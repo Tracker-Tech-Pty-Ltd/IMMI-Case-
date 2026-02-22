@@ -27,6 +27,7 @@ from ...visa_registry import (
     get_family,
     get_registry_for_api,
     group_by_family,
+    VISA_REGISTRY,
 )
 from ..helpers import get_repo, get_output_dir, safe_int, _filter_cases, EDITABLE_FIELDS
 from ..jobs import _job_lock, _job_status, _run_download_job
@@ -1896,6 +1897,113 @@ def analytics_judge_bio():
 def visa_registry():
     """Return the full visa registry (entries + families) for frontend caching."""
     return jsonify(get_registry_for_api())
+
+
+# ── Taxonomy Endpoints ─────────────────────────────────────────────────────
+
+@api_bp.route("/taxonomy/visa-lookup")
+def taxonomy_visa_lookup():
+    """Quick-lookup visa subclasses by code or name with case counts.
+
+    Query parameters:
+      q     (str, required, min 1 char) — searches subclass code or visa name
+      limit (int, default 20, max 50)   — max results to return
+
+    Returns:
+      {
+        "success": true,
+        "data": [
+          {
+            "subclass": "866",
+            "name": "Protection",
+            "family": "Protection",
+            "case_count": 12543
+          },
+          ...
+        ],
+        "meta": {
+          "query": "866",
+          "total_results": 1,
+          "limit": 20
+        }
+      }
+    """
+    try:
+        query = request.args.get("q", "").strip()
+        limit = min(request.args.get("limit", 20, type=int), 50)
+
+        if not query:
+            return jsonify({"success": False, "error": "q parameter is required"}), 400
+        if limit < 1:
+            return jsonify({"success": False, "error": "limit must be >= 1"}), 400
+
+        # Get all cases and count by visa subclass
+        cases = _get_all_cases()
+        visa_counts: dict[str, int] = Counter()
+        for c in cases:
+            cleaned = _clean_visa(c.visa_subclass)
+            if cleaned:
+                visa_counts[cleaned] += 1
+
+        # Search registry
+        q_lower = query.lower()
+        q_is_numeric = query.isdigit()
+
+        results = []
+        total_matched = 0
+
+        for subclass in sorted(VISA_REGISTRY.keys(), key=lambda x: x.zfill(4)):
+            name, family = VISA_REGISTRY[subclass]
+
+            # Match logic:
+            # 1. If query is numeric: match subclass prefix (e.g., "86" matches "866")
+            # 2. If query is text: match visa name (case-insensitive partial)
+            matched = False
+            is_exact = False
+
+            if q_is_numeric:
+                if subclass == query:
+                    matched = True
+                    is_exact = True
+                elif subclass.startswith(query):
+                    matched = True
+            else:
+                if q_lower in name.lower():
+                    matched = True
+                    if q_lower == name.lower():
+                        is_exact = True
+
+            if matched:
+                total_matched += 1
+                if len(results) < limit:
+                    results.append({
+                        "subclass": subclass,
+                        "name": name,
+                        "family": family,
+                        "case_count": visa_counts.get(subclass, 0),
+                        "_exact": is_exact,  # For sorting, will be removed
+                    })
+
+        # Sort: exact matches first, then by case count descending
+        results.sort(key=lambda x: (not x["_exact"], -x["case_count"]))
+
+        # Remove internal sorting flag
+        for r in results:
+            r.pop("_exact", None)
+
+        return jsonify({
+            "success": True,
+            "data": results,
+            "meta": {
+                "query": query,
+                "total_results": total_matched,
+                "limit": limit,
+            },
+        })
+
+    except Exception as e:
+        logger.error(f"Error in visa-lookup: {e}")
+        return jsonify({"success": False, "error": "Failed to lookup visa subclasses"}), 500
 
 
 @api_bp.route("/analytics/visa-families")
