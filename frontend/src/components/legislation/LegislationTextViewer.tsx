@@ -61,14 +61,22 @@ function stripAustliiHeader(text: string): string {
   // Skip the first header line
   start = 1;
   // Skip optional title line (non-empty, non-header)
-  if (start < lines.length && lines[start].trim() && !AUSTLII_HDR_RE.test(lines[start].trim())) {
+  if (
+    start < lines.length &&
+    lines[start].trim() &&
+    !AUSTLII_HDR_RE.test(lines[start].trim())
+  ) {
     start++;
   }
   // Skip duplicate header line if present (the double-copy AustLII pattern)
   if (start < lines.length && AUSTLII_HDR_RE.test(lines[start].trim())) {
     start++;
     // Skip duplicate title line
-    if (start < lines.length && lines[start].trim() && !AUSTLII_HDR_RE.test(lines[start].trim())) {
+    if (
+      start < lines.length &&
+      lines[start].trim() &&
+      !AUSTLII_HDR_RE.test(lines[start].trim())
+    ) {
       start++;
     }
   }
@@ -303,11 +311,61 @@ function renderStatuteLine(
   }
 }
 
+/**
+ * Merge contiguous "body" lines that AustLII broke mid-sentence.
+ *
+ * AustLII text uses `\n` for visual line wrapping, not logical breaks.
+ * E.g. "Section\n9 of the\nWar Precautions Act" should be one sentence.
+ *
+ * Strategy:
+ *  - Keep structural lines (subsection, paragraph, note, etc.) separate.
+ *  - Join consecutive body lines with a space.
+ *  - Also append a trailing body line onto a preceding structural line
+ *    (e.g. "(1)\nThe Acts…" becomes "(1) The Acts…" so it matches the
+ *    subsection regex correctly).
+ *  - Preserve blank lines as paragraph separators.
+ */
+function mergeContiguousBodyLines(text: string): string {
+  const lines = text.split("\n");
+  const merged: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Blank lines are preserved as separators
+    if (!trimmed) {
+      merged.push("");
+      continue;
+    }
+
+    const type = classifyLine(trimmed);
+
+    // Structural lines always start fresh
+    if (type !== "body") {
+      merged.push(trimmed);
+      continue;
+    }
+
+    // Body line — try to merge with the previous non-blank line
+    const prevIdx = merged.length - 1;
+    if (prevIdx >= 0 && merged[prevIdx].trim()) {
+      // Append to previous line (works for both body+body and structural+body)
+      merged[prevIdx] = merged[prevIdx] + " " + trimmed;
+      continue;
+    }
+
+    merged.push(trimmed);
+  }
+
+  return merged.join("\n");
+}
+
 function renderStatuteText(
   text: string,
   sectionMap: SectionMap,
   onJump: (id: string) => void,
 ): React.ReactNode[] {
+  // text is already merged by SectionCard's cleanText memo
   return text
     .split("\n")
     .map((line, i) =>
@@ -416,7 +474,7 @@ function TocSidebar({ sections, activeId, onJump, expanded }: TocSidebarProps) {
     <nav
       className={cn(
         "overflow-y-auto border-r border-border bg-card",
-        expanded ? "max-h-none" : "max-h-[680px]",
+        expanded ? "max-h-none" : "max-h-[calc(100vh-12rem)]",
       )}
     >
       <p className="sticky top-0 z-10 bg-card px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-text">
@@ -507,9 +565,9 @@ function SectionCard({
   sectionMap,
   onJump,
 }: SectionCardProps) {
-  // Strip the AustLII "ACT - SECT N" header line that duplicates our card header
+  // Strip the AustLII duplicate header, then merge mid-sentence line breaks
   const cleanText = useMemo(
-    () => stripAustliiHeader(section.text),
+    () => mergeContiguousBodyLines(stripAustliiHeader(section.text)),
     [section.text],
   );
 
@@ -573,7 +631,7 @@ export function LegislationTextViewer({
   const [searchTerm, setSearchTerm] = useState("");
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(
     sections[0]?.id ?? null,
   );
@@ -584,12 +642,19 @@ export function LegislationTextViewer({
   const contentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Precompute cleaned text per section (same as SectionCard's cleanText)
+  const cleanedTexts = useMemo(
+    () =>
+      sections.map((s) => mergeContiguousBodyLines(stripAustliiHeader(s.text))),
+    [sections],
+  );
+
   // ── Per-section match counts (for offset calculation) ─────────────────
   const sectionMatchCounts = useMemo(() => {
     if (!searchTerm || searchTerm.length < 2) return sections.map(() => 0);
     const lower = searchTerm.toLowerCase();
-    return sections.map((s) => {
-      const text = s.text.toLowerCase();
+    return cleanedTexts.map((cleaned) => {
+      const text = cleaned.toLowerCase();
       let count = 0;
       let idx = text.indexOf(lower);
       while (idx !== -1) {
@@ -598,7 +663,7 @@ export function LegislationTextViewer({
       }
       return count;
     });
-  }, [searchTerm, sections]);
+  }, [searchTerm, cleanedTexts, sections]);
 
   const totalMatches = useMemo(
     () => sectionMatchCounts.reduce((a, b) => a + b, 0),
@@ -785,7 +850,7 @@ export function LegislationTextViewer({
           ref={contentRef}
           className={cn(
             "flex-1 overflow-auto border-l border-border",
-            expanded ? "max-h-none" : "max-h-[680px]",
+            expanded ? "max-h-none" : "max-h-[calc(100vh-12rem)]",
           )}
         >
           <div className="space-y-3 p-4">
