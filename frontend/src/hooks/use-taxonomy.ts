@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchVisaLookup,
-  fetchLegalConcepts,
+  fetchTaxonomyLegalConcepts,
   fetchJudgeAutocomplete,
   fetchCountries,
   submitGuidedSearch,
@@ -21,7 +21,7 @@ export function useVisaLookup(query: string = "", limit: number = 20) {
 export function useLegalConcepts() {
   return useQuery({
     queryKey: ["taxonomy-legal-concepts"],
-    queryFn: fetchLegalConcepts,
+    queryFn: fetchTaxonomyLegalConcepts,
     staleTime: 300_000,
   });
 }

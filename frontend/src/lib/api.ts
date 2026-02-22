@@ -566,7 +566,7 @@ export function fetchVisaLookup(
   return apiFetch(`/api/v1/taxonomy/visa-lookup?${params}`);
 }
 
-export function fetchLegalConcepts(): Promise<{ success: boolean; concepts: LegalConceptEntry[]; meta: { total_concepts: number } }> {
+export function fetchTaxonomyLegalConcepts(): Promise<{ success: boolean; concepts: LegalConceptEntry[]; meta: { total_concepts: number } }> {
   return apiFetch("/api/v1/taxonomy/legal-concepts");
 }
 

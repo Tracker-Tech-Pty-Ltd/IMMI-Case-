@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
 import {
   Search,
   ArrowRight,
@@ -37,7 +36,6 @@ interface FlowState {
 }
 
 export function GuidedSearchPage() {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const [selectedFlow, setSelectedFlow] = useState<FlowType>(null);
   const [currentStep, setCurrentStep] = useState(1);
@@ -214,14 +212,18 @@ export function GuidedSearchPage() {
 
         {paginatedResults.length === 0 ? (
           <EmptyState
-            icon={Search}
+            icon={<Search />}
             title="No cases found"
             description="Try adjusting your search criteria"
           />
         ) : (
           <div className="space-y-4">
             {paginatedResults.map((c) => (
-              <CaseCard key={c.case_id} case={c} />
+              <CaseCard
+                key={c.case_id}
+                case_={c}
+                onClick={() => navigate(`/cases/${c.case_id}`)}
+              />
             ))}
           </div>
         )}
@@ -229,8 +231,10 @@ export function GuidedSearchPage() {
         {results.length > 20 && (
           <div className="mt-6">
             <Pagination
-              page={currentPage}
+              currentPage={currentPage}
               totalPages={Math.ceil(results.length / 20)}
+              totalItems={results.length}
+              pageSize={20}
               onPageChange={setCurrentPage}
             />
           </div>
