@@ -317,3 +317,14 @@ export interface FlowMatrixData {
   nodes: FlowNode[];
   links: FlowLink[];
 }
+
+// ─── Saved Searches ─────────────────────────────────────────────
+
+export interface SavedSearch {
+  id: string;
+  name: string;
+  filters: CaseFilters;
+  createdAt: string;
+  lastExecutedAt?: string;
+  resultCount?: number;
+}
