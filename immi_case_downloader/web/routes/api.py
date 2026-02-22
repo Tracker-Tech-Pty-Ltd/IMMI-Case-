@@ -2006,6 +2006,72 @@ def taxonomy_visa_lookup():
         return jsonify({"success": False, "error": "Failed to lookup visa subclasses"}), 500
 
 
+@api_bp.route("/taxonomy/legal-concepts")
+def taxonomy_legal_concepts():
+    """Get all 34 canonical legal concepts with case counts.
+
+    Returns all legal concepts defined in the registry, annotated with
+    case counts for each. Used by frontend taxonomy browser for filtering.
+
+    Returns:
+      {
+        "success": true,
+        "concepts": [
+          {
+            "id": "procedural-fairness",
+            "name": "Procedural Fairness",
+            "description": "Natural justice, right to be heard, bias",
+            "keywords": ["natural justice", "procedural fairness", ...],
+            "case_count": 12543
+          },
+          ...
+        ],
+        "meta": {
+          "total_concepts": 34
+        }
+      }
+    """
+    try:
+        # Import legal concepts registry
+        from ...legal_concepts_registry import get_concepts_for_api
+
+        # Get all cases and count by concept
+        cases = _get_all_cases()
+        concept_counts: dict[str, int] = Counter()
+
+        for c in cases:
+            for concept in _split_concepts(c.legal_concepts):
+                concept_counts[concept] += 1
+
+        # Get all canonical concepts and annotate with counts
+        concepts = get_concepts_for_api()
+        results = []
+
+        for concept in concepts:
+            results.append({
+                "id": concept["id"],
+                "name": concept["name"],
+                "description": concept["description"],
+                "keywords": concept["keywords"],
+                "case_count": concept_counts.get(concept["name"], 0),
+            })
+
+        # Sort by case count descending (most popular first)
+        results.sort(key=lambda x: -x["case_count"])
+
+        return jsonify({
+            "success": True,
+            "concepts": results,
+            "meta": {
+                "total_concepts": len(results),
+            },
+        })
+
+    except Exception as e:
+        logger.error(f"Error in legal-concepts: {e}")
+        return jsonify({"success": False, "error": "Failed to retrieve legal concepts"}), 500
+
+
 @api_bp.route("/analytics/visa-families")
 def analytics_visa_families():
     """Case counts and win rates aggregated by visa family."""
