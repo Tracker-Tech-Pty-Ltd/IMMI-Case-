@@ -22,7 +22,15 @@ function SavedSearchCardInner({
   const { t } = useTranslation();
 
   // Fetch current count for this search's filters
-  const { data } = useCases({ ...search.filters, page: 1, page_size: 1 });
+  // Optimized: longer staleTime (60s) since counts don't need real-time updates
+  // refetchOnMount: false prevents redundant API calls when cards re-render
+  const { data } = useCases(
+    { ...search.filters, page: 1, page_size: 1 },
+    {
+      staleTime: 60_000, // 60 seconds - count badges don't need real-time updates
+      refetchOnMount: false, // Prevent refetch on component mount if data is cached
+    }
+  );
   const currentCount = data?.total ?? 0;
 
   // Calculate if there are new results since last execution

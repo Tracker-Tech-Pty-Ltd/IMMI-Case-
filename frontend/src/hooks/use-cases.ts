@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import type { UseQueryOptions } from "@tanstack/react-query"
 import type { CaseFilters } from "@/types/case"
 import {
   fetchCases,
@@ -13,11 +14,15 @@ import {
 } from "@/lib/api"
 import type { ImmigrationCase } from "@/types/case"
 
-export function useCases(filters: CaseFilters) {
+export function useCases(
+  filters: CaseFilters,
+  options?: Omit<UseQueryOptions<Awaited<ReturnType<typeof fetchCases>>>, "queryKey" | "queryFn">
+) {
   return useQuery({
     queryKey: ["cases", filters],
     queryFn: () => fetchCases(filters),
     staleTime: 10_000,
+    ...options,
   })
 }
 

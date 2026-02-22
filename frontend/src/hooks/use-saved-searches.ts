@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { SavedSearch, CaseFilters } from "@/types/case";
 import {
   loadSavedSearches,
@@ -185,17 +185,34 @@ export function useSavedSearches() {
     notifySubscribers();
   }, []);
 
-  return {
-    savedSearches,
-    saveSearch,
-    updateSearch,
-    deleteSearch,
-    executeSearch,
-    getSearchById,
-    renameSearch,
-    searchNameExists,
-    count,
-    limitReached,
-    clearAll,
-  };
+  // Memoize return object to prevent unnecessary re-renders in components
+  // that destructure the hook's return value
+  return useMemo(
+    () => ({
+      savedSearches,
+      saveSearch,
+      updateSearch,
+      deleteSearch,
+      executeSearch,
+      getSearchById,
+      renameSearch,
+      searchNameExists,
+      count,
+      limitReached,
+      clearAll,
+    }),
+    [
+      savedSearches,
+      saveSearch,
+      updateSearch,
+      deleteSearch,
+      executeSearch,
+      getSearchById,
+      renameSearch,
+      searchNameExists,
+      count,
+      limitReached,
+      clearAll,
+    ]
+  );
 }
