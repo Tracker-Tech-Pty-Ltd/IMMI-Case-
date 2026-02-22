@@ -3,6 +3,7 @@ import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { VisaQuickLookup } from "@/components/taxonomy/VisaQuickLookup";
 import { LegalConceptBrowser } from "@/components/taxonomy/LegalConceptBrowser";
 import { JudgeAutocomplete } from "@/components/taxonomy/JudgeAutocomplete";
+import { CountryDropdown } from "@/components/taxonomy/CountryDropdown";
 
 export function TaxonomyPage() {
   const { t } = useTranslation();
@@ -43,6 +44,11 @@ export function TaxonomyPage() {
       {/* Judge Autocomplete Section */}
       <div className="rounded-lg border border-border bg-card p-5">
         <JudgeAutocomplete />
+      </div>
+
+      {/* Country Dropdown Section */}
+      <div className="rounded-lg border border-border bg-card p-5">
+        <CountryDropdown />
       </div>
     </div>
   );
