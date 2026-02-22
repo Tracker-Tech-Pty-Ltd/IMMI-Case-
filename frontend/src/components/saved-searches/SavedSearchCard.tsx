@@ -49,7 +49,7 @@ function SavedSearchCardInner({
     if (filters.source) parts.push(filters.source);
     if (filters.tag) parts.push(filters.tag);
 
-    return parts.length > 0 ? parts.join(" • ") : "No filters";
+    return parts.length > 0 ? parts.join(" • ") : t("saved_searches.no_filters");
   }, [search.filters]);
 
   // Format last executed date
@@ -68,11 +68,11 @@ function SavedSearchCardInner({
     try {
       const url = generateShareableUrl(search.filters);
       await navigator.clipboard.writeText(url);
-      toast.success("Search URL copied to clipboard");
+      toast.success(t("saved_searches.toast_url_copied"));
     } catch (err) {
-      toast.error("Failed to copy URL to clipboard");
+      toast.error(t("saved_searches.toast_url_copy_failed"));
     }
-  }, [search.filters]);
+  }, [search.filters, t]);
 
   // Handle execute - pass current count to parent
   const handleExecute = useCallback(() => {
@@ -93,14 +93,14 @@ function SavedSearchCardInner({
           <div className="flex shrink-0 items-center gap-1.5">
             <span
               className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent"
-              title={`Current results: ${currentCount}`}
+              title={`${t("saved_searches.current_results")} ${currentCount}`}
             >
               {currentCount.toLocaleString()}
             </span>
             {hasNewResults && (
               <span
                 className="inline-flex items-center gap-0.5 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/30 dark:text-green-400"
-                title={`${newResultsCount} new result${newResultsCount !== 1 ? "s" : ""} since last execution`}
+                title={`${newResultsCount} ${newResultsCount !== 1 ? t("saved_searches.new_results_tooltip_plural") : t("saved_searches.new_results_tooltip")}`}
               >
                 <TrendingUp className="h-3 w-3" />
                 +{newResultsCount}
@@ -125,7 +125,7 @@ function SavedSearchCardInner({
           <div className="mb-3 border-t border-border-light pt-2.5">
             <span className="inline-flex items-center gap-1 text-xs text-muted-text">
               <Calendar className="h-3 w-3 shrink-0" />
-              Last run: {lastExecutedText}
+              {t("saved_searches.last_run")} {lastExecutedText}
             </span>
           </div>
         )}
@@ -135,29 +135,29 @@ function SavedSearchCardInner({
           <button
             onClick={handleExecute}
             className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-dark"
-            title={t("saved_searches.execute_button", "Execute Search")}
+            title={t("saved_searches.execute_button")}
           >
             <Play className="h-3 w-3" />
-            Execute
+            {t("saved_searches.execute_label")}
           </button>
           <button
             onClick={handleShare}
             className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent/5"
-            title={t("saved_searches.share_button", "Share Search")}
+            title={t("saved_searches.share_button")}
           >
             <Share2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onEdit}
             className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent/5"
-            title={t("saved_searches.edit_button", "Edit Search")}
+            title={t("saved_searches.edit_button")}
           >
             <Edit2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onDelete}
             className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/20"
-            title={t("saved_searches.delete_button", "Delete Search")}
+            title={t("saved_searches.delete_button")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

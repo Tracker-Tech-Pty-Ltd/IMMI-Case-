@@ -53,12 +53,12 @@ export function SaveSearchModal({
 
     // Validation
     if (!trimmedName) {
-      setError("Search name cannot be empty");
+      setError(t("saved_searches.error_empty_name"));
       return;
     }
 
     if (trimmedName.length > 50) {
-      setError("Search name must be 50 characters or less");
+      setError(t("saved_searches.error_name_too_long"));
       return;
     }
 
@@ -67,7 +67,7 @@ export function SaveSearchModal({
       existingNames.includes(trimmedName) &&
       trimmedName !== editingSearch?.name
     ) {
-      setError("A search with this name already exists");
+      setError(t("saved_searches.error_duplicate_name"));
       return;
     }
 
@@ -95,13 +95,13 @@ export function SaveSearchModal({
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-foreground">
                 {isEditMode
-                  ? t("saved_searches.edit_title", { defaultValue: "Edit Search" })
-                  : t("common.save") + " Search"}
+                  ? t("saved_searches.edit_title")
+                  : t("saved_searches.save_title")}
               </h3>
               <p className="mt-1 text-sm text-muted-text">
                 {isEditMode
-                  ? "Update the name or filters for this saved search"
-                  : "Save current search configuration for quick access later"}
+                  ? t("saved_searches.edit_description")
+                  : t("saved_searches.save_description")}
               </p>
             </div>
           </div>
@@ -111,7 +111,7 @@ export function SaveSearchModal({
               htmlFor="search-name"
               className="block text-sm font-medium text-foreground"
             >
-              Search Name
+              {t("saved_searches.search_name_label")}
             </label>
             <input
               ref={inputRef}
@@ -122,7 +122,7 @@ export function SaveSearchModal({
                 setName(e.target.value);
                 setError(null);
               }}
-              placeholder="e.g., FCA Visa 500 Cases"
+              placeholder={t("saved_searches.search_name_placeholder")}
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-text focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
             {error && (
@@ -133,7 +133,7 @@ export function SaveSearchModal({
           {filterSummary && (
             <div className="mt-4 rounded-md bg-surface p-3">
               <p className="text-xs font-medium text-muted-text">
-                Current Filters:
+                {t("saved_searches.current_filters_label")}
               </p>
               <p className="mt-1 text-sm text-foreground">{filterSummary}</p>
             </div>
@@ -152,8 +152,8 @@ export function SaveSearchModal({
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light"
             >
               {isEditMode
-                ? t("common.update", { defaultValue: "Update" })
-                : t("common.save") + " Search"}
+                ? t("common.update")
+                : t("saved_searches.save_button")}
             </button>
           </div>
         </form>
@@ -201,5 +201,5 @@ function generateFilterSummary(filters: CaseFilters): string {
     parts.push(`Sorted by ${filters.sort_by} (${dir})`);
   }
 
-  return parts.length > 0 ? parts.join(" • ") : "No filters applied";
+  return parts.length > 0 ? parts.join(" • ") : "No filters applied"; // Intentionally not translated - used in modal context
 }

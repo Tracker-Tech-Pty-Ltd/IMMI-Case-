@@ -180,13 +180,13 @@ export function CasesPage() {
           filters: searchFilters,
         });
         if (updated) {
-          toast.success(`Updated search "${name}" successfully`);
+          toast.success(t("saved_searches.toast_updated", { name }));
         }
         setEditingSearchId(null);
       } else {
         // Create new search
         saveSearch(name, searchFilters);
-        toast.success(`Saved search "${name}" successfully`);
+        toast.success(t("saved_searches.toast_saved", { name }));
       }
       setShowSaveModal(false);
     },
@@ -207,7 +207,7 @@ export function CasesPage() {
       if (savedFilters.sort_dir) params.set("sort_dir", savedFilters.sort_dir);
       params.set("page", "1");
       setSearchParams(params);
-      toast.success("Applied saved search");
+      toast.success(t("saved_searches.toast_applied"));
     },
     [setSearchParams],
   );
@@ -437,7 +437,7 @@ export function CasesPage() {
           title="Save current search for quick access later"
         >
           <Bookmark className="h-3.5 w-3.5" />
-          Save Search
+          {t("saved_searches.save_button")}
         </button>
 
         {/* Sort */}
