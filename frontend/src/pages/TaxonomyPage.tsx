@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { VisaQuickLookup } from "@/components/taxonomy/VisaQuickLookup";
 import { LegalConceptBrowser } from "@/components/taxonomy/LegalConceptBrowser";
+import { JudgeAutocomplete } from "@/components/taxonomy/JudgeAutocomplete";
 
 export function TaxonomyPage() {
   const { t } = useTranslation();
@@ -37,6 +38,11 @@ export function TaxonomyPage() {
       {/* Legal Concepts Browser Section */}
       <div className="rounded-lg border border-border bg-card p-5">
         <LegalConceptBrowser />
+      </div>
+
+      {/* Judge Autocomplete Section */}
+      <div className="rounded-lg border border-border bg-card p-5">
+        <JudgeAutocomplete />
       </div>
     </div>
   );
