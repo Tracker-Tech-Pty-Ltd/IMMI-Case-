@@ -509,6 +509,94 @@ export function fetchLegislationUpdateStatus(): Promise<{
   return apiFetch("/api/v1/legislations/update/status");
 }
 
+// ─── Taxonomy ──────────────────────────────────────────────────
+
+export interface VisaEntry {
+  subclass: string;
+  name: string;
+  family: string;
+  case_count: number;
+}
+
+export interface LegalConceptEntry {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  case_count: number;
+}
+
+export interface JudgeAutocompleteEntry {
+  name: string;
+  case_count: number;
+}
+
+export interface CountryEntry {
+  country: string;
+  case_count: number;
+}
+
+export interface GuidedSearchParams {
+  flow: "find-precedents" | "assess-judge";
+  visa_subclass?: string;
+  country?: string;
+  legal_concepts?: string[];
+  judge_name?: string;
+}
+
+export interface GuidedSearchResult {
+  success: boolean;
+  flow: string;
+  results?: ImmigrationCase[];
+  total?: number;
+  judge_profile?: {
+    name: string;
+    url: string;
+    case_count: number;
+  };
+}
+
+export function fetchVisaLookup(
+  query: string,
+  limit: number = 20,
+): Promise<{ success: boolean; data: VisaEntry[]; meta: { query: string; total_results: number; limit: number } }> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  params.set("limit", String(limit));
+  return apiFetch(`/api/v1/taxonomy/visa-lookup?${params}`);
+}
+
+export function fetchLegalConcepts(): Promise<{ success: boolean; concepts: LegalConceptEntry[]; meta: { total_concepts: number } }> {
+  return apiFetch("/api/v1/taxonomy/legal-concepts");
+}
+
+export function fetchJudgeAutocomplete(
+  query: string,
+  limit: number = 20,
+): Promise<{ success: boolean; judges: JudgeAutocompleteEntry[]; meta: { query: string; total_results: number; limit: number } }> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  params.set("limit", String(limit));
+  return apiFetch(`/api/v1/taxonomy/judges/autocomplete?${params}`);
+}
+
+export function fetchCountries(
+  limit: number = 30,
+): Promise<{ success: boolean; countries: CountryEntry[]; meta: { total_countries: number; limit: number } }> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return apiFetch(`/api/v1/taxonomy/countries?${params}`);
+}
+
+export function submitGuidedSearch(
+  params: GuidedSearchParams,
+): Promise<GuidedSearchResult> {
+  return apiFetch("/api/v1/taxonomy/guided-search", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 // ─── Export (file downloads) ───────────────────────────────────
 export function downloadExportFile(format: "csv" | "json"): void {
   window.location.href = `/api/v1/export/${format}`;

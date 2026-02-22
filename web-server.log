@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/Users/d/Developer/IMMI-Case-/.auto-claude/worktrees/tasks/001-immigration-specific-search-taxonomy/./web.py", line 13, in <module>
+    from immi_case_downloader.webapp import create_app
+  File "/Users/d/Developer/IMMI-Case-/.auto-claude/worktrees/tasks/001-immigration-specific-search-taxonomy/immi_case_downloader/webapp.py", line 8, in <module>
+    from .web import create_app  # noqa: F401
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/d/Developer/IMMI-Case-/.auto-claude/worktrees/tasks/001-immigration-specific-search-taxonomy/immi_case_downloader/web/__init__.py", line 15, in <module>
+    from dotenv import load_dotenv
+ModuleNotFoundError: No module named 'dotenv'
