@@ -12,6 +12,8 @@ import {
   Palette,
   TrendingUp,
   Users,
+  Tags,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { prefetchRoute } from "@/lib/prefetch";
@@ -43,6 +45,21 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         { to: "/analytics", icon: TrendingUp, label: t("nav.analytics") },
         { to: "/judge-profiles", icon: Users, label: t("nav.judge_profiles") },
         { to: "/cases", icon: FileText, label: t("nav.cases") },
+      ],
+    },
+    {
+      title: t("nav.search"),
+      items: [
+        {
+          to: "/taxonomy",
+          icon: Tags,
+          label: t("nav.search_taxonomy"),
+        },
+        {
+          to: "/guided-search",
+          icon: Search,
+          label: t("nav.guided_search"),
+        },
       ],
     },
     {
