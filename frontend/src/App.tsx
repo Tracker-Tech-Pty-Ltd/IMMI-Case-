@@ -74,8 +74,10 @@ const LegislationDetailPage = lazy(() =>
     default: m.LegislationDetailPage,
   }))
 );
-const TaxonomyPage = lazy(() =>
-  import("@/pages/TaxonomyPage").then((m) => ({ default: m.TaxonomyPage }))
+const SearchTaxonomyPage = lazy(() =>
+  import("@/pages/SearchTaxonomyPage").then((m) => ({
+    default: m.SearchTaxonomyPage,
+  }))
 );
 
 const queryClient = new QueryClient({
@@ -161,7 +163,7 @@ export default function App() {
               path="taxonomy"
               element={
                 <Suspense fallback={<PageLoader />}>
-                  <TaxonomyPage />
+                  <SearchTaxonomyPage />
                 </Suspense>
               }
             />
