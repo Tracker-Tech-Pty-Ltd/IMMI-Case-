@@ -53,12 +53,12 @@ export function SaveSearchModal({
 
     // Validation
     if (!trimmedName) {
-      setError(t("saved_searches.error_empty_name"));
+      setError(t("saved_searches.error_empty_name", { defaultValue: "Search name cannot be empty" }));
       return;
     }
 
     if (trimmedName.length > 50) {
-      setError(t("saved_searches.error_name_too_long"));
+      setError(t("saved_searches.error_name_too_long", { defaultValue: "Name must be 50 characters or less" }));
       return;
     }
 
@@ -67,7 +67,13 @@ export function SaveSearchModal({
       existingNames.includes(trimmedName) &&
       trimmedName !== editingSearch?.name
     ) {
-      setError(t("saved_searches.error_duplicate_name"));
+      setError(t("saved_searches.error_duplicate_name", { defaultValue: "A search with this name already exists" }));
+      return;
+    }
+
+    // Check that at least one filter is applied
+    if (!isEditMode && !hasActiveFilters(filters)) {
+      setError(t("saved_searches.error_no_filters", { defaultValue: "Cannot save a search with no filters applied" }));
       return;
     }
 
@@ -159,6 +165,21 @@ export function SaveSearchModal({
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * Check if filters have at least one meaningful value
+ */
+function hasActiveFilters(filters: CaseFilters): boolean {
+  return Boolean(
+    filters.court ||
+    filters.year ||
+    filters.visa_type ||
+    filters.nature ||
+    filters.source ||
+    filters.tag ||
+    filters.keyword
   );
 }
 

@@ -1,15 +1,85 @@
 import type { SavedSearch, CaseFilters } from "@/types/case";
 
 const STORAGE_KEY = "saved-searches";
+const MAX_SAVED_SEARCHES = 50;
+
+/**
+ * Validation error messages
+ */
+export const VALIDATION_ERRORS = {
+  EMPTY_NAME: "Search name cannot be empty",
+  DUPLICATE_NAME: "A search with this name already exists",
+  LIMIT_REACHED: "Cannot save more than 50 searches. Delete some to create new ones.",
+  NO_FILTERS: "Cannot save a search with no filters applied",
+  CORRUPTED_DATA: "Saved searches data is corrupted and has been reset",
+} as const;
+
+/**
+ * Validate a SavedSearch object structure
+ */
+function isValidSavedSearch(obj: unknown): obj is SavedSearch {
+  if (!obj || typeof obj !== "object") return false;
+  const s = obj as Record<string, unknown>;
+
+  return (
+    typeof s.id === "string" &&
+    s.id.length > 0 &&
+    typeof s.name === "string" &&
+    s.name.length > 0 &&
+    typeof s.filters === "object" &&
+    s.filters !== null &&
+    typeof s.createdAt === "string" &&
+    (s.lastExecutedAt === undefined || typeof s.lastExecutedAt === "string") &&
+    (s.resultCount === undefined || typeof s.resultCount === "number")
+  );
+}
+
+/**
+ * Check if filters object has at least one meaningful filter
+ */
+function hasActiveFilters(filters: CaseFilters): boolean {
+  return Boolean(
+    filters.court ||
+    filters.year ||
+    filters.visa_type ||
+    filters.nature ||
+    filters.source ||
+    filters.tag ||
+    filters.keyword
+  );
+}
 
 /**
  * Load all saved searches from localStorage
+ * Returns empty array if data is corrupted or invalid
  */
 export function loadSavedSearches(): SavedSearch[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    // Validate that it's an array
+    if (!Array.isArray(parsed)) {
+      console.warn(VALIDATION_ERRORS.CORRUPTED_DATA);
+      localStorage.removeItem(STORAGE_KEY);
+      return [];
+    }
+
+    // Filter out invalid entries and limit to MAX_SAVED_SEARCHES
+    const valid = parsed.filter(isValidSavedSearch).slice(0, MAX_SAVED_SEARCHES);
+
+    // If we had to remove invalid entries, save the cleaned data
+    if (valid.length !== parsed.length) {
+      console.warn(`Removed ${parsed.length - valid.length} invalid saved search entries`);
+      saveSavedSearches(valid);
+    }
+
+    return valid;
+  } catch (error) {
+    console.error("Failed to load saved searches:", error);
+    localStorage.removeItem(STORAGE_KEY);
     return [];
   }
 }
@@ -22,16 +92,40 @@ export function saveSavedSearches(searches: SavedSearch[]): void {
 }
 
 /**
- * Add a new saved search
+ * Add a new saved search with validation
+ * @throws Error if validation fails
  */
 export function addSavedSearch(
   name: string,
   filters: CaseFilters
 ): SavedSearch {
   const searches = loadSavedSearches();
+  const trimmedName = name.trim();
+
+  // Validate name is not empty
+  if (!trimmedName) {
+    throw new Error(VALIDATION_ERRORS.EMPTY_NAME);
+  }
+
+  // Validate filters are not empty
+  if (!hasActiveFilters(filters)) {
+    throw new Error(VALIDATION_ERRORS.NO_FILTERS);
+  }
+
+  // Check for duplicate names (case-insensitive)
+  const lowerName = trimmedName.toLowerCase();
+  if (searches.some((s) => s.name.toLowerCase() === lowerName)) {
+    throw new Error(VALIDATION_ERRORS.DUPLICATE_NAME);
+  }
+
+  // Check limit
+  if (searches.length >= MAX_SAVED_SEARCHES) {
+    throw new Error(VALIDATION_ERRORS.LIMIT_REACHED);
+  }
+
   const newSearch: SavedSearch = {
     id: generateSearchId(),
-    name: name.trim(),
+    name: trimmedName,
     filters,
     createdAt: new Date().toISOString(),
   };
@@ -41,7 +135,8 @@ export function addSavedSearch(
 }
 
 /**
- * Update an existing saved search
+ * Update an existing saved search with validation
+ * @throws Error if validation fails
  */
 export function updateSavedSearch(
   id: string,
@@ -50,6 +145,27 @@ export function updateSavedSearch(
   const searches = loadSavedSearches();
   const index = searches.findIndex((s) => s.id === id);
   if (index === -1) return null;
+
+  // Validate name if being updated
+  if (updates.name !== undefined) {
+    const trimmedName = updates.name.trim();
+    if (!trimmedName) {
+      throw new Error(VALIDATION_ERRORS.EMPTY_NAME);
+    }
+
+    // Check for duplicate names (case-insensitive), excluding current search
+    const lowerName = trimmedName.toLowerCase();
+    if (searches.some((s) => s.id !== id && s.name.toLowerCase() === lowerName)) {
+      throw new Error(VALIDATION_ERRORS.DUPLICATE_NAME);
+    }
+
+    updates.name = trimmedName;
+  }
+
+  // Validate filters if being updated
+  if (updates.filters !== undefined && !hasActiveFilters(updates.filters)) {
+    throw new Error(VALIDATION_ERRORS.NO_FILTERS);
+  }
 
   const updated = { ...searches[index], ...updates };
   searches[index] = updated;
@@ -120,20 +236,47 @@ export function encodeFiltersToUrl(filters: CaseFilters): string {
 }
 
 /**
- * Decode URL search params to filters
+ * Decode URL search params to filters with validation
+ * Handles invalid or missing params gracefully
  */
 export function decodeUrlToFilters(searchParams: URLSearchParams): CaseFilters {
+  // Parse year with validation
+  const yearStr = searchParams.get("year");
+  let year: number | undefined;
+  if (yearStr) {
+    const parsed = Number(yearStr);
+    // Validate year is a reasonable value (1900-2100)
+    if (!isNaN(parsed) && parsed >= 1900 && parsed <= 2100) {
+      year = parsed;
+    }
+  }
+
+  // Parse page with validation
+  const pageStr = searchParams.get("page");
+  let page = 1;
+  if (pageStr) {
+    const parsed = Number(pageStr);
+    // Ensure page is a positive integer
+    if (!isNaN(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+      page = parsed;
+    }
+  }
+
+  // Validate sort_dir
+  const sortDir = searchParams.get("sort_dir");
+  const validSortDir = sortDir === "asc" || sortDir === "desc" ? sortDir : "desc";
+
   const filters: CaseFilters = {
     court: searchParams.get("court") ?? "",
-    year: searchParams.get("year") ? Number(searchParams.get("year")) : undefined,
+    year,
     visa_type: searchParams.get("visa_type") ?? "",
     nature: searchParams.get("nature") ?? "",
     source: searchParams.get("source") ?? "",
     tag: searchParams.get("tag") ?? "",
     keyword: searchParams.get("keyword") ?? "",
     sort_by: searchParams.get("sort_by") ?? "date",
-    sort_dir: (searchParams.get("sort_dir") as "asc" | "desc") ?? "desc",
-    page: Number(searchParams.get("page") ?? 1),
+    sort_dir: validSortDir,
+    page,
     page_size: 100,
   };
 

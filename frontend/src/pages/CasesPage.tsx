@@ -173,24 +173,29 @@ export function CasesPage() {
 
   const handleSaveSearch = useCallback(
     (name: string, searchFilters: CaseFilters) => {
-      if (editingSearchId) {
-        // Update existing search
-        const updated = updateSearch(editingSearchId, {
-          name,
-          filters: searchFilters,
-        });
-        if (updated) {
-          toast.success(t("saved_searches.toast_updated", { name }));
+      try {
+        if (editingSearchId) {
+          // Update existing search
+          const updated = updateSearch(editingSearchId, {
+            name,
+            filters: searchFilters,
+          });
+          if (updated) {
+            toast.success(t("saved_searches.toast_updated", { name }));
+          }
+          setEditingSearchId(null);
+        } else {
+          // Create new search
+          saveSearch(name, searchFilters);
+          toast.success(t("saved_searches.toast_saved", { name }));
         }
-        setEditingSearchId(null);
-      } else {
-        // Create new search
-        saveSearch(name, searchFilters);
-        toast.success(t("saved_searches.toast_saved", { name }));
+        setShowSaveModal(false);
+      } catch (error) {
+        // Show validation error to user
+        toast.error(error instanceof Error ? error.message : "Failed to save search");
       }
-      setShowSaveModal(false);
     },
-    [editingSearchId, saveSearch, updateSearch],
+    [editingSearchId, saveSearch, updateSearch, t],
   );
 
   const handleExecuteSavedSearch = useCallback(

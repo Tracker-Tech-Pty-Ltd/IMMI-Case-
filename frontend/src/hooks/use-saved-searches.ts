@@ -75,6 +75,7 @@ export function useSavedSearches() {
 
   /**
    * Save a new search with the given name and filters
+   * @throws Error if name is empty, duplicate, limit reached, or no filters applied
    */
   const saveSearch = useCallback((name: string, filters: CaseFilters): SavedSearch => {
     const search = addSearchToStorage(name, filters);
@@ -84,6 +85,7 @@ export function useSavedSearches() {
 
   /**
    * Update an existing saved search
+   * @throws Error if name is empty, duplicate, or filters are invalid
    */
   const updateSearch = useCallback(
     (
@@ -146,6 +148,7 @@ export function useSavedSearches() {
 
   /**
    * Rename a saved search
+   * @throws Error if name is empty or duplicate
    */
   const renameSearch = useCallback((id: string, newName: string): SavedSearch | null => {
     return updateSearch(id, { name: newName.trim() });
