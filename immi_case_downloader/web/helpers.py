@@ -11,7 +11,7 @@ from ..repository import CaseRepository
 ITEMS_PER_PAGE = 100
 
 EDITABLE_FIELDS = [
-    "citation", "title", "court", "court_code", "date", "year", "url",
+    "citation", "title", "court", "court_code", "date", "year", "url", "source",
     "judges", "catchwords", "outcome", "visa_type", "legislation",
     "user_notes", "tags", "case_nature", "legal_concepts",
     "visa_subclass", "visa_class_code",

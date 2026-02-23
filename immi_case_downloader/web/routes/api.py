@@ -1743,10 +1743,15 @@ def analytics_success_rate():
     )
 
 
+ALLOWED_LEADERBOARD_SORT = frozenset({"cases", "approval_rate", "name"})
+
+
 @api_bp.route("/analytics/judge-leaderboard")
 def analytics_judge_leaderboard():
     """Judge/member leaderboard with approval rates and metadata."""
     sort_by = request.args.get("sort_by", "cases").strip().lower() or "cases"
+    if sort_by not in ALLOWED_LEADERBOARD_SORT:
+        return jsonify({"error": f"Invalid sort_by. Allowed: {sorted(ALLOWED_LEADERBOARD_SORT)}"}), 400
     limit = safe_int(request.args.get("limit"), default=50, min_val=1, max_val=200)
     cases = _apply_filters(_get_all_cases())
 
