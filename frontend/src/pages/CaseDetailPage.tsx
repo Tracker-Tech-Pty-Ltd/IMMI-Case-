@@ -1,4 +1,4 @@
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Edit,
@@ -30,8 +30,8 @@ export function CaseDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data, isLoading } = useCase(id!);
-  const { data: related } = useRelatedCases(id!);
+  const { data, isLoading } = useCase(id ?? "");
+  const { data: related } = useRelatedCases(id ?? "");
   const deleteMutation = useDeleteCase();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -51,13 +51,13 @@ export function CaseDetailPage() {
 
   const handleDelete = useCallback(async () => {
     try {
-      await deleteMutation.mutateAsync(id!);
+      await deleteMutation.mutateAsync(id ?? "");
       toast.success(t("states.completed"));
       navigate("/cases");
     } catch (e) {
       toast.error((e as Error).message);
     }
-  }, [id, deleteMutation, navigate]);
+  }, [id, deleteMutation, navigate, t]);
 
   const copyCitation = useCallback(() => {
     if (!data?.case.citation) return;
@@ -65,6 +65,10 @@ export function CaseDetailPage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [data]);
+
+  if (!id) {
+    return <Navigate to="/cases" replace />;
+  }
 
   if (isLoading || !data) {
     return (
@@ -374,12 +378,12 @@ function AddToCollectionMenu({
 
   function handleAddToCollection(collectionId: string) {
     addCaseToCollection(collectionId, caseId);
-    toast.success(t("bookmarks.add_to_collection", "Add to Collection"));
+    toast.success(t("bookmarks.add_to_collection"));
     setOpen(false);
   }
 
   function handleNewCollection() {
-    const name = prompt(t("bookmarks.collection_name", "Collection Name"));
+    const name = prompt(t("bookmarks.collection_name"));
     if (!name?.trim()) return;
     const col = createCollection(name.trim());
     addCaseToCollection(col.id, caseId);
@@ -393,7 +397,7 @@ function AddToCollectionMenu({
         date,
       });
     });
-    toast.success(t("bookmarks.collection_created", "Collection created"));
+    toast.success(t("bookmarks.collection_created"));
     setOpen(false);
   }
 
@@ -404,7 +408,7 @@ function AddToCollectionMenu({
         className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface"
       >
         <BookmarkPlus className="h-3.5 w-3.5" />
-        {t("bookmarks.add_to_collection", "Add to Collection")}
+        {t("bookmarks.add_to_collection")}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-border bg-card shadow-lg">
@@ -414,7 +418,7 @@ function AddToCollectionMenu({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-surface"
             >
               <Plus className="h-3.5 w-3.5" />
-              {t("bookmarks.new_collection", "New Collection")}
+              {t("bookmarks.new_collection")}
             </button>
           ) : (
             <>
@@ -433,7 +437,7 @@ function AddToCollectionMenu({
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-text hover:bg-surface hover:text-foreground"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  {t("bookmarks.new_collection", "New Collection")}
+                  {t("bookmarks.new_collection")}
                 </button>
               </div>
             </>

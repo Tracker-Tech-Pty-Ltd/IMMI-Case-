@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Save } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
@@ -53,7 +53,7 @@ export function CaseEditPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data, isLoading } = useCase(id!);
+  const { data, isLoading } = useCase(id ?? "");
   const updateMutation = useUpdateCase();
   const [form, setForm] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
@@ -83,6 +83,10 @@ export function CaseEditPage() {
     setDirty(true);
   }, []);
 
+  if (!id) {
+    return <Navigate to="/cases" replace />;
+  }
+
   if (isLoading || !data) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-text">
@@ -98,7 +102,7 @@ export function CaseEditPage() {
       return;
     }
     try {
-      await updateMutation.mutateAsync({ id: id!, data: form });
+      await updateMutation.mutateAsync({ id, data: form });
       toast.success(t("pages.case_edit.success"));
       setDirty(false);
       navigate(`/cases/${id}`);
@@ -364,6 +368,7 @@ function SelectField({
   options: string[];
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-secondary-text">
@@ -376,7 +381,7 @@ function SelectField({
       >
         {options.map((o) => (
           <option key={o} value={o}>
-            {o || `Select ${label}...`}
+            {o || t("common.all", { defaultValue: `— ${label} —` })}
           </option>
         ))}
       </select>
