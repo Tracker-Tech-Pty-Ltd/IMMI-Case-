@@ -439,7 +439,7 @@ export function CasesPage() {
         <button
           onClick={() => setShowSaveModal(true)}
           className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-text hover:text-foreground"
-          title="Save current search for quick access later"
+          title={t("saved_searches.save_description")}
         >
           <Bookmark className="h-3.5 w-3.5" />
           {t("saved_searches.save_button")}
@@ -512,9 +512,9 @@ export function CasesPage() {
             className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground"
           >
             <option value="">{t("filters.all_tags")}</option>
-            {filterOpts?.tags?.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {filterOpts?.tags?.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
               </option>
             ))}
           </select>
@@ -575,20 +575,21 @@ export function CasesPage() {
               }}
               className="flex items-center gap-1 text-accent hover:text-accent-light"
             >
-              <GitCompare className="h-3.5 w-3.5" /> Compare
+              <GitCompare className="h-3.5 w-3.5" />{" "}
+              {t("buttons.compare_cases")}
             </button>
           )}
           <button
             onClick={() => setDeleteConfirm(true)}
             className="flex items-center gap-1 text-danger hover:text-danger/80"
           >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
+            <Trash2 className="h-3.5 w-3.5" /> {t("common.delete")}
           </button>
           <button
             onClick={() => setSelected(new Set())}
             className="ml-auto text-muted-text hover:text-foreground"
           >
-            Clear
+            {t("filters.clear_filters")}
           </button>
         </div>
       )}
@@ -596,7 +597,7 @@ export function CasesPage() {
       {/* Loading */}
       {isLoading && (
         <div className="flex h-32 items-center justify-center text-muted-text">
-          Loading cases...
+          {t("common.loading_ellipsis")}
         </div>
       )}
 
@@ -604,11 +605,11 @@ export function CasesPage() {
       {!isLoading && cases.length === 0 && (
         <EmptyState
           icon={<FileText className="h-8 w-8" />}
-          title="No cases found"
+          title={t("cases.empty_state_title")}
           description={
             activeFilters.length > 0
-              ? "Try adjusting your filters or clearing them."
-              : "Get started by searching or downloading cases."
+              ? t("cases.empty_state_description")
+              : t("empty_states.no_cases_description")
           }
           action={
             activeFilters.length > 0 ? (
@@ -616,14 +617,14 @@ export function CasesPage() {
                 onClick={clearAllFilters}
                 className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light"
               >
-                Clear Filters
+                {t("filters.clear_filters")}
               </button>
             ) : (
               <button
                 onClick={() => navigate("/pipeline")}
                 className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light"
               >
-                Run Pipeline
+                {t("buttons.start_pipeline")}
               </button>
             )
           }
@@ -645,28 +646,29 @@ export function CasesPage() {
                   />
                 </th>
                 <th className="px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Title
+                  {t("cases.case_title")}
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Citation
+                  {t("cases.citation")}
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Court
+                  {t("cases.court")}
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  <span className="block leading-tight">Date</span>
+                  <span className="block leading-tight">{t("cases.date")}</span>
                   <span className="block text-[9px] font-normal text-muted-text leading-tight">
-                    decision / hearing
+                    {t("cases.date", { defaultValue: "decision" })} /{" "}
+                    {t("cases.hearing_date")}
                   </span>
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Country
+                  {t("cases.country_of_origin")}
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Outcome
+                  {t("cases.outcome")}
                 </th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-secondary-text">
-                  Nature
+                  {t("cases.nature")}
                 </th>
               </tr>
             </thead>
@@ -707,7 +709,7 @@ export function CasesPage() {
                         title={c.applicant_name || c.judges}
                       >
                         {c.applicant_name
-                          ? `Applicant: ${c.applicant_name}`
+                          ? `${t("cases.applicant")}: ${c.applicant_name}`
                           : c.judges}
                       </span>
                     )}
@@ -725,7 +727,7 @@ export function CasesPage() {
                     className="whitespace-nowrap px-2 py-2 text-xs text-muted-text"
                     title={
                       c.hearing_date && c.hearing_date !== c.date
-                        ? `Decision: ${c.date}\nHearing: ${c.hearing_date}`
+                        ? `${t("cases.date")}: ${c.date}\n${t("cases.hearing_date")}: ${c.hearing_date}`
                         : c.date
                     }
                   >
@@ -779,9 +781,11 @@ export function CasesPage() {
       {/* Delete confirmation modal */}
       <ConfirmModal
         open={deleteConfirm}
-        title="Delete Cases"
-        message={`Are you sure you want to delete ${selected.size} selected case${selected.size > 1 ? "s" : ""}? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={t("modals.confirm_delete")}
+        message={t("modals.confirm_delete_message", {
+          name: `${selected.size}`,
+        })}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={() => handleBatch("delete")}
         onCancel={() => setDeleteConfirm(false)}
