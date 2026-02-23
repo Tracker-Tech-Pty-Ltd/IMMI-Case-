@@ -136,7 +136,7 @@ export function CasesPage() {
         toast.error((e as Error).message);
       }
     },
-    [selected, batchMutation],
+    [selected, batchMutation, t],
   );
 
   const exportCsv = useCallback(() => {

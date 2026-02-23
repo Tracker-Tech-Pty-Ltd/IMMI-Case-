@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   BarChart,
   Bar,
@@ -78,6 +79,7 @@ function ChartTooltip({
   label?: number;
   normalized?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!active || !payload) return null;
   const nonZero = payload.filter(
     (p) => typeof p.value === "number" && p.value > 0,
@@ -141,7 +143,7 @@ function ChartTooltip({
             justifyContent: "space-between",
           }}
         >
-          <span>Total</span>
+          <span>{t("analytics.total")}</span>
           <span>
             {total.toLocaleString()}
             {suffix}
