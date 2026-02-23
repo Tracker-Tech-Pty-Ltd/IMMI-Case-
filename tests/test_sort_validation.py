@@ -1,5 +1,4 @@
 """Tests for sort parameter validation and export row limits."""
-import pytest
 
 
 class TestSortValidation:
