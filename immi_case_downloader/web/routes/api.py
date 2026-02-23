@@ -2632,7 +2632,7 @@ def taxonomy_guided_search():
                 },
             })
 
-        elif flow == "assess-judge":
+        else:  # flow == "assess-judge" (validated above)
             judge_name = data.get("judge_name", "").strip()
             if not judge_name:
                 return jsonify({"success": False, "error": "Judge name is required for assess-judge flow"}), 400
