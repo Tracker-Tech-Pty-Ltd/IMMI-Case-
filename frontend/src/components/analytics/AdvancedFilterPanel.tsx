@@ -38,9 +38,7 @@ function savePresets(presets: FilterPreset[]): void {
 }
 
 function toggleItem(list: string[], item: string): string[] {
-  return list.includes(item)
-    ? list.filter((i) => i !== item)
-    : [...list, item];
+  return list.includes(item) ? list.filter((i) => i !== item) : [...list, item];
 }
 
 export function AdvancedFilterPanel({
@@ -59,7 +57,9 @@ export function AdvancedFilterPanel({
   const [presets, setPresets] = useState<FilterPreset[]>(loadPresets);
 
   const activeCount =
-    selectedNatures.length + selectedSubclasses.length + selectedOutcomes.length;
+    selectedNatures.length +
+    selectedSubclasses.length +
+    selectedOutcomes.length;
 
   const handleClearAll = () => {
     onNaturesChange([]);
@@ -75,7 +75,10 @@ export function AdvancedFilterPanel({
       subclasses: selectedSubclasses,
       outcomes: selectedOutcomes,
     };
-    const updated = [...presets.filter((p) => p.name !== newPreset.name), newPreset];
+    const updated = [
+      ...presets.filter((p) => p.name !== newPreset.name),
+      newPreset,
+    ];
     savePresets(updated);
     setPresets(updated);
     setPresetName("");
@@ -93,7 +96,9 @@ export function AdvancedFilterPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-foreground">
-            {t("analytics.advanced_filters", { defaultValue: "Advanced Filters" })}
+            {t("analytics.advanced_filters", {
+              defaultValue: "Advanced Filters",
+            })}
           </h3>
           {activeCount > 0 && (
             <span
@@ -108,18 +113,22 @@ export function AdvancedFilterPanel({
           <button
             type="button"
             onClick={handleClearAll}
-            aria-label="Clear all filters"
+            aria-label={t("filters.clear_filters", {
+              defaultValue: "Clear filters",
+            })}
             className="inline-flex items-center gap-1 text-xs text-muted-text hover:text-foreground"
           >
             <RotateCcw className="h-3 w-3" />
-            {t("common.clear", { defaultValue: "Clear" })}
+            {t("filters.clear_filters", { defaultValue: "Clear filters" })}
           </button>
         )}
       </div>
 
       {/* Case Nature */}
       <div>
-        <p className="mb-1.5 text-xs font-medium text-muted-text">Case Nature</p>
+        <p className="mb-1.5 text-xs font-medium text-muted-text">
+          {t("analytics.case_nature", { defaultValue: "Case Nature" })}
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {caseNatures.map((nature) => {
             const active = selectedNatures.includes(nature);
@@ -127,7 +136,9 @@ export function AdvancedFilterPanel({
               <button
                 key={nature}
                 type="button"
-                onClick={() => onNaturesChange(toggleItem(selectedNatures, nature))}
+                onClick={() =>
+                  onNaturesChange(toggleItem(selectedNatures, nature))
+                }
                 className={cn(
                   "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                   active
@@ -144,7 +155,9 @@ export function AdvancedFilterPanel({
 
       {/* Visa Subclass */}
       <div>
-        <p className="mb-1.5 text-xs font-medium text-muted-text">Visa Subclass</p>
+        <p className="mb-1.5 text-xs font-medium text-muted-text">
+          {t("analytics.visa_subclass", { defaultValue: "Visa Subclass" })}
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {visaSubclasses.map((subclass) => {
             const active = selectedSubclasses.includes(subclass);
@@ -171,7 +184,9 @@ export function AdvancedFilterPanel({
 
       {/* Outcome Type */}
       <div>
-        <p className="mb-1.5 text-xs font-medium text-muted-text">Outcome</p>
+        <p className="mb-1.5 text-xs font-medium text-muted-text">
+          {t("filters.outcome", { defaultValue: "Outcome" })}
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {outcomeTypes.map((outcome) => {
             const active = selectedOutcomes.includes(outcome);
@@ -225,7 +240,7 @@ export function AdvancedFilterPanel({
           <button
             type="button"
             onClick={handleSavePreset}
-            aria-label="Save preset"
+            aria-label={t("common.save", { defaultValue: "Save" })}
             disabled={!presetName.trim()}
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-secondary-text hover:bg-surface hover:text-foreground disabled:opacity-40"
           >

@@ -15,12 +15,13 @@ vi.mock("@/hooks/use-legislations", () => ({
   useLegislationDetail: mockUseLegislationDetail,
 }));
 
-// Mock CaseTextViewer component
-vi.mock("@/components/cases/CaseTextViewer", () => ({
-  CaseTextViewer: ({ text, citation }: any) => (
+// Mock LegislationTextViewer component
+vi.mock("@/components/legislation/LegislationTextViewer", () => ({
+  LegislationTextViewer: ({ sections }: any) => (
     <div data-testid="case-text-viewer">
-      <div>{citation}</div>
-      <pre>{text}</pre>
+      {sections?.map((s: any) => (
+        <div key={s.id}>{s.title}</div>
+      ))}
     </div>
   ),
 }));

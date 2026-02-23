@@ -21,6 +21,11 @@ const { mockUseLegislations, mockUseLegislationSearch } = vi.hoisted(() => {
 vi.mock("@/hooks/use-legislations", () => ({
   useLegislations: mockUseLegislations,
   useLegislationSearch: mockUseLegislationSearch,
+  useLegislationUpdateStatus: vi.fn(() => ({ data: null, isLoading: false })),
+  useStartLegislationUpdate: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  })),
 }));
 
 import { LegislationsPage } from "@/pages/LegislationsPage";

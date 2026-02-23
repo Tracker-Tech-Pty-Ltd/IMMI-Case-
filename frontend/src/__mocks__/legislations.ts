@@ -1,28 +1,33 @@
-import type { Legislation, PaginatedLegislations, SearchLegislations, LegislationDetail } from "@/lib/api";
+import type {
+  Legislation,
+  PaginatedLegislations,
+  SearchLegislations,
+  LegislationDetail,
+} from "@/lib/api";
 
 export const mockLegislations: Legislation[] = [
   {
     id: "migration-act-1958",
     title: "Migration Act 1958",
     austlii_id: "consol_act/ma1958116",
-    shortcode: "MA1958",
+    shortcode: "MA",
     jurisdiction: "Commonwealth",
     type: "Act",
     description: "The primary legislation governing immigration to Australia",
     sections_count: 231,
-    last_amended: "1 December 2025",
+    last_amended: "15 Jan 2024",
     last_scraped: "2026-02-20T10:00:00Z",
   },
   {
     id: "migration-regulations-1994",
     title: "Migration Regulations 1994",
     austlii_id: "consol_reg/mr1994227",
-    shortcode: "MR1994",
+    shortcode: "MR",
     jurisdiction: "Commonwealth",
     type: "Regulation",
     description: "Regulations made under the Migration Act 1958",
     sections_count: 456,
-    last_amended: "15 November 2025",
+    last_amended: "10 Mar 2025",
     last_scraped: "2026-02-20T10:05:00Z",
   },
   {
@@ -32,7 +37,8 @@ export const mockLegislations: Legislation[] = [
     shortcode: "ACA2007",
     jurisdiction: "Commonwealth",
     type: "Act",
-    description: "Legislation governing the acquisition and loss of Australian citizenship",
+    description:
+      "Legislation governing the acquisition and loss of Australian citizenship",
     sections_count: 134,
     last_amended: "20 October 2025",
     last_scraped: "2026-02-20T10:10:00Z",
@@ -41,6 +47,9 @@ export const mockLegislations: Legislation[] = [
 
 export const mockLegislationWithSections: Legislation = {
   ...mockLegislations[0],
+  sections_count: 500,
+  last_amended: "15 Jan 2024",
+  last_scraped: "2023-12-01T00:00:00Z",
   sections: [
     {
       id: "s1",

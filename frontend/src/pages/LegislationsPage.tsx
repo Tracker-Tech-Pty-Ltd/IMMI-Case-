@@ -240,8 +240,12 @@ export function LegislationsPage() {
       ) : legislations.length === 0 ? (
         <EmptyState
           icon={<BookOpen className="h-8 w-8" />}
-          title={t("legislations.empty_title")}
-          description={t("legislations.empty_description")}
+          title={t("legislations.empty_title", {
+            defaultValue: "No Legislations",
+          })}
+          description={t("legislations.empty_description", {
+            defaultValue: "No legislation found matching your criteria.",
+          })}
         />
       ) : (
         <div className="space-y-2">

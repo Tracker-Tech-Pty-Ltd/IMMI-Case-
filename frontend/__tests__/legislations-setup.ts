@@ -19,6 +19,14 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+// Mock IntersectionObserver (not available in jsdom)
+globalThis.IntersectionObserver = class IntersectionObserver {
+  constructor(_cb: IntersectionObserverCallback) {}
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof IntersectionObserver;
+
 // Cleanup after each test
 afterEach(() => {
   cleanup();
