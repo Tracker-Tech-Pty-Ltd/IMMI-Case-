@@ -53,7 +53,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
 
   const subclassOptions = useMemo(() => {
     if (!outcomes) return [];
-    return Object.keys(outcomes.by_subclass).sort(
+    return Object.keys(outcomes.by_subclass).toSorted(
       (a, b) => Number(a) - Number(b),
     );
   }, [outcomes]);

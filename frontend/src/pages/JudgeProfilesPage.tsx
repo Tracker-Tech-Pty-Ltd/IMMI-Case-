@@ -24,8 +24,12 @@ export function JudgeProfilesPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"table" | "cards">(() => {
-    const stored = localStorage.getItem("judges-view-mode");
-    return stored === "cards" ? "cards" : "table";
+    try {
+      const stored = localStorage.getItem("judges-view-mode");
+      return stored === "cards" ? "cards" : "table";
+    } catch {
+      return "table";
+    }
   });
 
   const params = useMemo(
@@ -95,7 +99,11 @@ export function JudgeProfilesPage() {
             aria-pressed={viewMode === "table"}
             onClick={() => {
               setViewMode("table");
-              localStorage.setItem("judges-view-mode", "table");
+              try {
+                localStorage.setItem("judges-view-mode", "table");
+              } catch {
+                /* ignore */
+              }
             }}
             className={cn(
               "rounded-md p-1.5",
@@ -113,7 +121,11 @@ export function JudgeProfilesPage() {
             aria-pressed={viewMode === "cards"}
             onClick={() => {
               setViewMode("cards");
-              localStorage.setItem("judges-view-mode", "cards");
+              try {
+                localStorage.setItem("judges-view-mode", "cards");
+              } catch {
+                /* ignore */
+              }
             }}
             className={cn(
               "rounded-md p-1.5",

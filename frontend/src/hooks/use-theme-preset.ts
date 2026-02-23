@@ -467,19 +467,31 @@ function applyTheme(
 
 function readStoredPreset(): PresetName {
   if (typeof window === "undefined") return "claude";
-  const stored = localStorage.getItem(PRESET_KEY);
-  // Migrate old default "parchment" → "claude"
-  if (stored === "parchment") {
-    localStorage.setItem(PRESET_KEY, "claude");
+  try {
+    const stored = localStorage.getItem(PRESET_KEY);
+    // Migrate old default "parchment" → "claude"
+    if (stored === "parchment") {
+      try {
+        localStorage.setItem(PRESET_KEY, "claude");
+      } catch {
+        /* ignore */
+      }
+      return "claude";
+    }
+    return stored && stored in PRESETS ? (stored as PresetName) : "claude";
+  } catch {
     return "claude";
   }
-  return stored && stored in PRESETS ? (stored as PresetName) : "claude";
 }
 
 function readStoredDark(): boolean {
   if (typeof window === "undefined") return false;
-  const stored = localStorage.getItem(DARK_KEY);
-  if (stored !== null) return stored === "true";
+  try {
+    const stored = localStorage.getItem(DARK_KEY);
+    if (stored !== null) return stored === "true";
+  } catch {
+    // Fall through to system preference
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
@@ -535,9 +547,13 @@ function setState(next: ThemeState) {
     return;
   _state = next;
   applyTheme(next.preset, next.isDark, next.customVars);
-  localStorage.setItem(PRESET_KEY, next.preset);
-  localStorage.setItem(DARK_KEY, String(next.isDark));
-  localStorage.setItem(CUSTOM_KEY, JSON.stringify(next.customVars));
+  try {
+    localStorage.setItem(PRESET_KEY, next.preset);
+    localStorage.setItem(DARK_KEY, String(next.isDark));
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(next.customVars));
+  } catch {
+    // Silently ignore storage errors (private mode, quota exceeded)
+  }
   _listeners.forEach((fn) => fn());
 }
 

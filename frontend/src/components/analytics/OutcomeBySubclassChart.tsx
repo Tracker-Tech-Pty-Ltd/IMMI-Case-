@@ -32,7 +32,7 @@ function OutcomeBySubclassChartInner({
       };
     })
     .filter((d) => d.total >= 20)
-    .sort((a, b) => b.total - a.total)
+    .toSorted((a, b) => b.total - a.total)
     .slice(0, limit);
 
   const getBarColor = (rate: number) => {

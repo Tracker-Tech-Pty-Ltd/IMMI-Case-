@@ -42,7 +42,7 @@ function ConceptTrendChartInner({ data }: ConceptTrendChartProps) {
   });
 
   const rows = Array.from(years)
-    .sort((a, b) => a - b)
+    .toSorted((a, b) => a - b)
     .map((year) => {
       const row: Record<string, number> = { year };
       concepts.forEach((concept) => {

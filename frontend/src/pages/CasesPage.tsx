@@ -46,8 +46,12 @@ export function CasesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"table" | "cards">(() => {
-    const stored = localStorage.getItem("cases-view-mode");
-    return stored === "cards" ? "cards" : "table";
+    try {
+      const stored = localStorage.getItem("cases-view-mode");
+      return stored === "cards" ? "cards" : "table";
+    } catch {
+      return "table";
+    }
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -339,7 +343,11 @@ export function CasesPage() {
           <button
             onClick={() => {
               setViewMode("table");
-              localStorage.setItem("cases-view-mode", "table");
+              try {
+                localStorage.setItem("cases-view-mode", "table");
+              } catch {
+                /* ignore */
+              }
             }}
             className={cn(
               "rounded-md p-1.5",
@@ -353,7 +361,11 @@ export function CasesPage() {
           <button
             onClick={() => {
               setViewMode("cards");
-              localStorage.setItem("cases-view-mode", "cards");
+              try {
+                localStorage.setItem("cases-view-mode", "cards");
+              } catch {
+                /* ignore */
+              }
             }}
             className={cn(
               "rounded-md p-1.5",

@@ -105,7 +105,7 @@ export function PipelinePage() {
     }) => pipelineAction(payload.action, payload.params),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipeline-status"] });
-      toast.success("Pipeline action executed");
+      toast.success(t("states.completed"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -161,21 +161,21 @@ export function PipelinePage() {
   const PHASES = [
     {
       id: "crawl",
-      label: "Crawl",
+      label: t("pipeline.crawl_title"),
       icon: Database,
-      desc: "Browse AustLII year listings, extract case metadata",
+      desc: t("pipeline.crawl_description"),
     },
     {
       id: "clean",
-      label: "Clean",
+      label: t("pipeline.clean_title"),
       icon: GitBranch,
-      desc: "Deduplicate, fix years, validate records",
+      desc: t("pipeline.clean_description"),
     },
     {
       id: "download",
-      label: "Download",
+      label: t("pipeline.download_title"),
       icon: Download,
-      desc: "Fetch full text, extract structured fields",
+      desc: t("pipeline.download_description"),
     },
   ];
 
@@ -213,7 +213,9 @@ export function PipelinePage() {
           value={running ? t("states.in_progress") : t("states.idle")}
           icon={
             running ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <div className="animate-spin">
+                <Loader2 className="h-5 w-5" />
+              </div>
             ) : (
               <CheckCircle className="h-5 w-5" />
             )
@@ -279,7 +281,7 @@ export function PipelinePage() {
       </div>
 
       {/* Custom Pipeline */}
-      <div className="rounded-lg border border-border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <button
           onClick={() => setShowCustom(!showCustom)}
           className="flex w-full items-center justify-between p-5"
@@ -412,7 +414,9 @@ export function PipelinePage() {
         <div className="rounded-lg border border-accent/30 bg-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin text-accent" />
+              <div className="animate-spin">
+                <Loader2 className="h-5 w-5 text-accent" />
+              </div>
               <h2 className="font-heading text-base font-semibold">
                 {t("pipeline.live_monitor")}
               </h2>
@@ -463,7 +467,9 @@ export function PipelinePage() {
                   {isDone ? (
                     <CheckCircle className="h-5 w-5 shrink-0 text-success" />
                   ) : isActive ? (
-                    <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent" />
+                    <div className="animate-spin shrink-0">
+                      <Loader2 className="h-5 w-5 text-accent" />
+                    </div>
                   ) : (
                     <Icon className="h-5 w-5 shrink-0 text-muted-text" />
                   )}
@@ -482,19 +488,30 @@ export function PipelinePage() {
           {pipelineStats && (
             <div className="mt-4 grid gap-2 text-xs text-muted-text sm:grid-cols-3">
               <div className="rounded-md bg-surface p-2">
-                <span className="font-medium text-foreground">Crawl:</span>{" "}
-                {pipelineStats.crawl.total_found} found,{" "}
-                {pipelineStats.crawl.new_added} new
+                <span className="font-medium text-foreground">
+                  {t("pipeline.crawl_title")}:
+                </span>{" "}
+                {pipelineStats.crawl.total_found}{" "}
+                {t("pipeline.found", { defaultValue: "found" })},{" "}
+                {pipelineStats.crawl.new_added}{" "}
+                {t("pipeline.new", { defaultValue: "new" })}
               </div>
               <div className="rounded-md bg-surface p-2">
-                <span className="font-medium text-foreground">Clean:</span>{" "}
-                {pipelineStats.clean.dupes_removed} dupes,{" "}
-                {pipelineStats.clean.validated} valid
+                <span className="font-medium text-foreground">
+                  {t("pipeline.clean_title")}:
+                </span>{" "}
+                {pipelineStats.clean.dupes_removed}{" "}
+                {t("pipeline.dupes", { defaultValue: "dupes" })},{" "}
+                {pipelineStats.clean.validated}{" "}
+                {t("pipeline.valid", { defaultValue: "valid" })}
               </div>
               <div className="rounded-md bg-surface p-2">
-                <span className="font-medium text-foreground">Download:</span>{" "}
+                <span className="font-medium text-foreground">
+                  {t("pipeline.download_title")}:
+                </span>{" "}
                 {pipelineStats.download.downloaded} ok,{" "}
-                {pipelineStats.download.failed} fail
+                {pipelineStats.download.failed}{" "}
+                {t("states.failed", { defaultValue: "fail" })}
               </div>
             </div>
           )}
@@ -502,7 +519,7 @@ export function PipelinePage() {
       )}
 
       {/* Log Viewer */}
-      <div className="rounded-lg border border-border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <button
           onClick={() => setLogExpanded(!logExpanded)}
           className="flex w-full items-center justify-between p-4"
@@ -597,12 +614,16 @@ export function PipelinePage() {
             <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div>
               <p>
-                The pipeline runs all three phases automatically with smart
-                fallback strategies.
+                {t("pipeline.auto_phases_info", {
+                  defaultValue:
+                    "The pipeline runs all three phases automatically with smart fallback strategies.",
+                })}
               </p>
               <p className="mt-1">
-                If a crawl strategy fails, it rotates to the next one (direct →
-                viewdb → keyword search).
+                {t("pipeline.fallback_info", {
+                  defaultValue:
+                    "If a crawl strategy fails, it rotates to the next one (direct → viewdb → keyword search).",
+                })}
               </p>
             </div>
           </div>

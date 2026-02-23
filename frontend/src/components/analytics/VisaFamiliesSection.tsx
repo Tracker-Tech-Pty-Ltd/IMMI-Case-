@@ -38,7 +38,7 @@ function VisaFamiliesSectionInner({ filters }: Props) {
   const [sortBy, setSortBy] = useState<"total" | "win_rate">("total");
 
   const families = data?.families ?? [];
-  const sorted = [...families].sort((a, b) =>
+  const sorted = families.toSorted((a, b) =>
     sortBy === "total" ? b.total - a.total : b.win_rate - a.win_rate,
   );
   const top12 = sorted.slice(0, 12);
@@ -47,20 +47,24 @@ function VisaFamiliesSectionInner({ filters }: Props) {
     <section className="space-y-4" data-testid="visa-families-section">
       <div>
         <h2 className="font-semibold text-foreground">
-          {t("analytics.visa_families", "Visa Family Analysis")}
+          {t("analytics.visa_families", {
+            defaultValue: "Visa Family Analysis",
+          })}
         </h2>
         <p className="text-sm text-muted-text">
-          {t(
-            "analytics.visa_families_desc",
-            "Success rates aggregated by visa family grouping. Compare outcomes across visa categories.",
-          )}
+          {t("analytics.visa_families_desc", {
+            defaultValue:
+              "Success rates aggregated by visa family grouping. Compare outcomes across visa categories.",
+          })}
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Bar chart: Volume by family */}
         <ChartCard
-          title={t("analytics.visa_family_volume", "Cases by Visa Family")}
+          title={t("analytics.visa_family_volume", {
+            defaultValue: "Cases by Visa Family",
+          })}
           isLoading={isLoading}
           isEmpty={families.length === 0}
         >
@@ -73,10 +77,14 @@ function VisaFamiliesSectionInner({ filters }: Props) {
               className="rounded border border-border bg-surface px-2 py-1 text-xs text-foreground"
             >
               <option value="total">
-                {t("analytics.sort_by_volume", "Sort by Volume")}
+                {t("analytics.sort_by_volume", {
+                  defaultValue: "Sort by Volume",
+                })}
               </option>
               <option value="win_rate">
-                {t("analytics.sort_by_win_rate", "Sort by Win Rate")}
+                {t("analytics.sort_by_win_rate", {
+                  defaultValue: "Sort by Win Rate",
+                })}
               </option>
             </select>
           </div>
@@ -114,7 +122,9 @@ function VisaFamiliesSectionInner({ filters }: Props) {
                 ) => [
                   (value ?? 0).toLocaleString(),
                   name === "total"
-                    ? t("analytics.total_cases", "Total Cases")
+                    ? t("analytics.total_cases", {
+                        defaultValue: "Total Cases",
+                      })
                     : (name ?? ""),
                 ]}
               />
@@ -132,7 +142,9 @@ function VisaFamiliesSectionInner({ filters }: Props) {
 
         {/* Win rate table */}
         <ChartCard
-          title={t("analytics.visa_family_win_rates", "Win Rates by Family")}
+          title={t("analytics.visa_family_win_rates", {
+            defaultValue: "Win Rates by Family",
+          })}
           isLoading={isLoading}
           isEmpty={families.length === 0}
         >
@@ -141,16 +153,16 @@ function VisaFamiliesSectionInner({ filters }: Props) {
               <thead className="sticky top-0 bg-card">
                 <tr className="border-b border-border text-left text-xs text-muted-text">
                   <th className="pb-2 font-medium">
-                    {t("analytics.family", "Family")}
+                    {t("analytics.family", { defaultValue: "Family" })}
                   </th>
                   <th className="pb-2 text-right font-medium">
-                    {t("analytics.cases", "Cases")}
+                    {t("analytics.cases")}
                   </th>
                   <th className="pb-2 text-right font-medium">
-                    {t("analytics.win_rate", "Win Rate")}
+                    {t("analytics.win_rate")}
                   </th>
                   <th className="pb-2 text-right font-medium">
-                    {t("analytics.confidence", "Confidence")}
+                    {t("analytics.confidence")}
                   </th>
                 </tr>
               </thead>

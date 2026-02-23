@@ -34,7 +34,11 @@ function loadPresets(): FilterPreset[] {
 }
 
 function savePresets(presets: FilterPreset[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+  } catch {
+    // Silently ignore storage errors (private mode, quota exceeded)
+  }
 }
 
 function toggleItem(list: string[], item: string): string[] {

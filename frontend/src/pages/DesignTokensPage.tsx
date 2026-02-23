@@ -987,7 +987,11 @@ function ButtonGallery() {
             setTimeout(() => setLoading(false), 1500);
           }}
         >
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading && (
+            <div className="animate-spin">
+              <Loader2 className="h-4 w-4" />
+            </div>
+          )}
           {loading ? "Loading..." : "Click to Load"}
         </button>
       </div>
@@ -1164,7 +1168,9 @@ function MiscGallery() {
       <SubHeading>Miscellaneous</SubHeading>
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-2">
-          <Loader2 className="h-5 w-5 animate-spin text-accent" />
+          <div className="animate-spin">
+            <Loader2 className="h-5 w-5 text-accent" />
+          </div>
           <span className="text-sm text-muted-text">Loading...</span>
         </div>
         <div className="flex gap-2">

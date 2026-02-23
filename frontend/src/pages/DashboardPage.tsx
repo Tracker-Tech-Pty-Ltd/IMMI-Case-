@@ -132,7 +132,7 @@ export function DashboardPage() {
     );
   }
 
-  const sortedCourts = Object.entries(stats.courts).sort(
+  const sortedCourts = Object.entries(stats.courts).toSorted(
     ([, a], [, b]) => b - a,
   );
   const natureCount = Object.keys(stats.natures || {}).length;

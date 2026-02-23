@@ -43,7 +43,7 @@ function NatureChartInner({ data }: NatureChartProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const chartData = Object.entries(data)
-    .sort(([, a], [, b]) => b - a)
+    .toSorted(([, a], [, b]) => b - a)
     .slice(0, 15)
     .map(([name, value]) => ({ name, value }));
 

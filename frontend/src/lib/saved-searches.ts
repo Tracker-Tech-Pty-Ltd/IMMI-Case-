@@ -9,7 +9,8 @@ const MAX_SAVED_SEARCHES = 50;
 export const VALIDATION_ERRORS = {
   EMPTY_NAME: "Search name cannot be empty",
   DUPLICATE_NAME: "A search with this name already exists",
-  LIMIT_REACHED: "Cannot save more than 50 searches. Delete some to create new ones.",
+  LIMIT_REACHED:
+    "Cannot save more than 50 searches. Delete some to create new ones.",
   NO_FILTERS: "Cannot save a search with no filters applied",
   CORRUPTED_DATA: "Saved searches data is corrupted and has been reset",
 } as const;
@@ -45,7 +46,7 @@ function hasActiveFilters(filters: CaseFilters): boolean {
     filters.nature ||
     filters.source ||
     filters.tag ||
-    filters.keyword
+    filters.keyword,
   );
 }
 
@@ -68,11 +69,15 @@ export function loadSavedSearches(): SavedSearch[] {
     }
 
     // Filter out invalid entries and limit to MAX_SAVED_SEARCHES
-    const valid = parsed.filter(isValidSavedSearch).slice(0, MAX_SAVED_SEARCHES);
+    const valid = parsed
+      .filter(isValidSavedSearch)
+      .slice(0, MAX_SAVED_SEARCHES);
 
     // If we had to remove invalid entries, save the cleaned data
     if (valid.length !== parsed.length) {
-      console.warn(`Removed ${parsed.length - valid.length} invalid saved search entries`);
+      console.warn(
+        `Removed ${parsed.length - valid.length} invalid saved search entries`,
+      );
       saveSavedSearches(valid);
     }
 
@@ -88,7 +93,11 @@ export function loadSavedSearches(): SavedSearch[] {
  * Save all searches to localStorage
  */
 export function saveSavedSearches(searches: SavedSearch[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(searches));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(searches));
+  } catch {
+    // Silently ignore storage errors (private mode, quota exceeded)
+  }
 }
 
 /**
@@ -97,7 +106,7 @@ export function saveSavedSearches(searches: SavedSearch[]): void {
  */
 export function addSavedSearch(
   name: string,
-  filters: CaseFilters
+  filters: CaseFilters,
 ): SavedSearch {
   const searches = loadSavedSearches();
   const trimmedName = name.trim();
@@ -140,7 +149,7 @@ export function addSavedSearch(
  */
 export function updateSavedSearch(
   id: string,
-  updates: Partial<Omit<SavedSearch, "id" | "createdAt">>
+  updates: Partial<Omit<SavedSearch, "id" | "createdAt">>,
 ): SavedSearch | null {
   const searches = loadSavedSearches();
   const index = searches.findIndex((s) => s.id === id);
@@ -155,7 +164,9 @@ export function updateSavedSearch(
 
     // Check for duplicate names (case-insensitive), excluding current search
     const lowerName = trimmedName.toLowerCase();
-    if (searches.some((s) => s.id !== id && s.name.toLowerCase() === lowerName)) {
+    if (
+      searches.some((s) => s.id !== id && s.name.toLowerCase() === lowerName)
+    ) {
       throw new Error(VALIDATION_ERRORS.DUPLICATE_NAME);
     }
 
@@ -198,7 +209,7 @@ export function getSavedSearchById(id: string): SavedSearch | null {
  */
 export function markSearchExecuted(
   id: string,
-  resultCount: number
+  resultCount: number,
 ): SavedSearch | null {
   return updateSavedSearch(id, {
     lastExecutedAt: new Date().toISOString(),
@@ -264,7 +275,8 @@ export function decodeUrlToFilters(searchParams: URLSearchParams): CaseFilters {
 
   // Validate sort_dir
   const sortDir = searchParams.get("sort_dir");
-  const validSortDir = sortDir === "asc" || sortDir === "desc" ? sortDir : "desc";
+  const validSortDir =
+    sortDir === "asc" || sortDir === "desc" ? sortDir : "desc";
 
   const filters: CaseFilters = {
     court: searchParams.get("court") ?? "",

@@ -234,7 +234,9 @@ export function LegislationsPage() {
       {/* Legislations List */}
       {isLoading ? (
         <div className="flex h-64 items-center justify-center gap-2 text-muted-text">
-          <RefreshCw className="h-4 w-4 animate-spin" />
+          <div className="animate-spin">
+            <RefreshCw className="h-4 w-4" />
+          </div>
           <span className="text-sm">{t("common.loading_ellipsis")}</span>
         </div>
       ) : legislations.length === 0 ? (

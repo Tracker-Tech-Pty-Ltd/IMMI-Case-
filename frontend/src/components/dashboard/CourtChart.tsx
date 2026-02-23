@@ -39,7 +39,7 @@ function CourtChartInner({ data, type = "bar" }: CourtChartProps) {
   const { t } = useTranslation();
   const chartData = Object.entries(data)
     .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
+    .toSorted((a, b) => b.value - a.value);
 
   if (type === "pie") {
     const total = chartData.reduce((sum, d) => sum + d.value, 0);

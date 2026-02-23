@@ -34,7 +34,11 @@ function getSnapshot(): BookmarksState {
 
 function setState(next: BookmarksState): void {
   _state = next;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Silently ignore storage errors (private mode, quota exceeded)
+  }
   _listeners.forEach((fn) => fn());
 }
 

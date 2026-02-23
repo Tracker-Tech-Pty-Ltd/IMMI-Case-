@@ -39,7 +39,9 @@ export function DownloadPage() {
         limit: Number(batchSize),
       }),
     onSuccess: () => {
-      toast.success("Download job started");
+      toast.success(
+        t("states.in_progress", { defaultValue: "Download job started" }),
+      );
       navigate("/jobs");
     },
     onError: (e) => toast.error(e.message),
@@ -92,7 +94,7 @@ export function DownloadPage() {
               max={totalCases}
               size={160}
               strokeWidth={10}
-              label="downloaded"
+              label={t("download.stats_downloaded")}
             />
           </div>
         </div>
@@ -178,7 +180,9 @@ export function DownloadPage() {
                 </button>
                 {jobStatus?.running && (
                   <span className="flex items-center gap-2 text-sm text-muted-text">
-                    <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                    <div className="animate-spin">
+                      <Loader2 className="h-4 w-4" />
+                    </div>{" "}
                     {jobStatus.message}
                   </span>
                 )}

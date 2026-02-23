@@ -37,7 +37,7 @@ function OutcomeTrendChartInner({ data }: OutcomeTrendChartProps) {
       };
     })
     .filter((d) => d.total >= 10)
-    .sort((a, b) => a.year - b.year);
+    .toSorted((a, b) => a.year - b.year);
 
   return (
     <ResponsiveContainer width="100%" height="100%" minHeight={300}>

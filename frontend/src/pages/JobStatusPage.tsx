@@ -20,16 +20,16 @@ import { fetchJobStatus } from "@/lib/api";
 
 const TYPE_META: Record<
   string,
-  { label: string; icon: typeof Search; color: string }
+  { labelKey: string; icon: typeof Search; color: string }
 > = {
-  search: { label: "Search", icon: Search, color: "text-info" },
-  download: { label: "Download", icon: Download, color: "text-success" },
+  search: { labelKey: "common.search", icon: Search, color: "text-info" },
+  download: { labelKey: "nav.download", icon: Download, color: "text-success" },
   "bulk download": {
-    label: "Bulk Download",
+    labelKey: "jobs.job_type",
     icon: Download,
     color: "text-success",
   },
-  update: { label: "Update DB", icon: Database, color: "text-accent" },
+  update: { labelKey: "common.update", icon: Database, color: "text-accent" },
 };
 
 export function JobStatusPage() {
@@ -89,9 +89,9 @@ export function JobStatusPage() {
   };
 
   const quickLinks = [
-    { label: "View Cases", icon: FileText, to: "/cases" },
-    { label: "Dashboard", icon: Database, to: "/" },
-    { label: "Download", icon: Download, to: "/download" },
+    { labelKey: "nav.cases", icon: FileText, to: "/cases" },
+    { labelKey: "nav.dashboard", icon: Database, to: "/" },
+    { labelKey: "nav.download", icon: Download, to: "/download" },
   ];
 
   return (
@@ -122,7 +122,9 @@ export function JobStatusPage() {
             }`}
           >
             {running ? (
-              <Loader2 className="h-8 w-8 animate-spin text-accent" />
+              <div className="animate-spin">
+                <Loader2 className="h-8 w-8 text-accent" />
+              </div>
             ) : hasError ? (
               <XCircle className="h-8 w-8 text-danger" />
             ) : isDone ? (
@@ -149,7 +151,7 @@ export function JobStatusPage() {
                   className={`flex items-center gap-1 rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium ${typeMeta.color}`}
                 >
                   <TypeIcon className="h-3 w-3" />
-                  {typeMeta.label}
+                  {t(typeMeta.labelKey)}
                 </span>
               )}
             </div>
@@ -194,15 +196,15 @@ export function JobStatusPage() {
             </p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               {[
-                { label: "Download", to: "/download" },
-                { label: "Pipeline", to: "/pipeline" },
+                { labelKey: "nav.download", to: "/download" },
+                { labelKey: "nav.pipeline", to: "/pipeline" },
               ].map((link) => (
                 <button
                   key={link.to}
                   onClick={() => navigate(link.to)}
                   className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-card"
                 >
-                  {link.label}
+                  {t(link.labelKey)}
                 </button>
               ))}
             </div>
@@ -232,7 +234,7 @@ export function JobStatusPage() {
 
       {/* Error Section */}
       {errors.length > 0 && (
-        <div className="rounded-lg border border-danger/30 bg-card">
+        <div className="overflow-hidden rounded-lg border border-danger/30 bg-card">
           <button
             onClick={() => setErrorsExpanded(!errorsExpanded)}
             className="flex w-full items-center justify-between p-4"
@@ -269,7 +271,7 @@ export function JobStatusPage() {
             {t("pages.job_status.next_steps")}
           </h3>
           <div className="grid gap-2 sm:grid-cols-4">
-            {quickLinks.map(({ label, icon: Icon, to }) => (
+            {quickLinks.map(({ labelKey, icon: Icon, to }) => (
               <button
                 key={to}
                 onClick={() => navigate(to)}
@@ -279,7 +281,7 @@ export function JobStatusPage() {
                   <Icon className="h-4 w-4" />
                 </div>
                 <span className="flex-1 text-sm font-medium text-foreground">
-                  {label}
+                  {t(labelKey)}
                 </span>
                 <ArrowRight className="h-4 w-4 text-muted-text" />
               </button>

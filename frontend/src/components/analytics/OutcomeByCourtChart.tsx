@@ -35,7 +35,7 @@ function OutcomeByCourtChartInner({ data }: OutcomeByCourtChartProps) {
   for (const outcomes of Object.values(data)) {
     for (const key of Object.keys(outcomes)) outcomeSet.add(key);
   }
-  const outcomeLabels = [...outcomeSet].sort();
+  const outcomeLabels = [...outcomeSet].toSorted();
 
   const chartData = Object.entries(data)
     .map(([court, outcomes]) => {
@@ -49,7 +49,7 @@ function OutcomeByCourtChartInner({ data }: OutcomeByCourtChartProps) {
       }
       return row;
     })
-    .sort((a, b) => (b._total as number) - (a._total as number));
+    .toSorted((a, b) => (b._total as number) - (a._total as number));
 
   return (
     <ResponsiveContainer width="100%" height={chartData.length * 36 + 50}>

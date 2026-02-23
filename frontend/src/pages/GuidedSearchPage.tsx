@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Search,
   ArrowRight,
@@ -37,6 +38,7 @@ interface FlowState {
 
 export function GuidedSearchPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [selectedFlow, setSelectedFlow] = useState<FlowType>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [flowState, setFlowState] = useState<FlowState>({
@@ -57,40 +59,65 @@ export function GuidedSearchPage() {
   const flowConfig = useMemo(
     () => ({
       "find-precedents": {
-        title: "Find Precedents for My Case",
-        description:
-          "Walk through a step-by-step search to find relevant case law for your visa application or appeal",
+        title: t("guided_search.find_precedents_title", {
+          defaultValue: "Find Precedents for My Case",
+        }),
+        description: t("guided_search.find_precedents_desc", {
+          defaultValue:
+            "Walk through a step-by-step search to find relevant case law for your visa application or appeal",
+        }),
         icon: Scale,
         steps: [
           {
-            title: "Select Visa Subclass",
-            description: "Enter the 3-digit visa subclass number",
+            title: t("guided_search.step_visa_subclass_title", {
+              defaultValue: "Select Visa Subclass",
+            }),
+            description: t("guided_search.step_visa_subclass_desc", {
+              defaultValue: "Enter the 3-digit visa subclass number",
+            }),
           },
           {
-            title: "Choose Country of Origin",
-            description: "Select the applicant's country (optional)",
+            title: t("guided_search.step_country_title", {
+              defaultValue: "Choose Country of Origin",
+            }),
+            description: t("guided_search.step_country_desc", {
+              defaultValue: "Select the applicant's country (optional)",
+            }),
           },
           {
-            title: "Select Legal Concepts",
-            description:
-              "Choose relevant legal principles (optional, up to 5)",
+            title: t("guided_search.step_legal_concepts_title", {
+              defaultValue: "Select Legal Concepts",
+            }),
+            description: t("guided_search.step_legal_concepts_desc", {
+              defaultValue:
+                "Choose relevant legal principles (optional, up to 5)",
+            }),
           },
         ],
       },
       "assess-judge": {
-        title: "Assess Judge Patterns",
-        description:
-          "Find a judge by name and view their decision patterns, success rates, and key statistics",
+        title: t("guided_search.assess_judge_title", {
+          defaultValue: "Assess Judge Patterns",
+        }),
+        description: t("guided_search.assess_judge_desc", {
+          defaultValue:
+            "Find a judge by name and view their decision patterns, success rates, and key statistics",
+        }),
         icon: User,
         steps: [
           {
-            title: "Search Judge Name",
-            description: "Enter the judge's last name (minimum 2 characters)",
+            title: t("guided_search.step_judge_name_title", {
+              defaultValue: "Search Judge Name",
+            }),
+            description: t("guided_search.step_judge_name_desc", {
+              defaultValue:
+                "Enter the judge's last name (minimum 2 characters)",
+            }),
           },
         ],
       },
     }),
-    [],
+    [t],
   );
 
   const handleFlowSelect = useCallback((flow: FlowType) => {
@@ -124,7 +151,11 @@ export function GuidedSearchPage() {
 
     if (selectedFlow === "assess-judge") {
       if (!flowState.judge_name) {
-        toast.error("Please select a judge");
+        toast.error(
+          t("guided_search.toast_please_select_judge", {
+            defaultValue: "Please select a judge",
+          }),
+        );
         return;
       }
       // Navigate to judge detail page
@@ -135,7 +166,11 @@ export function GuidedSearchPage() {
 
     if (selectedFlow === "find-precedents") {
       if (!flowState.visa_subclass) {
-        toast.error("Please select a visa subclass");
+        toast.error(
+          t("guided_search.toast_please_select_visa", {
+            defaultValue: "Please select a visa subclass",
+          }),
+        );
         return;
       }
 
@@ -153,30 +188,49 @@ export function GuidedSearchPage() {
         const result = await guidedMutation.mutateAsync(params);
         if (result.success && result.results) {
           setResults(result.results);
-          toast.success(`Found ${result.total ?? 0} matching cases`);
+          toast.success(
+            t("guided_search.toast_found_cases", {
+              defaultValue: "Found {{count}} matching cases",
+              count: result.total ?? 0,
+            }),
+          );
         } else {
-          toast.error("No cases found matching your criteria");
+          toast.error(
+            t("guided_search.toast_no_cases_found", {
+              defaultValue: "No cases found matching your criteria",
+            }),
+          );
           setResults([]);
         }
       } catch (e) {
         toast.error((e as Error).message);
       }
     }
-  }, [selectedFlow, flowState, guidedMutation, navigate]);
+  }, [selectedFlow, flowState, guidedMutation, navigate, t]);
 
-  const toggleConcept = useCallback((conceptId: string) => {
-    setFlowState((prev) => {
-      const concepts = prev.legal_concepts;
-      if (concepts.includes(conceptId)) {
-        return { ...prev, legal_concepts: concepts.filter((c) => c !== conceptId) };
-      } else if (concepts.length < 5) {
-        return { ...prev, legal_concepts: [...concepts, conceptId] };
-      } else {
-        toast.error("Maximum 5 legal concepts allowed");
-        return prev;
-      }
-    });
-  }, []);
+  const toggleConcept = useCallback(
+    (conceptId: string) => {
+      setFlowState((prev) => {
+        const concepts = prev.legal_concepts;
+        if (concepts.includes(conceptId)) {
+          return {
+            ...prev,
+            legal_concepts: concepts.filter((c) => c !== conceptId),
+          };
+        } else if (concepts.length < 5) {
+          return { ...prev, legal_concepts: [...concepts, conceptId] };
+        } else {
+          toast.error(
+            t("guided_search.toast_max_concepts", {
+              defaultValue: "Maximum 5 legal concepts allowed",
+            }),
+          );
+          return prev;
+        }
+      });
+    },
+    [t],
+  );
 
   const paginatedResults = useMemo(() => {
     if (!results) return [];
@@ -191,10 +245,15 @@ export function GuidedSearchPage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-text-primary">
-              Search Results
+              {t("guided_search.results_heading", {
+                defaultValue: "Search Results",
+              })}
             </h1>
             <p className="mt-2 text-text-secondary">
-              Found {results.length} cases matching your criteria
+              {t("guided_search.results_found_count", {
+                defaultValue: "Found {{count}} cases matching your criteria",
+                count: results.length,
+              })}
             </p>
           </div>
           <button
@@ -206,15 +265,21 @@ export function GuidedSearchPage() {
             className="flex items-center gap-2 rounded-lg border border-border-default bg-bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-muted"
           >
             <ArrowLeft className="h-4 w-4" />
-            New Search
+            {t("guided_search.new_search_btn", {
+              defaultValue: "New Search",
+            })}
           </button>
         </div>
 
         {paginatedResults.length === 0 ? (
           <EmptyState
             icon={<Search />}
-            title="No cases found"
-            description="Try adjusting your search criteria"
+            title={t("guided_search.no_cases_title", {
+              defaultValue: "No cases found",
+            })}
+            description={t("guided_search.no_cases_desc", {
+              defaultValue: "Try adjusting your search criteria",
+            })}
           />
         ) : (
           <div className="space-y-4">
@@ -248,11 +313,15 @@ export function GuidedSearchPage() {
       <div className="container-padding">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-text-primary">
-            Guided Search
+            {t("guided_search.page_title", {
+              defaultValue: "Guided Search",
+            })}
           </h1>
           <p className="mt-2 text-lg text-text-secondary">
-            Choose a search flow to get started with finding relevant cases or
-            judge information
+            {t("guided_search.page_subtitle", {
+              defaultValue:
+                "Choose a search flow to get started with finding relevant cases or judge information",
+            })}
           </p>
         </div>
 
@@ -281,7 +350,9 @@ export function GuidedSearchPage() {
                       </p>
                       <div className="mt-4">
                         <span className="inline-flex items-center gap-1 text-sm font-medium text-accent-primary">
-                          Start flow
+                          {t("guided_search.start_flow_btn", {
+                            defaultValue: "Start flow",
+                          })}
                           <ArrowRight className="h-4 w-4" />
                         </span>
                       </div>
@@ -294,25 +365,35 @@ export function GuidedSearchPage() {
 
         <div className="mt-12 rounded-lg border border-border-default bg-bg-muted p-6">
           <h2 className="text-lg font-semibold text-text-primary">
-            How it works
+            {t("guided_search.how_it_works_heading", {
+              defaultValue: "How it works",
+            })}
           </h2>
           <ul className="mt-4 space-y-3">
             <li className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-accent-primary" />
               <span className="text-sm text-text-secondary">
-                Select a search flow based on your research goal
+                {t("guided_search.how_it_works_step1", {
+                  defaultValue:
+                    "Select a search flow based on your research goal",
+                })}
               </span>
             </li>
             <li className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-accent-primary" />
               <span className="text-sm text-text-secondary">
-                Answer guided questions to build your search criteria
+                {t("guided_search.how_it_works_step2", {
+                  defaultValue:
+                    "Answer guided questions to build your search criteria",
+                })}
               </span>
             </li>
             <li className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-accent-primary" />
               <span className="text-sm text-text-secondary">
-                View results tailored to your specific needs
+                {t("guided_search.how_it_works_step3", {
+                  defaultValue: "View results tailored to your specific needs",
+                })}
               </span>
             </li>
           </ul>
@@ -334,7 +415,7 @@ export function GuidedSearchPage() {
             className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back
+            {t("guided_search.back_btn", { defaultValue: "Back" })}
           </button>
         </div>
         <h1 className="text-3xl font-bold text-text-primary">{flow.title}</h1>
@@ -403,19 +484,27 @@ export function GuidedSearchPage() {
             {selectedFlow === "find-precedents" && currentStep === 1 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary">
-                  Visa Subclass
+                  {t("guided_search.label_visa_subclass", {
+                    defaultValue: "Visa Subclass",
+                  })}
                 </label>
                 <input
                   type="text"
                   value={visaQuery}
                   onChange={(e) => setVisaQuery(e.target.value)}
-                  placeholder="e.g., 866, 820, 457"
+                  placeholder={t("guided_search.placeholder_visa_subclass", {
+                    defaultValue: "e.g., 866, 820, 457",
+                  })}
                   className="mt-2 w-full rounded-lg border border-border-default bg-bg-default px-4 py-2 text-text-primary placeholder:text-text-tertiary focus:border-accent-primary focus:outline-none focus:ring-1 focus:ring-accent-primary"
                 />
                 {visaLoading && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-text-secondary">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching...
+                    <div className="animate-spin">
+                      <Loader2 className="h-4 w-4" />
+                    </div>
+                    {t("guided_search.searching_state", {
+                      defaultValue: "Searching...",
+                    })}
                   </div>
                 )}
                 {visaData && visaData.data.length > 0 && (
@@ -447,7 +536,10 @@ export function GuidedSearchPage() {
                             </div>
                           </div>
                           <div className="rounded-full bg-bg-muted px-3 py-1 text-xs font-medium text-text-secondary">
-                            {visa.case_count.toLocaleString()} cases
+                            {visa.case_count.toLocaleString()}{" "}
+                            {t("guided_search.cases_unit", {
+                              defaultValue: "cases",
+                            })}
                           </div>
                         </div>
                       </button>
@@ -460,10 +552,14 @@ export function GuidedSearchPage() {
             {selectedFlow === "find-precedents" && currentStep === 2 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary">
-                  Country of Origin (Optional)
+                  {t("guided_search.label_country_optional", {
+                    defaultValue: "Country of Origin (Optional)",
+                  })}
                 </label>
                 <p className="mt-1 text-sm text-text-tertiary">
-                  Select a country or skip to continue
+                  {t("guided_search.country_skip_hint", {
+                    defaultValue: "Select a country or skip to continue",
+                  })}
                 </p>
                 {countriesData && (
                   <div className="mt-4 grid max-h-96 gap-2 overflow-y-auto">
@@ -493,7 +589,10 @@ export function GuidedSearchPage() {
                           </span>
                         </div>
                         <span className="text-sm text-text-secondary">
-                          {country.case_count.toLocaleString()} cases
+                          {country.case_count.toLocaleString()}{" "}
+                          {t("guided_search.cases_unit", {
+                            defaultValue: "cases",
+                          })}
                         </span>
                       </button>
                     ))}
@@ -505,10 +604,15 @@ export function GuidedSearchPage() {
             {selectedFlow === "find-precedents" && currentStep === 3 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary">
-                  Legal Concepts (Optional)
+                  {t("guided_search.label_legal_concepts_optional", {
+                    defaultValue: "Legal Concepts (Optional)",
+                  })}
                 </label>
                 <p className="mt-1 text-sm text-text-tertiary">
-                  Select up to 5 legal concepts or skip to continue
+                  {t("guided_search.concepts_skip_hint", {
+                    defaultValue:
+                      "Select up to 5 legal concepts or skip to continue",
+                  })}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {flowState.legal_concepts.map((id) => {
@@ -571,19 +675,27 @@ export function GuidedSearchPage() {
             {selectedFlow === "assess-judge" && currentStep === 1 && (
               <div>
                 <label className="block text-sm font-medium text-text-primary">
-                  Judge Name
+                  {t("guided_search.label_judge_name", {
+                    defaultValue: "Judge Name",
+                  })}
                 </label>
                 <input
                   type="text"
                   value={judgeQuery}
                   onChange={(e) => setJudgeQuery(e.target.value)}
-                  placeholder="e.g., Smith, Robertson"
+                  placeholder={t("guided_search.placeholder_judge_name", {
+                    defaultValue: "e.g., Smith, Robertson",
+                  })}
                   className="mt-2 w-full rounded-lg border border-border-default bg-bg-default px-4 py-2 text-text-primary placeholder:text-text-tertiary focus:border-accent-primary focus:outline-none focus:ring-1 focus:ring-accent-primary"
                 />
                 {judgeLoading && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-text-secondary">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching...
+                    <div className="animate-spin">
+                      <Loader2 className="h-4 w-4" />
+                    </div>
+                    {t("guided_search.searching_state", {
+                      defaultValue: "Searching...",
+                    })}
                   </div>
                 )}
                 {judgeData && judgeData.judges.length > 0 && (
@@ -615,7 +727,10 @@ export function GuidedSearchPage() {
                             </span>
                           </div>
                           <span className="text-sm text-text-secondary">
-                            {judge.case_count.toLocaleString()} cases
+                            {judge.case_count.toLocaleString()}{" "}
+                            {t("guided_search.cases_unit", {
+                              defaultValue: "cases",
+                            })}
                           </span>
                         </div>
                       </button>
@@ -633,7 +748,7 @@ export function GuidedSearchPage() {
               className="flex items-center gap-2 rounded-lg border border-border-default bg-bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-muted"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back
+              {t("guided_search.back_btn", { defaultValue: "Back" })}
             </button>
 
             {isLastStep ? (
@@ -649,15 +764,23 @@ export function GuidedSearchPage() {
               >
                 {guidedMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching...
+                    <div className="animate-spin">
+                      <Loader2 className="h-4 w-4" />
+                    </div>
+                    {t("guided_search.searching_state", {
+                      defaultValue: "Searching...",
+                    })}
                   </>
                 ) : (
                   <>
                     <Search className="h-4 w-4" />
                     {selectedFlow === "assess-judge"
-                      ? "View Judge Profile"
-                      : "Find Cases"}
+                      ? t("guided_search.view_judge_profile_btn", {
+                          defaultValue: "View Judge Profile",
+                        })
+                      : t("guided_search.find_cases_btn", {
+                          defaultValue: "Find Cases",
+                        })}
                   </>
                 )}
               </button>
@@ -671,7 +794,7 @@ export function GuidedSearchPage() {
                 }
                 className="flex items-center gap-2 rounded-lg bg-accent-primary px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-primary/90 disabled:opacity-50"
               >
-                Next
+                {t("guided_search.next_btn", { defaultValue: "Next" })}
                 <ArrowRight className="h-4 w-4" />
               </button>
             )}

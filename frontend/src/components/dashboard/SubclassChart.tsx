@@ -63,7 +63,7 @@ function SubclassChartInner({ data }: SubclassChartProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const chartData = Object.entries(data)
-    .sort(([, a], [, b]) => b - a)
+    .toSorted(([, a], [, b]) => b - a)
     .slice(0, 15)
     .map(([subclass, value]) => ({
       subclass,

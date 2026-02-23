@@ -44,7 +44,7 @@ function TrendChartInner({ data }: TrendChartProps) {
 
   // Order courts by TOP_COURTS preference, then alphabetically
   const courts = TOP_COURTS.filter((c) => courtSet.has(c));
-  for (const c of [...courtSet].sort()) {
+  for (const c of [...courtSet].toSorted()) {
     if (!courts.includes(c)) courts.push(c);
   }
 

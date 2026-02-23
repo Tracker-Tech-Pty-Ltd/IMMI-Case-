@@ -60,7 +60,7 @@ function transformToChartData(data: LineageData): ChartDataRow[] {
     }
   }
 
-  return Array.from(yearMap.values()).sort((a, b) => a.year - b.year);
+  return Array.from(yearMap.values()).toSorted((a, b) => a.year - b.year);
 }
 
 function ChartTooltip({
