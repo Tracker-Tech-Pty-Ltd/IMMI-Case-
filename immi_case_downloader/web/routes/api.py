@@ -37,8 +37,6 @@ from ...visa_registry import (
 )
 from ..helpers import get_repo, get_output_dir, safe_int, _filter_cases, EDITABLE_FIELDS
 from ..jobs import _job_lock, _job_status, _run_download_job
-from ..security import csrf
-
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
