@@ -238,7 +238,9 @@ CREATE POLICY "deny_anon_insert" ON immigration_cases
 
 -- Only service_role can update cases
 CREATE POLICY "deny_anon_update" ON immigration_cases
-    FOR UPDATE USING (auth.role() = 'service_role');
+    FOR UPDATE
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
 
 -- Only service_role can delete cases
 CREATE POLICY "deny_anon_delete" ON immigration_cases

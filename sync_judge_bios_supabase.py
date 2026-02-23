@@ -33,7 +33,7 @@ _find_and_load_env()
 
 JUDGE_BIOS_PATH = Path("downloaded_cases/judge_bios.json")
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 
 def load_judge_bios() -> dict:
