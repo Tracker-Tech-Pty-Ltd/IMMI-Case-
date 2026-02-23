@@ -58,6 +58,12 @@ DEFAULT_SEMANTIC_CANDIDATE_LIMIT = 150
 MAX_SEMANTIC_CANDIDATE_LIMIT = 500
 DEFAULT_RELATED_LIMIT = 5
 MAX_RELATED_LIMIT = 20
+ALLOWED_SORT_FIELDS = frozenset({
+    "date", "title", "court", "outcome", "visa_subclass_number",
+    "applicant_name", "hearing_date", "case_id",
+})
+ALLOWED_SORT_DIRS = frozenset({"asc", "desc"})
+MAX_EXPORT_ROWS = 50_000
 
 # ── Outcome normalisation ──────────────────────────────────────────────
 
@@ -1039,6 +1045,10 @@ def list_cases():
     nature = request.args.get("nature", "")
     sort_by = request.args.get("sort_by", "date")
     sort_dir = request.args.get("sort_dir", "desc")
+    if sort_by not in ALLOWED_SORT_FIELDS:
+        return jsonify({"error": f"Invalid sort_by '{sort_by}'. Allowed: {sorted(ALLOWED_SORT_FIELDS)}"}), 400
+    if sort_dir not in ALLOWED_SORT_DIRS:
+        return jsonify({"error": f"Invalid sort_dir '{sort_dir}'. Allowed: asc, desc"}), 400
     page = safe_int(request.args.get("page"), default=1, min_val=1)
     page_size = safe_int(request.args.get("page_size"), default=DEFAULT_PAGE_SIZE, min_val=1, max_val=MAX_PAGE_SIZE)
 
@@ -1382,7 +1392,7 @@ def filter_options():
 @api_bp.route("/export/csv")
 def export_csv():
     repo = get_repo()
-    cases = _filter_cases(repo.load_all(), request.args)
+    cases = _filter_cases(repo.load_all(), request.args)[:MAX_EXPORT_ROWS]
     si = io.StringIO()
     writer = csv.DictWriter(si, fieldnames=CASE_FIELDS)
     writer.writeheader()
@@ -1400,7 +1410,7 @@ def export_csv():
 @api_bp.route("/export/json")
 def export_json():
     repo = get_repo()
-    cases = _filter_cases(repo.load_all(), request.args)
+    cases = _filter_cases(repo.load_all(), request.args)[:MAX_EXPORT_ROWS]
     data = {
         "exported_at": datetime.now().isoformat(),
         "total_cases": len(cases),
