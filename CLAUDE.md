@@ -14,10 +14,13 @@ pip install -r requirements.txt
 
 # Run tests
 pip install -r requirements-test.txt
-python3 -m pytest                           # all tests (296 unit + 181 E2E)
+python3 -m pytest                           # all Python tests (296 unit + 231 E2E)
 python3 -m pytest tests/test_models.py      # models only
 python3 -m pytest tests/e2e/react/ -x       # React E2E only
 python3 -m pytest -x                        # stop on first failure
+
+# Frontend unit tests (Vitest)
+cd frontend && npx vitest run               # 83 frontend unit tests (14 test files)
 
 # CLI - search for cases
 python run.py search
@@ -150,6 +153,11 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
 - **Dashboard empty state** — shows "Welcome to IMMI-Case" when `stats.total_cases === 0 && !isFetching`; guard with `isFetching` to avoid false empty state
 - **E2E tests must match UI** — after renaming Dashboard sections, update test assertions in `tests/e2e/react/test_react_dashboard.py`
 - **Analytics page** — at `/analytics` route, uses 4 API endpoints: `/api/v1/analytics/{outcomes,judges,legal-concepts,nature-outcome}`
+- **i18n defaultValue pattern** — always use `t("key", { defaultValue: "English text" })` for UI text; i18n mock in tests returns the key string without `defaultValue`, causing test assertion failures
+- **localStorage must be try-catch wrapped** — all `localStorage.getItem/setItem/removeItem` calls are wrapped in try-catch; throws in incognito/private mode and when quota exceeded
+- **Use `.toSorted()` not `.sort()`** — never mutate arrays in React; `.toSorted()` returns a new array (ES2023, requires `"lib": ["ES2023"]` in `frontend/tsconfig.app.json`)
+- **animate-spin on wrapper div** — put `animate-spin` on a `<div>` wrapper, NOT on `<Loader2>` or `<RefreshCw>` directly; SVG elements are not hardware-accelerated for CSS animations
+- **useCallback deps must include `t`** — `const { t } = useTranslation()` — `t` must be in the dependency array of all `useCallback`/`useMemo` that call it
 
 ## Legislations Feature (NEW - 2026-02-20)
 
@@ -246,7 +254,7 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
 - 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
 - **Supabase Cloud**: 149,016 records fully synced (Project: Bsmart, `urntbuqczarkuoaosjxd`)
 - Rate limiting enforced at `BaseScraper` level; respect default 1-second delay
-- Test suite: 527 tests (296 unit + 231 Playwright E2E) — run `python3 -m pytest`
+- Test suite: 610 tests total — 296 Python unit + 231 Playwright E2E (`python3 -m pytest`) + 83 frontend unit (`cd frontend && npx vitest run`)
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Security headers (CSP, X-Frame-Options, etc.) set via `@app.after_request`
 - Default host is `127.0.0.1` (localhost only); use `--host 0.0.0.0` to expose externally

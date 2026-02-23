@@ -47,6 +47,27 @@ python web.py --debug             # Debug mode
 
 The React SPA is served at `/app/` and the API at `/api/v1/*`. Legacy Jinja2 templates remain accessible at the original routes (`/`, `/cases`, etc.).
 
+### Search API Gateway Modes
+
+`/api/v1/search` now supports gateway-level mode switching while keeping Supabase as the data backend:
+
+```bash
+# Default lexical (PostgreSQL/SQLite full-text path via repository)
+GET /api/v1/search?q=judicial+review&mode=lexical
+
+# Pure semantic rerank over lexical candidates
+GET /api/v1/search?q=judicial+review&mode=semantic&provider=gemini
+
+# Hybrid (semantic + lexical RRF fusion), with lexical fallback on provider outage
+GET /api/v1/search?q=judicial+review&mode=hybrid&provider=openai
+```
+
+Query params:
+- `mode`: `lexical` | `semantic` | `hybrid`
+- `provider`: `openai` | `gemini` (semantic/hybrid only)
+- `model`: optional embedding model override
+- `candidate_limit`: lexical candidate pool size before semantic rerank
+
 ### React Frontend Development
 
 ```bash
@@ -54,6 +75,7 @@ cd frontend
 npm run dev                       # Vite dev server with HMR
 npm run build                     # Production build → static/react/
 npm run tokens                    # Rebuild design tokens (CSS + TS)
+npx vitest run                    # Run 83 frontend unit tests
 ```
 
 ### Web Interface Pages
@@ -64,7 +86,7 @@ npm run tokens                    # Rebuild design tokens (CSS + TS)
 | **Cases** | Filter by court, year, visa type, nature, keyword, tags. Table & card views. Batch operations |
 | **Analytics** | Success rate calculator, outcome analysis, judge analysis, legal concept intelligence |
 | **Judge Profiles** | Leaderboard, individual profiles, win rate analysis, judge comparison |
-| **Legislations** | Browse 6 Australian immigration laws (Migration Act 1958, etc.) |
+| **Legislations** | Browse 6 Australian immigration laws (Migration Act 1958, etc.) — bilingual EN/ZH |
 | **Case Detail** | Full metadata, catchwords, full text viewer with ToC, related cases |
 | **Case Compare** | Side-by-side comparison of 2–5 selected cases |
 | **Scrape AustLII** | Batch download full case texts with progress tracking |
@@ -267,17 +289,64 @@ python migrate_csv_to_supabase.py --dry-run # Count only
 ```
 
 - Project: Bsmart (`urntbuqczarkuoaosjxd`)
-- Schema: 6 migrations in `supabase/migrations/`
+- Schema: migrations in `supabase/migrations/`
 - All 31 fields available, native full-text search via `to_tsvector`
+
+### pgvector migration + embedding backfill
+
+Apply vector schema migration:
+
+```bash
+# In Supabase SQL Editor or via migration workflow:
+# supabase/migrations/20260223103000_add_pgvector_embeddings.sql
+```
+
+Backfill embeddings for all cases (resumable checkpoint):
+
+```bash
+# OpenAI
+python3 scripts/backfill_case_embeddings.py --provider openai --resume
+
+# Gemini
+python3 scripts/backfill_case_embeddings.py --provider gemini --resume
+
+# Estimate only (no write)
+python3 scripts/backfill_case_embeddings.py --provider openai --dry-run --max-cases 5000
+```
+
+Notes:
+- Checkpoint file: `downloaded_cases/embedding_backfill_checkpoint.json`
+- Incremental mode uses `embedding_content_hash` to skip unchanged rows
+- Supports provider/model metadata for future re-embedding strategies
+
+### Semantic search evaluation (1000-case benchmark)
+
+Run a reproducible lexical vs semantic vs hybrid experiment and output both JSON + Markdown reports:
+
+```bash
+python3 scripts/run_semantic_eval.py --sample-size 1000 --seed 42
+
+# If OpenAI embeddings are unavailable, use Gemini embeddings:
+python3 scripts/run_semantic_eval.py \
+  --provider gemini \
+  --model models/gemini-embedding-001 \
+  --sample-size 1000 \
+  --seed 42
+```
+
+- Outputs: `data_quality_reports/semantic_eval_*.json` and `data_quality_reports/semantic_eval_*.md`
+- Metrics: `Recall@K`, `nDCG@K`, `MRR@K` for lexical, semantic, and hybrid (RRF)
+- Cost model: token-based estimate using the configured `--price-per-1m`
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Python 3, Flask, pandas, BeautifulSoup/lxml |
-| **Frontend** | React 18, TypeScript, Vite 6, Tailwind CSS v4, TanStack Query, Recharts, Sonner |
+| **Frontend** | React 18, TypeScript, Vite 7, Tailwind CSS v4, TanStack Query, Recharts, Sonner |
+| **i18n** | react-i18next — English + Traditional Chinese (全繁體中文介面) |
 | **Storage** | CSV/JSON (default), SQLite (FTS5+WAL), Supabase (PostgreSQL) |
-| **Testing** | pytest (296 unit tests), Playwright (231 E2E tests) |
+| **Testing** | pytest (296 unit + 231 E2E), Vitest (83 frontend unit tests) |
 | **LLM** | Claude Sonnet (field extraction), 10 parallel sub-agents |
 | **Scraper** | Cloudflare Workers + R2 (bulk), AustLII direct scraping |
 
