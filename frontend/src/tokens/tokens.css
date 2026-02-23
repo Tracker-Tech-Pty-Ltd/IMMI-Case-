@@ -11,6 +11,11 @@
   --color-background-card: #ffffff;
   --color-background-sidebar: #faf9f7;
   --color-background-surface: #f0efec;
+  --color-background-surface-hover: #e6e4e0;
+  --color-chart-2: #8b5cf6;
+  --color-chart-3: #10b981;
+  --color-chart-4: #3b82f6;
+  --color-chart-5: #f59e0b;
   --color-border: #6e7177;
   --color-border-light: #eae8e3;
   --color-text: #1b2838;
@@ -58,6 +63,11 @@
   --color-background-card: #192230;
   --color-background-sidebar: #141c28;
   --color-background-surface: #1c2535;
+  --color-background-surface-hover: #243144;
+  --color-chart-2: #a78bfa;
+  --color-chart-3: #34d399;
+  --color-chart-4: #60a5fa;
+  --color-chart-5: #fbbf24;
   --color-border: #4a5060;
   --color-border-light: #2d3748;
   --color-text: #e2dfda;

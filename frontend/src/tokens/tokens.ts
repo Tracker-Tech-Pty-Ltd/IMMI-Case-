@@ -16,7 +16,14 @@ export const tokens = {
       "DEFAULT": "#f5f4f1",
       "card": "#ffffff",
       "sidebar": "#faf9f7",
-      "surface": "#f0efec"
+      "surface": "#f0efec",
+      "surface-hover": "#e6e4e0"
+    },
+    "chart": {
+      "2": "#8b5cf6",
+      "3": "#10b981",
+      "4": "#3b82f6",
+      "5": "#f59e0b"
     },
     "border": {
       "DEFAULT": "#6e7177",
@@ -57,7 +64,14 @@ export const tokens = {
         "DEFAULT": "#111820",
         "card": "#192230",
         "sidebar": "#141c28",
-        "surface": "#1c2535"
+        "surface": "#1c2535",
+        "surface-hover": "#243144"
+      },
+      "chart": {
+        "2": "#a78bfa",
+        "3": "#34d399",
+        "4": "#60a5fa",
+        "5": "#fbbf24"
       },
       "border": {
         "DEFAULT": "#4a5060",
