@@ -27,10 +27,31 @@ ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 
 URL_RE = re.compile(r"https?://[^\s)>\"]+")
 
-COUNCIL_SYSTEM_PROMPT = (
-    "You are assisting with Australian immigration legal research. "
-    "Provide careful, source-aware analysis and clearly state uncertainty. "
+DEFAULT_OPENAI_SYSTEM_PROMPT = (
+    "You are OpenAI expert counsel in an Australian immigration research council. "
+    "Focus on statutory interpretation, case law analogies, and practical legal research framing. "
+    "Always separate verified facts from inference and explicitly state uncertainty. "
     "Do not provide legal advice; provide research-oriented guidance."
+)
+
+DEFAULT_GEMINI_PRO_SYSTEM_PROMPT = (
+    "You are Gemini Pro expert counsel in an Australian immigration research council. "
+    "Use grounded web evidence where possible, cite authoritative sources, and prioritize current legal context. "
+    "Distinguish statute text, policy guidance, and judicial reasoning. "
+    "Do not provide legal advice; provide research-oriented guidance."
+)
+
+DEFAULT_ANTHROPIC_SYSTEM_PROMPT = (
+    "You are Anthropic Sonnet expert counsel in an Australian immigration research council. "
+    "Apply deep reasoning to identify strongest and weakest arguments, procedural risks, and evidentiary gaps. "
+    "Be explicit about assumptions and counterarguments. "
+    "Do not provide legal advice; provide research-oriented guidance."
+)
+
+DEFAULT_MODERATOR_SYSTEM_PROMPT = (
+    "You are Gemini Flash moderator for an Australian immigration LLM council. "
+    "Rank model outputs by legal rigor, evidence quality, and practical usefulness, then compose a balanced synthesis. "
+    "Flag uncertainty and disagreements clearly."
 )
 
 
@@ -68,6 +89,10 @@ class CouncilConfig:
     anthropic_api_key: str
     anthropic_version: str
     anthropic_web_search_beta: str
+    openai_system_prompt: str
+    gemini_pro_system_prompt: str
+    anthropic_system_prompt: str
+    moderator_system_prompt: str
 
     @classmethod
     def from_env(cls) -> "CouncilConfig":
@@ -90,6 +115,22 @@ class CouncilConfig:
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", "").strip(),
             anthropic_version=os.environ.get("ANTHROPIC_VERSION", "2023-06-01").strip() or "2023-06-01",
             anthropic_web_search_beta=os.environ.get("ANTHROPIC_WEB_SEARCH_BETA", "web-search-2025-03-05").strip() or "web-search-2025-03-05",
+            openai_system_prompt=(
+                os.environ.get("LLM_COUNCIL_SYSTEM_PROMPT_OPENAI", "").strip()
+                or DEFAULT_OPENAI_SYSTEM_PROMPT
+            ),
+            gemini_pro_system_prompt=(
+                os.environ.get("LLM_COUNCIL_SYSTEM_PROMPT_GEMINI_PRO", "").strip()
+                or DEFAULT_GEMINI_PRO_SYSTEM_PROMPT
+            ),
+            anthropic_system_prompt=(
+                os.environ.get("LLM_COUNCIL_SYSTEM_PROMPT_ANTHROPIC", "").strip()
+                or DEFAULT_ANTHROPIC_SYSTEM_PROMPT
+            ),
+            moderator_system_prompt=(
+                os.environ.get("LLM_COUNCIL_SYSTEM_PROMPT_MODERATOR", "").strip()
+                or DEFAULT_MODERATOR_SYSTEM_PROMPT
+            ),
         )
 
 
@@ -270,7 +311,13 @@ def _extract_anthropic_sources(payload: dict[str, Any]) -> list[str]:
     return _dedupe(urls)
 
 
-def _run_openai(question: str, case_context: str, cfg: CouncilConfig) -> CouncilOpinion:
+def _run_openai(
+    question: str,
+    case_context: str,
+    cfg: CouncilConfig,
+    *,
+    system_prompt: str | None = None,
+) -> CouncilOpinion:
     provider_key = "openai"
     label = "OpenAI ChatGPT"
     start = time.perf_counter()
@@ -292,7 +339,7 @@ def _run_openai(question: str, case_context: str, cfg: CouncilConfig) -> Council
         "input": [
             {
                 "role": "system",
-                "content": [{"type": "input_text", "text": COUNCIL_SYSTEM_PROMPT}],
+                "content": [{"type": "input_text", "text": system_prompt or cfg.openai_system_prompt}],
             },
             {
                 "role": "user",
@@ -354,6 +401,7 @@ def _run_gemini_expert(
     case_context: str,
     cfg: CouncilConfig,
     with_grounding: bool,
+    system_prompt: str | None = None,
 ) -> CouncilOpinion:
     start = time.perf_counter()
     if not cfg.gemini_api_key:
@@ -368,7 +416,7 @@ def _run_gemini_expert(
     user_prompt = _build_user_prompt(question, case_context)
     endpoint = f"{GEMINI_API_BASE}/models/{model}:generateContent"
     payload: dict[str, Any] = {
-        "systemInstruction": {"parts": [{"text": COUNCIL_SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": system_prompt or cfg.gemini_pro_system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
         "generationConfig": {
             "temperature": 0.2,
@@ -420,7 +468,13 @@ def _run_gemini_expert(
         )
 
 
-def _run_anthropic(question: str, case_context: str, cfg: CouncilConfig) -> CouncilOpinion:
+def _run_anthropic(
+    question: str,
+    case_context: str,
+    cfg: CouncilConfig,
+    *,
+    system_prompt: str | None = None,
+) -> CouncilOpinion:
     provider_key = "anthropic"
     label = "Anthropic Sonnet"
     start = time.perf_counter()
@@ -436,7 +490,7 @@ def _run_anthropic(question: str, case_context: str, cfg: CouncilConfig) -> Coun
     user_prompt = _build_user_prompt(question, case_context)
     payload: dict[str, Any] = {
         "model": cfg.anthropic_model,
-        "system": COUNCIL_SYSTEM_PROMPT,
+        "system": system_prompt or cfg.anthropic_system_prompt,
         "max_tokens": cfg.max_output_tokens,
         "messages": [{"role": "user", "content": user_prompt}],
         "tools": [{"type": "web_search_20250305", "name": "web_search"}],
@@ -583,6 +637,7 @@ def _run_moderator(
         ],
     }
     moderator_prompt = (
+        f"{cfg.moderator_system_prompt}\n\n"
         "You are the middle-ranking and composition model for an LLM council.\n"
         "Input JSON:\n"
         f"{json.dumps(prompt_payload, ensure_ascii=False)}\n\n"
@@ -610,6 +665,7 @@ def _run_moderator(
         case_context="",
         cfg=cfg,
         with_grounding=False,
+        system_prompt=cfg.moderator_system_prompt,
     )
     elapsed = int((time.perf_counter() - start) * 1000)
 
@@ -711,26 +767,108 @@ def run_immi_council(question: str, case_context: str = "") -> dict[str, Any]:
                 "model": cfg.openai_model,
                 "reasoning": cfg.openai_reasoning_effort,
                 "web_search": True,
+                "system_prompt": cfg.openai_system_prompt,
             },
             "gemini_pro": {
                 "provider": "Google",
                 "model": cfg.gemini_pro_model,
                 "reasoning_budget": cfg.gemini_thinking_budget,
                 "grounding_google_search": True,
+                "system_prompt": cfg.gemini_pro_system_prompt,
             },
             "anthropic": {
                 "provider": "Anthropic",
                 "model": cfg.anthropic_model,
                 "reasoning_budget": cfg.anthropic_thinking_budget,
                 "web_search": True,
+                "system_prompt": cfg.anthropic_system_prompt,
             },
             "gemini_flash": {
                 "provider": "Google",
                 "model": cfg.gemini_flash_model,
                 "role": "middle_ranking_and_composer",
+                "system_prompt": cfg.moderator_system_prompt,
             },
         },
         "opinions": [o.to_dict() for o in opinions],
         "moderator": moderator,
     }
 
+
+def validate_council_connectivity(*, live: bool = False) -> dict[str, Any]:
+    """Validate model/provider configuration and optionally perform live probe calls."""
+    cfg = CouncilConfig.from_env()
+    base = {
+        "live_probe": bool(live),
+        "providers": {
+            "openai": {
+                "model": cfg.openai_model,
+                "api_key_present": bool(cfg.openai_api_key),
+                "system_prompt_preview": _trim(cfg.openai_system_prompt, 140),
+            },
+            "gemini_pro": {
+                "model": cfg.gemini_pro_model,
+                "api_key_present": bool(cfg.gemini_api_key),
+                "system_prompt_preview": _trim(cfg.gemini_pro_system_prompt, 140),
+            },
+            "anthropic": {
+                "model": cfg.anthropic_model,
+                "api_key_present": bool(cfg.anthropic_api_key),
+                "system_prompt_preview": _trim(cfg.anthropic_system_prompt, 140),
+            },
+            "gemini_flash": {
+                "model": cfg.gemini_flash_model,
+                "api_key_present": bool(cfg.gemini_api_key),
+                "system_prompt_preview": _trim(cfg.moderator_system_prompt, 140),
+            },
+        },
+        "errors": [],
+    }
+
+    if not cfg.openai_api_key:
+        base["errors"].append("Missing OPENAI_API_KEY")
+    if not cfg.gemini_api_key:
+        base["errors"].append("Missing GEMINI_API_KEY or GOOGLE_API_KEY")
+    if not cfg.anthropic_api_key:
+        base["errors"].append("Missing ANTHROPIC_API_KEY")
+
+    if not live:
+        base["ok"] = len(base["errors"]) == 0
+        return base
+
+    probe_question = "Connectivity probe: reply exactly with OK."
+    openai_probe = _run_openai(
+        probe_question,
+        "",
+        cfg,
+        system_prompt=cfg.openai_system_prompt,
+    )
+    gemini_probe = _run_gemini_expert(
+        provider_key="gemini_pro",
+        provider_label="Google Gemini Pro",
+        model=cfg.gemini_pro_model,
+        question=probe_question,
+        case_context="",
+        cfg=cfg,
+        with_grounding=True,
+        system_prompt=cfg.gemini_pro_system_prompt,
+    )
+    anthropic_probe = _run_anthropic(
+        probe_question,
+        "",
+        cfg,
+        system_prompt=cfg.anthropic_system_prompt,
+    )
+
+    probe_results = {
+        "openai": openai_probe.to_dict(),
+        "gemini_pro": gemini_probe.to_dict(),
+        "anthropic": anthropic_probe.to_dict(),
+    }
+    base["probe_results"] = probe_results
+    base["ok"] = (
+        openai_probe.success
+        and gemini_probe.success
+        and anthropic_probe.success
+    )
+    return base

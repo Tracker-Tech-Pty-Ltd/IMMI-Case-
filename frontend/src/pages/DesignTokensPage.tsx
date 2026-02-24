@@ -152,14 +152,14 @@ function getBaseColor(
    ═══════════════════════════════════════════════════════════════ */
 
 const COLOR_GROUPS = [
-  { title: "Primary", cssVar: "--color-primary" },
-  { title: "Accent", cssVar: "--color-accent" },
-  { title: "Background", cssVar: "--color-background" },
-  { title: "Card", cssVar: "--color-background-card" },
-  { title: "Surface", cssVar: "--color-background-surface" },
-  { title: "Border", cssVar: "--color-border" },
-  { title: "Text", cssVar: "--color-text" },
-  { title: "Muted Text", cssVar: "--color-text-muted" },
+  { title: "主色", cssVar: "--color-primary" },
+  { title: "強調色", cssVar: "--color-accent" },
+  { title: "背景", cssVar: "--color-background" },
+  { title: "卡片背景", cssVar: "--color-background-card" },
+  { title: "表面背景", cssVar: "--color-background-surface" },
+  { title: "邊框", cssVar: "--color-border" },
+  { title: "主要文字", cssVar: "--color-text" },
+  { title: "弱化文字", cssVar: "--color-text-muted" },
 ];
 
 // Court colors — use hex values directly (CSS vars are lowercase)
@@ -172,56 +172,56 @@ const COURT_GROUPS = Object.entries(courtColors).map(([name, hex]) => ({
 // Semantic colors — these have matching CSS vars consumed by the UI
 const SEMANTIC_GROUPS: { title: string; hex: string; cssVar: string }[] = [
   {
-    title: "Success",
+    title: "成功",
     hex: semanticColors.success,
     cssVar: "--color-semantic-success",
   },
   {
-    title: "Warning",
+    title: "警告",
     hex: semanticColors.warning,
     cssVar: "--color-semantic-warning",
   },
   {
-    title: "Danger",
+    title: "危險",
     hex: semanticColors.danger,
     cssVar: "--color-semantic-danger",
   },
-  { title: "Info", hex: semanticColors.info, cssVar: "--color-semantic-info" },
+  { title: "資訊", hex: semanticColors.info, cssVar: "--color-semantic-info" },
 ];
 
 // Creative palette — for charts and illustrations (copy-only, no live override)
 const CREATIVE_COLORS: { title: string; hex: string }[] = [
-  { title: "Coral", hex: "#e76f51" },
-  { title: "Teal", hex: "#2a9d8f" },
-  { title: "Indigo", hex: "#5c6bc0" },
-  { title: "Gold", hex: "#c9942e" },
+  { title: "珊瑚", hex: "#e76f51" },
+  { title: "青綠", hex: "#2a9d8f" },
+  { title: "靛藍", hex: "#5c6bc0" },
+  { title: "金色", hex: "#c9942e" },
 ];
 
 const FONT_OPTIONS = [
   {
     label: "Inter",
     value: "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
-    style: "Modern sans-serif",
+    style: "現代無襯線",
   },
   {
     label: "DM Sans",
     value: "'DM Sans', sans-serif",
-    style: "Geometric, friendly",
+    style: "幾何風、親和",
   },
   {
     label: "IBM Plex Sans",
     value: "'IBM Plex Sans', sans-serif",
-    style: "Professional, neutral",
+    style: "專業、中性",
   },
   {
     label: "Source Serif 4",
     value: "'Source Serif 4', Georgia, serif",
-    style: "Elegant serif",
+    style: "優雅襯線",
   },
   {
     label: "Merriweather",
     value: "Merriweather, Georgia, serif",
-    style: "Robust, readable",
+    style: "穩重、易讀",
   },
 ];
 
@@ -236,21 +236,21 @@ const SPACING_SCALE = [
 ];
 
 const RADIUS_SCALE = [
-  { key: "none", value: "0", label: "None" },
-  { key: "xs", value: "0.25rem", label: "XS" },
-  { key: "sm", value: "0.5rem", label: "SM" },
-  { key: "token-sm", value: tokens.radius.sm, label: "Token SM" },
-  { key: "default", value: tokens.radius.DEFAULT, label: "Default" },
-  { key: "token-lg", value: tokens.radius.lg, label: "Token LG" },
-  { key: "pill", value: tokens.radius.pill, label: "Pill" },
-  { key: "full", value: "9999px", label: "Full" },
+  { key: "none", value: "0", label: "無" },
+  { key: "xs", value: "0.25rem", label: "特小" },
+  { key: "sm", value: "0.5rem", label: "小" },
+  { key: "token-sm", value: tokens.radius.sm, label: "代碼小" },
+  { key: "default", value: tokens.radius.DEFAULT, label: "預設" },
+  { key: "token-lg", value: tokens.radius.lg, label: "代碼大" },
+  { key: "pill", value: tokens.radius.pill, label: "膠囊" },
+  { key: "full", value: "9999px", label: "全圓" },
 ];
 
 const SHADOW_DEMOS = [
-  { key: "xs", label: "Extra Small", value: tokens.shadow.xs },
-  { key: "sm", label: "Small", value: tokens.shadow.sm },
-  { key: "md", label: "Medium", value: tokens.shadow.DEFAULT },
-  { key: "lg", label: "Large", value: tokens.shadow.lg },
+  { key: "xs", label: "特小", value: tokens.shadow.xs },
+  { key: "sm", label: "小", value: tokens.shadow.sm },
+  { key: "md", label: "中", value: tokens.shadow.DEFAULT },
+  { key: "lg", label: "大", value: tokens.shadow.lg },
 ];
 
 /* ═══════════════════════════════════════════════════════════════
@@ -259,7 +259,7 @@ const SHADOW_DEMOS = [
 
 function copyToClipboard(text: string, label?: string) {
   navigator.clipboard.writeText(text);
-  toast.success(`Copied ${label ?? text}`);
+  toast.success(`已複製：${label ?? text}`);
 }
 
 function SectionHeading({
@@ -294,10 +294,9 @@ function ThemePresetSwitcher() {
 
   return (
     <section>
-      <SectionHeading id="theme">Theme Presets</SectionHeading>
+      <SectionHeading id="theme">主題預設</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        Click a preset to change the site-wide colour theme. Custom colour
-        overrides below will be cleared when switching presets.
+        點選預設可切換全站主題顏色。切換預設時，下方的自訂顏色覆寫會一併清除。
       </p>
 
       <div className="mb-4 flex items-center gap-3">
@@ -309,7 +308,7 @@ function ThemePresetSwitcher() {
           )}
           role="switch"
           aria-checked={isDark}
-          aria-label="Toggle dark mode"
+          aria-label="切換深色模式"
         >
           <span
             className={cn(
@@ -319,7 +318,7 @@ function ThemePresetSwitcher() {
           />
         </button>
         <span className="text-sm font-medium text-foreground">
-          {isDark ? "Dark Mode" : "Light Mode"}
+          {isDark ? "深色模式" : "淺色模式"}
         </span>
       </div>
 
@@ -436,15 +435,14 @@ function ColorPalette() {
 
   function handleSelect(cssVar: string, hex: string, title: string) {
     setCustomVar(cssVar, hex);
-    toast.success(`${title} set to ${hex}`);
+    toast.success(`${title} 已設定為 ${hex}`);
   }
 
   return (
     <section>
-      <SectionHeading id="colors">Color Palette</SectionHeading>
+      <SectionHeading id="colors">色彩面板</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        Click any shade to apply it live across the entire UI. 8 tones per
-        colour group. Active selection is highlighted.
+        點選任何色階會即時套用至整個介面。每組顏色提供 8 個色階，已啟用色彩會高亮顯示。
       </p>
 
       {COLOR_GROUPS.map((group) => {
@@ -468,11 +466,10 @@ function ColorPalette() {
       {/* Court Colors */}
       <div className="mt-8 mb-5">
         <h3 className="mb-3 text-base font-semibold text-foreground">
-          Court Colors
+          法院顏色
         </h3>
         <p className="mb-4 text-sm text-muted-text">
-          Each court has a distinct colour. Click any tone to copy its hex
-          value.
+          每個法院都有專屬顏色。點選任一色階即可複製十六進位顏色值。
         </p>
         {COURT_GROUPS.map((court) => {
           const tones = generateTones(court.hex);
@@ -514,10 +511,10 @@ function ColorPalette() {
       {/* Semantic Colors (functional — these override live UI) */}
       <div className="mt-8 mb-5">
         <h3 className="mb-3 text-base font-semibold text-foreground">
-          Semantic Colors
+          語意顏色
         </h3>
         <p className="mb-4 text-sm text-muted-text">
-          Core UI status colours. Click any tone to apply it live across the UI.
+          核心狀態顏色。點選任一色階可即時套用到介面。
         </p>
         {SEMANTIC_GROUPS.map((sg) => {
           const tones = generateTones(sg.hex);
@@ -539,11 +536,10 @@ function ColorPalette() {
       {/* Creative Colors (reference only — click to copy hex) */}
       <div className="mt-8 mb-5">
         <h3 className="mb-3 text-base font-semibold text-foreground">
-          Creative Colors
+          創意配色
         </h3>
         <p className="mb-4 text-sm text-muted-text">
-          Complementary palette for charts and illustrations. Click any tone to
-          copy its hex value.
+          適用於圖表與插圖的輔助色盤。點選任一色階即可複製十六進位顏色值。
         </p>
         {CREATIVE_COLORS.map((cc) => {
           const tones = generateTones(cc.hex);
@@ -594,11 +590,11 @@ const FONT_SIZES = [
   { label: "3xl", cls: "text-3xl", px: "30px" },
 ];
 const FONT_WEIGHTS = [
-  { label: "Light", weight: 300, cls: "font-light" },
-  { label: "Regular", weight: 400, cls: "font-normal" },
-  { label: "Medium", weight: 500, cls: "font-medium" },
-  { label: "Semibold", weight: 600, cls: "font-semibold" },
-  { label: "Bold", weight: 700, cls: "font-bold" },
+  { label: "纖細", weight: 300, cls: "font-light" },
+  { label: "常規", weight: 400, cls: "font-normal" },
+  { label: "中等", weight: 500, cls: "font-medium" },
+  { label: "半粗", weight: 600, cls: "font-semibold" },
+  { label: "粗體", weight: 700, cls: "font-bold" },
 ];
 
 function TypographySection() {
@@ -607,13 +603,12 @@ function TypographySection() {
 
   return (
     <section>
-      <SectionHeading id="typography">Typography</SectionHeading>
+      <SectionHeading id="typography">字體排版</SectionHeading>
 
       {/* Font Picker */}
-      <SubHeading>Body Font</SubHeading>
+      <SubHeading>內文字型</SubHeading>
       <p className="mb-3 text-sm text-muted-text">
-        Click a font to apply it across the entire UI. Your choice is
-        auto-saved.
+        點選字型會即時套用到全站。你的選擇會自動儲存。
       </p>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {FONT_OPTIONS.map((f) => {
@@ -625,7 +620,7 @@ function TypographySection() {
               key={f.label}
               onClick={() => {
                 setCustomVar("--font-body", f.value);
-                toast.success(`Font changed to ${f.label}`);
+                toast.success(`字型已切換為 ${f.label}`);
               }}
               className={cn(
                 "relative rounded-lg border-2 p-4 text-left transition-all",
@@ -649,7 +644,7 @@ function TypographySection() {
                 className="mb-1 text-lg leading-snug text-foreground"
                 style={{ fontFamily: f.value }}
               >
-                The quick brown fox
+                香港移民案例分析示例
               </p>
               <p className="text-[10px] text-muted-text">{f.style}</p>
             </button>
@@ -658,7 +653,7 @@ function TypographySection() {
       </div>
 
       {/* Size Scale */}
-      <SubHeading>Size Scale</SubHeading>
+      <SubHeading>字級比例</SubHeading>
       <div className="mb-6 space-y-2">
         {FONT_SIZES.map((s) => (
           <div key={s.label} className="flex items-baseline gap-4">
@@ -668,13 +663,13 @@ function TypographySection() {
             <span className="w-10 shrink-0 font-mono text-[10px] text-muted-text/70">
               {s.px}
             </span>
-            <span className={s.cls}>Immigration Law Concepts</span>
+            <span className={s.cls}>移民法重點概念</span>
           </div>
         ))}
       </div>
 
       {/* Weight Scale */}
-      <SubHeading>Weight Scale</SubHeading>
+      <SubHeading>字重比例</SubHeading>
       <div className="space-y-2">
         {FONT_WEIGHTS.map((w) => (
           <div key={w.label} className="flex items-baseline gap-4">
@@ -682,7 +677,7 @@ function TypographySection() {
               {w.weight}
             </span>
             <span className={`text-base ${w.cls}`}>
-              {w.label} — Review of Migration Decision
+              {w.label} — 移民決定覆核
             </span>
           </div>
         ))}
@@ -700,9 +695,9 @@ function SpacingSection() {
 
   return (
     <section>
-      <SectionHeading id="spacing">Spacing</SectionHeading>
+      <SectionHeading id="spacing">間距</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        Click a spacing value to preview it in the live layout below.
+        點選任一間距值，可在下方即時預覽版面效果。
       </p>
       <div className="mb-4 grid grid-cols-4 gap-2 sm:grid-cols-7">
         {SPACING_SCALE.map((s) => {
@@ -738,7 +733,7 @@ function SpacingSection() {
         })}
       </div>
 
-      <SubHeading>Live Preview (gap: {selectedSpacing})</SubHeading>
+      <SubHeading>即時預覽（間隔：{selectedSpacing}）</SubHeading>
       <div
         className="rounded-lg border border-border bg-card transition-all"
         style={{ padding: selectedSpacing }}
@@ -747,7 +742,7 @@ function SpacingSection() {
           className="flex flex-wrap transition-all"
           style={{ gap: selectedSpacing }}
         >
-          {["Card A", "Card B", "Card C"].map((label) => (
+          {["卡片 A", "卡片 B", "卡片 C"].map((label) => (
             <div
               key={label}
               className="rounded-md border border-accent/30 bg-accent-muted transition-all"
@@ -790,15 +785,14 @@ function RadiusSection() {
       setCustomVar("--radius", value);
       setCustomVar("--radius-lg", `${(rem * 1.33).toFixed(3)}rem`);
     }
-    toast.success(`Border radius set to ${value}`);
+    toast.success(`圓角已設定為 ${value}`);
   }
 
   return (
     <section>
-      <SectionHeading id="radius">Border Radius</SectionHeading>
+      <SectionHeading id="radius">邊角圓角</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        Click a radius to apply it live. Proportionally adjusts sm, default, and
-        lg radius across the entire UI.
+        點選圓角值即可即時套用。系統會按比例調整全站 `sm`、`預設`、`lg` 圓角。
       </p>
       <div className="mb-4 grid grid-cols-4 gap-3 sm:grid-cols-8">
         {RADIUS_SCALE.map((r) => {
@@ -831,26 +825,26 @@ function RadiusSection() {
         })}
       </div>
 
-      <SubHeading>Live Preview</SubHeading>
+      <SubHeading>即時預覽</SubHeading>
       <div className="flex flex-wrap items-center gap-3">
         <button
           className="bg-accent px-4 py-2 text-sm font-medium text-white"
           style={{ borderRadius: activeRadius || tokens.radius.DEFAULT }}
         >
-          Button
+          按鈕
         </button>
         <input
           className="border border-border bg-card px-3 py-2 text-sm text-foreground"
           style={{ borderRadius: activeRadius || tokens.radius.DEFAULT }}
-          placeholder="Input field"
-          aria-label="Input field preview"
+          placeholder="輸入欄位"
+          aria-label="輸入欄位預覽"
           readOnly
         />
         <div
           className="border border-border bg-card p-4"
           style={{ borderRadius: activeRadius || tokens.radius.DEFAULT }}
         >
-          <span className="text-xs text-foreground">Card element</span>
+          <span className="text-xs text-foreground">卡片元素</span>
         </div>
       </div>
     </section>
@@ -868,10 +862,9 @@ function ShadowSection() {
 
   return (
     <section>
-      <SectionHeading id="shadows">Shadows</SectionHeading>
+      <SectionHeading id="shadows">陰影</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        Shadow scale from subtle to prominent. Hover each card to see the shadow
-        animate. Cards sit on a contrasting stage to maximize visibility.
+        陰影層級由細緻到明顯。滑過卡片可觀察陰影動態，並以高對比底板加強可視性。
       </p>
       <div className="rounded-xl p-6" style={{ backgroundColor: stageBg }}>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -928,60 +921,60 @@ function ShadowSection() {
 const MOCK_CASE: ImmigrationCase = {
   case_id: "a1b2c3d4e5f6",
   citation: "[2025] ARTA 1234",
-  title: "Singh v Minister for Immigration",
-  court: "Administrative Review Tribunal",
+  title: "Singh 訴 移民部長",
+  court: "行政覆核審裁處",
   court_code: "ARTA",
   date: "2025-03-15",
   year: 2025,
   url: "https://austlii.edu.au/au/cases/cth/ARTA/2025/1234.html",
-  judges: "Senior Member Johnson",
-  catchwords: "Migration - visa cancellation - character test",
-  outcome: "Decision set aside and remitted",
-  visa_type: "Subclass 500 (Student)",
-  legislation: "Migration Act 1958 (Cth), s 501",
-  text_snippet: "The Tribunal finds that the decision should be set aside...",
+  judges: "高級委員 Johnson",
+  catchwords: "移民－簽證取消－品格測試",
+  outcome: "撤銷原決定並發還重審",
+  visa_type: "500 類（學生）",
+  legislation: "《1958 年移民法》（聯邦）第 501 條",
+  text_snippet: "審裁處認為原決定應予撤銷並發還重審……",
   full_text_path: "case_texts/[2025] ARTA 1234.txt",
   source: "AustLII",
   user_notes: "",
   tags: "",
-  case_nature: "Migration",
-  legal_concepts: "Character test, visa cancellation",
+  case_nature: "移民",
+  legal_concepts: "品格測試、簽證取消",
   visa_subclass: "500",
   visa_class_code: "TU",
   applicant_name: "Singh",
-  respondent: "Minister for Immigration",
-  country_of_origin: "India",
+  respondent: "移民部長",
+  country_of_origin: "印度",
   visa_subclass_number: "500",
-  hearing_date: "12 March 2025",
-  is_represented: "Yes",
-  representative: "Smith & Associates",
+  hearing_date: "2025 年 3 月 12 日",
+  is_represented: "是",
+  representative: "Smith & Associates 律師行",
 };
 
 function ButtonGallery() {
   const [loading, setLoading] = useState(false);
   return (
     <div>
-      <SubHeading>Buttons</SubHeading>
+      <SubHeading>按鈕</SubHeading>
       <div className="flex flex-wrap items-center gap-3">
         <button className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-light">
-          Primary
+          主要
         </button>
         <button className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface">
-          Secondary
+          次要
         </button>
         <button className="rounded-md bg-danger px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90">
-          Danger
+          危險
         </button>
         <button
           className="rounded-md bg-accent/50 px-4 py-2 text-sm font-medium text-white cursor-not-allowed"
           disabled
         >
-          Disabled
+          已停用
         </button>
         <button
           className="rounded-md border border-border bg-card p-2 text-foreground transition-colors hover:bg-surface"
-          aria-label="Icon button example"
-          title="Icon button example"
+          aria-label="圖示按鈕示例"
+          title="圖示按鈕示例"
         >
           <Search className="h-4 w-4" />
         </button>
@@ -997,7 +990,7 @@ function ButtonGallery() {
               <Loader2 className="h-4 w-4" />
             </div>
           )}
-          {loading ? "Loading..." : "Click to Load"}
+          {loading ? "載入中..." : "點擊載入"}
         </button>
       </div>
     </div>
@@ -1007,32 +1000,30 @@ function ButtonGallery() {
 function FormControlGallery() {
   return (
     <div>
-      <SubHeading>Form Controls</SubHeading>
+      <SubHeading>表單控制</SubHeading>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="text-sm font-medium text-foreground">
-            Text Input
-          </span>
+          <span className="text-sm font-medium text-foreground">文字輸入</span>
           <input
             type="text"
-            placeholder="Search cases..."
+            placeholder="搜尋案例..."
             className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-text focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-foreground">Select</span>
+          <span className="text-sm font-medium text-foreground">下拉選擇</span>
           <select className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent">
-            <option>All Courts</option>
+            <option>所有法院</option>
             <option>AATA</option>
             <option>ARTA</option>
             <option>FCA</option>
           </select>
         </label>
         <label className="block sm:col-span-2">
-          <span className="text-sm font-medium text-foreground">Textarea</span>
+          <span className="text-sm font-medium text-foreground">多行輸入</span>
           <textarea
             rows={2}
-            placeholder="Add case notes..."
+            placeholder="加入案例備註..."
             className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-text focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </label>
@@ -1043,7 +1034,7 @@ function FormControlGallery() {
             className="h-4 w-4 rounded border-border accent-accent"
           />
           <span className="text-sm text-foreground">
-            Include full text in export
+            匯出時包含全文
           </span>
         </label>
       </div>
@@ -1054,13 +1045,13 @@ function FormControlGallery() {
 function BadgeGallery() {
   return (
     <div>
-      <SubHeading>Court Badges</SubHeading>
+      <SubHeading>法院標籤</SubHeading>
       <div className="mb-4 flex flex-wrap gap-2">
         {Object.keys(courtColors).map((court) => (
           <CourtBadge key={court} court={court} />
         ))}
       </div>
-      <SubHeading>Outcome Badges</SubHeading>
+      <SubHeading>結果標籤</SubHeading>
       <div className="flex flex-wrap gap-2">
         {[
           "Allowed",
@@ -1081,23 +1072,23 @@ function BadgeGallery() {
 function CardGallery() {
   return (
     <div>
-      <SubHeading>Cards</SubHeading>
+      <SubHeading>卡片</SubHeading>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
-          title="Total Cases"
+          title="案例總數"
           value={62539}
           icon={<Scale className="h-5 w-5" />}
-          description="All databases combined"
+          description="整合所有資料庫"
         />
         <StatCard
-          title="With Full Text"
+          title="包含全文"
           value={62517}
           icon={<FileText className="h-5 w-5" />}
-          description="99.96% coverage"
+          description="覆蓋率 99.96%"
         />
         <CaseCard
           case_={MOCK_CASE}
-          onClick={() => toast.info("Case card clicked")}
+          onClick={() => toast.info("已點擊案例卡片")}
         />
       </div>
     </div>
@@ -1127,18 +1118,18 @@ function TableGallery() {
   ];
   return (
     <div>
-      <SubHeading>Table</SubHeading>
+      <SubHeading>表格</SubHeading>
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-surface">
               <th className="px-4 py-2.5 font-medium text-foreground">
-                Citation
+                引用
               </th>
-              <th className="px-4 py-2.5 font-medium text-foreground">Court</th>
-              <th className="px-4 py-2.5 font-medium text-foreground">Date</th>
+              <th className="px-4 py-2.5 font-medium text-foreground">法院</th>
+              <th className="px-4 py-2.5 font-medium text-foreground">日期</th>
               <th className="px-4 py-2.5 font-medium text-foreground">
-                Outcome
+                結果
               </th>
             </tr>
           </thead>
@@ -1170,55 +1161,55 @@ function TableGallery() {
 function MiscGallery() {
   return (
     <div>
-      <SubHeading>Miscellaneous</SubHeading>
+      <SubHeading>其他元件</SubHeading>
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-2">
           <div className="animate-spin">
             <Loader2 className="h-5 w-5 text-accent" />
           </div>
-          <span className="text-sm text-muted-text">Loading...</span>
+          <span className="text-sm text-muted-text">載入中...</span>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => toast.success("Operation completed")}
+            onClick={() => toast.success("操作已完成")}
             className="rounded border border-success/30 bg-success/10 px-3 py-1 text-xs font-medium text-success"
           >
-            Success
+            成功
           </button>
           <button
-            onClick={() => toast.error("Something went wrong")}
+            onClick={() => toast.error("發生錯誤")}
             className="rounded border border-danger/30 bg-danger/10 px-3 py-1 text-xs font-medium text-danger"
           >
-            Error
+            錯誤
           </button>
           <button
-            onClick={() => toast.warning("Check your input")}
+            onClick={() => toast.warning("請檢查輸入內容")}
             className="rounded border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-medium text-warning"
           >
-            Warning
+            警告
           </button>
           <button
-            onClick={() => toast.info("Tip: keyboard shortcuts")}
+            onClick={() => toast.info("提示：可使用鍵盤快捷鍵")}
             className="rounded border border-info/30 bg-info/10 px-3 py-1 text-xs font-medium text-info"
           >
-            Info
+            資訊
           </button>
         </div>
         <div className="flex items-center gap-1 text-sm text-muted-text">
           <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-xs shadow-xs">
             /
           </kbd>
-          <span>Search</span>
+          <span>搜尋</span>
           <kbd className="ml-2 rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-xs shadow-xs">
             ?
           </kbd>
-          <span>Help</span>
+          <span>說明</span>
         </div>
         <div className="flex items-center gap-1">
           <button
             className="rounded border border-border bg-card p-1.5 text-muted-text hover:bg-surface"
-            aria-label="Previous page"
-            title="Previous page"
+            aria-label="上一頁"
+            title="上一頁"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -1233,8 +1224,8 @@ function MiscGallery() {
           </button>
           <button
             className="rounded border border-border bg-card p-1.5 text-muted-text hover:bg-surface"
-            aria-label="Next page"
-            title="Next page"
+            aria-label="下一頁"
+            title="下一頁"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -1247,7 +1238,7 @@ function MiscGallery() {
 function ComponentGallery() {
   return (
     <section>
-      <SectionHeading id="components">Component Gallery</SectionHeading>
+      <SectionHeading id="components">元件展示</SectionHeading>
       <div className="space-y-8">
         <ButtonGallery />
         <FormControlGallery />
@@ -1289,7 +1280,7 @@ function DarkModeMiniCard({ vars, label }: DarkModeMiniCardProps) {
       <div className="space-y-3 p-4" style={{ backgroundColor: vars.card }}>
         <div>
           <p className="text-sm font-semibold" style={{ color: vars.text }}>
-            Case Title Example
+            案例標題示例
           </p>
           <p className="text-xs" style={{ color: vars.secondary }}>
             [2025] ARTA 1234
@@ -1310,14 +1301,14 @@ function DarkModeMiniCard({ vars, label }: DarkModeMiniCardProps) {
               backgroundColor: `${semanticColors.success}1a`,
             }}
           >
-            Allowed
+            勝訴
           </span>
         </div>
         <button
           className="rounded px-3 py-1.5 text-xs font-medium text-white"
           style={{ backgroundColor: vars.accent }}
         >
-          Action Button
+          操作按鈕
         </button>
       </div>
     </div>
@@ -1344,10 +1335,10 @@ function DarkModeComparison() {
 
   return (
     <section>
-      <SectionHeading id="dark-mode">Dark Mode Comparison</SectionHeading>
+      <SectionHeading id="dark-mode">深淺色模式對照</SectionHeading>
       <div className="flex gap-4">
-        <DarkModeMiniCard vars={lightVars} label="Light" />
-        <DarkModeMiniCard vars={darkVars} label="Dark" />
+        <DarkModeMiniCard vars={lightVars} label="淺色" />
+        <DarkModeMiniCard vars={darkVars} label="深色" />
       </div>
     </section>
   );
@@ -1364,52 +1355,52 @@ interface VarRow {
 }
 
 const ALL_VARS: VarRow[] = [
-  { name: "--color-primary", category: "Color", preview: "color" },
-  { name: "--color-primary-light", category: "Color", preview: "color" },
-  { name: "--color-primary-lighter", category: "Color", preview: "color" },
-  { name: "--color-accent", category: "Color", preview: "color" },
-  { name: "--color-accent-light", category: "Color", preview: "color" },
-  { name: "--color-accent-muted", category: "Color", preview: "color" },
-  { name: "--color-background", category: "Color", preview: "color" },
-  { name: "--color-background-card", category: "Color", preview: "color" },
-  { name: "--color-background-sidebar", category: "Color", preview: "color" },
-  { name: "--color-background-surface", category: "Color", preview: "color" },
-  { name: "--color-border", category: "Color", preview: "color" },
-  { name: "--color-border-light", category: "Color", preview: "color" },
-  { name: "--color-text", category: "Color", preview: "color" },
-  { name: "--color-text-secondary", category: "Color", preview: "color" },
-  { name: "--color-text-muted", category: "Color", preview: "color" },
-  { name: "--color-semantic-success", category: "Semantic", preview: "color" },
-  { name: "--color-semantic-warning", category: "Semantic", preview: "color" },
-  { name: "--color-semantic-danger", category: "Semantic", preview: "color" },
-  { name: "--color-semantic-info", category: "Semantic", preview: "color" },
-  { name: "--color-court-aata", category: "Court", preview: "color" },
-  { name: "--color-court-arta", category: "Court", preview: "color" },
-  { name: "--color-court-fca", category: "Court", preview: "color" },
-  { name: "--color-court-fcca", category: "Court", preview: "color" },
-  { name: "--color-court-fedcfamc2g", category: "Court", preview: "color" },
-  { name: "--color-court-hca", category: "Court", preview: "color" },
-  { name: "--color-court-rrta", category: "Court", preview: "color" },
-  { name: "--color-court-mrta", category: "Court", preview: "color" },
-  { name: "--color-court-fmca", category: "Court", preview: "color" },
-  { name: "--font-heading", category: "Font", preview: "font" },
-  { name: "--font-body", category: "Font", preview: "font" },
-  { name: "--font-mono", category: "Font", preview: "font" },
-  { name: "--spacing-1", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-2", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-3", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-4", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-5", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-6", category: "Spacing", preview: "spacing" },
-  { name: "--spacing-8", category: "Spacing", preview: "spacing" },
-  { name: "--radius-sm", category: "Radius", preview: "radius" },
-  { name: "--radius", category: "Radius", preview: "radius" },
-  { name: "--radius-lg", category: "Radius", preview: "radius" },
-  { name: "--radius-pill", category: "Radius", preview: "radius" },
-  { name: "--shadow-xs", category: "Shadow", preview: "shadow" },
-  { name: "--shadow-sm", category: "Shadow", preview: "shadow" },
-  { name: "--shadow", category: "Shadow", preview: "shadow" },
-  { name: "--shadow-lg", category: "Shadow", preview: "shadow" },
+  { name: "--color-primary", category: "顏色", preview: "color" },
+  { name: "--color-primary-light", category: "顏色", preview: "color" },
+  { name: "--color-primary-lighter", category: "顏色", preview: "color" },
+  { name: "--color-accent", category: "顏色", preview: "color" },
+  { name: "--color-accent-light", category: "顏色", preview: "color" },
+  { name: "--color-accent-muted", category: "顏色", preview: "color" },
+  { name: "--color-background", category: "顏色", preview: "color" },
+  { name: "--color-background-card", category: "顏色", preview: "color" },
+  { name: "--color-background-sidebar", category: "顏色", preview: "color" },
+  { name: "--color-background-surface", category: "顏色", preview: "color" },
+  { name: "--color-border", category: "顏色", preview: "color" },
+  { name: "--color-border-light", category: "顏色", preview: "color" },
+  { name: "--color-text", category: "顏色", preview: "color" },
+  { name: "--color-text-secondary", category: "顏色", preview: "color" },
+  { name: "--color-text-muted", category: "顏色", preview: "color" },
+  { name: "--color-semantic-success", category: "語意", preview: "color" },
+  { name: "--color-semantic-warning", category: "語意", preview: "color" },
+  { name: "--color-semantic-danger", category: "語意", preview: "color" },
+  { name: "--color-semantic-info", category: "語意", preview: "color" },
+  { name: "--color-court-aata", category: "法院", preview: "color" },
+  { name: "--color-court-arta", category: "法院", preview: "color" },
+  { name: "--color-court-fca", category: "法院", preview: "color" },
+  { name: "--color-court-fcca", category: "法院", preview: "color" },
+  { name: "--color-court-fedcfamc2g", category: "法院", preview: "color" },
+  { name: "--color-court-hca", category: "法院", preview: "color" },
+  { name: "--color-court-rrta", category: "法院", preview: "color" },
+  { name: "--color-court-mrta", category: "法院", preview: "color" },
+  { name: "--color-court-fmca", category: "法院", preview: "color" },
+  { name: "--font-heading", category: "字型", preview: "font" },
+  { name: "--font-body", category: "字型", preview: "font" },
+  { name: "--font-mono", category: "字型", preview: "font" },
+  { name: "--spacing-1", category: "間距", preview: "spacing" },
+  { name: "--spacing-2", category: "間距", preview: "spacing" },
+  { name: "--spacing-3", category: "間距", preview: "spacing" },
+  { name: "--spacing-4", category: "間距", preview: "spacing" },
+  { name: "--spacing-5", category: "間距", preview: "spacing" },
+  { name: "--spacing-6", category: "間距", preview: "spacing" },
+  { name: "--spacing-8", category: "間距", preview: "spacing" },
+  { name: "--radius-sm", category: "圓角", preview: "radius" },
+  { name: "--radius", category: "圓角", preview: "radius" },
+  { name: "--radius-lg", category: "圓角", preview: "radius" },
+  { name: "--radius-pill", category: "圓角", preview: "radius" },
+  { name: "--shadow-xs", category: "陰影", preview: "shadow" },
+  { name: "--shadow-sm", category: "陰影", preview: "shadow" },
+  { name: "--shadow", category: "陰影", preview: "shadow" },
+  { name: "--shadow-lg", category: "陰影", preview: "shadow" },
 ];
 
 function CssVariableReference() {
@@ -1463,32 +1454,32 @@ function CssVariableReference() {
   }
 
   const categoryColors: Record<string, string> = {
-    Color: "bg-accent/10 text-accent",
-    Semantic: "bg-success/10 text-success",
-    Court: "bg-info/10 text-info",
-    Font: "bg-warning/10 text-warning",
-    Spacing: "bg-danger/10 text-danger",
-    Radius: "bg-muted-text/10 text-muted-text",
-    Shadow: "bg-primary/10 text-primary",
+    顏色: "bg-accent/10 text-accent",
+    語意: "bg-success/10 text-success",
+    法院: "bg-info/10 text-info",
+    字型: "bg-warning/10 text-warning",
+    間距: "bg-danger/10 text-danger",
+    圓角: "bg-muted-text/10 text-muted-text",
+    陰影: "bg-primary/10 text-primary",
   };
 
   return (
     <section>
-      <SectionHeading id="css-vars">CSS Variable Reference</SectionHeading>
+      <SectionHeading id="css-vars">CSS 變數參考</SectionHeading>
       <div className="overflow-hidden rounded-lg border border-border">
         <div className="max-h-[500px] overflow-y-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-border">
                 <th className="px-3 py-2 font-medium text-foreground">
-                  Variable
+                  變數
                 </th>
                 <th className="px-3 py-2 font-medium text-foreground">
-                  Category
+                  類別
                 </th>
-                <th className="px-3 py-2 font-medium text-foreground">Value</th>
+                <th className="px-3 py-2 font-medium text-foreground">值</th>
                 <th className="px-3 py-2 font-medium text-foreground">
-                  Preview
+                  預覽
                 </th>
               </tr>
             </thead>
@@ -1539,11 +1530,11 @@ function CssVariableReference() {
 function UsageGuide() {
   return (
     <section>
-      <SectionHeading id="usage">Usage Guide</SectionHeading>
+      <SectionHeading id="usage">使用指南</SectionHeading>
       <div className="space-y-4">
         <div className="rounded-lg border border-border bg-card p-5">
           <h3 className="mb-2 text-sm font-semibold text-foreground">
-            Tailwind Classes (via @theme)
+            Tailwind 類別（透過 `@theme`）
           </h3>
           <pre className="overflow-auto rounded bg-surface p-3 font-mono text-xs text-foreground">
             {`<div className="bg-background text-foreground border-border" />
@@ -1554,7 +1545,7 @@ function UsageGuide() {
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
           <h3 className="mb-2 text-sm font-semibold text-foreground">
-            TypeScript Token Imports
+            TypeScript Token 匯入
           </h3>
           <pre className="overflow-auto rounded bg-surface p-3 font-mono text-xs text-foreground">
             {`import { tokens, courtColors, semanticColors } from "@/tokens/tokens"
@@ -1566,17 +1557,17 @@ function UsageGuide() {
         </div>
         <div className="rounded-lg border border-border bg-card p-5">
           <h3 className="mb-2 text-sm font-semibold text-foreground">
-            Theme Customisation Hook
+            主題自訂 Hook
           </h3>
           <pre className="overflow-auto rounded bg-surface p-3 font-mono text-xs text-foreground">
             {`import { useThemePreset } from "@/hooks/use-theme-preset"
 
 const { preset, setPreset, setCustomVar, clearCustomVars } = useThemePreset()
-// setPreset("ocean")          -> switch theme (clears custom overrides)
-// setCustomVar("--color-accent", "#e67e22")  -> live override
-// setCustomVar("--font-body", "'DM Sans', sans-serif")  -> change font
-// clearCustomVars()           -> reset to preset defaults
-// All changes auto-save to localStorage`}
+// setPreset("ocean")          -> 切換主題（會清除自訂覆寫）
+// setCustomVar("--color-accent", "#e67e22")  -> 即時覆寫顏色
+// setCustomVar("--font-body", "'DM Sans', sans-serif")  -> 更改字型
+// clearCustomVars()           -> 重設為預設主題
+// 所有變更會自動儲存到 localStorage`}
           </pre>
         </div>
       </div>
@@ -1599,19 +1590,19 @@ function PreferencesBar() {
       <div className="flex items-center gap-3 rounded-full border border-border bg-card px-5 py-2.5 shadow-lg">
         <div className="h-2 w-2 shrink-0 rounded-full bg-accent animate-pulse" />
         <span className="whitespace-nowrap text-sm font-medium text-foreground">
-          {count} override{count > 1 ? "s" : ""}
+          已啟用 {count} 項自訂覆寫
         </span>
         <span className="flex items-center gap-1 whitespace-nowrap text-xs text-success">
-          <Save className="h-3 w-3" /> Auto-saved
+          <Save className="h-3 w-3" /> 已自動儲存
         </span>
         <button
           onClick={() => {
             clearCustomVars();
-            toast.success("Custom overrides cleared");
+            toast.success("已清除所有自訂覆寫");
           }}
           className="flex items-center gap-1 whitespace-nowrap rounded-md bg-danger/10 px-3 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/20"
         >
-          <RotateCcw className="h-3 w-3" /> Reset
+          <RotateCcw className="h-3 w-3" /> 重設
         </button>
       </div>
     </div>
@@ -1623,16 +1614,16 @@ function PreferencesBar() {
    ═══════════════════════════════════════════════════════════════ */
 
 const NAV_ITEMS = [
-  { id: "theme", label: "Theme" },
-  { id: "colors", label: "Colors" },
-  { id: "typography", label: "Fonts" },
-  { id: "spacing", label: "Spacing" },
-  { id: "radius", label: "Radius" },
-  { id: "shadows", label: "Shadows" },
-  { id: "components", label: "Components" },
-  { id: "dark-mode", label: "Dark Mode" },
-  { id: "css-vars", label: "CSS Vars" },
-  { id: "usage", label: "Usage" },
+  { id: "theme", label: "主題" },
+  { id: "colors", label: "顏色" },
+  { id: "typography", label: "字體" },
+  { id: "spacing", label: "間距" },
+  { id: "radius", label: "圓角" },
+  { id: "shadows", label: "陰影" },
+  { id: "components", label: "元件" },
+  { id: "dark-mode", label: "深色模式" },
+  { id: "css-vars", label: "CSS 變數" },
+  { id: "usage", label: "用法" },
 ];
 
 function SectionNav() {

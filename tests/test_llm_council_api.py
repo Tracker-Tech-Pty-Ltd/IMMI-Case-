@@ -13,6 +13,39 @@ def test_llm_council_rejects_missing_question(client):
     assert "question is required" in data["error"]
 
 
+def test_llm_council_health_defaults_to_config_only_probe(client, monkeypatch):
+    observed: dict = {}
+
+    def _fake_validate(*, live: bool):
+        observed["live"] = live
+        return {"ok": True, "live_probe": live, "providers": {}}
+
+    monkeypatch.setattr(api_module, "validate_council_connectivity", _fake_validate)
+
+    resp = client.get("/api/v1/llm-council/health")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["live_probe"] is False
+    assert observed["live"] is False
+
+
+def test_llm_council_health_accepts_live_query_flag(client, monkeypatch):
+    observed: dict = {}
+
+    def _fake_validate(*, live: bool):
+        observed["live"] = live
+        return {"ok": True, "live_probe": live, "providers": {}}
+
+    monkeypatch.setattr(api_module, "validate_council_connectivity", _fake_validate)
+
+    resp = client.get("/api/v1/llm-council/health?live=1")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["live_probe"] is True
+    assert observed["live"] is True
+
+
 def test_llm_council_rejects_invalid_case_id(client):
     resp = client.post(
         "/api/v1/llm-council/run",
@@ -85,4 +118,3 @@ def test_llm_council_runs_and_passes_compact_case_context(client, monkeypatch):
     assert payload["question"] == "What are the strongest grounds for review?"
     assert "Citation: [2024] AATA 999" in observed["case_context"]
     assert "User Context: Focus on procedural fairness." in observed["case_context"]
-

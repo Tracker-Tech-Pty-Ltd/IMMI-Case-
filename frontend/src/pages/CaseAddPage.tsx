@@ -86,7 +86,7 @@ export function CaseAddPage() {
                 label={t("cases.citation")}
                 value={form.citation}
                 onChange={(v) => updateField("citation", v)}
-                placeholder="[2024] FCA 123"
+                placeholder={t("cases.citation_placeholder")}
               />
               <Field
                 label={t("cases.court")}

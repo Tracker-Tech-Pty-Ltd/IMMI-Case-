@@ -26,7 +26,7 @@ class ErrorBoundary extends Component<
             minHeight: "100vh",
           }}
         >
-          <h2 style={{ color: "#ff4444" }}>⚠ React Error</h2>
+          <h2 style={{ color: "#ff4444" }}>⚠ React 錯誤</h2>
           <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {err.message}
             {"\n\n"}

@@ -24,7 +24,7 @@ export function AppLayout() {
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-accent focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
       >
-        Skip to main content
+        跳到主要內容
       </a>
       {/* Desktop sidebar */}
       <div className="hidden lg:block">

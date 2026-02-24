@@ -701,6 +701,7 @@ export interface LlmCouncilModelConfig {
   web_search?: boolean;
   grounding_google_search?: boolean;
   role?: string;
+  system_prompt?: string;
 }
 
 export interface LlmCouncilOpinion {
@@ -747,6 +748,29 @@ export interface LlmCouncilResponse {
   moderator: LlmCouncilModeratorResult;
 }
 
+export interface LlmCouncilHealthProviderStatus {
+  model: string;
+  api_key_present: boolean;
+  system_prompt_preview: string;
+}
+
+export interface LlmCouncilHealthResponse {
+  ok: boolean;
+  live_probe: boolean;
+  errors: string[];
+  providers: {
+    openai: LlmCouncilHealthProviderStatus;
+    gemini_pro: LlmCouncilHealthProviderStatus;
+    anthropic: LlmCouncilHealthProviderStatus;
+    gemini_flash: LlmCouncilHealthProviderStatus;
+  };
+  probe_results?: {
+    openai?: LlmCouncilOpinion;
+    gemini_pro?: LlmCouncilOpinion;
+    anthropic?: LlmCouncilOpinion;
+  };
+}
+
 export function runLlmCouncil(
   payload: LlmCouncilRequest,
 ): Promise<LlmCouncilResponse> {
@@ -754,6 +778,17 @@ export function runLlmCouncil(
     method: "POST",
     body: JSON.stringify(payload),
     timeoutMs: 180_000,
+  });
+}
+
+export function checkLlmCouncilHealth(
+  live: boolean = false,
+): Promise<LlmCouncilHealthResponse> {
+  const params = new URLSearchParams();
+  if (live) params.set("live", "1");
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch(`/api/v1/llm-council/health${suffix}`, {
+    timeoutMs: live ? 120_000 : 15_000,
   });
 }
 

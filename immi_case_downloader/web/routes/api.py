@@ -22,7 +22,7 @@ from flask import Blueprint, request, jsonify, send_file
 from flask_wtf.csrf import generate_csrf
 
 from ...config import START_YEAR, END_YEAR
-from ...llm_council import run_immi_council
+from ...llm_council import run_immi_council, validate_council_connectivity
 from ...models import ImmigrationCase
 from ...semantic_search_eval import (
     GeminiEmbeddingClient,
@@ -3269,6 +3269,18 @@ def analytics_visa_families():
 
 
 # ── LLM Council ──────────────────────────────────────────────────────────
+
+@api_bp.route("/llm-council/health", methods=["GET"])
+def llm_council_health():
+    """Validate LLM council provider configuration and optional live connectivity."""
+    live_raw = str(request.args.get("live", "")).strip().lower()
+    live = live_raw in {"1", "true", "yes", "on"}
+    try:
+        payload = validate_council_connectivity(live=live)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("LLM council health check failed: %s", exc, exc_info=True)
+        return _error("LLM council health check failed", 503)
+    return jsonify(payload)
 
 @api_bp.route("/llm-council/run", methods=["POST"])
 def llm_council_run():
