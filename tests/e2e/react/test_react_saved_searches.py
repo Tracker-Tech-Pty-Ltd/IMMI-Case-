@@ -8,6 +8,25 @@ from .react_helpers import (
 )
 
 
+def _saved_searches_heading(page: Page):
+    """Return the Saved Searches section heading (not sidebar link)."""
+    return page.get_by_role("heading", name="Saved Searches").first
+
+
+def _saved_searches_panel(page: Page):
+    """Return the parent container for the Saved Searches section."""
+    return _saved_searches_heading(page).locator(
+        "xpath=ancestor::div[contains(@class,'rounded-lg') and contains(@class,'bg-card')][1]"
+    )
+
+
+def _apply_filter_for_savable_search(page: Page, court: str = "FCA"):
+    """Saved search creation now requires at least one active filter."""
+    court_select = page.locator("select").first
+    court_select.select_option(court)
+    page.wait_for_timeout(500)
+
+
 class TestSaveSearch:
     """Saving new searches from the Cases page."""
 
@@ -22,7 +41,7 @@ class TestSaveSearch:
         """Clicking Save Search button opens the modal."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         # Modal should appear with name input
         modal = react_page.locator("[role='dialog']")
         expect(modal).to_be_visible()
@@ -40,7 +59,7 @@ class TestSaveSearch:
         react_page.wait_for_timeout(500)
 
         # Open save modal
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
 
         # Enter search name
@@ -48,7 +67,7 @@ class TestSaveSearch:
         name_input.fill("Test FCA Search")
 
         # Save
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
 
         # Wait for success toast
         react_page.wait_for_timeout(1000)
@@ -57,7 +76,7 @@ class TestSaveSearch:
         expect(modal).not_to_be_visible()
 
         # Search should appear in SavedSearchPanel
-        panel_heading = react_page.get_by_text("Saved Searches")
+        panel_heading = _saved_searches_heading(react_page)
         assert panel_heading.is_visible()
 
     def test_save_search_empty_name_validation(self, react_page):
@@ -65,12 +84,11 @@ class TestSaveSearch:
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
 
         # Try to save with empty name
-        save_btn = modal.get_by_text("Save", exact=True)
-        save_btn.click()
+        modal.locator("button[type='submit']").click()
 
         # Modal should stay open (validation failed)
         expect(modal).to_be_visible()
@@ -79,21 +97,22 @@ class TestSaveSearch:
         """Duplicate search names are rejected."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save first search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         name_input = modal.locator("input[type='text']")
         name_input.fill("Duplicate Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Try to save second search with same name
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         name_input = modal.locator("input[type='text']")
         name_input.fill("Duplicate Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
 
         # Modal should stay open (validation failed)
         expect(modal).to_be_visible()
@@ -112,10 +131,10 @@ class TestExecuteSearch:
         court_select.select_option("AATA")
         react_page.wait_for_timeout(500)
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("AATA Cases")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Clear filters by selecting "All Courts"
@@ -125,7 +144,7 @@ class TestExecuteSearch:
 
         # Find and click execute button in SavedSearchPanel
         # The Play button should be the first button in the card
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         execute_btn = panel.locator("button[aria-label*='Execute'], button[title*='Execute']").first
         if not execute_btn.is_visible():
             # Fallback: find Play icon button
@@ -144,11 +163,12 @@ class TestExecuteSearch:
         # First save a search
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Dashboard Test Search")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Go to dashboard
@@ -156,10 +176,14 @@ class TestExecuteSearch:
         wait_for_loading_gone(react_page)
 
         # Look for saved searches section on dashboard
-        dashboard_searches = react_page.get_by_text("Saved Searches")
+        dashboard_searches = _saved_searches_heading(react_page)
         if dashboard_searches.is_visible():
-            # Click execute button in dashboard
-            execute_btn = react_page.locator("button").filter(has=react_page.locator("svg")).first
+            # Click execute button in dashboard saved-search panel
+            dashboard_panel = _saved_searches_panel(react_page)
+            execute_btn = dashboard_panel.get_by_title("Execute Search").first
+            if not execute_btn.is_visible():
+                execute_btn = dashboard_panel.get_by_role("button", name="Execute").first
+            expect(execute_btn).to_be_visible()
             execute_btn.click()
             react_page.wait_for_load_state("networkidle")
 
@@ -174,16 +198,17 @@ class TestEditSearch:
         """Clicking edit button opens modal with current name."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search first
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Edit Test Search")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Find and click edit button
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         edit_btn = panel.locator("button[aria-label*='Edit'], button[title*='Edit']").first
         if not edit_btn.is_visible():
             # Fallback: find Edit2 icon button (2nd button in card)
@@ -202,34 +227,36 @@ class TestEditSearch:
         """Successfully rename a saved search."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Original Name")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Edit the search
-        panel = react_page.locator("text=Saved Searches").locator("..")
-        edit_btn = panel.locator("button").filter(has=react_page.locator("svg")).nth(1)
+        panel = _saved_searches_panel(react_page)
+        edit_btn = panel.get_by_title("Edit Search").first
+        if not edit_btn.is_visible():
+            edit_btn = panel.locator("button[title*='Edit']").first
         edit_btn.click()
 
         # Change the name
         modal = react_page.locator("[role='dialog']")
+        expect(modal).to_be_visible()
         name_input = modal.locator("input[type='text']")
         name_input.fill("Renamed Search")
 
-        # Save button might say "Update" in edit mode
-        save_btn = modal.get_by_text("Save", exact=True)
-        if not save_btn.is_visible():
-            save_btn = modal.get_by_text("Update", exact=True)
-        save_btn.click()
+        # Submit edit form
+        modal.locator("button[type='submit']").click()
 
         react_page.wait_for_timeout(1000)
 
         # Verify new name appears in panel
-        assert react_page.get_by_text("Renamed Search").is_visible()
+        panel = _saved_searches_panel(react_page)
+        assert panel.get_by_role("heading", name="Renamed Search").first.is_visible()
 
 
 class TestDeleteSearch:
@@ -239,16 +266,17 @@ class TestDeleteSearch:
         """Delete button appears on saved search cards."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search first
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Delete Test Search")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Find delete button (Trash2 icon, last button in card)
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         delete_btn = panel.locator("button[aria-label*='Delete'], button[title*='Delete']").first
         if not delete_btn.is_visible():
             delete_btn = panel.locator("button").filter(has=react_page.locator("svg")).last
@@ -259,26 +287,30 @@ class TestDeleteSearch:
         """Deleting a search removes it from the panel."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Will Be Deleted")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Verify it appears
-        assert react_page.get_by_text("Will Be Deleted").is_visible()
+        panel = _saved_searches_panel(react_page)
+        card_heading = panel.get_by_role("heading", name="Will Be Deleted").first
+        assert card_heading.is_visible()
 
         # Click delete button
-        panel = react_page.locator("text=Saved Searches").locator("..")
-        delete_btn = panel.locator("button").filter(has=react_page.locator("svg")).last
+        delete_btn = panel.get_by_title("Delete Search").first
+        if not delete_btn.is_visible():
+            delete_btn = panel.locator("button[title*='Delete']").first
         delete_btn.click()
 
         react_page.wait_for_timeout(1000)
 
         # Search should be gone
-        expect(react_page.get_by_text("Will Be Deleted")).not_to_be_visible()
+        expect(card_heading).not_to_be_visible()
 
 
 class TestShareSearch:
@@ -288,16 +320,17 @@ class TestShareSearch:
         """Share button appears on saved search cards."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Share Test Search")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Find share button (Share2 icon)
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         share_btn = panel.locator("button[aria-label*='Share'], button[title*='Share']").first
 
         assert share_btn.is_visible() or panel.locator("button").filter(has=react_page.locator("svg")).count() >= 3
@@ -312,16 +345,16 @@ class TestShareSearch:
         court_select.select_option("FCA")
         react_page.wait_for_timeout(500)
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("FCA Share Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # The shared URL would be copied to clipboard
         # We can verify the filter summary shows FCA
-        panel = react_page.locator("text=Saved Searches").locator("..")
-        assert panel.get_by_text("FCA").is_visible()
+        panel = _saved_searches_panel(react_page)
+        assert panel.get_by_title("FCA", exact=True).is_visible()
 
 
 class TestResultCountBadge:
@@ -331,16 +364,17 @@ class TestResultCountBadge:
         """Saved search cards show result count badge."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Count Badge Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(2000)  # Wait for count to load
 
         # Look for the count badge (should show a number)
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         # Count badge should contain a numeric value
         card = panel.locator("text=Count Badge Test").locator("..")
         card_text = card.inner_text()
@@ -352,11 +386,12 @@ class TestResultCountBadge:
         # Save a search first
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Dashboard Count Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Go to dashboard
@@ -364,7 +399,7 @@ class TestResultCountBadge:
         wait_for_loading_gone(react_page)
 
         # If saved searches section exists, it should show count
-        dashboard_searches = react_page.get_by_text("Saved Searches")
+        dashboard_searches = _saved_searches_heading(react_page)
         if dashboard_searches.is_visible():
             section = dashboard_searches.locator("..")
             section_text = section.inner_text()
@@ -379,16 +414,17 @@ class TestSearchLimit:
         """SavedSearchPanel displays X/50 count."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search to make panel visible
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Limit Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Panel should show count like "1/50"
-        panel = react_page.locator("text=Saved Searches").locator("..")
+        panel = _saved_searches_panel(react_page)
         panel_text = panel.inner_text()
         assert "/50" in panel_text or "50" in panel_text
 
@@ -403,7 +439,7 @@ class TestSidebarIntegration:
 
         # Look for Saved Searches link in sidebar
         sidebar = react_page.locator("aside")
-        saved_searches_link = sidebar.get_by_text("Saved Searches")
+        saved_searches_link = sidebar.get_by_role("link", name="Saved Searches").first
 
         # Link should be visible in sidebar
         assert saved_searches_link.is_visible()
@@ -413,11 +449,12 @@ class TestSidebarIntegration:
         # Save a search first
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Sidebar Badge Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
         # Go back to dashboard to see sidebar
@@ -426,24 +463,24 @@ class TestSidebarIntegration:
 
         # Sidebar should show count badge
         sidebar = react_page.locator("aside")
-        saved_searches_link = sidebar.get_by_text("Saved Searches").locator("..")
+        saved_searches_link = sidebar.get_by_role("link", name="Saved Searches").first.locator("..")
         # Badge should show format like "1/50"
         badge_text = saved_searches_link.inner_text()
         assert "/50" in badge_text or any(c.isdigit() for c in badge_text)
 
-    def test_sidebar_link_navigates_to_cases(self, react_page):
-        """Clicking Saved Searches in sidebar navigates to Cases page."""
+    def test_sidebar_link_navigates_to_saved_searches(self, react_page):
+        """Clicking Saved Searches in sidebar navigates to Saved Searches page."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
 
         sidebar = react_page.locator("aside")
-        saved_searches_link = sidebar.get_by_text("Saved Searches")
+        saved_searches_link = sidebar.get_by_role("link", name="Saved Searches").first
         saved_searches_link.click()
 
         react_page.wait_for_load_state("networkidle")
 
-        # Should navigate to /cases
-        assert "/cases" in react_page.url
+        # Should navigate to /saved-searches
+        assert "/saved-searches" in react_page.url
 
 
 class TestEmptyStates:
@@ -486,20 +523,26 @@ class TestPersistence:
         """Saved searches remain after page reload."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
+        _apply_filter_for_savable_search(react_page, "FCA")
 
         # Save a search
-        react_page.get_by_role("button", name="Save Search").click()
+        react_page.get_by_role("button", name="Save Search").first.click()
         modal = react_page.locator("[role='dialog']")
         modal.locator("input[type='text']").fill("Persistence Test")
-        modal.get_by_text("Save", exact=True).click()
+        modal.locator("button[type='submit']").click()
         react_page.wait_for_timeout(1000)
 
-        # Verify it appears
-        assert react_page.get_by_text("Persistence Test").is_visible()
+        # Verify count badge shows at least one saved search
+        panel = _saved_searches_panel(react_page)
+        count_before = panel.locator("[data-testid='saved-search-count']").inner_text()
+        before_saved = int(count_before.split("/", 1)[0])
+        assert before_saved >= 1
 
         # Reload page
         react_page.reload()
         wait_for_loading_gone(react_page)
 
-        # Search should still be there
-        assert react_page.get_by_text("Persistence Test").is_visible()
+        # Saved-search count should persist across reload
+        panel = _saved_searches_panel(react_page)
+        count_after = panel.locator("[data-testid='saved-search-count']").inner_text()
+        assert count_after == count_before

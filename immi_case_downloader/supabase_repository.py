@@ -20,6 +20,7 @@ ALLOWED_UPDATE_FIELDS = frozenset({
 
 # Columns safe for ORDER BY (prevent SQL injection via sort parameter).
 ALLOWED_SORT_COLUMNS = frozenset({"year", "date", "title", "court", "citation"})
+ALLOWED_COUNT_MODES = frozenset({"exact", "planned", "estimated"})
 
 TABLE = "immigration_cases"
 BATCH_SIZE = 500
@@ -249,6 +250,86 @@ class SupabaseRepository:
         cases = [self._row_to_case(r) for r in (resp.data or [])]
         total = resp.count if resp.count is not None else len(cases)
         return cases, total
+
+    def list_cases_fast(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        sort_by: str = "year",
+        sort_dir: str = "desc",
+        page: int = 1,
+        page_size: int = 50,
+        columns: list[str] | None = None,
+    ) -> list[ImmigrationCase]:
+        """Fetch a page of cases without requesting total count.
+
+        This is intentionally lighter than filter_cases() because it avoids
+        COUNT(*) header computation, which can be expensive on large datasets.
+        """
+        table_columns = self._get_table_columns()
+        if columns:
+            valid_columns = [c for c in columns if c in table_columns]
+            selected_columns = valid_columns or ["case_id"]
+        else:
+            selected_columns = table_columns
+
+        cols = ",".join(selected_columns)
+        query = self._client.table(TABLE).select(cols)
+        query = self._apply_filters(
+            query, court, year, visa_type, source, tag, nature
+        )
+
+        if sort_by == "date":
+            col = "date_sort"
+        else:
+            col = sort_by if sort_by in ALLOWED_SORT_COLUMNS else "year"
+        desc = sort_dir == "desc"
+        query = query.order(col, desc=desc, nullsfirst=False)
+
+        offset = (max(1, page) - 1) * page_size
+        query = query.range(offset, offset + page_size - 1)
+
+        if keyword and keyword.strip():
+            query = query.text_search(
+                "fts", keyword,
+                options={"type": "plain", "config": "english"},
+            )
+
+        resp = query.execute()
+        return [self._row_to_case(r) for r in (resp.data or [])]
+
+    def count_cases(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        count_mode: str = "planned",
+    ) -> int:
+        """Return count of matching cases with configurable count strategy."""
+        mode = (count_mode or "planned").strip().lower()
+        if mode not in ALLOWED_COUNT_MODES:
+            mode = "planned"
+
+        query = self._client.table(TABLE).select("case_id", count=mode).limit(1)
+        query = self._apply_filters(
+            query, court, year, visa_type, source, tag, nature
+        )
+        if keyword and keyword.strip():
+            query = query.text_search(
+                "fts", keyword,
+                options={"type": "plain", "config": "english"},
+            )
+        resp = query.execute()
+        return int(resp.count) if resp.count is not None else len(resp.data or [])
 
     def search_text(self, query: str, limit: int = 50) -> list[ImmigrationCase]:
         """PostgreSQL native full-text search via tsvector column."""

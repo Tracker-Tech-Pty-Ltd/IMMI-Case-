@@ -3,6 +3,7 @@ import type { UseQueryOptions } from "@tanstack/react-query"
 import type { CaseFilters } from "@/types/case"
 import {
   fetchCases,
+  fetchCaseCount,
   fetchCase,
   createCase,
   updateCase,
@@ -13,6 +14,7 @@ import {
   searchCases,
 } from "@/lib/api"
 import type { ImmigrationCase } from "@/types/case"
+import type { CaseCountMode } from "@/lib/api"
 
 export function useCases(
   filters: CaseFilters,
@@ -22,6 +24,19 @@ export function useCases(
     queryKey: ["cases", filters],
     queryFn: () => fetchCases(filters),
     staleTime: 10_000,
+    ...options,
+  })
+}
+
+export function useCaseCount(
+  filters: CaseFilters,
+  countMode: CaseCountMode = "planned",
+  options?: Omit<UseQueryOptions<Awaited<ReturnType<typeof fetchCaseCount>>>, "queryKey" | "queryFn">
+) {
+  return useQuery({
+    queryKey: ["cases-count", filters, countMode],
+    queryFn: () => fetchCaseCount(filters, countMode),
+    staleTime: 60_000,
     ...options,
   })
 }
@@ -47,6 +62,7 @@ export function useFilterOptions() {
   return useQuery({
     queryKey: ["filter-options"],
     queryFn: fetchFilterOptions,
+    retry: 0,
     staleTime: 60_000,
   })
 }

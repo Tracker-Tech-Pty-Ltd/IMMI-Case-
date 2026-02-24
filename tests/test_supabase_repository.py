@@ -371,6 +371,43 @@ class TestFilterCases:
         repo.filter_cases(page=3, page_size=20)
         table.range.assert_called_with(40, 59)
 
+    def test_list_cases_fast_skips_count_header(self, repo, mock_client):
+        table = MagicMock()
+        mock_client.table.return_value = table
+        table.select.return_value = table
+        table.order.return_value = table
+        table.range.return_value = table
+        table.execute.return_value = _mock_response(data=[])
+
+        repo.list_cases_fast(sort_by="date", page=1, page_size=5)
+
+        # list_cases_fast should not request count=exact
+        select_call = table.select.call_args
+        assert "count" not in select_call.kwargs
+
+    def test_count_cases_uses_planned_mode(self, repo, mock_client):
+        table = MagicMock()
+        mock_client.table.return_value = table
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = _mock_response(data=[{"case_id": "x"}], count=42)
+
+        total = repo.count_cases(court="AATA", count_mode="planned")
+        assert total == 42
+        table.select.assert_called_with("case_id", count="planned")
+
+    def test_count_cases_invalid_mode_falls_back_to_planned(self, repo, mock_client):
+        table = MagicMock()
+        mock_client.table.return_value = table
+        table.select.return_value = table
+        table.eq.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = _mock_response(data=[], count=0)
+
+        repo.count_cases(count_mode="invalid-mode")
+        table.select.assert_called_with("case_id", count="planned")
+
 
 # ---------------------------------------------------------------------------
 # Tests: search_text

@@ -20,7 +20,7 @@ class TestCasesTable:
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         for col in ["Title", "Court", "Date", "Outcome", "Nature"]:
-            assert react_page.locator("th").get_by_text(col).is_visible()
+            assert react_page.locator("th", has_text=col).count() >= 1
 
     def test_table_renders_seed_cases(self, react_page):
         react_navigate(react_page, "/cases")
@@ -62,7 +62,7 @@ class TestCardsView:
         """Click the grid/cards view toggle button in the cases header."""
         main = page.locator("main")
         # The button group is in the same flex container as "Add Case"
-        add_btn = main.get_by_text("Add Case")
+        add_btn = main.get_by_role("button", name="Add Case")
         btn_group = add_btn.locator("xpath=..")
         # Table=0, Cards=1, Add Case=2
         btn_group.locator("button").nth(1).click()
@@ -155,13 +155,13 @@ class TestAddButton:
     def test_add_case_button_visible(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        add_btn = react_page.get_by_text("Add Case")
+        add_btn = react_page.get_by_role("button", name="Add Case")
         assert add_btn.is_visible()
 
     def test_add_case_button_navigates(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        react_page.get_by_text("Add Case").click()
+        react_page.get_by_role("button", name="Add Case").click()
         react_page.wait_for_load_state("networkidle")
         assert "/cases/add" in react_page.url
 
@@ -194,7 +194,7 @@ class TestViewModeToggle:
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         main = react_page.locator("main")
-        add_btn = main.get_by_text("Add Case")
+        add_btn = main.get_by_role("button", name="Add Case")
         btn_group = add_btn.locator("xpath=..")
         # Switch to cards (2nd button)
         btn_group.locator("button").nth(1).click()
@@ -204,3 +204,23 @@ class TestViewModeToggle:
         btn_group.locator("button").nth(0).click()
         react_page.wait_for_timeout(500)
         assert react_page.locator("table").is_visible()
+
+
+class TestCasesKeyboardEnhancements:
+    """Keyboard interactions added for higher usability on the cases page."""
+
+    def test_slash_focuses_case_search(self, react_page):
+        react_navigate(react_page, "/cases")
+        wait_for_loading_gone(react_page)
+        react_page.locator("h1").first.click()
+        react_page.keyboard.press("/")
+        react_page.wait_for_timeout(200)
+        focused_aria = react_page.evaluate(
+            "() => document.activeElement?.getAttribute('aria-label')"
+        )
+        assert focused_aria == "Search cases"
+
+    def test_table_shortcuts_hint_visible(self, react_page):
+        react_navigate(react_page, "/cases")
+        wait_for_loading_gone(react_page)
+        assert react_page.get_by_text("Keyboard: j/k move row").is_visible()

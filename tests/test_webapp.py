@@ -58,6 +58,19 @@ class TestExport:
 
 
 class TestApiRoutes:
+    def test_case_count_api(self, client):
+        resp = client.get("/api/v1/cases/count")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "total" in data
+        assert data.get("count_mode") == "exact"
+
+    def test_case_count_api_rejects_invalid_mode(self, client):
+        resp = client.get("/api/v1/cases/count?count_mode=invalid")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
     def test_job_status_api(self, client):
         resp = client.get("/api/v1/job-status")
         assert resp.status_code == 200

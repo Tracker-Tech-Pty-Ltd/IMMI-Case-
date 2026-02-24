@@ -26,6 +26,8 @@ import type { LineageData } from "@/lib/lineage-data";
 
 let csrfToken: string | null = null;
 const API_TIMEOUT_MS = 20_000;
+const ANALYTICS_TIMEOUT_MS = 10_000;
+const FILTER_OPTIONS_TIMEOUT_MS = 8_000;
 
 async function fetchCsrfToken(): Promise<string> {
   if (csrfToken) return csrfToken;
@@ -35,31 +37,39 @@ async function fetchCsrfToken(): Promise<string> {
   return csrfToken!;
 }
 
-async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
+interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+async function apiFetch<T>(
+  url: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const { timeoutMs = API_TIMEOUT_MS, ...requestOptions } = options;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
+    ...(requestOptions.headers as Record<string, string>),
   };
 
-  if (options.method && options.method !== "GET") {
+  if (requestOptions.method && requestOptions.method !== "GET") {
     headers["X-CSRFToken"] = await fetchCsrfToken();
   }
 
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  let signal = options.signal;
+  let signal = requestOptions.signal;
 
   if (!signal) {
     const controller = new AbortController();
     signal = controller.signal;
-    timeoutHandle = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
   }
 
   let res: Response;
   try {
-    res = await fetch(url, { ...options, headers, signal });
+    res = await fetch(url, { ...requestOptions, headers, signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timeout after ${API_TIMEOUT_MS / 1000} seconds`);
+      throw new Error(`Request timeout after ${timeoutMs / 1000} seconds`);
     }
     throw error;
   } finally {
@@ -133,14 +143,18 @@ export function fetchTrends(
 
 // ─── Court Lineage ─────────────────────────────────────────────
 export function fetchLineageData(): Promise<LineageData> {
-  return apiFetch("/api/v1/court-lineage");
+  return apiFetch("/api/v1/court-lineage", {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 // ─── Analytics ─────────────────────────────────────────────────
 export function fetchOutcomes(
   filters?: AnalyticsFilterParams,
 ): Promise<OutcomeData> {
-  return apiFetch(`/api/v1/analytics/outcomes${buildFilterParams(filters)}`);
+  return apiFetch(`/api/v1/analytics/outcomes${buildFilterParams(filters)}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchJudges(
@@ -149,7 +163,9 @@ export function fetchJudges(
 ): Promise<{ judges: JudgeEntry[] }> {
   const qs = buildFilterParams(filters);
   const sep = qs ? "&" : "?";
-  return apiFetch(`/api/v1/analytics/judges${qs}${sep}limit=${limit}`);
+  return apiFetch(`/api/v1/analytics/judges${qs}${sep}limit=${limit}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchLegalConcepts(
@@ -158,7 +174,9 @@ export function fetchLegalConcepts(
 ): Promise<{ concepts: ConceptEntry[] }> {
   const qs = buildFilterParams(filters);
   const sep = qs ? "&" : "?";
-  return apiFetch(`/api/v1/analytics/legal-concepts${qs}${sep}limit=${limit}`);
+  return apiFetch(`/api/v1/analytics/legal-concepts${qs}${sep}limit=${limit}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchNatureOutcome(
@@ -166,6 +184,7 @@ export function fetchNatureOutcome(
 ): Promise<NatureOutcomeData> {
   return apiFetch(
     `/api/v1/analytics/nature-outcome${buildFilterParams(filters)}`,
+    { timeoutMs: ANALYTICS_TIMEOUT_MS },
   );
 }
 
@@ -184,7 +203,9 @@ export function fetchSuccessRate(
     qs.set("legal_concepts", params.legal_concepts.join(","));
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/success-rate${suffix}`);
+  return apiFetch(`/api/v1/analytics/success-rate${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchJudgeLeaderboard(
@@ -198,7 +219,9 @@ export function fetchJudgeLeaderboard(
   if (params.sort_by) qs.set("sort_by", params.sort_by);
   if (typeof params.limit === "number") qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/judge-leaderboard${suffix}`);
+  return apiFetch(`/api/v1/analytics/judge-leaderboard${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchJudgeProfile(
@@ -213,7 +236,9 @@ export function fetchJudgeProfile(
   if (params.yearTo && params.yearTo < CURRENT_YEAR) {
     qs.set("year_to", String(params.yearTo));
   }
-  return apiFetch(`/api/v1/analytics/judge-profile?${qs.toString()}`);
+  return apiFetch(`/api/v1/analytics/judge-profile?${qs.toString()}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchJudgeCompare(
@@ -228,12 +253,15 @@ export function fetchJudgeCompare(
   if (params.yearTo && params.yearTo < CURRENT_YEAR) {
     qs.set("year_to", String(params.yearTo));
   }
-  return apiFetch(`/api/v1/analytics/judge-compare?${qs.toString()}`);
+  return apiFetch(`/api/v1/analytics/judge-compare?${qs.toString()}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchJudgeBio(name: string): Promise<JudgeBio> {
   return apiFetch(
     `/api/v1/analytics/judge-bio?name=${encodeURIComponent(name)}`,
+    { timeoutMs: ANALYTICS_TIMEOUT_MS },
   );
 }
 
@@ -244,7 +272,9 @@ export function fetchConceptEffectiveness(
   appendAnalyticsFilters(qs, params);
   if (typeof params.limit === "number") qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/concept-effectiveness${suffix}`);
+  return apiFetch(`/api/v1/analytics/concept-effectiveness${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchConceptCooccurrence(
@@ -257,7 +287,9 @@ export function fetchConceptCooccurrence(
     qs.set("min_count", String(params.min_count));
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/concept-cooccurrence${suffix}`);
+  return apiFetch(`/api/v1/analytics/concept-cooccurrence${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchConceptTrends(
@@ -267,7 +299,9 @@ export function fetchConceptTrends(
   appendAnalyticsFilters(qs, params);
   if (typeof params.limit === "number") qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/concept-trends${suffix}`);
+  return apiFetch(`/api/v1/analytics/concept-trends${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchMonthlyTrends(
@@ -276,7 +310,9 @@ export function fetchMonthlyTrends(
   const qs = new URLSearchParams();
   appendAnalyticsFilters(qs, params);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/monthly-trends${suffix}`);
+  return apiFetch(`/api/v1/analytics/monthly-trends${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchFlowMatrix(
@@ -286,7 +322,9 @@ export function fetchFlowMatrix(
   appendAnalyticsFilters(qs, params);
   if (typeof params.top_n === "number") qs.set("top_n", String(params.top_n));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/flow-matrix${suffix}`);
+  return apiFetch(`/api/v1/analytics/flow-matrix${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 export function fetchVisaFamilies(
@@ -295,7 +333,9 @@ export function fetchVisaFamilies(
   const qs = new URLSearchParams();
   appendAnalyticsFilters(qs, params);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch(`/api/v1/analytics/visa-families${suffix}`);
+  return apiFetch(`/api/v1/analytics/visa-families${suffix}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
 }
 
 // ─── Cases ─────────────────────────────────────────────────────
@@ -307,6 +347,22 @@ export function fetchCases(filters: CaseFilters): Promise<PaginatedCases> {
     }
   }
   return apiFetch(`/api/v1/cases?${params}`);
+}
+
+export type CaseCountMode = "exact" | "planned" | "estimated";
+
+export function fetchCaseCount(
+  filters: CaseFilters,
+  countMode: CaseCountMode = "planned",
+): Promise<{ total: number; count_mode: CaseCountMode }> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+  params.set("count_mode", countMode);
+  return apiFetch(`/api/v1/cases/count?${params}`);
 }
 
 export function fetchCase(
@@ -377,7 +433,9 @@ export function searchCases(
 
 // ─── Filters ───────────────────────────────────────────────────
 export function fetchFilterOptions(): Promise<FilterOptions> {
-  return apiFetch("/api/v1/filter-options");
+  return apiFetch("/api/v1/filter-options", {
+    timeoutMs: FILTER_OPTIONS_TIMEOUT_MS,
+  });
 }
 
 // ─── Jobs ──────────────────────────────────────────────────────

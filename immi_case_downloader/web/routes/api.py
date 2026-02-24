@@ -63,6 +63,7 @@ ALLOWED_SORT_FIELDS = frozenset({
     "applicant_name", "hearing_date", "case_id",
 })
 ALLOWED_SORT_DIRS = frozenset({"asc", "desc"})
+ALLOWED_COUNT_MODES = frozenset({"exact", "planned", "estimated"})
 MAX_EXPORT_ROWS = 50_000
 
 # ── Outcome normalisation ──────────────────────────────────────────────
@@ -768,6 +769,24 @@ def _error(msg: str, status: int = 400):
     return jsonify({"error": msg}), status
 
 
+def _parse_case_list_filters() -> tuple[str, int | None, str, str, str, str, str]:
+    """Parse shared case-list query filters from request args."""
+    court = request.args.get("court", "").strip()
+    year_str = request.args.get("year", "").strip()
+    year = None
+    if year_str:
+        try:
+            year = int(year_str)
+        except ValueError:
+            year = None
+    visa_type = request.args.get("visa_type", "").strip()
+    keyword = request.args.get("keyword", "").strip()
+    source = request.args.get("source", "").strip()
+    tag = request.args.get("tag", "").strip()
+    nature = request.args.get("nature", "").strip()
+    return court, year, visa_type, keyword, source, tag, nature
+
+
 # ── CSRF ────────────────────────────────────────────────────────────────
 
 @api_bp.route("/csrf-token")
@@ -834,7 +853,21 @@ def stats():
 
     recent = []
     try:
-        recent_cases, _ = repo.filter_cases(sort_by="date", sort_dir="desc", page=1, page_size=5)
+        if hasattr(repo, "list_cases_fast"):
+            recent_cases = repo.list_cases_fast(
+                sort_by="date",
+                sort_dir="desc",
+                page=1,
+                page_size=5,
+                columns=["case_id", "title", "citation", "court_code", "date", "outcome"],
+            )
+        else:
+            recent_cases, _ = repo.filter_cases(
+                sort_by="date",
+                sort_dir="desc",
+                page=1,
+                page_size=5,
+            )
         recent = [
             {
                 "case_id": c.case_id, "title": c.title, "citation": c.citation,
@@ -1030,19 +1063,7 @@ def court_lineage():
 @api_bp.route("/cases")
 def list_cases():
     repo = get_repo()
-    court = request.args.get("court", "")
-    year_str = request.args.get("year", "")
-    year = None
-    if year_str:
-        try:
-            year = int(year_str)
-        except ValueError:
-            pass
-    visa_type = request.args.get("visa_type", "")
-    keyword = request.args.get("keyword", "")
-    source = request.args.get("source", "")
-    tag = request.args.get("tag", "")
-    nature = request.args.get("nature", "")
+    court, year, visa_type, keyword, source, tag, nature = _parse_case_list_filters()
     sort_by = request.args.get("sort_by", "date")
     sort_dir = request.args.get("sort_dir", "desc")
     if sort_by not in ALLOWED_SORT_FIELDS:
@@ -1068,6 +1089,43 @@ def list_cases():
         "page_size": page_size,
         "total_pages": total_pages,
     })
+
+
+@api_bp.route("/cases/count")
+def count_cases():
+    """Return only the total number of matching cases (lightweight endpoint)."""
+    repo = get_repo()
+    court, year, visa_type, keyword, source, tag, nature = _parse_case_list_filters()
+    count_mode = request.args.get("count_mode", "planned").strip().lower()
+    if count_mode not in ALLOWED_COUNT_MODES:
+        return _error(f"Invalid count_mode '{count_mode}'. Allowed: {sorted(ALLOWED_COUNT_MODES)}")
+
+    if hasattr(repo, "count_cases"):
+        total = repo.count_cases(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+            count_mode=count_mode,
+        )
+    else:
+        _, total = repo.filter_cases(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+            page=1,
+            page_size=1,
+        )
+        count_mode = "exact"
+
+    return jsonify({"total": total, "count_mode": count_mode})
 
 
 @api_bp.route("/cases/<case_id>")
@@ -1227,6 +1285,8 @@ def _case_semantic_text(case: ImmigrationCase) -> str:
             case.title,
             case.citation,
             case.catchwords,
+            case.visa_type,
+            case.legislation,
             case.case_nature,
             case.legal_concepts,
             case.outcome,

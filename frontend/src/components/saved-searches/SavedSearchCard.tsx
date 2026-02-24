@@ -3,7 +3,7 @@ import { Play, Edit2, Trash2, Calendar, Filter, Share2, TrendingUp } from "lucid
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { generateShareableUrl } from "@/lib/saved-searches";
-import { useCases } from "@/hooks/use-cases";
+import { useCaseCount } from "@/hooks/use-cases";
 import type { SavedSearch } from "@/types/case";
 
 interface SavedSearchCardProps {
@@ -21,17 +21,17 @@ function SavedSearchCardInner({
 }: SavedSearchCardProps) {
   const { t } = useTranslation();
 
-  // Fetch current count for this search's filters
-  // Optimized: longer staleTime (60s) since counts don't need real-time updates
-  // refetchOnMount: false prevents redundant API calls when cards re-render
-  const { data } = useCases(
-    { ...search.filters, page: 1, page_size: 1 },
+  // Lightweight count endpoint avoids full row payload + exact count overhead.
+  const { data } = useCaseCount(
+    search.filters,
+    "planned",
     {
-      staleTime: 60_000, // 60 seconds - count badges don't need real-time updates
-      refetchOnMount: false, // Prevent refetch on component mount if data is cached
+      staleTime: 120_000,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
     }
   );
-  const currentCount = data?.total ?? 0;
+  const currentCount = data?.total ?? search.resultCount ?? 0;
 
   // Calculate if there are new results since last execution
   const hasNewResults = useMemo(() => {

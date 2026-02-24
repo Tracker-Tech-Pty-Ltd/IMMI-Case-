@@ -1,5 +1,7 @@
 """Keyboard shortcut tests: navigation shortcuts, search focus, input exclusion."""
 
+from urllib.parse import urlparse
+
 from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
@@ -12,6 +14,12 @@ def _focus_body(page):
     page.wait_for_timeout(200)
 
 
+def _is_dashboard_url(url: str) -> bool:
+    """Dashboard may be mounted at '/' or legacy '/app'."""
+    path = urlparse(url).path.rstrip("/")
+    return path in ("", "/app")
+
+
 class TestNavigationShortcuts:
     """Keys d, c, p navigate to Dashboard, Cases, Pipeline."""
 
@@ -21,8 +29,7 @@ class TestNavigationShortcuts:
         _focus_body(react_page)
         react_page.keyboard.press("d")
         react_page.wait_for_timeout(1000)
-        url = react_page.url.rstrip("/")
-        assert url.endswith("/app")
+        assert _is_dashboard_url(react_page.url)
 
     def test_c_goes_to_cases(self, react_page):
         react_navigate(react_page, "/")
@@ -120,5 +127,4 @@ class TestInputExclusion:
         # Now 'd' should navigate to dashboard
         react_page.keyboard.press("d")
         react_page.wait_for_timeout(1000)
-        url = react_page.url.rstrip("/")
-        assert url.endswith("/app")
+        assert _is_dashboard_url(react_page.url)
