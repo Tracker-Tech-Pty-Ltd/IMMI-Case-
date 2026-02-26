@@ -43,7 +43,6 @@ def _get_env_default_port() -> int:
 
 def main():
     default_port = _get_env_default_port()
-    default_host = os.environ.get("BACKEND_HOST", "127.0.0.1")
 
     parser = argparse.ArgumentParser(description="IMMI-Case Web Interface")
     parser.add_argument(
@@ -54,8 +53,8 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default=default_host,
-        help=f"Host (default: {default_host}; env: BACKEND_HOST)",
+        default="127.0.0.1",
+        help="Host to listen on (default: 127.0.0.1; use --host 0.0.0.0 to expose externally)",
     )
     parser.add_argument("--output", default="downloaded_cases", help="Data directory")
     parser.add_argument(

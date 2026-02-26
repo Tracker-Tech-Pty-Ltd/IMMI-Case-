@@ -26,6 +26,8 @@ def _make_case(case_id: str, full_text_path: str = "") -> EvalCase:
         text_snippet="Short snippet",
         legal_concepts="Procedural Fairness; Judicial Review",
         case_nature="Judicial review",
+        visa_type="Protection",
+        legislation="Migration Act 1958",
         full_text_path=full_text_path,
     )
 

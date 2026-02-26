@@ -375,3 +375,13 @@ export interface SavedSearch {
   lastExecutedAt?: string;
   resultCount?: number;
 }
+
+// ─── Semantic Similar Cases ──────────────────────────────────────
+
+export interface SimilarCase {
+  case_id: string;
+  citation: string;
+  title: string;
+  outcome: string;
+  similarity_score: number;
+}

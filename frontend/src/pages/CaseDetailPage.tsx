@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useCase, useRelatedCases, useDeleteCase } from "@/hooks/use-cases";
+import { useSimilarCases } from "@/hooks/use-similar-cases";
+import { SimilarCasesPanel } from "@/components/cases/SimilarCasesPanel";
 import { CourtBadge } from "@/components/shared/CourtBadge";
 import { OutcomeBadge } from "@/components/shared/OutcomeBadge";
 import { NatureBadge } from "@/components/shared/NatureBadge";
@@ -32,6 +34,9 @@ export function CaseDetailPage() {
   const navigate = useNavigate();
   const { data, isLoading } = useCase(id ?? "");
   const { data: related } = useRelatedCases(id ?? "");
+  const { data: similarCases, isLoading: similarLoading } = useSimilarCases(
+    id ?? "",
+  );
   const deleteMutation = useDeleteCase();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -327,6 +332,13 @@ export function CaseDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Similar cases (pgvector semantic search) */}
+      <SimilarCasesPanel
+        cases={similarCases}
+        isLoading={similarLoading}
+        available={similarCases !== undefined || similarLoading}
+      />
 
       {/* Full text */}
       {fullText && <CaseTextViewer text={fullText} citation={c.citation} />}

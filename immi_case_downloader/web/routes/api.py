@@ -2037,6 +2037,111 @@ def related_cases(case_id):
     return jsonify({"cases": [c.to_dict() for c in related]})
 
 
+# ── Similar Cases (pgvector semantic search) ────────────────────────────
+
+MAX_SIMILAR_LIMIT = 10
+DEFAULT_SIMILAR_LIMIT = 5
+
+
+@api_bp.route("/cases/<case_id>/similar")
+def similar_cases(case_id):
+    """Return semantically similar cases using pgvector cosine similarity.
+
+    Uses the existing ``search_cases_semantic`` RPC function (created in
+    migration 20260223103000_add_pgvector_embeddings.sql) which leverages the
+    HNSW index for fast approximate nearest-neighbour search.
+
+    Falls back gracefully when:
+    - The repository is not Supabase (CSV / SQLite backends)
+    - The case has no embedding stored
+    - Any RPC error occurs
+    """
+    if not _valid_case_id(case_id):
+        return _error("Invalid case ID")
+
+    limit = safe_int(
+        request.args.get("limit"),
+        default=DEFAULT_SIMILAR_LIMIT,
+        min_val=1,
+        max_val=MAX_SIMILAR_LIMIT,
+    )
+
+    repo = get_repo()
+
+    # Only SupabaseRepository supports pgvector queries.
+    from ...supabase_repository import SupabaseRepository
+    if not isinstance(repo, SupabaseRepository):
+        return jsonify({"similar": [], "available": False})
+
+    try:
+        # Step 1: fetch the case's embedding vector via RPC (avoids sending
+        # 6 KB of raw vector bytes through the REST layer for every request).
+        emb_resp = (
+            repo._client
+            .table("immigration_cases")
+            .select("embedding, embedding_provider, embedding_model, embedding_dimensions")
+            .eq("case_id", case_id)
+            .maybe_single()
+            .execute()
+        )
+        if not emb_resp.data or not emb_resp.data.get("embedding"):
+            return jsonify({"similar": [], "available": True})
+
+        row = emb_resp.data
+        provider = row.get("embedding_provider", "openai")
+        model = row.get("embedding_model", "text-embedding-3-small")
+        embedding = row["embedding"]
+
+        # Step 2: call the existing RPC for ANN search, requesting limit+1
+        # so we can exclude the query case itself from results.
+        rpc_resp = repo._client.rpc("search_cases_semantic", {
+            "p_query_embedding": embedding,
+            "p_provider": provider,
+            "p_model": model,
+            "p_limit": limit + 1,
+        }).execute()
+
+        similar_ids_scores: list[tuple[str, float]] = [
+            (r["case_id"], float(r["similarity"]))
+            for r in (rpc_resp.data or [])
+            if r.get("case_id") and r["case_id"] != case_id
+        ][:limit]
+
+        if not similar_ids_scores:
+            return jsonify({"similar": [], "available": True})
+
+        # Step 3: fetch metadata for the similar case IDs.
+        ids = [cid for cid, _ in similar_ids_scores]
+        meta_resp = (
+            repo._client
+            .table("immigration_cases")
+            .select("case_id, citation, title, outcome")
+            .in_("case_id", ids)
+            .execute()
+        )
+        meta_by_id: dict[str, dict] = {
+            r["case_id"]: r for r in (meta_resp.data or [])
+        }
+
+        # Step 4: assemble result list preserving similarity order.
+        results = []
+        for cid, score in similar_ids_scores:
+            meta = meta_by_id.get(cid, {})
+            results.append({
+                "case_id": cid,
+                "citation": meta.get("citation") or "",
+                "title": meta.get("title") or "",
+                "outcome": meta.get("outcome") or "",
+                "similarity_score": round(score, 4),
+            })
+
+        return jsonify({"similar": results, "available": True})
+
+    except Exception as exc:
+        logger.warning("similar_cases RPC failed for %s: %s", case_id, exc)
+        return jsonify({"similar": [], "available": False})
+
+
 # ── Full-Text Search ────────────────────────────────────────────────────
 
 def _case_semantic_text(case: ImmigrationCase) -> str:

@@ -22,6 +22,7 @@ import type {
   FlowMatrixData,
   MonthlyTrendsData,
   VisaFamiliesData,
+  SimilarCase,
 } from "@/types/case";
 import type { LineageData } from "@/lib/lineage-data";
 
@@ -236,9 +237,12 @@ export function fetchStats(
 ): Promise<DashboardStats> {
   const cacheKey = buildDashboardCacheKey(DASHBOARD_STATS_CACHE_KEY, filters);
 
-  return apiFetch<DashboardStats>(`/api/v1/stats${buildFilterParams(filters)}`, {
-    timeoutMs: DASHBOARD_STATS_TIMEOUT_MS,
-  })
+  return apiFetch<DashboardStats>(
+    `/api/v1/stats${buildFilterParams(filters)}`,
+    {
+      timeoutMs: DASHBOARD_STATS_TIMEOUT_MS,
+    },
+  )
     .then((stats) => {
       writeCache(cacheKey, stats);
       return stats;
@@ -272,7 +276,9 @@ export function fetchTrends(
       writeCache(cacheKey, data);
       return data;
     })
-    .catch(() => readCache<{ trends: TrendEntry[] }>(cacheKey) ?? { trends: [] });
+    .catch(
+      () => readCache<{ trends: TrendEntry[] }>(cacheKey) ?? { trends: [] },
+    );
 }
 
 // ─── Court Lineage ─────────────────────────────────────────────
@@ -892,8 +898,9 @@ function normalizeJudgeAutocompleteEntries(
     });
   }
 
-  return Array.from(byCanonical.values())
-    .sort((a, b) => b.case_count - a.case_count || a.name.localeCompare(b.name));
+  return Array.from(byCanonical.values()).sort(
+    (a, b) => b.case_count - a.case_count || a.name.localeCompare(b.name),
+  );
 }
 
 function normalizeCountryEntries(
@@ -980,19 +987,19 @@ export function fetchCountries(limit: number = 30): Promise<{
 }> {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
-  return apiFetch<CountryRawResponse>(`/api/v1/taxonomy/countries?${params}`).then(
-    (payload) => {
-      const countries = normalizeCountryEntries(payload.countries ?? []);
-      return {
-        success: payload.success,
-        countries,
-        meta: {
-          total_countries: payload.meta?.total_countries ?? countries.length,
-          limit: payload.meta?.limit ?? limit,
-        },
-      };
-    },
-  );
+  return apiFetch<CountryRawResponse>(
+    `/api/v1/taxonomy/countries?${params}`,
+  ).then((payload) => {
+    const countries = normalizeCountryEntries(payload.countries ?? []);
+    return {
+      success: payload.success,
+      countries,
+      meta: {
+        total_countries: payload.meta?.total_countries ?? countries.length,
+        limit: payload.meta?.limit ?? limit,
+      },
+    };
+  });
 }
 
 export function submitGuidedSearch(
@@ -1013,15 +1020,11 @@ export function submitGuidedSearch(
       (payload.judge_name
         ? {
             name: payload.judge_name,
-            url: (
-              payload.profile_url?.startsWith("/judges/")
-                ? payload.profile_url.replace(
-                    "/judges/",
-                    "/judge-profiles/",
-                  )
-                : payload.profile_url
-            ) ??
-            `/judge-profiles/${encodeURIComponent(payload.canonical_name ?? payload.judge_name)}`,
+            url:
+              (payload.profile_url?.startsWith("/judges/")
+                ? payload.profile_url.replace("/judges/", "/judge-profiles/")
+                : payload.profile_url) ??
+              `/judge-profiles/${encodeURIComponent(payload.canonical_name ?? payload.judge_name)}`,
             canonical_name: payload.canonical_name,
             case_count: payload.meta?.total_cases ?? 0,
           }
@@ -1218,6 +1221,24 @@ export async function exportCollection(
 // ─── Export (file downloads) ───────────────────────────────────
 export function downloadExportFile(format: "csv" | "json"): void {
   window.location.href = `/api/v1/export/${format}`;
+}
+
+// ─── Semantic Similar Cases ────────────────────────────────────
+
+interface SimilarCasesResponse {
+  similar: SimilarCase[];
+  available: boolean;
+}
+
+export async function fetchSimilarCases(
+  caseId: string,
+  limit = 5,
+): Promise<SimilarCase[]> {
+  const res = await apiFetch<SimilarCasesResponse>(
+    `/api/v1/cases/${caseId}/similar?limit=${limit}`,
+    { timeoutMs: 15_000 },
+  );
+  return res.available ? res.similar : [];
 }
 
 // ─── Invalidate CSRF (call on auth errors) ─────────────────────

@@ -35,7 +35,8 @@ class TestAnalyticsPage:
     def test_top_judges_section(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Most Active Judges").is_visible()
+        # Use heading role to avoid matching nav link text with the same substring
+        assert react_page.get_by_role("heading", name="Most Active Judges", exact=False).is_visible()
 
     def test_legal_concepts_section(self, react_page):
         react_navigate(react_page, "/analytics")
