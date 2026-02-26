@@ -77,6 +77,25 @@ export interface FilterOptions {
   natures: string[];
 }
 
+export interface AnalyticsFilterOption {
+  value: string;
+  count: number;
+  label?: string;
+  family?: string;
+}
+
+export interface AnalyticsAdvancedFilterOptions {
+  query: {
+    court?: string | null;
+    year_from?: number | null;
+    year_to?: number | null;
+    total_matching: number;
+  };
+  case_natures: AnalyticsFilterOption[];
+  visa_subclasses: AnalyticsFilterOption[];
+  outcome_types: AnalyticsFilterOption[];
+}
+
 export interface JobStatus {
   running: boolean;
   type?: string;

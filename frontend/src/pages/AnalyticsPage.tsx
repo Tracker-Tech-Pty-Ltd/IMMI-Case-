@@ -9,8 +9,8 @@ import { FlowTrendsSection } from "@/components/analytics/FlowTrendsSection";
 import { ConceptIntelligenceSection } from "@/components/analytics/ConceptIntelligenceSection";
 import { VisaFamiliesSection } from "@/components/analytics/VisaFamiliesSection";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
-import { useFilterOptions } from "@/hooks/use-cases";
-import type { AnalyticsFilterParams } from "@/types/case";
+import { useAnalyticsFilterOptions } from "@/hooks/use-analytics";
+import type { AnalyticsFilterOption, AnalyticsFilterParams } from "@/types/case";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_YEAR_FROM = 2000;
@@ -25,6 +25,10 @@ const OUTCOME_TYPES = [
   "Withdrawn",
   "Other",
 ];
+
+const DEFAULT_OUTCOME_OPTIONS: AnalyticsFilterOption[] = OUTCOME_TYPES.map(
+  (value) => ({ value, count: 0 }),
+);
 
 export function AnalyticsPage() {
   const { t } = useTranslation();
@@ -66,11 +70,15 @@ export function AnalyticsPage() {
   }, [startTransition]);
 
   const {
-    data: filterOptions,
+    data: analyticsFilterOptions,
     isError: isFilterOptionsError,
     error: filterOptionsError,
     refetch: refetchFilterOptions,
-  } = useFilterOptions();
+  } = useAnalyticsFilterOptions({
+    court: court || undefined,
+    yearFrom,
+    yearTo,
+  });
 
   const filters: AnalyticsFilterParams = useMemo(
     () => ({
@@ -203,9 +211,11 @@ export function AnalyticsPage() {
             })}
           </h3>
           <AdvancedFilterPanel
-            caseNatures={filterOptions?.natures ?? []}
-            visaSubclasses={filterOptions?.visa_types ?? []}
-            outcomeTypes={OUTCOME_TYPES}
+            caseNatures={analyticsFilterOptions?.case_natures ?? []}
+            visaSubclasses={analyticsFilterOptions?.visa_subclasses ?? []}
+            outcomeTypes={
+              analyticsFilterOptions?.outcome_types ?? DEFAULT_OUTCOME_OPTIONS
+            }
             selectedNatures={selectedNatures}
             selectedSubclasses={selectedSubclasses}
             selectedOutcomes={selectedOutcomes}

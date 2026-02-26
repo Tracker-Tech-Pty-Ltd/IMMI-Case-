@@ -7,6 +7,7 @@ import type {
   FilterOptions,
   JobStatus,
   AnalyticsFilterParams,
+  AnalyticsAdvancedFilterOptions,
   OutcomeData,
   JudgeEntry,
   ConceptEntry,
@@ -286,6 +287,25 @@ export function fetchOutcomes(
   filters?: AnalyticsFilterParams,
 ): Promise<OutcomeData> {
   return apiFetch(`/api/v1/analytics/outcomes${buildFilterParams(filters)}`, {
+    timeoutMs: ANALYTICS_TIMEOUT_MS,
+  });
+}
+
+export function fetchAnalyticsFilterOptions(
+  filters: Pick<AnalyticsFilterParams, "court" | "yearFrom" | "yearTo"> = {},
+): Promise<AnalyticsAdvancedFilterOptions> {
+  const qs = new URLSearchParams();
+  if (filters.court) {
+    qs.set("court", filters.court);
+  }
+  if (filters.yearFrom && filters.yearFrom > 2000) {
+    qs.set("year_from", String(filters.yearFrom));
+  }
+  if (filters.yearTo && filters.yearTo < CURRENT_YEAR) {
+    qs.set("year_to", String(filters.yearTo));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch(`/api/v1/analytics/filter-options${suffix}`, {
     timeoutMs: ANALYTICS_TIMEOUT_MS,
   });
 }

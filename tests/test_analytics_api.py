@@ -195,6 +195,36 @@ def patch_analytics_cases(monkeypatch, analytics_cases):
 # ---------------------------------------------------------------------------
 
 
+def test_analytics_filter_options_returns_contextual_options(
+    client, patch_analytics_cases
+):
+    data = client.get(
+        "/api/v1/analytics/filter-options?court=AATA&year_from=2021&year_to=2022"
+    ).get_json()
+
+    assert data["query"]["court"] == "AATA"
+    assert data["query"]["total_matching"] == 3
+
+    visa_values = {item["value"] for item in data["visa_subclasses"]}
+    assert visa_values == {"866", "500", "790"}
+
+    nature_values = {item["value"] for item in data["case_natures"]}
+    assert nature_values == {"Protection", "Cancellation"}
+
+    outcome_values = {item["value"] for item in data["outcome_types"]}
+    assert outcome_values == {"Set Aside", "Affirmed", "Dismissed"}
+
+
+def test_analytics_filter_options_enriches_known_visa_labels(
+    client, patch_analytics_cases
+):
+    data = client.get("/api/v1/analytics/filter-options?court=AATA").get_json()
+
+    by_value = {item["value"]: item for item in data["visa_subclasses"]}
+    assert by_value["866"]["label"].startswith("866 - ")
+    assert by_value["866"]["family"] == "Protection"
+
+
 def test_success_rate_returns_200(client, patch_analytics_cases):
     resp = client.get("/api/v1/analytics/success-rate")
     assert resp.status_code == 200

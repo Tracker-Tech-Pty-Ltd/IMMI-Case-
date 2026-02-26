@@ -2486,6 +2486,103 @@ def pipeline_action():
 
 # ── Analytics ──────────────────────────────────────────────────────────
 
+@api_bp.route("/analytics/filter-options")
+def analytics_filter_options():
+    """Context-aware advanced filter options for the analytics page.
+
+    This endpoint intentionally scopes options by court/year only, so users can
+    discover useful advanced filters without selecting values that immediately
+    collapse to empty results.
+    """
+    court = request.args.get("court", "").strip()
+    year_from = safe_int(request.args.get("year_from"), default=0, min_val=0, max_val=2100)
+    year_to = safe_int(request.args.get("year_to"), default=0, min_val=0, max_val=2100)
+
+    scoped_cases = _get_all_cases()
+    if court:
+        scoped_cases = [c for c in scoped_cases if c.court_code == court]
+    if year_from:
+        scoped_cases = [c for c in scoped_cases if c.year and c.year >= year_from]
+    if year_to:
+        scoped_cases = [c for c in scoped_cases if c.year and c.year <= year_to]
+
+    nature_counts: Counter = Counter()
+    nature_labels: dict[str, str] = {}
+    subclass_counts: Counter = Counter()
+    outcome_counts: Counter = Counter()
+
+    for case in scoped_cases:
+        case_nature = re.sub(r"\s+", " ", (case.case_nature or "").strip())
+        if case_nature:
+            key = case_nature.casefold()
+            nature_counts[key] += 1
+            nature_labels.setdefault(key, case_nature)
+
+        cleaned_subclass = _clean_visa(case.visa_subclass)
+        if cleaned_subclass:
+            subclass_counts[cleaned_subclass] += 1
+
+        outcome_counts[_normalise_outcome(case.outcome)] += 1
+
+    case_natures = [
+        {
+            "value": nature_labels[key],
+            "count": count,
+        }
+        for key, count in sorted(
+            nature_counts.items(),
+            key=lambda item: (-item[1], nature_labels[item[0]].lower()),
+        )
+    ][:60]
+
+    visa_subclasses = []
+    for subclass, count in sorted(
+        subclass_counts.items(),
+        key=lambda item: (-item[1], item[0].zfill(4)),
+    )[:80]:
+        registry_entry = VISA_REGISTRY.get(subclass)
+        if registry_entry:
+            visa_name, family = registry_entry
+            label = f"{subclass} - {visa_name}"
+        else:
+            family = "Other"
+            label = f"Subclass {subclass}"
+
+        visa_subclasses.append(
+            {
+                "value": subclass,
+                "label": label,
+                "family": family,
+                "count": count,
+            }
+        )
+
+    outcome_types = [
+        {
+            "value": outcome,
+            "count": count,
+        }
+        for outcome, count in sorted(
+            outcome_counts.items(),
+            key=lambda item: (-item[1], item[0].lower()),
+        )
+        if outcome
+    ]
+
+    return jsonify(
+        {
+            "query": {
+                "court": court or None,
+                "year_from": year_from or None,
+                "year_to": year_to or None,
+                "total_matching": len(scoped_cases),
+            },
+            "case_natures": case_natures,
+            "visa_subclasses": visa_subclasses,
+            "outcome_types": outcome_types,
+        }
+    )
+
 @api_bp.route("/analytics/outcomes")
 def analytics_outcomes():
     """Outcome rates by court, year, and visa subclass."""

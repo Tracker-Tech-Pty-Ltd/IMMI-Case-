@@ -1,5 +1,6 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import {
+  fetchAnalyticsFilterOptions,
   fetchOutcomes,
   fetchJudges,
   fetchLegalConcepts,
@@ -27,6 +28,24 @@ export function useOutcomes(filters?: AnalyticsFilterParams) {
   return useQuery({
     queryKey: ["analytics", "outcomes", ...filterKey(filters)],
     queryFn: () => fetchOutcomes(filters),
+    retry: 0,
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useAnalyticsFilterOptions(
+  filters?: Pick<AnalyticsFilterParams, "court" | "yearFrom" | "yearTo">,
+) {
+  return useQuery({
+    queryKey: [
+      "analytics",
+      "filter-options",
+      filters?.court ?? "",
+      filters?.yearFrom ?? 0,
+      filters?.yearTo ?? 0,
+    ],
+    queryFn: () => fetchAnalyticsFilterOptions(filters),
     retry: 0,
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,

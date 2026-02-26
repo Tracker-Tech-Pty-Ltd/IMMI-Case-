@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   Bot,
+  ChevronDown,
   CheckCircle2,
   ExternalLink,
   Info,
@@ -162,6 +163,7 @@ export function LlmCouncilPage() {
   const [healthResult, setHealthResult] = useState<LlmCouncilHealthResponse | null>(null);
   const [healthError, setHealthError] = useState("");
   const [healthLiveProbe, setHealthLiveProbe] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
   const councilMutation = useLlmCouncil();
@@ -231,6 +233,48 @@ export function LlmCouncilPage() {
       sections: providerMap[opinion.provider_key] || [],
     }));
   }, [result, sortedOpinions]);
+  const workflowSteps = [
+    {
+      icon: Scale,
+      title: t("llm_council.workflow_step_1_title", {
+        defaultValue: "Input Legal Issue",
+      }),
+      description: t("llm_council.workflow_step_1_desc", {
+        defaultValue:
+          "Enter your legal question and the full case-study facts, even when the case is not already recorded.",
+      }),
+    },
+    {
+      icon: Search,
+      title: t("llm_council.workflow_step_2_title", {
+        defaultValue: "Find Closest Precedents",
+      }),
+      description: t("llm_council.workflow_step_2_desc", {
+        defaultValue:
+          "System searches the local IMMI-Case database first and retrieves the most relevant judgments.",
+      }),
+    },
+    {
+      icon: Bot,
+      title: t("llm_council.workflow_step_3_title", {
+        defaultValue: "3-Model Council Debate",
+      }),
+      description: t("llm_council.workflow_step_3_desc", {
+        defaultValue:
+          "OpenAI, Gemini Pro, and Anthropic answer independently, then Gemini Flash critiques and votes.",
+      }),
+    },
+    {
+      icon: Sparkles,
+      title: t("llm_council.workflow_step_4_title", {
+        defaultValue: "Compose Mock Judgment",
+      }),
+      description: t("llm_council.workflow_step_4_desc", {
+        defaultValue:
+          "Receive a database-grounded mock judgment draft, consensus/conflict map, and cited sections.",
+      }),
+    },
+  ];
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -291,8 +335,8 @@ export function LlmCouncilPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-lg border border-border bg-card p-5">
+    <div className="space-y-8">
+      <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
         <div className="flex items-start gap-3">
           <div className="rounded-md bg-accent-muted p-2 text-accent">
             <Scale className="h-5 w-5" />
@@ -311,268 +355,349 @@ export function LlmCouncilPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-text">
-          {t("llm_council.workflow_heading", {
-            defaultValue: "Council Workflow",
-          })}
-        </h2>
-        <div className="grid gap-3 md:grid-cols-4">
-          {[
-            t("llm_council.workflow_step_1", {
-              defaultValue: "Step 1: Enter legal issue and case-study facts (even if case is not in record).",
-            }),
-            t("llm_council.workflow_step_2", {
-              defaultValue: "Step 2: System searches local IMMI-Case database for closest precedents.",
-            }),
-            t("llm_council.workflow_step_3", {
-              defaultValue: "Step 3: Three expert models answer independently and are judged by Gemini Flash.",
-            }),
-            t("llm_council.workflow_step_4", {
-              defaultValue: "Step 4: Receive mock judgment draft, consensus/conflict map, and cited sections.",
-            }),
-          ].map((text) => (
-            <div key={text} className="rounded-md border border-border bg-surface/60 p-3 text-xs text-muted-text">
-              {text}
-            </div>
-          ))}
+      <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-border pb-3">
+          <h2 className="text-sm font-semibold tracking-wide text-muted-text">
+            {t("llm_council.workflow_heading", {
+              defaultValue: "Council Workflow",
+            })}
+          </h2>
+          <p className="text-xs text-muted-text">
+            {t("llm_council.workflow_note", {
+              defaultValue: "Designed for user-provided cases not already in record.",
+            })}
+          </p>
         </div>
+        <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {workflowSteps.map((step, idx) => (
+            <li
+              key={step.title}
+              className="rounded-xl border border-border bg-surface/60 p-4"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-accent/15 text-xs font-semibold text-accent">
+                  {idx + 1}
+                </span>
+                <step.icon className="h-4 w-4 text-accent" />
+                <p className="text-sm font-semibold text-foreground">{step.title}</p>
+              </div>
+              <p className="text-xs leading-relaxed text-muted-text">
+                {step.description}
+              </p>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      <section className="rounded-lg border border-border bg-card p-5">
+      <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
         <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">
-              {t("llm_council.question_label", {
-                defaultValue: "Legal Research Question",
-              })}
-            </label>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              rows={4}
-              maxLength={8000}
-              placeholder={t("llm_council.question_placeholder", {
-                defaultValue:
-                  "Example: Compare strongest review grounds for visa cancellation where procedural fairness may be breached.",
-              })}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
-            />
-          </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t("llm_council.question_label", {
+                    defaultValue: "Legal Research Question",
+                  })}
+                </label>
+                <textarea
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  rows={4}
+                  maxLength={8000}
+                  placeholder={t("llm_council.question_placeholder", {
+                    defaultValue:
+                      "Example: Compare strongest review grounds for visa cancellation where procedural fairness may be breached.",
+                  })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
+                />
+              </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">
-              {t("llm_council.context_label", {
-                defaultValue: "Case Study Facts (not in record)",
-              })}
-            </label>
-            <textarea
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              rows={6}
-              maxLength={12000}
-              placeholder={t("llm_council.case_study_placeholder", {
-                defaultValue:
-                  "Describe user-provided facts, timeline, visa status, procedural events, and contested findings. This will be used to search local precedents and draft a mock judgment.",
-              })}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
-            />
-            <p className="mt-1 text-xs text-muted-text">
-              {t("llm_council.case_study_note", {
-                defaultValue:
-                  "Use concrete facts. The council will map these facts against similar cases in the current database.",
-              })}
-            </p>
-          </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t("llm_council.context_label", {
+                    defaultValue: "Case Study Facts (not in record)",
+                  })}
+                </label>
+                <textarea
+                  value={context}
+                  onChange={(e) => setContext(e.target.value)}
+                  rows={9}
+                  maxLength={12000}
+                  placeholder={t("llm_council.case_study_placeholder", {
+                    defaultValue:
+                      "Describe user-provided facts, timeline, visa status, procedural events, and contested findings. This will be used to search local precedents and draft a mock judgment.",
+                  })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
+                />
+                <p className="mt-1 text-xs text-muted-text">
+                  {t("llm_council.case_study_note", {
+                    defaultValue:
+                      "Use concrete facts. The council will map these facts against similar cases in the current database.",
+                  })}
+                </p>
+              </div>
+            </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">
-              {t("llm_council.case_id_label", {
-                defaultValue: "Case ID (optional, if existing record)",
-              })}
-            </label>
-            <input
-              type="text"
-              value={caseId}
-              onChange={(e) => setCaseId(e.target.value)}
-              placeholder={t("llm_council.case_id_placeholder", {
-                defaultValue: "12-char case id",
-              })}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
-            />
-          </div>
+            <aside className="space-y-4">
+              <div className="rounded-md border border-border bg-surface/40 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-text">
+                  {t("llm_council.input_checklist_title", {
+                    defaultValue: "Case-Fact Checklist",
+                  })}
+                </p>
+                <ul className="mt-2 space-y-1 text-xs text-muted-text">
+                  <li>
+                    •{" "}
+                    {t("llm_council.input_checklist_item_1", {
+                      defaultValue: "Timeline: key dates, notices, interviews, refusals/cancellations.",
+                    })}
+                  </li>
+                  <li>
+                    •{" "}
+                    {t("llm_council.input_checklist_item_2", {
+                      defaultValue: "Decision points: who decided what, and under which legal powers.",
+                    })}
+                  </li>
+                  <li>
+                    •{" "}
+                    {t("llm_council.input_checklist_item_3", {
+                      defaultValue: "Procedural issues: hearing fairness, evidence disputes, reasons adequacy.",
+                    })}
+                  </li>
+                </ul>
+              </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={councilMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {councilMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t("llm_council.running_btn", { defaultValue: "Running Council..." })}
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4" />
-                  {t("llm_council.run_btn", { defaultValue: "Run LLM Council" })}
-                </>
-              )}
-            </button>
-            <p className="text-xs text-muted-text">
-              {t("llm_council.runtime_note", {
-                defaultValue:
-                  "This runs 3 expert models, then Gemini Flash for ranking/critique/voting/synthesis, so response time may be longer.",
-              })}
-            </p>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t("llm_council.case_id_label", {
+                    defaultValue: "Case ID (optional, if existing record)",
+                  })}
+                </label>
+                <input
+                  type="text"
+                  value={caseId}
+                  onChange={(e) => setCaseId(e.target.value)}
+                  placeholder={t("llm_council.case_id_placeholder", {
+                    defaultValue: "12-char case id",
+                  })}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-accent"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={councilMutation.isPending}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {councilMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("llm_council.running_btn", { defaultValue: "Running Council..." })}
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" />
+                    {t("llm_council.run_btn", { defaultValue: "Run LLM Council" })}
+                  </>
+                )}
+              </button>
+
+              <p className="text-xs text-muted-text">
+                {t("llm_council.runtime_note", {
+                  defaultValue:
+                    "This runs 3 expert models, then Gemini Flash for ranking/critique/voting/synthesis, so response time may be longer.",
+                })}
+              </p>
+            </aside>
           </div>
         </form>
         {submitError ? <ApiErrorState message={submitError} /> : null}
       </section>
 
-      <section className="rounded-lg border border-border bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-text">
-          {t("llm_council.models_heading", {
-            defaultValue: "Model Council Setup",
-          })}
-        </h2>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {Object.entries(models).map(([key, config]) => (
-            <article
-              key={key}
-              className="rounded-md border border-border bg-surface/50 p-3"
-            >
-              <p className="text-xs font-medium tracking-wide text-muted-text">
-                {modelKeyLabel(key, t)}
+      <section className="rounded-xl border border-border/80 bg-card shadow-sm">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 px-6 py-5 text-left"
+          aria-expanded={advancedOpen}
+        >
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-accent-muted p-2 text-accent">
+              <ShieldCheck className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold tracking-wide text-muted-text">
+                {t("llm_council.advanced_heading", {
+                  defaultValue: "Advanced Controls",
+                })}
+              </h2>
+              <p className="mt-1 text-xs text-muted-text">
+                {t("llm_council.advanced_subtitle", {
+                  defaultValue:
+                    "Expand to review model configuration and run provider health diagnostics.",
+                })}
               </p>
-              <p className="mt-1 text-sm font-semibold text-foreground">
-                {config.provider}
-              </p>
-              <p className="mt-1 break-all text-xs text-muted-text">{config.model}</p>
-              <p className="mt-2 text-[11px] text-muted-text">
-                {modelMetaLine(config, t) ||
-                  t("llm_council.default_meta", {
-                    defaultValue: "default",
-                  })}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-accent" />
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-text">
-              {t("llm_council.health_heading", {
-                defaultValue: "Provider Health Check",
-              })}
-            </h2>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-2 text-xs text-muted-text">
-              <input
-                type="checkbox"
-                checked={healthLiveProbe}
-                onChange={(e) => setHealthLiveProbe(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              {t("llm_council.health_live_probe_label", {
-                defaultValue: "Enable live probe",
-              })}
-            </label>
-            <button
-              type="button"
-              onClick={onHealthCheck}
-              disabled={healthMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {healthMutation.isPending ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("llm_council.health_running_btn", {
-                    defaultValue: "Checking...",
-                  })}
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {t("llm_council.health_btn", {
-                    defaultValue: "Health Check",
-                  })}
-                </>
-              )}
-            </button>
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted-text">
+            {advancedOpen
+              ? t("llm_council.advanced_hide", { defaultValue: "Hide" })
+              : t("llm_council.advanced_show", { defaultValue: "Show" })}
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${
+                advancedOpen ? "rotate-180" : "rotate-0"
+              }`}
+            />
           </div>
-        </div>
+        </button>
 
-        <p className="mt-2 text-xs text-muted-text">
-          {healthLiveProbe
-            ? t("llm_council.health_live_note", {
-                defaultValue:
-                  "Live probe will call provider APIs and verify response availability.",
-              })
-            : t("llm_council.health_config_note", {
-                defaultValue:
-                  "Config-only check validates API keys and model/prompt configuration without external calls.",
-              })}
-        </p>
-
-        {healthError ? <div className="mt-3"><ApiErrorState message={healthError} /></div> : null}
-
-        {healthResult ? (
-          <div className="mt-3 space-y-3">
-            {!healthResult.ok && healthResult.errors.length > 0 ? (
-              <div className="rounded-md border border-amber-300/40 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-900/20 dark:text-amber-200">
-                <p className="font-semibold">
-                  {t("llm_council.health_issues_title", {
-                    defaultValue: "Issues detected",
-                  })}
-                </p>
-                <ul className="mt-1 space-y-1">
-                  {healthResult.errors.map((entry) => (
-                    <li key={entry}>• {entry}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {Object.entries(healthResult.providers).map(([key, provider]) => {
-                const probe = healthResult.probe_results?.[
-                  key as keyof NonNullable<LlmCouncilHealthResponse["probe_results"]>
-                ];
-                return (
-                  <article key={key} className="rounded-md border border-border bg-surface/50 p-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-text">{key}</p>
-                    <p className="mt-1 break-all text-xs text-foreground">{provider.model}</p>
-                    <p className="mt-2 text-xs text-muted-text">
-                      {provider.api_key_present
-                        ? t("llm_council.health_api_key_yes", { defaultValue: "API key: present" })
-                        : t("llm_council.health_api_key_no", { defaultValue: "API key: missing" })}
+        {advancedOpen ? (
+          <div className="space-y-4 border-t border-border px-6 pb-6 pt-5">
+            <div className="rounded-lg border border-border/80 bg-surface/40 p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-text">
+                {t("llm_council.models_heading", {
+                  defaultValue: "Model Council Setup",
+                })}
+              </h3>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {Object.entries(models).map(([key, config]) => (
+                  <article
+                    key={key}
+                    className="rounded-md border border-border bg-card p-3"
+                  >
+                    <p className="text-xs font-medium tracking-wide text-muted-text">
+                      {modelKeyLabel(key, t)}
                     </p>
-                    <p className="mt-1 text-[11px] text-muted-text break-words">
-                      {provider.system_prompt_preview ||
-                        t("llm_council.default_meta", { defaultValue: "default" })}
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {config.provider}
                     </p>
-                    {probe ? (
-                      <p className="mt-2 text-xs text-muted-text">
-                        {probe.success
-                          ? t("llm_council.health_probe_ok", {
-                              defaultValue: "Probe OK ({{latency}} ms)",
-                              latency: probe.latency_ms,
-                            })
-                          : t("llm_council.health_probe_failed", {
-                              defaultValue: "Probe failed ({{latency}} ms)",
-                              latency: probe.latency_ms,
-                            })}
-                      </p>
-                    ) : null}
+                    <p className="mt-1 break-all text-xs text-muted-text">{config.model}</p>
+                    <p className="mt-2 text-[11px] text-muted-text">
+                      {modelMetaLine(config, t) ||
+                        t("llm_council.default_meta", {
+                          defaultValue: "default",
+                        })}
+                    </p>
                   </article>
-                );
-              })}
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/80 bg-surface/40 p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-accent" />
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-text">
+                    {t("llm_council.health_heading", {
+                      defaultValue: "Provider Health Check",
+                    })}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-xs text-muted-text">
+                    <input
+                      type="checkbox"
+                      checked={healthLiveProbe}
+                      onChange={(e) => setHealthLiveProbe(e.target.checked)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                    {t("llm_council.health_live_probe_label", {
+                      defaultValue: "Enable live probe",
+                    })}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onHealthCheck}
+                    disabled={healthMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {healthMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        {t("llm_council.health_running_btn", {
+                          defaultValue: "Checking...",
+                        })}
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        {t("llm_council.health_btn", {
+                          defaultValue: "Health Check",
+                        })}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <p className="mt-2 text-xs text-muted-text">
+                {healthLiveProbe
+                  ? t("llm_council.health_live_note", {
+                      defaultValue:
+                        "Live probe will call provider APIs and verify response availability.",
+                    })
+                  : t("llm_council.health_config_note", {
+                      defaultValue:
+                        "Config-only check validates API keys and model/prompt configuration without external calls.",
+                    })}
+              </p>
+
+              {healthError ? <div className="mt-3"><ApiErrorState message={healthError} /></div> : null}
+
+              {healthResult ? (
+                <div className="mt-3 space-y-3">
+                  {!healthResult.ok && healthResult.errors.length > 0 ? (
+                    <div className="rounded-md border border-amber-300/40 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-900/20 dark:text-amber-200">
+                      <p className="font-semibold">
+                        {t("llm_council.health_issues_title", {
+                          defaultValue: "Issues detected",
+                        })}
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {healthResult.errors.map((entry) => (
+                          <li key={entry}>• {entry}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {Object.entries(healthResult.providers).map(([key, provider]) => {
+                      const probe = healthResult.probe_results?.[
+                        key as keyof NonNullable<LlmCouncilHealthResponse["probe_results"]>
+                      ];
+                      return (
+                        <article key={key} className="rounded-md border border-border bg-card p-3">
+                          <p className="text-xs uppercase tracking-wide text-muted-text">{key}</p>
+                          <p className="mt-1 break-all text-xs text-foreground">{provider.model}</p>
+                          <p className="mt-2 text-xs text-muted-text">
+                            {provider.api_key_present
+                              ? t("llm_council.health_api_key_yes", { defaultValue: "API key: present" })
+                              : t("llm_council.health_api_key_no", { defaultValue: "API key: missing" })}
+                          </p>
+                          <p className="mt-1 text-[11px] text-muted-text break-words">
+                            {provider.system_prompt_preview ||
+                              t("llm_council.default_meta", { defaultValue: "default" })}
+                          </p>
+                          {probe ? (
+                            <p className="mt-2 text-xs text-muted-text">
+                              {probe.success
+                                ? t("llm_council.health_probe_ok", {
+                                    defaultValue: "Probe OK ({{latency}} ms)",
+                                    latency: probe.latency_ms,
+                                  })
+                                : t("llm_council.health_probe_failed", {
+                                    defaultValue: "Probe failed ({{latency}} ms)",
+                                    latency: probe.latency_ms,
+                                  })}
+                            </p>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -581,7 +706,7 @@ export function LlmCouncilPage() {
       {result ? (
         <>
           {result.retrieved_cases && result.retrieved_cases.length > 0 ? (
-            <section className="rounded-lg border border-border bg-card p-5">
+            <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-foreground">
                 {t("llm_council.retrieved_cases_title", {
                   defaultValue: "Retrieved Supporting Cases",
@@ -630,8 +755,8 @@ export function LlmCouncilPage() {
             </section>
           ) : null}
 
-          <section className="rounded-lg border border-border bg-card p-5">
-            <div className="flex items-center gap-2">
+          <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
+            <div className="flex items-center gap-2 border-b border-border pb-3">
               <Sparkles className="h-4 w-4 text-accent" />
               <h2 className="text-lg font-semibold text-foreground">
                 {t("llm_council.moderator_title", {
@@ -1079,7 +1204,7 @@ export function LlmCouncilPage() {
             {sortedOpinions.map((opinion) => (
               <article
                 key={opinion.provider_key}
-                className="rounded-lg border border-border bg-card p-5"
+                className="rounded-xl border border-border/80 bg-card p-5 shadow-sm"
               >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1161,7 +1286,7 @@ export function LlmCouncilPage() {
           </section>
         </>
       ) : (
-        <section className="rounded-lg border border-dashed border-border bg-card p-6 text-sm text-muted-text">
+        <section className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted-text shadow-sm">
           <div className="flex items-center gap-2">
             {councilMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin text-accent" />
