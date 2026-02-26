@@ -568,7 +568,13 @@
     "advanced_filters_hint": "僅顯示目前範圍內有資料的篩選選項。",
     "available_options": "可用選項",
     "no_options_available": "目前範圍沒有可用選項。",
-    "no_matching_option": "找不到符合的選項。"
+    "no_matching_option": "找不到符合的選項。",
+    "insights_label": "分析自動洞察",
+    "insights_total_label": "符合案件",
+    "insights_top_outcome_label": "最常見結果",
+    "insights_top_nature_label": "最常見案件性質",
+    "insights_top_visa_label": "最常見簽證類別",
+    "insights_of_cases": "的案件"
   },
   "lineage": {
     "title": "法院沿革時間軸",

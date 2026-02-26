@@ -568,7 +568,13 @@
     "advanced_filters_hint": "Only options with data in the current scope are shown.",
     "available_options": "Available options",
     "no_options_available": "No options available for this scope.",
-    "no_matching_option": "No matching options."
+    "no_matching_option": "No matching options.",
+    "insights_label": "Analytics auto-insights",
+    "insights_total_label": "Matching Cases",
+    "insights_top_outcome_label": "Top Outcome",
+    "insights_top_nature_label": "Top Case Nature",
+    "insights_top_visa_label": "Top Visa Class",
+    "insights_of_cases": "of cases"
   },
   "lineage": {
     "title": "Court Lineage Timeline",

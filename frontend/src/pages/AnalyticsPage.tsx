@@ -1,4 +1,10 @@
-import { useState, useMemo, useTransition, useEffect, useCallback } from "react";
+import {
+  useState,
+  useMemo,
+  useTransition,
+  useEffect,
+  useCallback,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCcw } from "lucide-react";
 import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
@@ -8,9 +14,13 @@ import { OutcomeAnalysisSection } from "@/components/analytics/OutcomeAnalysisSe
 import { FlowTrendsSection } from "@/components/analytics/FlowTrendsSection";
 import { ConceptIntelligenceSection } from "@/components/analytics/ConceptIntelligenceSection";
 import { VisaFamiliesSection } from "@/components/analytics/VisaFamiliesSection";
+import { AnalyticsInsightsPanel } from "@/components/analytics/AnalyticsInsightsPanel";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { useAnalyticsFilterOptions } from "@/hooks/use-analytics";
-import type { AnalyticsFilterOption, AnalyticsFilterParams } from "@/types/case";
+import type {
+  AnalyticsFilterOption,
+  AnalyticsFilterParams,
+} from "@/types/case";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const DEFAULT_YEAR_FROM = 2000;
@@ -71,6 +81,7 @@ export function AnalyticsPage() {
 
   const {
     data: analyticsFilterOptions,
+    isLoading: isFilterOptionsLoading,
     isError: isFilterOptionsError,
     error: filterOptionsError,
     refetch: refetchFilterOptions,
@@ -109,12 +120,17 @@ export function AnalyticsPage() {
     selectedOutcomes.length > 0;
 
   const scopeSummary = useMemo(() => {
-    const parts: string[] = [court || t("filters.all_courts"), `${yearFrom}–${yearTo}`];
+    const parts: string[] = [
+      court || t("filters.all_courts"),
+      `${yearFrom}–${yearTo}`,
+    ];
     if (selectedNatures.length > 0) {
       parts.push(`${t("analytics.case_nature")}: ${selectedNatures.length}`);
     }
     if (selectedSubclasses.length > 0) {
-      parts.push(`${t("analytics.visa_subclass")}: ${selectedSubclasses.length}`);
+      parts.push(
+        `${t("analytics.visa_subclass")}: ${selectedSubclasses.length}`,
+      );
     }
     if (selectedOutcomes.length > 0) {
       parts.push(`${t("filters.outcome")}: ${selectedOutcomes.length}`);
@@ -240,6 +256,11 @@ export function AnalyticsPage() {
           />
         )}
       </section>
+
+      <AnalyticsInsightsPanel
+        data={analyticsFilterOptions}
+        isLoading={isFilterOptionsLoading}
+      />
 
       <section className="space-y-4" data-testid="analytics-success-estimate">
         <div>
