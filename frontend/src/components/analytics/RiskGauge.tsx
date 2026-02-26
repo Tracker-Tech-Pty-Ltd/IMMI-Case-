@@ -1,10 +1,13 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 interface RiskGaugeProps {
   /** 0-100 risk/success score */
   score: number;
   /** Text label displayed below the score */
   label: string;
+  /** Optional baseline value (0-100) to show a comparison marker */
+  baseline?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -23,7 +26,8 @@ function arcStrokeColor(score: number): string {
   return "#22c55e";
 }
 
-export function RiskGauge({ score, label }: RiskGaugeProps) {
+export function RiskGauge({ score, label, baseline }: RiskGaugeProps) {
+  const { t } = useTranslation();
   const clamped = clamp(Math.round(score), 0, 100);
   const colorClass = useMemo(() => scoreColorClass(clamped), [clamped]);
   const strokeColor = useMemo(() => arcStrokeColor(clamped), [clamped]);
@@ -67,6 +71,19 @@ export function RiskGauge({ score, label }: RiskGaugeProps) {
         >
           {clamped}
         </text>
+        {/* Baseline marker */}
+        {baseline !== undefined && (
+          <text
+            data-testid="risk-gauge-baseline"
+            x="50%"
+            y="90%"
+            textAnchor="middle"
+            fontSize={10}
+            fill="var(--color-text-muted, #94a3b8)"
+          >
+            {t("analytics.vs_avg", { defaultValue: "vs avg" })} {baseline}%
+          </text>
+        )}
       </svg>
       <span
         data-testid="risk-gauge-label"

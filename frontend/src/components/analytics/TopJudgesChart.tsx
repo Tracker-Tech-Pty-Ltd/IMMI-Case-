@@ -39,8 +39,19 @@ function TopJudgesChartInner({ data }: TopJudgesChartProps) {
   });
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end">
+    <div
+      role="img"
+      aria-label={t("analytics.top_judges_aria", {
+        defaultValue: "Bar chart of most active judges by case count",
+      })}
+      className="space-y-2"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-text">
+          {t("analytics.most_active_judges", {
+            defaultValue: "Most Active Judges",
+          })}
+        </span>
         <Link
           to="/judge-profiles"
           className="text-xs font-medium text-accent hover:underline"
@@ -76,7 +87,11 @@ function TopJudgesChartInner({ data }: TopJudgesChartProps) {
             ) => {
               const judge = payload?.[0]?.payload;
               if (!judge) return "";
-              return `${judge.fullName ?? judge.name} (${judge.courts.join(", ")})`;
+              const courtsText = judge.courts.join(", ");
+              const profileHint = t("analytics.judge_profile_hint", {
+                defaultValue: "Win rate data on Judge Profile page",
+              });
+              return `${judge.fullName ?? judge.name} (${courtsText}) — ${profileHint}`;
             }}
             contentStyle={{
               backgroundColor: "var(--color-background-card)",

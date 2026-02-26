@@ -1,76 +1,64 @@
 import { memo } from "react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-  LabelList,
-} from "recharts";
+import { useTranslation } from "react-i18next";
 
 interface OutcomeFunnelChartProps {
   winCount: number;
   lossCount: number;
 }
 
-function OutcomeFunnelChartInner({
-  winCount,
-  lossCount,
-}: OutcomeFunnelChartProps) {
-  const data = [
-    {
-      name: "Cases",
-      win: winCount,
-      loss: lossCount,
-    },
-  ];
+function OutcomeFunnelChartInner({ winCount, lossCount }: OutcomeFunnelChartProps) {
+  const { t } = useTranslation();
+  const total = winCount + lossCount;
+  const winPct = total > 0 ? (winCount / total) * 100 : 0;
+  const lossPct = total > 0 ? (lossCount / total) * 100 : 0;
 
   return (
-    <ResponsiveContainer width="100%" height={72}>
-      <BarChart
-        data={data}
-        layout="vertical"
-        margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
-      >
-        <XAxis type="number" hide />
-        <YAxis type="category" dataKey="name" hide />
-        <Tooltip
-          formatter={(
-            value: number | string | undefined,
-            name: string | undefined,
-          ) => [
-            Number(value ?? 0).toLocaleString(),
-            name === "win" ? "Wins" : "Losses",
-          ]}
-          contentStyle={{
-            backgroundColor: "var(--color-background-card)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius)",
-            color: "var(--color-text)",
-          }}
-        />
-        <Bar dataKey="win" stackId="total" radius={[4, 0, 0, 4]}>
-          <Cell fill="#1f8a4d" />
-          <LabelList
-            dataKey="win"
-            position="insideLeft"
-            fill="#ffffff"
-            fontSize={11}
-          />
-        </Bar>
-        <Bar dataKey="loss" stackId="total" radius={[0, 4, 4, 0]}>
-          <Cell fill="#b64040" />
-          <LabelList
-            dataKey="loss"
-            position="insideRight"
-            fill="#ffffff"
-            fontSize={11}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+    <div
+      role="img"
+      aria-label={t("analytics.outcome_funnel_aria", {
+        win: winCount.toLocaleString(),
+        loss: lossCount.toLocaleString(),
+        winPct: winPct.toFixed(1),
+        defaultValue: `Wins: ${winCount.toLocaleString()} (${winPct.toFixed(1)}%), Losses: ${lossCount.toLocaleString()} (${lossPct.toFixed(1)}%)`,
+      })}
+      data-testid="outcome-funnel-chart"
+      className="space-y-2"
+    >
+      {/* Two stat numbers */}
+      <div className="flex justify-between text-xs">
+        <span className="font-semibold text-green-600 dark:text-green-400">
+          {t("analytics.wins", { defaultValue: "Wins" })}: {winCount.toLocaleString()}
+        </span>
+        <span className="font-semibold text-red-600 dark:text-red-400">
+          {t("analytics.losses", { defaultValue: "Losses" })}: {lossCount.toLocaleString()}
+        </span>
+      </div>
+      {/* 100% stacked bar */}
+      <div className="flex h-7 overflow-hidden rounded-md">
+        {total > 0 ? (
+          <>
+            <div
+              className="flex items-center justify-center text-xs font-medium text-white"
+              style={{ width: `${winPct}%`, backgroundColor: "#1f8a4d" }}
+              data-testid="win-bar"
+            >
+              {winPct >= 12 ? `${winPct.toFixed(0)}%` : ""}
+            </div>
+            <div
+              className="flex items-center justify-center text-xs font-medium text-white"
+              style={{ width: `${lossPct}%`, backgroundColor: "#b64040" }}
+              data-testid="loss-bar"
+            >
+              {lossPct >= 12 ? `${lossPct.toFixed(0)}%` : ""}
+            </div>
+          </>
+        ) : (
+          <div className="w-full rounded-md bg-surface text-center text-xs text-muted-text">
+            {t("common.no_data", { defaultValue: "No data" })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

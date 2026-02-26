@@ -26,6 +26,16 @@ function ConceptCooccurrenceHeatmapInner({
     );
   }
 
+  // Find max count excluding diagonal
+  let maxCount = 1;
+  for (const rowC of concepts) {
+    for (const colC of concepts) {
+      if (rowC === colC) continue; // skip diagonal
+      const count = data.matrix[rowC]?.[colC]?.count ?? 0;
+      if (count > maxCount) maxCount = count;
+    }
+  }
+
   return (
     <div className="overflow-x-auto">
       <div
@@ -54,6 +64,24 @@ function ConceptCooccurrenceHeatmapInner({
               {rowConcept}
             </div>
             {concepts.map((colConcept) => {
+              const isDiagonal = rowConcept === colConcept;
+
+              if (isDiagonal) {
+                return (
+                  <div
+                    key={`${rowConcept}-${colConcept}`}
+                    className="flex items-center justify-center rounded-sm p-1.5 text-[10px]"
+                    style={{
+                      backgroundColor: "var(--color-border-light)",
+                      color: "var(--color-text-muted)",
+                    }}
+                    title={`${rowConcept} (self)`}
+                  >
+                    {"—"}
+                  </div>
+                );
+              }
+
               const cell = data.matrix[rowConcept]?.[colConcept];
               const count = cell?.count ?? 0;
               const winRate = cell?.win_rate ?? 0;

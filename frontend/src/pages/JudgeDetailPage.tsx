@@ -2,9 +2,6 @@ import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   Tooltip,
   AreaChart,
   Area,
@@ -12,6 +9,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
+import { OutcomeStackedBar } from "@/components/shared/OutcomeStackedBar";
 import { JudgeHero } from "@/components/judges/JudgeHero";
 import { CourtComparisonCard } from "@/components/judges/CourtComparisonCard";
 import { RepresentationCard } from "@/components/judges/RepresentationCard";
@@ -21,7 +19,6 @@ import { NatureBreakdownChart } from "@/components/judges/NatureBreakdownChart";
 import { ConceptEffectivenessTable } from "@/components/judges/ConceptEffectivenessTable";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { useJudgeProfile, useJudgeBio } from "@/hooks/use-judges";
-import { OUTCOME_COLORS } from "@/components/judges/constants";
 
 const SECTION_NAV = [
   { id: "section-outcomes", key: "judges.section_outcomes" },
@@ -93,13 +90,6 @@ export function JudgeDetailPage() {
     );
   }
 
-  const outcomeRows = Object.entries(data.outcome_distribution).map(
-    ([outcome, count]) => ({
-      outcome,
-      count,
-    }),
-  );
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -163,41 +153,7 @@ export function JudgeDetailPage() {
           <h2 className="mb-3 text-base font-semibold text-foreground">
             {t("judges.outcome_distribution")}
           </h2>
-          {outcomeRows.length ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={outcomeRows}
-                  dataKey="count"
-                  nameKey="outcome"
-                  outerRadius={90}
-                >
-                  {outcomeRows.map((row, idx) => (
-                    <Cell
-                      key={row.outcome}
-                      fill={OUTCOME_COLORS[idx % OUTCOME_COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: number | string | undefined) => [
-                    Number(value ?? 0).toLocaleString(),
-                    t("judges.cases"),
-                  ]}
-                  contentStyle={{
-                    backgroundColor: "var(--color-background-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius)",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-sm text-muted-text">
-              {t("judges.no_outcome_data")}
-            </p>
-          )}
+          <OutcomeStackedBar data={data.outcome_distribution} height={36} />
         </section>
 
         <section

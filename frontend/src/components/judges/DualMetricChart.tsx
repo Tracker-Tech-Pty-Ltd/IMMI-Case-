@@ -20,9 +20,12 @@ interface MetricData {
 
 interface DualMetricChartProps {
   data: MetricData[];
+  label1?: string;
+  label2?: string;
   title?: string;
   height?: number;
   horizontal?: boolean;
+  layout?: "horizontal" | "vertical";
 }
 
 /**
@@ -31,11 +34,18 @@ interface DualMetricChartProps {
  */
 export function DualMetricChart({
   data,
+  label1,
+  label2,
   title,
   height = 300,
   horizontal = false,
+  layout,
 }: DualMetricChartProps) {
   const { t } = useTranslation();
+
+  // Resolve effective layout: explicit `layout` prop takes precedence over legacy `horizontal` bool
+  const isHorizontal =
+    layout === "horizontal" || (layout === undefined && horizontal);
 
   if (!data || data.length === 0) {
     return (
@@ -49,9 +59,9 @@ export function DualMetricChart({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart
         data={data}
-        layout={horizontal ? "vertical" : "vertical"}
+        layout={isHorizontal ? "horizontal" : "vertical"}
         margin={
-          horizontal
+          isHorizontal
             ? { top: 5, right: 30, left: 100, bottom: 5 }
             : { top: 5, right: 10, left: -20, bottom: 5 }
         }
@@ -61,7 +71,7 @@ export function DualMetricChart({
           stroke="var(--color-border)"
           opacity={0.35}
         />
-        {!horizontal ? (
+        {!isHorizontal ? (
           <>
             <XAxis
               dataKey="name"
@@ -109,8 +119,10 @@ export function DualMetricChart({
             color: "var(--color-text-secondary)",
           }}
           formatter={(value: string) => {
+            // Prefer explicit label1/label2 props; fall back to per-item labels
             const item = data[0];
-            return value === "value1" ? item.label1 : item.label2;
+            if (value === "value1") return label1 ?? item.label1;
+            return label2 ?? item.label2;
           }}
         />
         <Bar
@@ -128,7 +140,16 @@ export function DualMetricChart({
   );
 
   return (
-    <div className="w-full">
+    <div
+      role="img"
+      aria-label={
+        title ??
+        t("judges.dual_metric_chart", {
+          defaultValue: "Dual metric comparison chart",
+        })
+      }
+      className="w-full"
+    >
       {title && (
         <h3 className="mb-3 text-sm font-semibold text-foreground">{title}</h3>
       )}
