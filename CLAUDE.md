@@ -198,6 +198,30 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
 - 缺少律師代理數據（representative_name 僅為 Y/N 標記）
 - 法律概念需要大小寫正規化
 
+## Judge Bios Database (New - 2026-02-27)
+
+**104 位 MRT/AAT/ART 成員傳記資料**（`downloaded_cases/judge_bios.json`，gitignored）：
+- **資料表**: `judge_bios` — 同時存在於 SQLite (`cases.db`) 和 Supabase（含 FTS5 全文搜索）
+- **API**: `GET /api/v1/analytics/judge-bio?name=<judge_name>` — 回傳完整傳記含 `legal_status`
+- **欄位**: `id`, `full_name`, `role`, `court`, `appointed_year`, `registry`, `previously`, `current_role_desc`, `education` (JSONB), `notable_cases` (JSONB), `legal_status`, `notes`, `photo_url`, ...
+- **法律資格研究 (2026-02-27, 完成)**：
+  - `confirmed_lawyer` (7): Denise Connolly, Kate Millar, Meena Sripathy, Christopher Smolicz, Amanda Mendes Da Costa, Margie Bourke, Anne Grant
+  - `confirmed_non_lawyer` (7): Peter Emmerton, Hugh Sanderson, Steven Norman, George Haddad, Tim Connellan, Philippa McIntosh, David McCulloch
+  - 90 位未設定（大多數有法律學位，未深入調查）
+- **研究來源**:
+  - NLA Trove 數位化年報（2001-02: `nla.obj-2357993137`；2006-07: `nla.obj-1113025881`）
+  - Crikey 2019「AAT Zoo」調查（星號 * = 無已知法律資格）
+  - NSW Law Almanac（確認入律師名冊日期）
+  - 政府任命公告（ParlInfo, AG.gov.au）
+- **同步**: 修改 `judge_bios.json` 後需手動重新執行同步（直接 upsert 到 Supabase via service role key）
+- **Migration**: `supabase/migrations/20260227100000_add_judge_bios_legal_status.sql`
+
+**NLA Trove MRT-RRT 年報 Object IDs**（含傳記頁面，供後續研究）：
+- 2001/02: `nla.obj-2357993137` (147pp，pp.68-85 有傳記)
+- 2006/07: `nla.obj-1113025881` (204pp，pp.126-147 Appendix 4 有傳記)
+- 2005/06: `nla.obj-990186831` | 2007/08: `nla.obj-2177343529` | 2008/09: `nla.obj-2312919142`
+- 2010+ 年報：僅表格，無傳記文字
+
 ## MCP Servers Configuration (2026-02-20)
 
 **已配置的 MCP 伺服器**（位置：`.mcp.json`）：
