@@ -3071,9 +3071,37 @@ def analytics_judge_compare():
     names = names[:4]
     cases = _apply_filters(_get_all_cases())
 
+    # Resolve canonical keys for all requested judges upfront
+    judge_meta: dict[str, tuple[str, str]] = {}  # canonical_key → (canonical_name, display_name)
+    for name in names:
+        canonical_name, display_name = _judge_identity(name)
+        canonical_name = canonical_name or (_normalise_judge_name(name) or name)
+        display_name = display_name or canonical_name
+        judge_meta[canonical_name.lower()] = (canonical_name, display_name)
+
+    target_keys: set[str] = set(judge_meta.keys())
+
+    # Single scan: partition cases into per-judge buckets (1× instead of 4×)
+    judge_case_lists: dict[str, list[ImmigrationCase]] = defaultdict(list)
+    for case in cases:
+        seen_for_case: set[str] = set()
+        for raw_name in _split_judges(case.judges):
+            can_key = _judge_identity(raw_name, case.court_code, case.year)[0].lower()
+            if can_key in target_keys and can_key not in seen_for_case:
+                judge_case_lists[can_key].append(case)
+                seen_for_case.add(can_key)
+
+    # Build profiles in original name order; fall back to _collect_cases_for_judge for unknown aliases
     profiles = []
     for name in names:
-        judge_cases, canonical_name, display_name = _collect_cases_for_judge(cases, name)
+        canonical_name, display_name = _judge_identity(name)
+        canonical_name = canonical_name or (_normalise_judge_name(name) or name)
+        display_name = display_name or canonical_name
+        canonical_key = canonical_name.lower()
+        judge_cases = judge_case_lists.get(canonical_key)
+        if not judge_cases:
+            # Fallback for aliases that _judge_identity cannot resolve via lru_cache
+            judge_cases, canonical_name, display_name = _collect_cases_for_judge(cases, name)
         profile = _judge_profile_payload(display_name, judge_cases, include_recent_cases=False)
         profile["judge"]["canonical_name"] = canonical_name
         profiles.append(profile)
@@ -3153,7 +3181,8 @@ def analytics_concept_cooccurrence():
     pair_totals: Counter = Counter()
     pair_wins: Counter = Counter()
     for case in cases:
-        concepts = sorted(set(_split_concepts(case.legal_concepts)).intersection(top_set))
+        # Cap to 8 top concepts per case to bound combinations: C(8,2)=28, never C(15,2)=105
+        concepts = sorted(set(_split_concepts(case.legal_concepts)).intersection(top_set))[:8]
         if len(concepts) < 2:
             continue
         won = _is_win(_normalise_outcome(case.outcome), case.court_code)

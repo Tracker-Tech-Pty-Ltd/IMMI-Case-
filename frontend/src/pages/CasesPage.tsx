@@ -302,7 +302,7 @@ export function CasesPage() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [viewMode, data, focusedIdx, navigate, toggleSelect]);
+  }, [viewMode, data?.cases, focusedIdx, navigate, toggleSelect]);
 
   const cases = data?.cases ?? [];
   const total = data?.total ?? 0;

@@ -36,10 +36,8 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
   const [selectedConcepts, setSelectedConcepts] = useState<string[]>([]);
   const [deepModalOpen, setDeepModalOpen] = useState(false);
 
-  const {
-    data: filterOptions,
-    isError: isFilterOptionsError,
-  } = useFilterOptions();
+  const { data: filterOptions, isError: isFilterOptionsError } =
+    useFilterOptions();
   const { data: outcomes, isError: isOutcomesError } = useOutcomes(filters);
   const { data: conceptOptions, isError: isConceptOptionsError } =
     useLegalConcepts(filters, 18);
@@ -62,7 +60,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
     return Object.keys(outcomes.by_subclass).toSorted(
       (a, b) => Number(a) - Number(b),
     );
-  }, [outcomes]);
+  }, [outcomes?.by_subclass]);
 
   const conceptList = conceptOptions?.concepts ?? [];
 
@@ -168,9 +166,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
           />
         </div>
       ) : !data ? (
-        <div className="mt-4 text-sm text-muted-text">
-          {t("chart.no_data")}
-        </div>
+        <div className="mt-4 text-sm text-muted-text">{t("chart.no_data")}</div>
       ) : (
         <div className="mt-4 space-y-4">
           <div className="grid gap-4 lg:grid-cols-4">
