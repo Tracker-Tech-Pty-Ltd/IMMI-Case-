@@ -11,6 +11,15 @@
         ]
       },
       {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'supabase/migrations/' && [ -f \"$CLAUDE_FILE_PATH\" ]; then echo 'BLOCK: Migration 檔案為唯讀（append-only）。請建立新的 migration 檔案，勿修改已存在的版本' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
@@ -36,6 +45,33 @@
           {
             "type": "command",
             "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$' && grep -n '^[[:space:]]*print(' \"$CLAUDE_FILE_PATH\" > /dev/null 2>&1; then echo '注意: 檔案中有 print() 語句，考慮改用 logging'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'frontend/src/.*\\.(ts|tsx)$' && grep -qE 'console\\.log\\(' \"$CLAUDE_FILE_PATH\" 2>/dev/null; then count=$(grep -cE 'console\\.log\\(' \"$CLAUDE_FILE_PATH\" 2>/dev/null); echo \"注意: 檔案中有 ${count} 處 console.log()，上線前請移除或改用 console.debug()\"; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'i18n/locales/(en|zh-TW)\\.json$'; then python3 -c \"\nimport json, sys\ntry:\n    en = json.load(open('/Users/d/Developer/IMMI-Case-/frontend/src/i18n/locales/en.json'))\n    tw = json.load(open('/Users/d/Developer/IMMI-Case-/frontend/src/i18n/locales/zh-TW.json'))\n    en_k, tw_k = set(en.keys()), set(tw.keys())\n    missing_tw = en_k - tw_k\n    missing_en = tw_k - en_k\n    if missing_tw:\n        print(f'⚠️  zh-TW 缺少 {len(missing_tw)} 個頂層 key: {\\\", \\\".join(sorted(missing_tw)[:5])}')\n    elif missing_en:\n        print(f'⚠️  en 缺少 {len(missing_en)} 個頂層 key: {\\\", \\\".join(sorted(missing_en)[:5])}')\n    else:\n        print(f'✓ i18n 同步: en={len(en_k)} zh-TW={len(tw_k)} 頂層 key 一致')\nexcept Exception as e:\n    print(f'i18n 檢查失敗: {e}')\n\" 2>&1; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -q 'web/routes/api.py'; then lines=$(wc -l < \"$CLAUDE_FILE_PATH\" 2>/dev/null); if [ \"$lines\" -gt 4500 ]; then echo \"⚠️  api.py 已達 ${lines} 行（超過 4500 行門檻），考慮拆分為子模組\"; fi; fi"
           }
         ]
       },
