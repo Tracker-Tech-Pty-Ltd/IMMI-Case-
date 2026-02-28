@@ -101,6 +101,32 @@ if (validationWarnings.length > 0) {
   }
 }
 
+// ─── Dark/light symmetry validation ──────────────────────────
+function validateDarkLightSymmetry(
+  light: Record<string, unknown>,
+  dark: Record<string, unknown>,
+  prefix = "color",
+): void {
+  for (const key of Object.keys(light)) {
+    if (key === "dark") continue;
+    if (!(key in dark)) {
+      console.warn(
+        `⚠ WARN: ${prefix}.dark.${key.replace(prefix + ".", "")} is missing (exists in light mode)`,
+      );
+    } else if (
+      typeof light[key] === "object" &&
+      typeof dark[key] === "object"
+    ) {
+      validateDarkLightSymmetry(
+        light[key] as Record<string, unknown>,
+        dark[key] as Record<string, unknown>,
+        `${prefix}.${key}`,
+      );
+    }
+  }
+}
+validateDarkLightSymmetry(tokens.color, tokens.color.dark);
+
 // ─── CSS generation helpers ───────────────────────────────────
 
 /**
@@ -257,7 +283,11 @@ if (tokens.animation?.easing) {
   for (const [key, value] of Object.entries(
     tokens.animation.easing as Record<string, string>,
   )) {
-    css += `  --ease-${key}: ${value};\n`;
+    // Keys in JSON are "ease-in", "ease-out", "ease-in-out".
+    // Strip the leading "ease-" prefix so we get --ease-in, --ease-out, --ease-in-out
+    // instead of the doubled --ease-ease-in, --ease-ease-out, --ease-ease-in-out.
+    const cssKey = key.startsWith("ease-") ? key.slice(5) : key;
+    css += `  --ease-${cssKey}: ${value};\n`;
   }
 }
 

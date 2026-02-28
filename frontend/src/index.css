@@ -39,6 +39,7 @@
   --color-court-fca: var(--color-court-fca);
   --color-court-fcca: var(--color-court-fcca);
   --color-court-fedc: var(--color-court-fedcfamc2g);
+  --color-court-fedcfamc2g: var(--color-court-fedcfamc2g);
   --color-court-hca: var(--color-court-hca);
   --color-court-rrta: var(--color-court-rrta);
   --color-court-mrta: var(--color-court-mrta);
@@ -83,6 +84,9 @@
   --line-height-tight: var(--line-height-tight);
   --line-height-normal: var(--line-height-normal);
   --line-height-relaxed: var(--line-height-relaxed);
+  --letter-spacing-tight: var(--letter-spacing-tight);
+  --letter-spacing-normal: var(--letter-spacing-normal);
+  --letter-spacing-wide: var(--letter-spacing-wide);
   --font-weight-light: var(--font-weight-light);
   --font-weight-medium: var(--font-weight-medium);
   --font-weight-semibold: var(--font-weight-semibold);

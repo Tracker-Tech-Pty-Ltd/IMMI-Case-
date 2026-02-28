@@ -1,5 +1,5 @@
 /* Auto-generated from tokens.json — do not edit manually */
-/* Generated: 2026-02-28T16:33:41.203Z */
+/* Generated: 2026-02-28T17:07:11.592Z */
 
 :root {
   /* ── Colors ── */
@@ -104,18 +104,19 @@
   --duration-slow: 500ms;
 
   /* ── Animation: Easing ── */
-  --ease-ease-in: cubic-bezier(0.4, 0, 1, 1);
-  --ease-ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
   /* ── Dark mode color overrides ── */
   --color-primary: #d0d4da;
   --color-primary-light: #a8b2be;
-  --color-primary-lighter: #3a5572;
+  --color-primary-lighter: #5a7f9f;
   --color-accent: #c9942e;
   --color-accent-light: #e0b04a;
+  --color-accent-muted: rgba(201, 148, 46, 0.12);
   --color-background: #111820;
   --color-background-card: #192230;
   --color-background-sidebar: #141c28;

@@ -1,5 +1,5 @@
 /* Auto-generated from tokens.json — do not edit manually */
-/* Generated: 2026-02-28T16:33:41.203Z */
+/* Generated: 2026-02-28T17:07:11.592Z */
 
 export const tokens = {
   "color": {
@@ -56,11 +56,12 @@ export const tokens = {
       "primary": {
         "DEFAULT": "#d0d4da",
         "light": "#a8b2be",
-        "lighter": "#3a5572"
+        "lighter": "#5a7f9f"
       },
       "accent": {
         "DEFAULT": "#c9942e",
-        "light": "#e0b04a"
+        "light": "#e0b04a",
+        "muted": "rgba(201, 148, 46, 0.12)"
       },
       "background": {
         "DEFAULT": "#111820",

@@ -89,7 +89,15 @@ describe("Group 1 – tokens.json structure validation", () => {
   it("color.dark has the same structural keys as light-mode color (excluding 'dark' and 'court')", () => {
     // Light mode has: primary, accent, background, chart, border, text, semantic, court, dark
     // Dark mode mirror (color.dark) is expected to have: primary, accent, background, chart, border, text, semantic
-    const expectedDarkKeys = ["primary", "accent", "background", "chart", "border", "text", "semantic"];
+    const expectedDarkKeys = [
+      "primary",
+      "accent",
+      "background",
+      "chart",
+      "border",
+      "text",
+      "semantic",
+    ];
     const darkKeys = Object.keys(tokensJSON.color.dark);
     for (const key of expectedDarkKeys) {
       expect(darkKeys, `color.dark is missing key: "${key}"`).toContain(key);
@@ -224,7 +232,17 @@ describe("Group 4 – tokens.css completeness", () => {
   });
 
   it("tokens.css contains all 9 court color variables (lowercase)", () => {
-    const courts = ["aata", "arta", "fca", "fcca", "fedcfamc2g", "hca", "rrta", "mrta", "fmca"];
+    const courts = [
+      "aata",
+      "arta",
+      "fca",
+      "fcca",
+      "fedcfamc2g",
+      "hca",
+      "rrta",
+      "mrta",
+      "fmca",
+    ];
     for (const court of courts) {
       expect(
         tokensCSS,
@@ -265,13 +283,22 @@ describe("Group 5 – tokens.ts exports", () => {
   });
 
   it("tokens.ts exports courtColors with all 9 courts", () => {
-    const courts = ["AATA", "ARTA", "FCA", "FCCA", "FedCFamC2G", "HCA", "RRTA", "MRTA", "FMCA"];
+    const courts = [
+      "AATA",
+      "ARTA",
+      "FCA",
+      "FCCA",
+      "FedCFamC2G",
+      "HCA",
+      "RRTA",
+      "MRTA",
+      "FMCA",
+    ];
     expect(tokensTS).toContain("export const courtColors");
     for (const court of courts) {
-      expect(
-        tokensTS,
-        `tokens.ts courtColors is missing "${court}"`,
-      ).toContain(court);
+      expect(tokensTS, `tokens.ts courtColors is missing "${court}"`).toContain(
+        court,
+      );
     }
   });
 
@@ -323,7 +350,16 @@ describe("Group 6 – index.css @theme mapping", () => {
 
   it("@theme maps all 9 court colors", () => {
     // index.css uses shorter alias --color-court-fedc for FedCFamC2G
-    const courtAliases = ["aata", "arta", "fca", "fcca", "hca", "rrta", "mrta", "fmca"];
+    const courtAliases = [
+      "aata",
+      "arta",
+      "fca",
+      "fcca",
+      "hca",
+      "rrta",
+      "mrta",
+      "fmca",
+    ];
     for (const court of courtAliases) {
       expect(
         indexCSS,
@@ -365,7 +401,9 @@ describe("Group 7 – Typography tokens", () => {
 
   it("all lineHeight values are valid numeric strings", () => {
     const { lineHeight } = tokensJSON.typography;
-    for (const [key, value] of Object.entries(lineHeight as Record<string, string>)) {
+    for (const [key, value] of Object.entries(
+      lineHeight as Record<string, string>,
+    )) {
       expect(
         !isNaN(Number(value)),
         `lineHeight.${key} = "${value}" is not a valid number`,
@@ -375,7 +413,9 @@ describe("Group 7 – Typography tokens", () => {
 
   it("all fontWeight values are valid numeric strings (100–900 range)", () => {
     const { fontWeight } = tokensJSON.typography;
-    for (const [key, value] of Object.entries(fontWeight as Record<string, string>)) {
+    for (const [key, value] of Object.entries(
+      fontWeight as Record<string, string>,
+    )) {
       const num = Number(value);
       expect(
         !isNaN(num) && num >= 100 && num <= 900,
@@ -387,20 +427,18 @@ describe("Group 7 – Typography tokens", () => {
   it("tokens.css exposes --font-weight-* variables for all fontWeight keys", () => {
     const { fontWeight } = tokensJSON.typography;
     for (const key of Object.keys(fontWeight)) {
-      expect(
-        tokensCSS,
-        `tokens.css is missing --font-weight-${key}`,
-      ).toContain(`--font-weight-${key}:`);
+      expect(tokensCSS, `tokens.css is missing --font-weight-${key}`).toContain(
+        `--font-weight-${key}:`,
+      );
     }
   });
 
   it("tokens.css exposes --line-height-* variables for all lineHeight keys", () => {
     const { lineHeight } = tokensJSON.typography;
     for (const key of Object.keys(lineHeight)) {
-      expect(
-        tokensCSS,
-        `tokens.css is missing --line-height-${key}`,
-      ).toContain(`--line-height-${key}:`);
+      expect(tokensCSS, `tokens.css is missing --line-height-${key}`).toContain(
+        `--line-height-${key}:`,
+      );
     }
   });
 });
@@ -411,7 +449,9 @@ describe("Group 7 – Typography tokens", () => {
 describe("Group 8 – Spacing, radius, shadow, zIndex, animation completeness", () => {
   it("all spacing values in tokens.json are valid rem values", () => {
     const { spacing } = tokensJSON;
-    for (const [key, value] of Object.entries(spacing as Record<string, string>)) {
+    for (const [key, value] of Object.entries(
+      spacing as Record<string, string>,
+    )) {
       expect(
         /^\d+(\.\d+)?rem$/.test(value),
         `spacing.${key} = "${value}" is not a valid rem value`,
@@ -451,14 +491,16 @@ describe("Group 8 – Spacing, radius, shadow, zIndex, animation completeness", 
     expect(tokensCSS).toContain("--duration-fast:");
     expect(tokensCSS).toContain("--duration-normal:");
     expect(tokensCSS).toContain("--duration-slow:");
-    expect(tokensCSS).toContain("--ease-ease-in:");
-    expect(tokensCSS).toContain("--ease-ease-out:");
-    expect(tokensCSS).toContain("--ease-ease-in-out:");
+    expect(tokensCSS).toContain("--ease-in:");
+    expect(tokensCSS).toContain("--ease-out:");
+    expect(tokensCSS).toContain("--ease-in-out:");
   });
 
   it("opacity token values are correct numeric strings (0 to 1)", () => {
     const { opacity } = tokensJSON;
-    for (const [key, value] of Object.entries(opacity as Record<string, string>)) {
+    for (const [key, value] of Object.entries(
+      opacity as Record<string, string>,
+    )) {
       const num = Number(value);
       expect(
         !isNaN(num) && num >= 0 && num <= 1,

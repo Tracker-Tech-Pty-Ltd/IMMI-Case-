@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -503,19 +503,29 @@ function handleToneKeyDown(
   e: React.KeyboardEvent<HTMLButtonElement>,
   index: number,
   groupId: string,
+  totalCount: number,
 ) {
+  let targetIndex: number | null = null;
+
   if (e.key === "ArrowRight" || e.key === "ArrowDown") {
     e.preventDefault();
-    const next = document.querySelector(
-      `[data-tone-group="${groupId}"][data-tone-index="${index + 1}"]`,
-    ) as HTMLElement | null;
-    next?.focus();
+    targetIndex = (index + 1) % totalCount;
   } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
     e.preventDefault();
-    const prev = document.querySelector(
-      `[data-tone-group="${groupId}"][data-tone-index="${index - 1}"]`,
+    targetIndex = (index - 1 + totalCount) % totalCount;
+  } else if (e.key === "Home") {
+    e.preventDefault();
+    targetIndex = 0;
+  } else if (e.key === "End") {
+    e.preventDefault();
+    targetIndex = totalCount - 1;
+  }
+
+  if (targetIndex !== null) {
+    const target = document.querySelector(
+      `[data-tone-group="${groupId}"][data-tone-index="${targetIndex}"]`,
     ) as HTMLElement | null;
-    prev?.focus();
+    target?.focus();
   }
 }
 
@@ -548,7 +558,9 @@ function ToneGrid({
               key={tone.label}
               type="button"
               onClick={() => onSelect(cssVar, tone.hex, title)}
-              onKeyDown={(e) => handleToneKeyDown(e, index, groupId)}
+              onKeyDown={(e) =>
+                handleToneKeyDown(e, index, groupId, tones.length)
+              }
               data-tone-group={groupId}
               data-tone-index={index}
               aria-label={`${tone.label} 色階：${tone.hex}`}
@@ -658,6 +670,7 @@ function ColorPalette() {
                         e,
                         index,
                         `court-${court.title.toLowerCase()}`,
+                        tones.length,
                       )
                     }
                     data-tone-group={`court-${court.title.toLowerCase()}`}
@@ -735,7 +748,12 @@ function ColorPalette() {
                       copyToClipboard(tone.hex, `${cc.title} ${tone.label}`)
                     }
                     onKeyDown={(e) =>
-                      handleToneKeyDown(e, index, `creative-${cc.title}`)
+                      handleToneKeyDown(
+                        e,
+                        index,
+                        `creative-${cc.title}`,
+                        tones.length,
+                      )
                     }
                     data-tone-group={`creative-${cc.title}`}
                     data-tone-index={index}
@@ -2107,8 +2125,16 @@ function ContrastCard({
 
 function WcagContrastChecker() {
   const { preset, isDark } = useThemePreset();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    // Small delay to let applyTheme() finish setting inline styles
+    const id = setTimeout(() => setRefreshKey((k) => k + 1), 50);
+    return () => clearTimeout(id);
+  }, [preset, isDark]);
+
   return (
-    <section key={`${preset}-${isDark}`}>
+    <section id="contrast">
       <SectionHeading id="contrast">WCAG 對比度檢查</SectionHeading>
       <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-text">
         Contrast Checker
@@ -2121,7 +2147,7 @@ function WcagContrastChecker() {
       <div className="grid gap-3 sm:grid-cols-2">
         {CONTRAST_PAIRS.map((pair) => (
           <ContrastCard
-            key={pair.label}
+            key={`${pair.label}-${refreshKey}`}
             label={pair.label}
             fgVar={pair.fg}
             bgVar={pair.bg}
@@ -2177,12 +2203,25 @@ const PALETTE_VARS: { label: string; cssVar: string; fallback: string }[] = [
 ];
 
 function ColorBlindnessSimulator() {
+  const { preset, isDark } = useThemePreset();
   const [selectedColor, setSelectedColor] = useState<string>(() => {
     if (typeof window === "undefined") return "#da7756";
     const v = getCssVar("--color-accent");
     // getCssVar may return empty if page not yet mounted; use fallback
     return v && v.startsWith("#") ? v : "#da7756";
   });
+
+  // Sync with current theme's accent color when theme changes
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const accent =
+        getCssVar("--color-accent-light") ||
+        getCssVar("--color-accent") ||
+        "#da7756";
+      setSelectedColor(accent.startsWith("#") ? accent : "#da7756");
+    }, 60);
+    return () => clearTimeout(id);
+  }, [preset, isDark]);
 
   // Quick-pick buttons: resolve CSS vars at render time
   function resolveVar(cssVar: string, fallback: string): string {
@@ -2432,6 +2471,7 @@ function PreferencesBar() {
   const count = Object.keys(customVars).length;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imported, setImported] = useState(false);
+  const [importError, setImportError] = useState(false);
 
   if (count === 0) return null;
 
@@ -2459,6 +2499,8 @@ function PreferencesBar() {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
+        if (!data || typeof data !== "object")
+          throw new Error("Invalid format");
         if (data.customVars && typeof data.customVars === "object") {
           Object.entries(data.customVars).forEach(([key, value]) => {
             if (
@@ -2472,10 +2514,12 @@ function PreferencesBar() {
         }
         if (data.preset) setPreset(data.preset);
         if (typeof data.isDark === "boolean") setDark(data.isDark);
-        setImported(true);
+        setImported(true); // Only on success
         setTimeout(() => setImported(false), 2000);
       } catch {
-        // Silently ignore parse errors
+        // Show error state
+        setImportError(true);
+        setTimeout(() => setImportError(false), 3000);
       }
     };
     reader.readAsText(file);
@@ -2488,7 +2532,11 @@ function PreferencesBar() {
         <span className="whitespace-nowrap text-sm font-medium text-foreground">
           已啟用 {count} 項自訂覆寫
         </span>
-        {imported ? (
+        {importError ? (
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs text-danger">
+            ✗ 格式錯誤
+          </span>
+        ) : imported ? (
           <span className="flex items-center gap-1 whitespace-nowrap text-xs text-success">
             <Check className="h-3 w-3" /> 已匯入
           </span>
