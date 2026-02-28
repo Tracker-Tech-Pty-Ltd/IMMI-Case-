@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,8 @@ import {
   RotateCcw,
   Save,
   Type,
+  Download,
+  Upload,
 } from "lucide-react";
 import { tokens, courtColors, semanticColors } from "@/tokens/tokens";
 import { CourtBadge } from "@/components/shared/CourtBadge";
@@ -28,84 +30,207 @@ import { cn } from "@/lib/utils";
 import type { ImmigrationCase } from "@/types/case";
 
 /* ═══════════════════════════════════════════════════════════════
-   Color Utilities
+   Color Utilities — OKLCH-based perceptually uniform tones
    ═══════════════════════════════════════════════════════════════ */
 
-function parseColor(color: string): [number, number, number] | null {
-  const hex = color.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-  if (hex)
-    return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
-  const rgb = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-  if (rgb) return [parseInt(rgb[1]), parseInt(rgb[2]), parseInt(rgb[3])];
-  return null;
+function hexToRgb(hex: string): [number, number, number] | null {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return null;
+  return [
+    parseInt(clean.slice(0, 2), 16) / 255,
+    parseInt(clean.slice(2, 4), 16) / 255,
+    parseInt(clean.slice(4, 6), 16) / 255,
+  ];
+}
+
+function rgbToLinear(c: number): number {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function linearToRgb(c: number): number {
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+// sRGB → Linear RGB → XYZ-D65 → Oklab
+function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
+  const lr = rgbToLinear(r);
+  const lg = rgbToLinear(g);
+  const lb = rgbToLinear(b);
+  // Linear RGB → LMS
+  const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+  const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+  const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+  // Cube root
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+  return [
+    0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_,
+    1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_,
+    0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_,
+  ];
+}
+
+function oklabToRgb(L: number, a: number, b: number): [number, number, number] {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+  const rr = linearToRgb(
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+  );
+  const gg = linearToRgb(
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+  );
+  const bb = linearToRgb(
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  );
+  return [
+    Math.max(0, Math.min(1, rr)),
+    Math.max(0, Math.min(1, gg)),
+    Math.max(0, Math.min(1, bb)),
+  ];
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  return (
-    "#" +
-    [r, g, b]
-      .map((v) =>
-        Math.max(0, Math.min(255, Math.round(v)))
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")
-  );
+  const toHex = (c: number) =>
+    Math.round(Math.max(0, Math.min(255, c * 255)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
-function mixHex(c1: string, c2: string, w: number): string {
-  const a = parseColor(c1);
-  const b = parseColor(c2);
-  if (!a || !b) return c1;
+/**
+ * Generate perceptually uniform color tones using Oklab color space.
+ * Returns `count` (default 8) hex strings from lightest to darkest.
+ */
+function generateTones(hex: string, count = 8): string[] {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return Array(count).fill(hex);
+  const [oL, oA, oB] = rgbToOklab(...rgb);
+  const tones: string[] = [];
+  const lightL = 0.96;
+  const darkL = 0.15;
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1); // 0 = lightest, 1 = darkest
+    const L = lightL + t * (darkL - lightL);
+    const chromaScale =
+      L < oL ? L / Math.max(oL, 0.01) : (1 - L) / Math.max(1 - oL, 0.01);
+    const scaledA = oA * Math.min(chromaScale * 1.2, 1.5);
+    const scaledB = oB * Math.min(chromaScale * 1.2, 1.5);
+    const [r, g, b] = oklabToRgb(L, scaledA, scaledB);
+    tones.push(rgbToHex(r, g, b));
+  }
+  return tones;
+}
+
+/** Tone labels matching the 8-step scale (50→900) */
+const TONE_LABELS = [
+  "50",
+  "100",
+  "200",
+  "300",
+  "500",
+  "600",
+  "700",
+  "900",
+] as const;
+
+/** Convert raw hex[] from generateTones() to labelled objects for ToneGrid */
+function toLabelled(hexes: string[]): { label: string; hex: string }[] {
+  return hexes.map((h, i) => ({ label: TONE_LABELS[i] ?? String(i), hex: h }));
+}
+
+// ── WCAG helpers ────────────────────────────────────────────
+function getLuminance(h: string): number {
+  const rgb = hexToRgb(h);
+  if (!rgb) return 0.5;
+  const [r, g, b] = rgb.map(rgbToLinear);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function getContrastRatio(hex1: string, hex2: string): number {
+  const l1 = getLuminance(hex1);
+  const l2 = getLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+type WcagLevel = "AAA" | "AA" | "AA Large" | "Fail";
+function getWcagLevel(ratio: number): WcagLevel {
+  if (ratio >= 7) return "AAA";
+  if (ratio >= 4.5) return "AA";
+  if (ratio >= 3) return "AA Large";
+  return "Fail";
+}
+
+function getCssVar(name: string): string {
+  if (typeof window === "undefined") return "";
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
+
+// ── Color Blindness Simulation ────────────────────────────
+// Based on Brettel et al. (1997) and Viénot et al. (1999) algorithms
+type ColorBlindType =
+  | "protanopia"
+  | "deuteranopia"
+  | "tritanopia"
+  | "achromatopsia";
+
+function simulateColorBlindness(hex: string, type: ColorBlindType): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb.map((c) => rgbToLinear(c));
+
+  let sr: number, sg: number, sb: number;
+
+  switch (type) {
+    case "protanopia": // Red-blind
+      sr = 0.0 * r + 2.02344 * g + -2.52581 * b;
+      sg = 0.0 * r + 1.0 * g + 0.0 * b;
+      sb = 0.0 * r + 0.0 * g + 1.0 * b;
+      sr = Math.max(0, sr);
+      sg = Math.max(0, sg);
+      sb = Math.max(0, sb);
+      break;
+    case "deuteranopia": // Green-blind
+      sr = 1.0 * r + 0.0 * g + 0.0 * b;
+      sg = 0.494207 * r + 0.0 * g + 1.24827 * b;
+      sb = 0.0 * r + 0.0 * g + 1.0 * b;
+      sr = Math.max(0, sr);
+      sg = Math.max(0, sg);
+      sb = Math.max(0, sb);
+      break;
+    case "tritanopia": // Blue-blind
+      sr = 1.0 * r + 0.0 * g + 0.0 * b;
+      sg = 0.0 * r + 1.0 * g + 0.0 * b;
+      sb = -0.395913 * r + 0.801109 * g + 0.0 * b;
+      sr = Math.max(0, sr);
+      sg = Math.max(0, sg);
+      sb = Math.max(0, sb);
+      break;
+    case "achromatopsia": {
+      // Total color blindness - luminance only
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      sr = sg = sb = lum;
+      break;
+    }
+    default:
+      sr = r;
+      sg = g;
+      sb = b;
+  }
+
   return rgbToHex(
-    a[0] * (1 - w) + b[0] * w,
-    a[1] * (1 - w) + b[1] * w,
-    a[2] * (1 - w) + b[2] * w,
+    linearToRgb(Math.min(1, sr)),
+    linearToRgb(Math.min(1, sg)),
+    linearToRgb(Math.min(1, sb)),
   );
-}
-
-function generateTones(base: string): { label: string; hex: string }[] {
-  const rgb = parseColor(base);
-  if (!rgb) return [{ label: "500", hex: base }];
-  const brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
-
-  if (brightness > 200) {
-    // Very light (e.g. #ffffff, #f5f4f1) → tones go progressively darker
-    return [
-      { label: "50", hex: base },
-      { label: "100", hex: mixHex(base, "#9ca3af", 0.08) },
-      { label: "200", hex: mixHex(base, "#6b7280", 0.15) },
-      { label: "300", hex: mixHex(base, "#4b5563", 0.22) },
-      { label: "400", hex: mixHex(base, "#374151", 0.32) },
-      { label: "500", hex: mixHex(base, "#1f2937", 0.42) },
-      { label: "600", hex: mixHex(base, "#111827", 0.55) },
-      { label: "700", hex: mixHex(base, "#030712", 0.7) },
-    ];
-  }
-  if (brightness < 60) {
-    // Very dark (e.g. #1b2838) → tones go progressively lighter
-    return [
-      { label: "100", hex: mixHex(base, "#ffffff", 0.85) },
-      { label: "200", hex: mixHex(base, "#ffffff", 0.7) },
-      { label: "300", hex: mixHex(base, "#ffffff", 0.55) },
-      { label: "400", hex: mixHex(base, "#ffffff", 0.4) },
-      { label: "500", hex: mixHex(base, "#ffffff", 0.25) },
-      { label: "600", hex: mixHex(base, "#ffffff", 0.12) },
-      { label: "700", hex: base },
-      { label: "800", hex: mixHex(base, "#000000", 0.3) },
-    ];
-  }
-  // Mid-range → spread both directions from base
-  return [
-    { label: "50", hex: mixHex(base, "#ffffff", 0.9) },
-    { label: "100", hex: mixHex(base, "#ffffff", 0.75) },
-    { label: "200", hex: mixHex(base, "#ffffff", 0.55) },
-    { label: "300", hex: mixHex(base, "#ffffff", 0.35) },
-    { label: "500", hex: base },
-    { label: "600", hex: mixHex(base, "#000000", 0.15) },
-    { label: "700", hex: mixHex(base, "#000000", 0.3) },
-    { label: "900", hex: mixHex(base, "#000000", 0.5) },
-  ];
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -308,7 +433,8 @@ function ThemePresetSwitcher() {
           )}
           role="switch"
           aria-checked={isDark}
-          aria-label="切換深色模式"
+          aria-pressed={isDark}
+          aria-label={isDark ? "切換至淺色模式" : "切換至深色模式"}
         >
           <span
             className={cn(
@@ -335,6 +461,8 @@ function ThemePresetSwitcher() {
             <button
               key={name}
               onClick={() => setPreset(name)}
+              aria-label={`套用 ${p.label} 主題`}
+              aria-pressed={active}
               className={cn(
                 "relative flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all",
                 active
@@ -371,6 +499,26 @@ function ThemePresetSwitcher() {
    Section 2: Color Palette (8 tones per group, clickable)
    ═══════════════════════════════════════════════════════════════ */
 
+function handleToneKeyDown(
+  e: React.KeyboardEvent<HTMLButtonElement>,
+  index: number,
+  groupId: string,
+) {
+  if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+    e.preventDefault();
+    const next = document.querySelector(
+      `[data-tone-group="${groupId}"][data-tone-index="${index + 1}"]`,
+    ) as HTMLElement | null;
+    next?.focus();
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const prev = document.querySelector(
+      `[data-tone-group="${groupId}"][data-tone-index="${index - 1}"]`,
+    ) as HTMLElement | null;
+    prev?.focus();
+  }
+}
+
 function ToneGrid({
   title,
   tones,
@@ -384,16 +532,27 @@ function ToneGrid({
   activeHex: string | undefined;
   onSelect: (cssVar: string, hex: string, title: string) => void;
 }) {
+  const groupId = cssVar.replace(/[^a-zA-Z0-9-]/g, "_");
   return (
     <div className="mb-5">
       <SubHeading>{title}</SubHeading>
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-        {tones.map((tone) => {
+      <div
+        role="group"
+        aria-label={`${title} 色階`}
+        className="grid grid-cols-4 gap-2 sm:grid-cols-8"
+      >
+        {tones.map((tone, index) => {
           const isActive = activeHex?.toLowerCase() === tone.hex.toLowerCase();
           return (
             <button
               key={tone.label}
+              type="button"
               onClick={() => onSelect(cssVar, tone.hex, title)}
+              onKeyDown={(e) => handleToneKeyDown(e, index, groupId)}
+              data-tone-group={groupId}
+              data-tone-index={index}
+              aria-label={`${tone.label} 色階：${tone.hex}`}
+              title={`${tone.label}：${tone.hex}`}
               className={cn(
                 "group relative rounded-lg border-2 p-2 text-left transition-all",
                 isActive
@@ -442,13 +601,14 @@ function ColorPalette() {
     <section>
       <SectionHeading id="colors">色彩面板</SectionHeading>
       <p className="mb-4 text-sm text-muted-text">
-        點選任何色階會即時套用至整個介面。每組顏色提供 8 個色階，已啟用色彩會高亮顯示。
+        點選任何色階會即時套用至整個介面。每組顏色提供 8
+        個色階，已啟用色彩會高亮顯示。
       </p>
 
       {COLOR_GROUPS.map((group) => {
         const base = baseColors[group.cssVar];
         if (!base || base.startsWith("rgba")) return null;
-        const tones = generateTones(base);
+        const tones = toLabelled(generateTones(base));
         const activeHex = customVars[group.cssVar];
 
         return (
@@ -472,7 +632,7 @@ function ColorPalette() {
           每個法院都有專屬顏色。點選任一色階即可複製十六進位顏色值。
         </p>
         {COURT_GROUPS.map((court) => {
-          const tones = generateTones(court.hex);
+          const tones = toLabelled(generateTones(court.hex));
           return (
             <div key={court.title} className="mb-5">
               <div className="mb-2 flex items-center gap-2">
@@ -481,13 +641,29 @@ function ColorPalette() {
                   {court.hex}
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-                {tones.map((tone) => (
+              <div
+                role="group"
+                aria-label={`${court.title} 法院色階`}
+                className="grid grid-cols-4 gap-2 sm:grid-cols-8"
+              >
+                {tones.map((tone, index) => (
                   <button
                     key={tone.label}
+                    type="button"
                     onClick={() =>
                       copyToClipboard(tone.hex, `${court.title} ${tone.label}`)
                     }
+                    onKeyDown={(e) =>
+                      handleToneKeyDown(
+                        e,
+                        index,
+                        `court-${court.title.toLowerCase()}`,
+                      )
+                    }
+                    data-tone-group={`court-${court.title.toLowerCase()}`}
+                    data-tone-index={index}
+                    aria-label={`複製 ${court.title} ${tone.label} 色階顏色值 ${tone.hex}`}
+                    title={`${court.title} ${tone.label}：${tone.hex}`}
                     className="group rounded-lg border border-border p-2 text-left transition-all hover:border-accent/40 hover:shadow-sm"
                   >
                     <div
@@ -517,7 +693,7 @@ function ColorPalette() {
           核心狀態顏色。點選任一色階可即時套用到介面。
         </p>
         {SEMANTIC_GROUPS.map((sg) => {
-          const tones = generateTones(sg.hex);
+          const tones = toLabelled(generateTones(sg.hex));
           const activeHex = customVars[sg.cssVar];
 
           return (
@@ -542,17 +718,29 @@ function ColorPalette() {
           適用於圖表與插圖的輔助色盤。點選任一色階即可複製十六進位顏色值。
         </p>
         {CREATIVE_COLORS.map((cc) => {
-          const tones = generateTones(cc.hex);
+          const tones = toLabelled(generateTones(cc.hex));
           return (
             <div key={cc.title} className="mb-5">
               <SubHeading>{cc.title}</SubHeading>
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-                {tones.map((tone) => (
+              <div
+                role="group"
+                aria-label={`${cc.title} 創意配色色階`}
+                className="grid grid-cols-4 gap-2 sm:grid-cols-8"
+              >
+                {tones.map((tone, index) => (
                   <button
                     key={tone.label}
+                    type="button"
                     onClick={() =>
                       copyToClipboard(tone.hex, `${cc.title} ${tone.label}`)
                     }
+                    onKeyDown={(e) =>
+                      handleToneKeyDown(e, index, `creative-${cc.title}`)
+                    }
+                    data-tone-group={`creative-${cc.title}`}
+                    data-tone-index={index}
+                    aria-label={`複製 ${cc.title} ${tone.label} 色階顏色值 ${tone.hex}`}
+                    title={`${cc.title} ${tone.label}：${tone.hex}`}
                     className="group rounded-lg border border-border p-2 text-left transition-all hover:border-accent/40 hover:shadow-sm"
                   >
                     <div
@@ -871,7 +1059,10 @@ function ShadowSection() {
           {SHADOW_DEMOS.map((s) => (
             <button
               key={s.key}
+              type="button"
               onClick={() => copyToClipboard(s.value, `shadow-${s.key}`)}
+              aria-label={`複製陰影值 shadow-${s.key} 到剪貼簿`}
+              title={`複製 shadow-${s.key}`}
               className="group rounded-lg bg-white p-6 text-center transition-all duration-300 dark:bg-[#1b2332]"
               style={{ boxShadow: s.value }}
             >
@@ -915,7 +1106,310 @@ function ShadowSection() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Section 7: Component Gallery
+   Section 7: Animation Tokens
+   ═══════════════════════════════════════════════════════════════ */
+
+const DURATION_DEMOS = [
+  {
+    key: "fast",
+    label: "快速 (150ms)",
+    cssVar: "var(--duration-fast)",
+    ms: "150ms",
+  },
+  {
+    key: "normal",
+    label: "正常 (300ms)",
+    cssVar: "var(--duration-normal)",
+    ms: "300ms",
+  },
+  {
+    key: "slow",
+    label: "緩慢 (500ms)",
+    cssVar: "var(--duration-slow)",
+    ms: "500ms",
+  },
+];
+
+const EASING_DEMOS = [
+  {
+    key: "ease-in",
+    label: "ease-in",
+    cssVar: "var(--ease-in)",
+    value: "cubic-bezier(0.4, 0, 1, 1)",
+    desc: "加速進入",
+  },
+  {
+    key: "ease-out",
+    label: "ease-out",
+    cssVar: "var(--ease-out)",
+    value: "cubic-bezier(0, 0, 0.2, 1)",
+    desc: "減速離開",
+  },
+  {
+    key: "ease-in-out",
+    label: "ease-in-out",
+    cssVar: "var(--ease-in-out)",
+    value: "cubic-bezier(0.4, 0, 0.2, 1)",
+    desc: "先加速後減速",
+  },
+];
+
+function AnimationSection() {
+  return (
+    <section>
+      <SectionHeading id="animation">動畫令牌</SectionHeading>
+      <p className="mb-4 text-sm text-muted-text">
+        動畫時長與緩動曲線。滑過卡片可觀察實際動畫效果。
+      </p>
+
+      {/* Duration */}
+      <SubHeading>時長</SubHeading>
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        {DURATION_DEMOS.map((d) => (
+          <div
+            key={d.key}
+            className="overflow-hidden rounded-lg border border-border bg-card p-4"
+          >
+            <p className="mb-1 text-sm font-semibold text-foreground">
+              {d.label}
+            </p>
+            <p className="mb-3 font-mono text-[11px] text-muted-text">
+              --duration-{d.key}
+            </p>
+            {/* Sliding bar demo */}
+            <div className="relative h-8 overflow-hidden rounded-md bg-surface">
+              <div
+                className="absolute top-1/2 h-6 w-6 -translate-y-1/2 rounded-full bg-accent"
+                style={
+                  {
+                    transition: `transform ${d.ms} var(--ease-out, cubic-bezier(0, 0, 0.2, 1))`,
+                    "--hover-translate": "calc(100% + 4px)",
+                  } as React.CSSProperties
+                }
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.transform =
+                    "translateX(calc(100% + 4px)) translateY(-50%)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.transform =
+                    "translateX(0) translateY(-50%)";
+                }}
+              />
+            </div>
+            <p className="mt-2 text-[10px] text-muted-text">滑入/出上方圓點</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Easing */}
+      <SubHeading>緩動曲線</SubHeading>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {EASING_DEMOS.map((e) => (
+          <div
+            key={e.key}
+            className="overflow-hidden rounded-lg border border-border bg-card p-4"
+          >
+            <p className="mb-1 text-sm font-semibold text-foreground">
+              {e.label}
+            </p>
+            <p className="mb-1 text-xs text-muted-text">{e.desc}</p>
+            {/* Animated dot on line */}
+            <div className="relative mb-2 h-8">
+              <div className="absolute top-1/2 h-0.5 w-full -translate-y-1/2 rounded-full bg-border" />
+              <div
+                className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-accent shadow-sm"
+                style={{
+                  transition: `left 300ms ${e.value}`,
+                  left: "0%",
+                }}
+                onMouseEnter={(el) => {
+                  (el.currentTarget as HTMLElement).style.left =
+                    "calc(100% - 1rem)";
+                }}
+                onMouseLeave={(el) => {
+                  (el.currentTarget as HTMLElement).style.left = "0%";
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => copyToClipboard(e.value, e.label)}
+              aria-label={`複製 ${e.label} 緩動值到剪貼簿`}
+              className="mt-1 w-full rounded bg-surface px-2 py-1 text-left font-mono text-[10px] text-muted-text hover:bg-accent/10 hover:text-accent"
+            >
+              {e.value}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Section 8: Z-Index Tokens
+   ═══════════════════════════════════════════════════════════════ */
+
+const Z_LAYERS = [
+  { token: "--z-base", value: "0", label: "基礎層", desc: "Base content" },
+  {
+    token: "--z-dropdown",
+    value: "50",
+    label: "下拉選單",
+    desc: "Dropdowns",
+  },
+  {
+    token: "--z-popover",
+    value: "100",
+    label: "彈出層",
+    desc: "Popovers",
+  },
+  {
+    token: "--z-tooltip",
+    value: "150",
+    label: "提示層",
+    desc: "Tooltips",
+  },
+  { token: "--z-modal", value: "999", label: "模態視窗", desc: "Modals" },
+  {
+    token: "--z-toast",
+    value: "1000",
+    label: "通知層",
+    desc: "Toasts/Alerts",
+  },
+];
+
+// Color intensities for layer levels (lightest → darkest left border)
+const Z_BORDER_COLORS = [
+  "#c8d6e5",
+  "#7ea4c1",
+  "#4a7fa5",
+  "#2b5f8a",
+  "#1a4470",
+  "#0d2b52",
+];
+
+function ZIndexSection() {
+  return (
+    <section>
+      <SectionHeading id="zindex">層級順序</SectionHeading>
+      <p className="mb-4 text-sm text-muted-text">
+        Z-index 堆疊層級。數值越大，元素越靠近使用者，覆蓋在其他元素之上。
+      </p>
+      <div className="space-y-2">
+        {Z_LAYERS.map((layer, i) => (
+          <div
+            key={layer.token}
+            className="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3"
+            style={{
+              borderLeftWidth: "4px",
+              borderLeftColor: Z_BORDER_COLORS[i],
+            }}
+          >
+            <div className="w-24 shrink-0">
+              <p className="font-mono text-xs font-semibold text-foreground">
+                {layer.token}
+              </p>
+            </div>
+            <div
+              className="flex h-7 w-16 shrink-0 items-center justify-center rounded border border-border bg-surface font-mono text-sm font-bold text-foreground"
+              style={{ color: Z_BORDER_COLORS[i] }}
+            >
+              {layer.value}
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-medium text-foreground">
+                {layer.label}
+              </span>
+              <span className="ml-2 text-xs text-muted-text">{layer.desc}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                copyToClipboard(`var(${layer.token})`, layer.token)
+              }
+              aria-label={`複製 ${layer.token} CSS 變數到剪貼簿`}
+              className="shrink-0 rounded border border-border bg-surface px-2 py-1 font-mono text-[10px] text-muted-text hover:border-accent/40 hover:text-accent"
+            >
+              複製
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Section 9: Opacity Tokens
+   ═══════════════════════════════════════════════════════════════ */
+
+const OPACITY_LEVELS = [
+  { key: "0", label: "0%", value: 0, token: "--opacity-0" },
+  { key: "10", label: "10%", value: 0.1, token: "--opacity-10" },
+  { key: "20", label: "20%", value: 0.2, token: "--opacity-20" },
+  { key: "30", label: "30%", value: 0.3, token: "--opacity-30" },
+  { key: "50", label: "50%", value: 0.5, token: "--opacity-50" },
+  { key: "75", label: "75%", value: 0.75, token: "--opacity-75" },
+  { key: "100", label: "100%", value: 1, token: "--opacity-100" },
+];
+
+const CHECKERBOARD_STYLE: React.CSSProperties = {
+  backgroundImage: `
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%)
+  `,
+  backgroundSize: "10px 10px",
+  backgroundPosition: "0 0, 0 5px, 5px -5px, -5px 0px",
+};
+
+function OpacitySection() {
+  return (
+    <section>
+      <SectionHeading id="opacity">透明度</SectionHeading>
+      <p className="mb-4 text-sm text-muted-text">
+        透明度層級。棋盤格背景用於展示透明效果。點擊任一方塊可複製 CSS 變數。
+      </p>
+      <div className="flex flex-wrap gap-3">
+        {OPACITY_LEVELS.map((op) => (
+          <button
+            key={op.key}
+            type="button"
+            onClick={() => copyToClipboard(`var(${op.token})`, op.token)}
+            aria-label={`複製 ${op.token}（${op.label}）CSS 變數到剪貼簿`}
+            title={`${op.token}: ${op.label}`}
+            className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-3 transition-all hover:border-accent/40 hover:shadow-sm"
+          >
+            {/* Checkerboard + colored box */}
+            <div
+              className="h-14 w-14 overflow-hidden rounded-md border border-black/10"
+              style={CHECKERBOARD_STYLE}
+            >
+              <div
+                className="h-full w-full"
+                style={{
+                  backgroundColor: "var(--color-accent, #5c4306)",
+                  opacity: op.value,
+                }}
+              />
+            </div>
+            <span className="text-[11px] font-semibold text-foreground">
+              {op.label}
+            </span>
+            <span className="font-mono text-[9px] text-muted-text">
+              {op.token}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Section 10: Component Gallery
    ═══════════════════════════════════════════════════════════════ */
 
 const MOCK_CASE: ImmigrationCase = {
@@ -1033,9 +1527,7 @@ function FormControlGallery() {
             defaultChecked
             className="h-4 w-4 rounded border-border accent-accent"
           />
-          <span className="text-sm text-foreground">
-            匯出時包含全文
-          </span>
+          <span className="text-sm text-foreground">匯出時包含全文</span>
         </label>
       </div>
     </div>
@@ -1123,14 +1615,10 @@ function TableGallery() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="px-4 py-2.5 font-medium text-foreground">
-                引用
-              </th>
+              <th className="px-4 py-2.5 font-medium text-foreground">引用</th>
               <th className="px-4 py-2.5 font-medium text-foreground">法院</th>
               <th className="px-4 py-2.5 font-medium text-foreground">日期</th>
-              <th className="px-4 py-2.5 font-medium text-foreground">
-                結果
-              </th>
+              <th className="px-4 py-2.5 font-medium text-foreground">結果</th>
             </tr>
           </thead>
           <tbody>
@@ -1471,16 +1959,10 @@ function CssVariableReference() {
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-border">
-                <th className="px-3 py-2 font-medium text-foreground">
-                  變數
-                </th>
-                <th className="px-3 py-2 font-medium text-foreground">
-                  類別
-                </th>
+                <th className="px-3 py-2 font-medium text-foreground">變數</th>
+                <th className="px-3 py-2 font-medium text-foreground">類別</th>
                 <th className="px-3 py-2 font-medium text-foreground">值</th>
-                <th className="px-3 py-2 font-medium text-foreground">
-                  預覽
-                </th>
+                <th className="px-3 py-2 font-medium text-foreground">預覽</th>
               </tr>
             </thead>
             <tbody>
@@ -1524,7 +2006,365 @@ function CssVariableReference() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Section 10: Usage Guide
+   Section 10: WCAG Contrast Checker
+   ═══════════════════════════════════════════════════════════════ */
+
+const CONTRAST_PAIRS: { label: string; fg: string; bg: string }[] = [
+  { label: "Text / Background", fg: "--color-text", bg: "--color-background" },
+  { label: "Text / Card", fg: "--color-text", bg: "--color-background-card" },
+  {
+    label: "Accent / Background",
+    fg: "--color-accent",
+    bg: "--color-background",
+  },
+  {
+    label: "Muted Text / Background",
+    fg: "--color-text-muted",
+    bg: "--color-background",
+  },
+  {
+    label: "Secondary Text / Card",
+    fg: "--color-text-secondary",
+    bg: "--color-background-card",
+  },
+  {
+    label: "Success (semantic)",
+    fg: "--color-semantic-success",
+    bg: "--color-background",
+  },
+  {
+    label: "Danger (semantic)",
+    fg: "--color-semantic-danger",
+    bg: "--color-background",
+  },
+];
+
+const WCAG_BADGE_COLORS: Record<WcagLevel, string> = {
+  AAA: "bg-success/15 text-success border border-success/30",
+  AA: "bg-info/15 text-info border border-info/30",
+  "AA Large": "bg-warning/15 text-warning border border-warning/30",
+  Fail: "bg-danger/15 text-danger border border-danger/30",
+};
+
+function ContrastCard({
+  label,
+  fgVar,
+  bgVar,
+}: {
+  label: string;
+  fgVar: string;
+  bgVar: string;
+}) {
+  const fg = getCssVar(fgVar);
+  const bg = getCssVar(bgVar);
+  // Fallback in case CSS var is not resolved (e.g., SSR)
+  const fgColor = fg || "#111111";
+  const bgColor = bg || "#ffffff";
+  const ratio = getContrastRatio(fgColor, bgColor);
+  const level = getWcagLevel(ratio);
+  const badgeCls = WCAG_BADGE_COLORS[level];
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+      {/* Color swatches */}
+      <div className="flex shrink-0 flex-col gap-1">
+        <div
+          className="h-5 w-8 rounded border border-black/10"
+          style={{ backgroundColor: fgColor }}
+          title={`fg: ${fgColor}`}
+        />
+        <div
+          className="h-5 w-8 rounded border border-black/10"
+          style={{ backgroundColor: bgColor }}
+          title={`bg: ${bgColor}`}
+        />
+      </div>
+      {/* "Aa" text preview */}
+      <div
+        className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md border border-black/10 text-xl font-bold"
+        style={{ backgroundColor: bgColor, color: fgColor }}
+      >
+        Aa
+      </div>
+      {/* Label + ratio + badge */}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium text-foreground">{label}</p>
+        <p className="font-mono text-xs text-muted-text">
+          {ratio.toFixed(1)}:1
+        </p>
+      </div>
+      <span
+        className={cn(
+          "shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold",
+          badgeCls,
+        )}
+      >
+        {level}
+      </span>
+    </div>
+  );
+}
+
+function WcagContrastChecker() {
+  const { preset, isDark } = useThemePreset();
+  return (
+    <section key={`${preset}-${isDark}`}>
+      <SectionHeading id="contrast">WCAG 對比度檢查</SectionHeading>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-text">
+        Contrast Checker
+      </p>
+      <p className="mb-4 text-sm text-muted-text">
+        以下對比度數值從目前主題的 CSS
+        變數即時讀取。切換主題或深色模式後數值會自動更新。 AAA ≥ 7:1 | AA ≥
+        4.5:1 | AA Large ≥ 3:1
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {CONTRAST_PAIRS.map((pair) => (
+          <ContrastCard
+            key={pair.label}
+            label={pair.label}
+            fgVar={pair.fg}
+            bgVar={pair.bg}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Section 11: Color Blindness Simulator
+   ═══════════════════════════════════════════════════════════════ */
+
+const CB_TYPES: {
+  type: ColorBlindType;
+  label: string;
+  desc: string;
+}[] = [
+  { type: "protanopia", label: "Protanopia", desc: "紅色盲 · 約 1% 男性" },
+  {
+    type: "deuteranopia",
+    label: "Deuteranopia",
+    desc: "綠色盲 · 約 6% 男性",
+  },
+  {
+    type: "tritanopia",
+    label: "Tritanopia",
+    desc: "藍色盲 · 約 0.01% 人口",
+  },
+  {
+    type: "achromatopsia",
+    label: "Achromatopsia",
+    desc: "全色盲 · 極為罕見",
+  },
+];
+
+const PALETTE_VARS: { label: string; cssVar: string; fallback: string }[] = [
+  { label: "Primary", cssVar: "--color-primary", fallback: "#3d3929" },
+  { label: "Accent", cssVar: "--color-accent", fallback: "#da7756" },
+  {
+    label: "Success",
+    cssVar: "--color-semantic-success",
+    fallback: "#22c55e",
+  },
+  { label: "Danger", cssVar: "--color-semantic-danger", fallback: "#ef4444" },
+  { label: "Text", cssVar: "--color-text", fallback: "#1a1a1a" },
+  {
+    label: "Background",
+    cssVar: "--color-background",
+    fallback: "#f5f5f5",
+  },
+];
+
+function ColorBlindnessSimulator() {
+  const [selectedColor, setSelectedColor] = useState<string>(() => {
+    if (typeof window === "undefined") return "#da7756";
+    const v = getCssVar("--color-accent");
+    // getCssVar may return empty if page not yet mounted; use fallback
+    return v && v.startsWith("#") ? v : "#da7756";
+  });
+
+  // Quick-pick buttons: resolve CSS vars at render time
+  function resolveVar(cssVar: string, fallback: string): string {
+    const v = getCssVar(cssVar);
+    return v && v.match(/^#[0-9a-fA-F]{6}$/) ? v : fallback;
+  }
+
+  const quickPicks = PALETTE_VARS.map((pv) => ({
+    label: pv.label,
+    hex: resolveVar(pv.cssVar, pv.fallback),
+  }));
+
+  // Palette simulation table data
+  const paletteRows = PALETTE_VARS.map((pv) => {
+    const base = resolveVar(pv.cssVar, pv.fallback);
+    return {
+      label: pv.label,
+      normal: base,
+      protanopia: simulateColorBlindness(base, "protanopia"),
+      deuteranopia: simulateColorBlindness(base, "deuteranopia"),
+      tritanopia: simulateColorBlindness(base, "tritanopia"),
+      achromatopsia: simulateColorBlindness(base, "achromatopsia"),
+    };
+  });
+
+  return (
+    <section>
+      <SectionHeading id="colorblind">色盲模擬器</SectionHeading>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-text">
+        Color Blindness Simulator
+      </p>
+      <p className="mb-6 text-sm text-muted-text">
+        模擬不同色覺缺陷者所見的顏色效果。基於 Brettel et al. (1997) 與 Viénot
+        et al. (1999) 算法。
+      </p>
+
+      {/* Single color picker */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2">
+          <span className="text-sm font-medium text-foreground">
+            選擇顏色：
+          </span>
+          <input
+            type="color"
+            value={selectedColor}
+            onChange={(e) => setSelectedColor(e.target.value)}
+            className="h-9 w-14 cursor-pointer rounded border border-border bg-card"
+            aria-label="選擇要模擬的顏色"
+          />
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {quickPicks.map((qp) => (
+            <button
+              key={qp.label}
+              onClick={() => setSelectedColor(qp.hex)}
+              title={`${qp.label}: ${qp.hex}`}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all",
+                selectedColor.toLowerCase() === qp.hex.toLowerCase()
+                  ? "border-accent ring-1 ring-accent/40"
+                  : "border-border hover:border-accent/40",
+              )}
+            >
+              <span
+                className="h-3.5 w-3.5 rounded-full border border-black/10"
+                style={{ backgroundColor: qp.hex }}
+              />
+              {qp.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Normal vision + 4 simulations */}
+      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        {/* Normal Vision */}
+        <div className="flex min-w-[160px] flex-1 flex-col gap-2 rounded-lg border border-border bg-card p-4">
+          <p className="text-sm font-semibold text-foreground">正常視覺</p>
+          <p className="text-xs text-muted-text">Normal Vision</p>
+          <div
+            className="h-20 w-full rounded-md border border-black/10 transition-colors"
+            style={{ backgroundColor: selectedColor }}
+          />
+          <p className="font-mono text-xs text-muted-text">{selectedColor}</p>
+        </div>
+        {CB_TYPES.map((cb) => {
+          const simulated = simulateColorBlindness(selectedColor, cb.type);
+          return (
+            <div
+              key={cb.type}
+              className="flex min-w-[160px] flex-1 flex-col gap-2 rounded-lg border border-border bg-card p-4"
+            >
+              <p className="text-sm font-semibold text-foreground">
+                {cb.label}
+              </p>
+              <p className="text-xs text-muted-text">{cb.desc}</p>
+              <div
+                className="h-20 w-full rounded-md border border-black/10 transition-colors"
+                style={{ backgroundColor: simulated }}
+              />
+              <p className="font-mono text-xs text-muted-text">{simulated}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Theme Palette Preview table */}
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-foreground">
+          主題調色板預覽
+        </h3>
+        <p className="mb-3 text-xs text-muted-text">
+          6 種主題色彩在各色盲類型下的呈現效果對照表。
+        </p>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border bg-surface">
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    色彩
+                  </th>
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    正常
+                  </th>
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    Protanopia
+                  </th>
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    Deuteranopia
+                  </th>
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    Tritanopia
+                  </th>
+                  <th className="px-3 py-2 font-medium text-foreground">
+                    Achromatopsia
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paletteRows.map((row) => (
+                  <tr
+                    key={row.label}
+                    className="border-b border-border-light bg-card"
+                  >
+                    <td className="px-3 py-2 font-medium text-foreground">
+                      {row.label}
+                    </td>
+                    {(
+                      [
+                        row.normal,
+                        row.protanopia,
+                        row.deuteranopia,
+                        row.tritanopia,
+                        row.achromatopsia,
+                      ] as string[]
+                    ).map((hex, i) => (
+                      <td key={i} className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="h-6 w-10 shrink-0 rounded border border-black/10"
+                            style={{ backgroundColor: hex }}
+                          />
+                          <span className="font-mono text-[10px] text-muted-text">
+                            {hex}
+                          </span>
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Section 12: Usage Guide
    ═══════════════════════════════════════════════════════════════ */
 
 function UsageGuide() {
@@ -1580,21 +2420,113 @@ const { preset, setPreset, setCustomVar, clearCustomVars } = useThemePreset()
    ═══════════════════════════════════════════════════════════════ */
 
 function PreferencesBar() {
-  const { customVars, clearCustomVars } = useThemePreset();
+  const {
+    preset,
+    isDark,
+    customVars,
+    clearCustomVars,
+    setCustomVar,
+    setPreset,
+    setDark,
+  } = useThemePreset();
   const count = Object.keys(customVars).length;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState(false);
 
   if (count === 0) return null;
+
+  function exportTheme() {
+    const data = {
+      preset,
+      isDark,
+      customVars,
+      exportedAt: new Date().toISOString(),
+      version: "1.0",
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `immi-theme-${preset}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importTheme(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (data.customVars && typeof data.customVars === "object") {
+          Object.entries(data.customVars).forEach(([key, value]) => {
+            if (
+              typeof key === "string" &&
+              typeof value === "string" &&
+              key.startsWith("--")
+            ) {
+              setCustomVar(key, value);
+            }
+          });
+        }
+        if (data.preset) setPreset(data.preset);
+        if (typeof data.isDark === "boolean") setDark(data.isDark);
+        setImported(true);
+        setTimeout(() => setImported(false), 2000);
+      } catch {
+        // Silently ignore parse errors
+      }
+    };
+    reader.readAsText(file);
+  }
 
   return (
     <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2">
       <div className="flex items-center gap-3 rounded-full border border-border bg-card px-5 py-2.5 shadow-lg">
-        <div className="h-2 w-2 shrink-0 rounded-full bg-accent animate-pulse" />
+        <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
         <span className="whitespace-nowrap text-sm font-medium text-foreground">
           已啟用 {count} 項自訂覆寫
         </span>
-        <span className="flex items-center gap-1 whitespace-nowrap text-xs text-success">
-          <Save className="h-3 w-3" /> 已自動儲存
-        </span>
+        {imported ? (
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs text-success">
+            <Check className="h-3 w-3" /> 已匯入
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs text-success">
+            <Save className="h-3 w-3" /> 已自動儲存
+          </span>
+        )}
+        {/* Export */}
+        <button
+          onClick={exportTheme}
+          title="匯出主題 JSON"
+          className="flex items-center gap-1 whitespace-nowrap rounded-md bg-accent/10 px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+        >
+          <Download className="h-3 w-3" /> 匯出
+        </button>
+        {/* Import */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          title="匯入主題 JSON"
+          className="flex items-center gap-1 whitespace-nowrap rounded-md bg-info/10 px-3 py-1 text-xs font-medium text-info transition-colors hover:bg-info/20"
+        >
+          <Upload className="h-3 w-3" /> 匯入
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          aria-hidden="true"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) importTheme(file);
+            // Reset so same file can be re-imported
+            e.target.value = "";
+          }}
+        />
+        {/* Reset */}
         <button
           onClick={() => {
             clearCustomVars();
@@ -1620,9 +2552,14 @@ const NAV_ITEMS = [
   { id: "spacing", label: "間距" },
   { id: "radius", label: "圓角" },
   { id: "shadows", label: "陰影" },
+  { id: "animation", label: "動畫" },
+  { id: "zindex", label: "層級" },
+  { id: "opacity", label: "透明度" },
   { id: "components", label: "元件" },
   { id: "dark-mode", label: "深色模式" },
   { id: "css-vars", label: "CSS 變數" },
+  { id: "contrast", label: "對比度" },
+  { id: "colorblind", label: "色盲模擬" },
   { id: "usage", label: "用法" },
 ];
 
@@ -1666,9 +2603,14 @@ export function DesignTokensPage() {
       <SpacingSection />
       <RadiusSection />
       <ShadowSection />
+      <AnimationSection />
+      <ZIndexSection />
+      <OpacitySection />
       <ComponentGallery />
       <DarkModeComparison />
       <CssVariableReference />
+      <WcagContrastChecker />
+      <ColorBlindnessSimulator />
       <UsageGuide />
       <PreferencesBar />
     </div>

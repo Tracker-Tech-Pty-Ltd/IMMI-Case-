@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { CourtBadge } from "@/components/shared/CourtBadge";
 import { OutcomeBadge } from "@/components/shared/OutcomeBadge";
 import { BookmarkButton } from "@/components/shared/BookmarkButton";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import { cn } from "@/lib/utils";
 import type { ImmigrationCase } from "@/types/case";
 
@@ -17,7 +17,7 @@ interface CaseCardProps {
 function CaseCardInner({ case_: c, onClick, className }: CaseCardProps) {
   // i18n support ready; currently all metadata comes from case data props
   useTranslation();
-  const accentColor = courtColors[c.court_code] ?? "#6b7585";
+  const accentColor = getCourtColor(c.court_code) ?? "#6b7585";
 
   return (
     <div className={cn("relative h-full", className)}>

@@ -15,7 +15,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import type { LineageData } from "@/lib/lineage-data";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import {
   filterChartData,
   normalizeToPercent,
@@ -247,8 +247,8 @@ function TimelineChartInner({
               type="monotone"
               dataKey={court}
               stackId="stack"
-              fill={courtColors[court] ?? "#8b8680"}
-              stroke={courtColors[court] ?? "#8b8680"}
+              fill={getCourtColor(court) ?? "#8b8680"}
+              stroke={getCourtColor(court) ?? "#8b8680"}
               fillOpacity={0.7}
             />
           ))}
@@ -269,7 +269,7 @@ function TimelineChartInner({
             key={court}
             dataKey={court}
             stackId="stack"
-            fill={courtColors[court] ?? "#8b8680"}
+            fill={getCourtColor(court) ?? "#8b8680"}
             cursor="pointer"
             onClick={(d: unknown) => {
               const row = d as Record<string, unknown>;

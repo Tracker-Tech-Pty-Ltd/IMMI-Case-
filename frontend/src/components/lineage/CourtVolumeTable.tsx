@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ArrowUpDown } from "lucide-react";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import type { CourtStats } from "@/lib/lineage-transforms";
 import { cn } from "@/lib/utils";
 
@@ -102,7 +102,7 @@ export function CourtVolumeTable({ stats }: CourtVolumeTableProps) {
           </thead>
           <tbody>
             {sorted.map((court) => {
-              const color = courtColors[court.code] ?? "#8b8680";
+              const color = getCourtColor(court.code) ?? "#8b8680";
               const nowLabel = t("lineage.now", { defaultValue: "now" });
               return (
                 <tr

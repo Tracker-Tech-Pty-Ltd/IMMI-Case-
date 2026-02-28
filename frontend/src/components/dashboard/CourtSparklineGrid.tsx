@@ -1,13 +1,7 @@
 import { memo, useMemo } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useTranslation } from "react-i18next";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import type { TrendEntry } from "@/types/case";
 
 interface CourtSparklineGridProps {
@@ -27,14 +21,8 @@ function CourtSparklineGridInner({ data }: CourtSparklineGridProps) {
     }
     // Sort by total volume descending
     return Array.from(courtSet).toSorted((a, b) => {
-      const aTotal = data.reduce(
-        (s, e) => s + ((e[a] as number) || 0),
-        0,
-      );
-      const bTotal = data.reduce(
-        (s, e) => s + ((e[b] as number) || 0),
-        0,
-      );
+      const aTotal = data.reduce((s, e) => s + ((e[a] as number) || 0), 0);
+      const bTotal = data.reduce((s, e) => s + ((e[b] as number) || 0), 0);
       return bTotal - aTotal;
     });
   }, [data]);
@@ -59,8 +47,7 @@ function CourtSparklineGridInner({ data }: CourtSparklineGridProps) {
 
         const total = chartData.reduce((s, e) => s + e.count, 0);
 
-        const color =
-          (courtColors as Record<string, string>)[court] ?? "#6b7280";
+        const color = getCourtColor(court) ?? "#6b7280";
 
         return (
           <div

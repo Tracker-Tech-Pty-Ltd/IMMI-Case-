@@ -1,4 +1,5 @@
 /* Auto-generated from tokens.json — do not edit manually */
+/* Generated: 2026-02-28T16:33:41.203Z */
 
 export const tokens = {
   "color": {
@@ -54,7 +55,8 @@ export const tokens = {
     "dark": {
       "primary": {
         "DEFAULT": "#d0d4da",
-        "light": "#a8b2be"
+        "light": "#a8b2be",
+        "lighter": "#3a5572"
       },
       "accent": {
         "DEFAULT": "#c9942e",
@@ -109,6 +111,24 @@ export const tokens = {
         "Consolas",
         "monospace"
       ]
+    },
+    "lineHeight": {
+      "tight": "1.2",
+      "normal": "1.5",
+      "relaxed": "1.75",
+      "loose": "2"
+    },
+    "letterSpacing": {
+      "tight": "-0.015em",
+      "normal": "0",
+      "wide": "0.025em"
+    },
+    "fontWeight": {
+      "light": "300",
+      "regular": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
     }
   },
   "spacing": {
@@ -131,10 +151,39 @@ export const tokens = {
     "sm": "0 1px 3px rgba(27,40,56,0.06), 0 1px 2px rgba(27,40,56,0.04)",
     "DEFAULT": "0 2px 6px rgba(27,40,56,0.08)",
     "lg": "0 4px 12px rgba(27,40,56,0.1)"
+  },
+  "opacity": {
+    "0": "0",
+    "10": "0.1",
+    "20": "0.2",
+    "30": "0.3",
+    "50": "0.5",
+    "75": "0.75",
+    "100": "1"
+  },
+  "zIndex": {
+    "base": "0",
+    "dropdown": "50",
+    "popover": "100",
+    "tooltip": "150",
+    "modal": "999",
+    "toast": "1000"
+  },
+  "animation": {
+    "duration": {
+      "fast": "150ms",
+      "normal": "300ms",
+      "slow": "500ms"
+    },
+    "easing": {
+      "ease-in": "cubic-bezier(0.4, 0, 1, 1)",
+      "ease-out": "cubic-bezier(0, 0, 0.2, 1)",
+      "ease-in-out": "cubic-bezier(0.4, 0, 0.2, 1)"
+    }
   }
 } as const
 
-export const courtColors: Record<string, string> = {
+export const courtColors = {
   AATA: "#1a5276",
   ARTA: "#6c3483",
   FCA: "#117864",
@@ -146,9 +195,74 @@ export const courtColors: Record<string, string> = {
   FMCA: "#b84c00",
 } as const
 
+export type CourtColor = keyof typeof courtColors
+
+/** Lookup helper: accepts any string and returns the court color or undefined */
+export function getCourtColor(court: string): string | undefined {
+  return (courtColors as Record<string, string>)[court]
+}
+
 export const semanticColors = {
   success: "#2d7d46",
   warning: "#b8860b",
   danger: "#a83232",
   info: "#2a6496",
 } as const
+
+export type SemanticColor = keyof typeof semanticColors
+
+export const spacing = {
+  "1": "0.25rem",
+  "2": "0.5rem",
+  "3": "0.75rem",
+  "4": "1rem",
+  "5": "1.25rem",
+  "6": "1.5rem",
+  "8": "2rem",
+} as const
+
+export const radius = {
+  sm: "0.670rem",
+  DEFAULT: "1rem",
+  lg: "1.330rem",
+  pill: "2rem",
+} as const
+
+export const shadow = {
+  xs: "0 1px 2px rgba(27,40,56,0.04)",
+  sm: "0 1px 3px rgba(27,40,56,0.06), 0 1px 2px rgba(27,40,56,0.04)",
+  DEFAULT: "0 2px 6px rgba(27,40,56,0.08)",
+  lg: "0 4px 12px rgba(27,40,56,0.1)",
+} as const
+
+export const zIndex = {
+  base: "0",
+  dropdown: "50",
+  popover: "100",
+  tooltip: "150",
+  modal: "999",
+  toast: "1000",
+} as const
+
+export const opacity = {
+  "0": "0",
+  "10": "0.1",
+  "20": "0.2",
+  "30": "0.3",
+  "50": "0.5",
+  "75": "0.75",
+  "100": "1",
+} as const
+
+export const animationDuration = {
+  fast: "150ms",
+  normal: "300ms",
+  slow: "500ms",
+} as const
+
+export const animationEasing = {
+  "ease-in": "cubic-bezier(0.4, 0, 1, 1)",
+  "ease-out": "cubic-bezier(0, 0, 0.2, 1)",
+  "ease-in-out": "cubic-bezier(0.4, 0, 0.2, 1)",
+} as const
+

@@ -1,6 +1,12 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { GitBranch, Info, BarChart3, AreaChart as AreaChartIcon, Percent } from "lucide-react";
+import {
+  GitBranch,
+  Info,
+  BarChart3,
+  AreaChart as AreaChartIcon,
+  Percent,
+} from "lucide-react";
 import { useLineageData } from "@/hooks/use-lineage-data";
 import { TimelineChart } from "@/components/lineage/TimelineChart";
 import { LineageExplainer } from "@/components/lineage/LineageExplainer";
@@ -8,7 +14,7 @@ import { LineageFilters } from "@/components/lineage/LineageFilters";
 import { CourtVolumeTable } from "@/components/lineage/CourtVolumeTable";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import { cn } from "@/lib/utils";
 import type { CourtGroup } from "@/lib/lineage-transforms";
 import {
@@ -94,17 +100,22 @@ export function CourtLineagePage() {
 
   // ── Derived data ──────────────────────────────────────────────
   const filteredTotal = useMemo(
-    () => (lineageData ? countFilteredCases(lineageData, effectiveHiddenCourts) : 0),
+    () =>
+      lineageData ? countFilteredCases(lineageData, effectiveHiddenCourts) : 0,
     [lineageData, effectiveHiddenCourts],
   );
 
   const visibleCourtCount = useMemo(
-    () => (lineageData ? countVisibleCourts(lineageData, effectiveHiddenCourts) : 0),
+    () =>
+      lineageData ? countVisibleCourts(lineageData, effectiveHiddenCourts) : 0,
     [lineageData, effectiveHiddenCourts],
   );
 
   const peakYear = useMemo(
-    () => (lineageData ? findPeakYear(lineageData, effectiveHiddenCourts) : { year: 0, count: 0 }),
+    () =>
+      lineageData
+        ? findPeakYear(lineageData, effectiveHiddenCourts)
+        : { year: 0, count: 0 },
     [lineageData, effectiveHiddenCourts],
   );
 
@@ -162,7 +173,9 @@ export function CourtLineagePage() {
         <ApiErrorState
           title={t("errors.failed_to_load", { name: t("nav.court_lineage") })}
           message={message}
-          onRetry={() => { void refetch(); }}
+          onRetry={() => {
+            void refetch();
+          }}
         />
       </div>
     );
@@ -180,7 +193,9 @@ export function CourtLineagePage() {
         <ApiErrorState
           title={t("errors.data_unavailable", { name: t("nav.court_lineage") })}
           message={t("errors.payload_error", { name: t("nav.court_lineage") })}
-          onRetry={() => { void refetch(); }}
+          onRetry={() => {
+            void refetch();
+          }}
         />
       </div>
     );
@@ -193,7 +208,9 @@ export function CourtLineagePage() {
           <h1 className="text-2xl font-semibold text-foreground">
             {t("lineage.title")}
           </h1>
-          <p className="text-sm text-muted-text">{t("lineage.subtitle_empty")}</p>
+          <p className="text-sm text-muted-text">
+            {t("lineage.subtitle_empty")}
+          </p>
         </div>
         <EmptyState
           icon={<GitBranch className="h-10 w-10" />}
@@ -335,7 +352,7 @@ export function CourtLineagePage() {
                 <div
                   className="h-2.5 w-2.5 rounded-sm"
                   style={{
-                    backgroundColor: courtColors[court.code] ?? "#8b8680",
+                    backgroundColor: getCourtColor(court.code) ?? "#8b8680",
                   }}
                 />
                 <span className="font-mono text-[11px] text-muted-text">

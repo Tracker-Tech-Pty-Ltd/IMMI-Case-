@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 
 interface CourtChartProps {
   data: Record<string, number>;
@@ -53,7 +53,7 @@ function CourtChartInner({ data }: CourtChartProps) {
             {chartData.map((entry) => (
               <Cell
                 key={entry.name}
-                fill={courtColors[entry.name] ?? "#8b8680"}
+                fill={getCourtColor(entry.name) ?? "#8b8680"}
               />
             ))}
           </Bar>

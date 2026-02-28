@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import type { CourtGroup } from "@/lib/lineage-transforms";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -15,15 +15,29 @@ const GROUP_OPTIONS: { value: CourtGroup; labelKey: string }[] = [
 
 const YEAR_PRESETS = [
   { labelKey: "lineage.preset_all_time", from: 2000, to: CURRENT_YEAR },
-  { labelKey: "lineage.preset_last_5y", from: CURRENT_YEAR - 5, to: CURRENT_YEAR },
-  { labelKey: "lineage.preset_last_10y", from: CURRENT_YEAR - 10, to: CURRENT_YEAR },
+  {
+    labelKey: "lineage.preset_last_5y",
+    from: CURRENT_YEAR - 5,
+    to: CURRENT_YEAR,
+  },
+  {
+    labelKey: "lineage.preset_last_10y",
+    from: CURRENT_YEAR - 10,
+    to: CURRENT_YEAR,
+  },
   { labelKey: "lineage.preset_2020_on", from: 2020, to: CURRENT_YEAR },
 ];
 
 const ALL_COURT_CODES = [
-  "MRTA", "RRTA", "AATA", "ARTA",
-  "FMCA", "FCCA", "FedCFamC2G",
-  "FCA", "HCA",
+  "MRTA",
+  "RRTA",
+  "AATA",
+  "ARTA",
+  "FMCA",
+  "FCCA",
+  "FedCFamC2G",
+  "FCA",
+  "HCA",
 ];
 
 interface LineageFiltersProps {
@@ -133,7 +147,7 @@ export function LineageFilters({
                 <span
                   className="inline-block h-2 w-2 rounded-full"
                   style={{
-                    backgroundColor: courtColors[code] ?? "#8b8680",
+                    backgroundColor: getCourtColor(code) ?? "#8b8680",
                   }}
                 />
                 {code}

@@ -11,7 +11,7 @@ import {
   Legend,
 } from "recharts";
 import type { TrendEntry } from "@/types/case";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 
 // Top courts to show in the trend chart (by typical volume)
 const TOP_COURTS = [
@@ -118,8 +118,8 @@ function TrendChartInner({ data }: TrendChartProps) {
               type="monotone"
               dataKey={court}
               stackId="1"
-              stroke={courtColors[court] ?? "#8b8680"}
-              fill={courtColors[court] ?? "#8b8680"}
+              stroke={getCourtColor(court) ?? "#8b8680"}
+              fill={getCourtColor(court) ?? "#8b8680"}
               fillOpacity={0.6}
             />
           ))}

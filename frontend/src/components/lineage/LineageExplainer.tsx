@@ -7,7 +7,7 @@ import type {
   CourtLineage,
   CourtMetadata,
 } from "@/lib/lineage-data";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import { cn } from "@/lib/utils";
 
 // ── Timeline constants ─────────────────────────────────────────
@@ -76,7 +76,7 @@ function GanttRow({ court }: GanttRowProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const totalCases = useMemo(() => sumCases(court), [court]);
-  const color = courtColors[court.code] ?? "#8b8680";
+  const color = getCourtColor(court.code) ?? "#8b8680";
   const isOngoing = court.years[1] === 9999;
   const endYear = isOngoing ? TIMELINE_END : court.years[1];
   const leftPct = yearToPercent(court.years[0]);

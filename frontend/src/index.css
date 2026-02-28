@@ -57,6 +57,36 @@
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow);
   --shadow-lg: var(--shadow-lg);
+
+  /* Opacity */
+  --opacity-0: var(--opacity-0);
+  --opacity-10: var(--opacity-10);
+  --opacity-20: var(--opacity-20);
+  --opacity-30: var(--opacity-30);
+  --opacity-50: var(--opacity-50);
+  --opacity-75: var(--opacity-75);
+  --opacity-100: var(--opacity-100);
+
+  /* Z-Index */
+  --z-index-dropdown: var(--z-dropdown);
+  --z-index-popover: var(--z-popover);
+  --z-index-tooltip: var(--z-tooltip);
+  --z-index-modal: var(--z-modal);
+  --z-index-toast: var(--z-toast);
+
+  /* Animation */
+  --duration-fast: var(--duration-fast);
+  --duration-normal: var(--duration-normal);
+  --duration-slow: var(--duration-slow);
+
+  /* Typography extras */
+  --line-height-tight: var(--line-height-tight);
+  --line-height-normal: var(--line-height-normal);
+  --line-height-relaxed: var(--line-height-relaxed);
+  --font-weight-light: var(--font-weight-light);
+  --font-weight-medium: var(--font-weight-medium);
+  --font-weight-semibold: var(--font-weight-semibold);
+  --font-weight-bold: var(--font-weight-bold);
 }
 
 /* ─── Base styles ───────────────────────────────────────────── */
@@ -144,9 +174,78 @@ input[type="checkbox"]:focus-visible {
   outline-offset: 2px;
 }
 
-/* ─── Select ───────────────────────────────────────────────── */
+/* ─── Form Controls ─────────────────────────────────────────── */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea {
+  width: 100%;
+  padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-background-card);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  transition: border-color var(--duration-normal, 300ms) var(--ease-out, ease),
+              box-shadow var(--duration-normal, 300ms) var(--ease-out, ease);
+}
+
+input[type="text"]:focus-visible,
+input[type="email"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="number"]:focus-visible,
+input[type="search"]:focus-visible,
+input[type="url"]:focus-visible,
+input[type="tel"]:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-color: var(--color-accent);
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background-color: var(--color-background-surface);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
 select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding: var(--spacing-2, 0.5rem) var(--spacing-8, 2rem) var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-background-card);
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e7177' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-2, 0.5rem) center;
+  background-size: 1.25em 1.25em;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
   cursor: pointer;
+  transition: border-color var(--duration-normal, 300ms) ease;
+}
+
+select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-color: var(--color-accent);
 }
 
 /* ─── Theme transition (temporary class during dark/light switch) ── */
@@ -159,6 +258,21 @@ select {
     fill             0.7s cubic-bezier(0.4, 0, 0.2, 1),
     stroke           0.7s cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow       0.7s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* ─── Celestial Toggle Variables ────────────────────────────── */
+:root {
+  --ct-sky-day-from: #87ceeb;
+  --ct-sky-day-to: #f9a825;
+  --ct-sky-night-from: #0a0c14;
+  --ct-sky-night-to: #141008;
+  --ct-sun-color: #ffc107;
+  --ct-moon-color: #c0d0e8;
+  --ct-orb-glow-light: rgba(255, 193, 7, 0.7);
+  --ct-orb-glow-dark: rgba(192, 208, 232, 0.6);
+  --ct-bg-day: #192230;
+  --ct-bg-night: #0a0e1a;
+  --ct-star-color: #e2ddd6;
 }
 
 /* ─── Celestial Theme Toggle ─────────────────────────────────── */
@@ -211,11 +325,11 @@ select {
 .ct-sky {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #87ceeb 0%, #f9a825 100%);
+  background: linear-gradient(135deg, var(--ct-sky-day-from) 0%, var(--ct-sky-day-to) 100%);
   transition: background 0.7s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .dark .ct-sky {
-  background: linear-gradient(135deg, #0a0c14 0%, #141008 100%);
+  background: linear-gradient(135deg, var(--ct-sky-night-from) 0%, var(--ct-sky-night-to) 100%);
 }
 
 /* Stars — only visible in dark mode */
@@ -230,7 +344,7 @@ select {
 }
 .ct-star {
   position: absolute;
-  background: #e2ddd6;
+  background: var(--ct-star-color);
   border-radius: 50%;
   animation: ct-twinkle 2s ease-in-out infinite alternate;
 }
@@ -247,9 +361,9 @@ select {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #ffc107;
+  background: var(--ct-sun-color);
   box-shadow:
-    0 0 8px  rgba(255, 193, 7, 0.7),
+    0 0 8px  var(--ct-orb-glow-light),
     0 0 18px rgba(255, 193, 7, 0.4),
     inset 0 1px 2px rgba(255,255,255,0.3);
   transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
@@ -289,14 +403,13 @@ select {
   transform: translateX(32px);
   background: var(--color-accent);
   box-shadow:
-    0 0 8px  rgba(196, 130, 40, 0.6),
-    0 0 18px rgba(196, 130, 40, 0.3),
+    0 0 8px  var(--ct-orb-glow-dark),
+    0 0 18px rgba(192, 208, 232, 0.3),
     inset 0 1px 2px rgba(255,255,255,0.15);
 }
 .dark .ct-orb::before {
   opacity: 1;
-  /* background set inline via --color-background-card reference */
-  background: #192230; /* dark card bg */
+  background: var(--color-background-card);
 }
 .dark .ct-orb::after {
   opacity: 1;

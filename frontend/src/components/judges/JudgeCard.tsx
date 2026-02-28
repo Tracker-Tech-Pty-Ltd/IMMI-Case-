@@ -1,7 +1,7 @@
 import { Briefcase, Scale } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CourtBadge } from "@/components/shared/CourtBadge";
-import { courtColors } from "@/tokens/tokens";
+import { getCourtColor } from "@/tokens/tokens";
 import { cn } from "@/lib/utils";
 import { approvalBadgeClass } from "./constants";
 import type { JudgeLeaderboardEntry } from "@/types/case";
@@ -21,7 +21,7 @@ export function JudgeCard({
 }: JudgeCardProps) {
   const { t } = useTranslation();
   const displayName = judge.display_name ?? judge.name;
-  const accentColor = courtColors[judge.primary_court ?? ""] ?? "#6b7585";
+  const accentColor = getCourtColor(judge.primary_court ?? "") ?? "#6b7585";
   const yearsLabel =
     judge.active_years.first && judge.active_years.last
       ? judge.active_years.first === judge.active_years.last
