@@ -113,4 +113,30 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
         # All other routes → React index.html (client-side routing handles the rest)
         return send_from_directory(react_dir, "index.html")
 
+    # Background warmup: pre-fetch and pre-compute caches so the first browser
+    # request is instant instead of paying the cold-start penalty.
+    # Order:
+    #   1. stats (fast, ~5s)
+    #   2. analytics cases (7 cols, ~13s on free tier)
+    #   3. computed analytics results (4 endpoints, uses test_client, ~2-5s RPC)
+    def _warmup_stats_cache():
+        import time as _time
+        _time.sleep(2)  # let Flask finish binding to the port first
+        try:
+            from .routes.api import (
+                _fill_stats_cache,
+                _fill_analytics_cases_cache,
+                _fill_analytics_cache,
+            )
+            with app.app_context():
+                _fill_stats_cache()
+                _fill_analytics_cases_cache()
+                _fill_analytics_cache(app)
+        except Exception:
+            pass  # warmup failure is silent — browser request will fill it
+
+    import threading as _threading
+    _warmup_thread = _threading.Thread(target=_warmup_stats_cache, daemon=True)
+    _warmup_thread.start()
+
     return app

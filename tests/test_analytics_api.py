@@ -184,8 +184,15 @@ def analytics_cases() -> list[ImmigrationCase]:
 
 @pytest.fixture
 def patch_analytics_cases(monkeypatch, analytics_cases):
+    # Patch both accessors so tests work regardless of which path each endpoint uses.
+    # _get_all_cases: used by analytics_monthly_trends (needs `date` field not in ANALYTICS_COLS)
+    # _get_analytics_cases: used by all other analytics endpoints (7-column optimised fetch)
     monkeypatch.setattr(
         "immi_case_downloader.web.routes.api._get_all_cases",
+        lambda: analytics_cases,
+    )
+    monkeypatch.setattr(
+        "immi_case_downloader.web.routes.api._get_analytics_cases",
         lambda: analytics_cases,
     )
 
@@ -281,13 +288,14 @@ def test_success_rate_confidence_levels(client, monkeypatch, analytics_cases):
         big_case.ensure_id()
         big.append(big_case)
 
-    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_all_cases", lambda: big)
+    # analytics_success_rate uses _get_analytics_cases (7-col optimised path)
+    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: big)
     high = client.get("/api/v1/analytics/success-rate").get_json()
     assert high["success_rate"]["confidence"] == "high"
 
     # <20 => low
     small = analytics_cases[:10]
-    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_all_cases", lambda: small)
+    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: small)
     low = client.get("/api/v1/analytics/success-rate").get_json()
     assert low["success_rate"]["confidence"] == "low"
 
@@ -427,7 +435,8 @@ def test_judge_profile_strict_identity_avoids_cross_court_murphy_mix(client, mon
             visa_subclass="866",
         ),
     ]
-    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_all_cases", lambda: cases)
+    # judge-profile uses _get_analytics_cases (7-col optimised path)
+    monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: cases)
 
     data = client.get(
         "/api/v1/analytics/judge-profile?name=Bernard%20Michael%20Murphy"

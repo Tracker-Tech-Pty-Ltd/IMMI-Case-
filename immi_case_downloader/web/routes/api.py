@@ -1140,6 +1140,31 @@ def _fill_analytics_cases_cache() -> None:
         pass  # warmup failure is silent
 
 
+def _fill_analytics_cache(app) -> None:  # type: ignore[type-arg]
+    """Pre-warm the computed analytics cache (4 main endpoints, no-filter case).
+
+    Uses Flask's test client so all RPC-path / Python-fallback logic is reused
+    without duplication. After this runs, the first real browser request for
+    /analytics will be served instantly from _analytics_cache instead of waiting
+    for a fresh Supabase RPC call (~2-5 s on free tier).
+    """
+    endpoints = [
+        "/api/v1/analytics/outcomes",
+        "/api/v1/analytics/judges",
+        "/api/v1/analytics/legal-concepts",
+        "/api/v1/analytics/nature-outcome",
+    ]
+    try:
+        with app.test_client() as tc:
+            for path in endpoints:
+                try:
+                    tc.get(path)
+                except Exception as exc:
+                    logger.warning("Analytics cache warmup failed for %s: %s", path, exc)
+    except Exception as exc:
+        logger.warning("Analytics cache warmup skipped: %s", exc)
+
+
 def _clean_visa(raw: object) -> str:
     """Wrapper around clean_subclass for None/NaN-safe API usage."""
     return clean_subclass(raw)
@@ -2738,7 +2763,7 @@ def analytics_filter_options():
     year_from = safe_int(request.args.get("year_from"), default=0, min_val=0, max_val=2100)
     year_to = safe_int(request.args.get("year_to"), default=0, min_val=0, max_val=2100)
 
-    scoped_cases = _get_all_cases()
+    scoped_cases = _get_analytics_cases()
     if court:
         scoped_cases = [c for c in scoped_cases if c.court_code == court]
     if year_from:
@@ -3043,7 +3068,7 @@ def analytics_nature_outcome():
 @api_bp.route("/analytics/success-rate")
 def analytics_success_rate():
     """Multi-factor success-rate analytics."""
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     visa_subclass = request.args.get("visa_subclass", "").strip()
     case_nature = request.args.get("case_nature", "").strip()
@@ -3191,7 +3216,7 @@ def analytics_judge_leaderboard():
     name_q = request.args.get("name_q", "").strip().lower()
     limit = safe_int(request.args.get("limit"), default=50, min_val=1, max_val=200)
     min_cases = safe_int(request.args.get("min_cases"), default=1, min_val=1, max_val=100000)
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     judge_cases: dict[str, list[ImmigrationCase]] = defaultdict(list)
     judge_court_counts: dict[str, Counter] = defaultdict(Counter)
@@ -3263,7 +3288,7 @@ def analytics_judge_profile():
     if not name:
         return _error("name query parameter is required")
 
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
     judge_cases, canonical_name, display_name = _collect_cases_for_judge(cases, name)
 
     # Compute court-wide approval rates for comparison
@@ -3300,7 +3325,7 @@ def analytics_judge_compare():
         return _error("At least two judge names are required")
 
     names = names[:4]
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     # Resolve canonical keys for all requested judges upfront
     judge_meta: dict[str, tuple[str, str]] = {}  # canonical_key → (canonical_name, display_name)
@@ -3344,7 +3369,7 @@ def analytics_judge_compare():
 def analytics_concept_effectiveness():
     """Per-concept win-rate and lift vs baseline."""
     limit = safe_int(request.args.get("limit"), default=30, min_val=1, max_val=100)
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     baseline_wins = 0
     concept_totals: Counter = Counter()
@@ -3395,7 +3420,7 @@ def analytics_concept_cooccurrence():
     """Concept co-occurrence matrix and top pairs."""
     limit = safe_int(request.args.get("limit"), default=15, min_val=2, max_val=30)
     min_count = safe_int(request.args.get("min_count"), default=50, min_val=1, max_val=1000000)
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     concept_frequency: Counter = Counter()
     baseline_wins = 0
@@ -3458,7 +3483,7 @@ def analytics_concept_cooccurrence():
 def analytics_concept_trends():
     """Time-series concept usage + emerging/declining concepts."""
     limit = safe_int(request.args.get("limit"), default=10, min_val=1, max_val=30)
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     # Single-pass: collect frequency + per-concept year totals/wins
     concept_frequency: Counter = Counter()
@@ -3549,7 +3574,7 @@ def analytics_concept_trends():
 @api_bp.route("/analytics/flow-matrix")
 def analytics_flow_matrix():
     """Three-layer flow: Court → Case Nature → Outcome (for Sankey diagrams)."""
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
     top_n = safe_int(request.args.get("top_n"), default=8, min_val=1, max_val=20)
 
     # Count case natures and outcomes to pick top-N
@@ -4229,7 +4254,7 @@ def taxonomy_guided_search():
 @api_bp.route("/analytics/visa-families")
 def analytics_visa_families():
     """Case counts and win rates aggregated by visa family."""
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     family_totals: dict[str, int] = Counter()
     family_wins: dict[str, int] = Counter()
