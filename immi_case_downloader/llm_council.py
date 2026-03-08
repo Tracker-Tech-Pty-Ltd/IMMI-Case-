@@ -895,8 +895,7 @@ def _fallback_moderator(opinions: list[CouncilOpinion]) -> dict[str, Any]:
     composed_answer = "\n\n".join(
         f"[{op.provider_label}] {op.answer}" for op in successful[:2]
     )
-    composed_answer = str(parsed.get("composed_answer", "")).strip() or mod_opinion.answer
-    mock_judgment = str(parsed.get("mock_judgment", "")).strip() or composed_answer
+    mock_judgment = composed_answer
 
     return {
         "success": True,
@@ -921,7 +920,7 @@ def _fallback_moderator(opinions: list[CouncilOpinion]) -> dict[str, Any]:
         "shared_law_sections_confidence_percent": shared_law_confidence_percent,
         "shared_law_sections_confidence_reason": shared_law_confidence_reason,
         "composed_answer": composed_answer,
-        "mock_judgment": composed_answer,
+        "mock_judgment": mock_judgment,
         "consensus": "Partial consensus generated via fallback path.",
         "disagreements": "Possible conflicts remain; review each model opinion.",
         "outcome_likelihood_percent": 50,
@@ -1206,6 +1205,9 @@ def _run_moderator(
         consensus = " | ".join(agreement_points[:3])
     if not disagreements and conflict_points:
         disagreements = " | ".join(conflict_points[:3])
+
+    composed_answer = str(parsed.get("composed_answer", "")).strip() or mod_opinion.answer
+    mock_judgment = str(parsed.get("mock_judgment", "")).strip() or composed_answer
 
     return {
         "success": True,
