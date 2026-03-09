@@ -8,6 +8,7 @@ import { JudgeLeaderboard } from "@/components/judges/JudgeLeaderboard";
 import { JudgeCard } from "@/components/judges/JudgeCard";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { useJudgeLeaderboard } from "@/hooks/use-judges";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -124,60 +125,58 @@ export function JudgeProfilesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("judges.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("judges.subtitle")}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={t("tooltips.table_view")}
-            aria-pressed={viewMode === "table"}
-            onClick={() => {
-              setViewMode("table");
-              try {
-                localStorage.setItem("judges-view-mode", "table");
-              } catch {
-                /* ignore */
-              }
-            }}
-            className={cn(
-              "rounded-md p-1.5",
-              viewMode === "table"
-                ? "bg-accent-muted text-accent"
-                : "text-muted-text hover:text-foreground",
-            )}
-            title={t("judges.table_view_label")}
-          >
-            <List className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            aria-label={t("tooltips.chart_view")}
-            aria-pressed={viewMode === "cards"}
-            onClick={() => {
-              setViewMode("cards");
-              try {
-                localStorage.setItem("judges-view-mode", "cards");
-              } catch {
-                /* ignore */
-              }
-            }}
-            className={cn(
-              "rounded-md p-1.5",
-              viewMode === "cards"
-                ? "bg-accent-muted text-accent"
-                : "text-muted-text hover:text-foreground",
-            )}
-            title={t("judges.card_view_label")}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={t("judges.title")}
+        description={t("judges.subtitle")}
+        actions={
+          <>
+            <button
+              type="button"
+              aria-label={t("tooltips.table_view")}
+              aria-pressed={viewMode === "table"}
+              onClick={() => {
+                setViewMode("table");
+                try {
+                  localStorage.setItem("judges-view-mode", "table");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className={cn(
+                "rounded-md p-1.5",
+                viewMode === "table"
+                  ? "bg-accent-muted text-accent"
+                  : "text-muted-text hover:text-foreground",
+              )}
+              title={t("judges.table_view_label")}
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={t("tooltips.chart_view")}
+              aria-pressed={viewMode === "cards"}
+              onClick={() => {
+                setViewMode("cards");
+                try {
+                  localStorage.setItem("judges-view-mode", "cards");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className={cn(
+                "rounded-md p-1.5",
+                viewMode === "cards"
+                  ? "bg-accent-muted text-accent"
+                  : "text-muted-text hover:text-foreground",
+              )}
+              title={t("judges.card_view_label")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </>
+        }
+      />
 
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -234,7 +233,7 @@ export function JudgeProfilesPage() {
           </p>
           <div className="flex items-center gap-2">
             {selectedNames.length >= MAX_COMPARE && (
-              <span className="text-xs text-semantic-warning">
+              <span className="text-xs text-warning">
                 {t("judges.max_selected", { max: MAX_COMPARE })}
               </span>
             )}

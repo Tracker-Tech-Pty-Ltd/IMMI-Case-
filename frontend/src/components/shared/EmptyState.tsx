@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { cn } from "@/lib/utils"
+import { StatePanel } from "@/components/shared/StatePanel"
 
 interface EmptyStateProps {
   icon?: ReactNode
@@ -7,6 +7,7 @@ interface EmptyStateProps {
   description?: string
   action?: ReactNode
   className?: string
+  contained?: boolean
 }
 
 export function EmptyState({
@@ -15,19 +16,16 @@ export function EmptyState({
   description,
   action,
   className,
+  contained = true,
 }: EmptyStateProps) {
   return (
-    <div className={cn("flex flex-col items-center justify-center py-16 text-center", className)}>
-      {icon && (
-        <div className="mb-4 rounded-full bg-surface p-4 text-muted-text">
-          {icon}
-        </div>
-      )}
-      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-      {description && (
-        <p className="mt-1 max-w-sm text-sm text-muted-text">{description}</p>
-      )}
-      {action && <div className="mt-4">{action}</div>}
-    </div>
+    <StatePanel
+      title={title}
+      description={description}
+      icon={icon}
+      action={action}
+      contained={contained}
+      className={className}
+    />
   )
 }

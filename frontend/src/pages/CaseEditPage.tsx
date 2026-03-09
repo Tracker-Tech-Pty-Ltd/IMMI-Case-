@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { Save } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useCase, useUpdateCase } from "@/hooks/use-cases";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { toast } from "sonner";
 import type { ImmigrationCase } from "@/types/case";
 
@@ -76,7 +78,7 @@ export function CaseEditPage() {
   const { id } = useParams<{ id: string }>();
   const caseId = id ?? "";
   const navigate = useNavigate();
-  const { data, isLoading } = useCase(caseId);
+  const { data, isLoading, isError, error, refetch } = useCase(caseId);
   const updateMutation = useUpdateCase();
   const [formEditsByCaseId, setFormEditsByCaseId] = useState<
     Record<string, Record<string, string>>
@@ -123,11 +125,35 @@ export function CaseEditPage() {
     return <Navigate to="/cases" replace />;
   }
 
-  if (isLoading || !data) {
+  if (isLoading) {
+    return <PageLoader />;
+  }
+
+  if (isError && !data) {
     return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("pages.case_edit.loading")}
-      </div>
+      <ApiErrorState
+        title={t("errors.failed_to_load", { name: t("nav.cases") })}
+        message={
+          error instanceof Error
+            ? error.message
+            : t("errors.api_request_failed", { name: t("nav.cases") })
+        }
+        onRetry={() => {
+          void refetch();
+        }}
+      />
+    );
+  }
+
+  if (!data) {
+    return (
+      <ApiErrorState
+        title={t("errors.data_unavailable", { name: t("nav.cases") })}
+        message={t("errors.payload_error", { name: t("nav.cases") })}
+        onRetry={() => {
+          void refetch();
+        }}
+      />
     );
   }
 

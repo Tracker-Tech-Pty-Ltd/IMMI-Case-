@@ -26,6 +26,7 @@ import {
   PRESETS,
   type PresetName,
 } from "@/hooks/use-theme-preset";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { cn } from "@/lib/utils";
 import type { ImmigrationCase } from "@/types/case";
 
@@ -2635,14 +2636,10 @@ export function DesignTokensPage() {
   const { t } = useTranslation();
   return (
     <div className="space-y-12">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">
-          {t("pages.design_tokens.title")}
-        </h1>
-        <p className="text-sm text-muted-text">
-          {t("pages.design_tokens.subtitle")}
-        </p>
-      </div>
+      <PageHeader
+        title={t("pages.design_tokens.title")}
+        description={t("pages.design_tokens.subtitle")}
+      />
 
       <SectionNav />
       <ThemePresetSwitcher />

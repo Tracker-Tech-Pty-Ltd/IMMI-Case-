@@ -1,4 +1,6 @@
 import { useTranslation } from "react-i18next";
+import { AlertTriangle, RotateCcw } from "lucide-react";
+import { StatePanel } from "@/components/shared/StatePanel";
 
 interface ApiErrorStateProps {
   title?: string;
@@ -12,22 +14,24 @@ export function ApiErrorState({ title, message, onRetry }: ApiErrorStateProps) {
   const defaultTitle = title ?? t("errors.unable_to_load_data");
   const defaultMessage = message ?? t("errors.unable_to_load_message");
   return (
-    <div className="rounded-lg border border-red-300/40 bg-red-50/40 p-4 text-sm dark:border-red-500/30 dark:bg-red-900/15">
-      <p className="font-semibold text-red-800 dark:text-red-200">
-        {defaultTitle}
-      </p>
-      <p className="mt-1 text-red-700/90 dark:text-red-200/90">
-        {defaultMessage}
-      </p>
-      {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 rounded-md border border-red-600/30 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100/70 dark:border-red-300/30 dark:text-red-200 dark:hover:bg-red-900/30"
-        >
-          {t("common.retry")}
-        </button>
-      ) : null}
-    </div>
+    <StatePanel
+      tone="error"
+      align="start"
+      icon={<AlertTriangle className="h-5 w-5" />}
+      title={defaultTitle}
+      description={defaultMessage}
+      action={
+        onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 rounded-md border border-danger/25 bg-background-card px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger/10"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t("common.retry")}
+          </button>
+        ) : null
+      }
+    />
   );
 }

@@ -16,6 +16,22 @@ interface CourtChartProps {
   data: Record<string, number>;
 }
 
+const COURT_LABELS: Record<string, string> = {
+  "Administrative Appeals Tribunal": "AAT",
+  "Administrative Review Tribunal": "ART",
+  "Federal Court of Australia": "FCA",
+  "Federal Circuit Court of Australia": "FCCA",
+  "Federal Circuit and Family Court of Australia (Division 2)": "FCFCOA D2",
+  "High Court of Australia": "HCA",
+  "Refugee Review Tribunal": "RRT",
+  "Migration Review Tribunal": "MRT",
+  "Federal Magistrates Court of Australia": "FMCA",
+};
+
+function formatCourtLabel(name: string): string {
+  return COURT_LABELS[name] ?? name;
+}
+
 function CourtChartInner({ data }: CourtChartProps) {
   const { t } = useTranslation();
   const chartData = Object.entries(data)
@@ -38,6 +54,10 @@ function CourtChartInner({ data }: CourtChartProps) {
           <XAxis
             dataKey="name"
             tick={{ fontSize: 12, fill: "var(--color-text-secondary)" }}
+            tickFormatter={formatCourtLabel}
+            interval={0}
+            height={44}
+            tickMargin={6}
           />
           <YAxis tick={{ fontSize: 12, fill: "var(--color-text-secondary)" }} />
           <Tooltip

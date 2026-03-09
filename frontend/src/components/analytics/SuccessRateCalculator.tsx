@@ -138,7 +138,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
       </div>
 
       {(isFilterOptionsError || isOutcomesError || isConceptOptionsError) && (
-        <p className="mt-2 text-xs text-semantic-warning">
+        <p className="mt-2 text-xs text-warning">
           {t("analytics.filter_data_partial_warning", {
             defaultValue:
               "Some filter options are temporarily unavailable. You can still run calculations with available filters.",
@@ -251,8 +251,8 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-text">
                 {t("analytics.win_trend")}
               </p>
-              <div className="min-h-[180px] flex-1">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-[220px] min-w-0 flex-1">
+                <ResponsiveContainer width="100%" height={220}>
                   <LineChart
                     data={data.trend}
                     margin={{ top: 5, right: 5, left: -20, bottom: 5 }}

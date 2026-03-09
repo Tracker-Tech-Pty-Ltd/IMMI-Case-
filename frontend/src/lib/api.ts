@@ -28,7 +28,8 @@ import type { LineageData } from "@/lib/lineage-data";
 
 let csrfToken: string | null = null;
 const API_TIMEOUT_MS = 20_000;
-const ANALYTICS_TIMEOUT_MS = 10_000;
+const ANALYTICS_TIMEOUT_MS = 15_000;
+const ANALYTICS_HEAVY_TIMEOUT_MS = 20_000;
 const FILTER_OPTIONS_TIMEOUT_MS = 8_000;
 const DASHBOARD_STATS_TIMEOUT_MS = 12_000;
 const DASHBOARD_TRENDS_TIMEOUT_MS = 8_000;
@@ -323,7 +324,7 @@ export function fetchAnalyticsFilterOptions(
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch(`/api/v1/analytics/filter-options${suffix}`, {
-    timeoutMs: ANALYTICS_TIMEOUT_MS,
+    timeoutMs: ANALYTICS_HEAVY_TIMEOUT_MS,
   });
 }
 
@@ -334,7 +335,7 @@ export function fetchJudges(
   const qs = buildFilterParams(filters);
   const sep = qs ? "&" : "?";
   return apiFetch(`/api/v1/analytics/judges${qs}${sep}limit=${limit}`, {
-    timeoutMs: ANALYTICS_TIMEOUT_MS,
+    timeoutMs: ANALYTICS_HEAVY_TIMEOUT_MS,
   });
 }
 
@@ -489,7 +490,7 @@ export function fetchMonthlyTrends(
   appendAnalyticsFilters(qs, params);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch(`/api/v1/analytics/monthly-trends${suffix}`, {
-    timeoutMs: ANALYTICS_TIMEOUT_MS,
+    timeoutMs: ANALYTICS_HEAVY_TIMEOUT_MS,
   });
 }
 

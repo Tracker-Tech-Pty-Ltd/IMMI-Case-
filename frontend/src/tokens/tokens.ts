@@ -1,5 +1,5 @@
 /* Auto-generated from tokens.json — do not edit manually */
-/* Generated: 2026-03-08T17:08:24.287Z */
+/* Generated: 2026-03-08T22:03:05.691Z */
 
 export const tokens = {
   "color": {
@@ -36,8 +36,8 @@ export const tokens = {
       "muted": "#8b8680"
     },
     "semantic": {
-      "success": "#2d7d46",
-      "warning": "#b8860b",
+      "success": "#236238",
+      "warning": "#7d5b07",
       "danger": "#a83232",
       "info": "#2a6496"
     },
@@ -215,8 +215,8 @@ export function getCourtColor(court: string): string | undefined {
 }
 
 export const semanticColors = {
-  success: "#2d7d46",
-  warning: "#b8860b",
+  success: "#236238",
+  warning: "#7d5b07",
   danger: "#a83232",
   info: "#2a6496",
 } as const

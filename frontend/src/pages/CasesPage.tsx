@@ -27,6 +27,8 @@ import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { SaveSearchModal } from "@/components/saved-searches/SaveSearchModal";
 import { SavedSearchPanel } from "@/components/saved-searches/SavedSearchPanel";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { CaseFilters, ImmigrationCase } from "@/types/case";
@@ -386,70 +388,74 @@ export function CasesPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("cases.title")}
-          </h1>
-          <p className="text-sm text-muted-text">
+      <PageHeader
+        title={t("cases.title")}
+        description={t("cases.page_subtitle", {
+          defaultValue:
+            "Review, compare, and manage immigration case records from one workspace.",
+        })}
+        meta={
+          <span>
             {total.toLocaleString()} {t("units.cases")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode("table");
-              try {
-                localStorage.setItem("cases-view-mode", "table");
-              } catch {
-                /* ignore */
-              }
-            }}
-            className={cn(
-              "rounded-md p-1.5",
-              viewMode === "table"
-                ? "bg-accent-muted text-accent"
-                : "text-muted-text hover:text-foreground",
-            )}
-            aria-label={t("cases.table_view", { defaultValue: "Table view" })}
-            title={t("cases.table_view", { defaultValue: "Table view" })}
-            aria-pressed={viewMode === "table"}
-          >
-            <List className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setViewMode("cards");
-              try {
-                localStorage.setItem("cases-view-mode", "cards");
-              } catch {
-                /* ignore */
-              }
-            }}
-            className={cn(
-              "rounded-md p-1.5",
-              viewMode === "cards"
-                ? "bg-accent-muted text-accent"
-                : "text-muted-text hover:text-foreground",
-            )}
-            aria-label={t("cases.card_view", { defaultValue: "Card view" })}
-            title={t("cases.card_view", { defaultValue: "Card view" })}
-            aria-pressed={viewMode === "cards"}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/cases/add")}
-            aria-keyshortcuts="A"
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-light"
-          >
-            {t("buttons.add_case")}
-          </button>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("table");
+                try {
+                  localStorage.setItem("cases-view-mode", "table");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className={cn(
+                "rounded-md p-1.5",
+                viewMode === "table"
+                  ? "bg-accent-muted text-accent"
+                  : "text-muted-text hover:text-foreground",
+              )}
+              aria-label={t("cases.table_view", { defaultValue: "Table view" })}
+              title={t("cases.table_view", { defaultValue: "Table view" })}
+              aria-pressed={viewMode === "table"}
+            >
+              <List className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode("cards");
+                try {
+                  localStorage.setItem("cases-view-mode", "cards");
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className={cn(
+                "rounded-md p-1.5",
+                viewMode === "cards"
+                  ? "bg-accent-muted text-accent"
+                  : "text-muted-text hover:text-foreground",
+              )}
+              aria-label={t("cases.card_view", { defaultValue: "Card view" })}
+              title={t("cases.card_view", { defaultValue: "Card view" })}
+              aria-pressed={viewMode === "cards"}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/cases/add")}
+              aria-keyshortcuts="A"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-light"
+            >
+              {t("buttons.add_case")}
+            </button>
+          </>
+        }
+      />
 
       {/* Primary Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -746,11 +752,7 @@ export function CasesPage() {
       )}
 
       {/* Loading */}
-      {isLoading && !isCasesError && (
-        <div className="flex h-32 items-center justify-center text-muted-text">
-          {t("common.loading_ellipsis")}
-        </div>
-      )}
+      {isLoading && !isCasesError && <PageLoader />}
 
       {/* Empty state */}
       {!isLoading && !isCasesError && cases.length === 0 && (

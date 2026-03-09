@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJobStatus } from "@/lib/api";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 
 const TYPE_META: Record<
   string,
@@ -40,7 +43,7 @@ export function JobStatusPage() {
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: status } = useQuery({
+  const { data: status, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["job-status"],
     queryFn: fetchJobStatus,
     refetchInterval: (query) => (query.state.data?.running ? 2000 : 5000),
@@ -61,10 +64,57 @@ export function JobStatusPage() {
     };
   }, [status?.running, startTime]);
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title={t("pages.job_status.title")}
+          description={t("jobs.subtitle")}
+          icon={<Clock className="h-5 w-5" />}
+        />
+        <PageLoader />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title={t("pages.job_status.title")}
+          description={t("jobs.subtitle")}
+          icon={<Clock className="h-5 w-5" />}
+        />
+        <ApiErrorState
+          title={t("errors.failed_to_load", { name: t("jobs.title") })}
+          message={
+            error instanceof Error
+              ? error.message
+              : t("errors.api_request_failed", { name: t("jobs.title") })
+          }
+          onRetry={() => {
+            void refetch();
+          }}
+        />
+      </div>
+    );
+  }
+
   if (!status) {
     return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.loading_ellipsis")}
+      <div className="space-y-6">
+        <PageHeader
+          title={t("pages.job_status.title")}
+          description={t("jobs.subtitle")}
+          icon={<Clock className="h-5 w-5" />}
+        />
+        <ApiErrorState
+          title={t("errors.data_unavailable", { name: t("jobs.title") })}
+          message={t("errors.payload_error", { name: t("jobs.title") })}
+          onRetry={() => {
+            void refetch();
+          }}
+        />
       </div>
     );
   }
@@ -96,15 +146,11 @@ export function JobStatusPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <Clock className="h-6 w-6 text-accent" />
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("pages.job_status.title")}
-          </h1>
-        </div>
-        <p className="mt-1 text-sm text-muted-text">{t("jobs.subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("pages.job_status.title")}
+        description={t("jobs.subtitle")}
+        icon={<Clock className="h-5 w-5" />}
+      />
 
       {/* Main Status Card */}
       <div className="rounded-lg border border-border bg-card p-6">

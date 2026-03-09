@@ -19,6 +19,7 @@ import { fetchPipelineStatus, pipelineAction } from "@/lib/api";
 import { useStats } from "@/hooks/use-stats";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { DatabaseCard } from "@/components/shared/DatabaseCard";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { toast } from "sonner";
 
 const DATABASES = [
@@ -181,15 +182,11 @@ export function PipelinePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <GitBranch className="h-6 w-6 text-accent" />
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("pipeline.title")}
-          </h1>
-        </div>
-        <p className="mt-1 text-sm text-muted-text">{t("pipeline.subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("pipeline.title")}
+        description={t("pipeline.subtitle")}
+        icon={<GitBranch className="h-5 w-5" />}
+      />
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">

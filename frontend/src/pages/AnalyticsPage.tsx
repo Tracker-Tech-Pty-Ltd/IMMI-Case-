@@ -16,6 +16,7 @@ import { ConceptIntelligenceSection } from "@/components/analytics/ConceptIntell
 import { VisaFamiliesSection } from "@/components/analytics/VisaFamiliesSection";
 import { AnalyticsInsightsPanel } from "@/components/analytics/AnalyticsInsightsPanel";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { useAnalyticsFilterOptions } from "@/hooks/use-analytics";
 import type {
   AnalyticsFilterOption,
@@ -175,26 +176,24 @@ export function AnalyticsPage() {
         className="space-y-3 rounded-lg border border-border bg-card p-4"
         data-testid="analytics-filter-scope"
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="font-semibold text-foreground">
-              {t("analytics.title")}
-            </h1>
-            <p className="text-sm text-muted-text">{t("analytics.subtitle")}</p>
-            <p className="mt-1 text-xs text-muted-text">{scopeSummary}</p>
-          </div>
-          {hasAnyFilter && (
-            <button
-              type="button"
-              aria-keyshortcuts="R"
-              onClick={resetAllFilters}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-text hover:bg-surface hover:text-foreground"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              {t("analytics.reset_all_filters")}
-            </button>
-          )}
-        </div>
+        <PageHeader
+          title={t("analytics.title")}
+          description={t("analytics.subtitle")}
+          meta={<span>{scopeSummary}</span>}
+          actions={
+            hasAnyFilter ? (
+              <button
+                type="button"
+                aria-keyshortcuts="R"
+                onClick={resetAllFilters}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-text hover:bg-surface hover:text-foreground"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t("analytics.reset_all_filters")}
+              </button>
+            ) : null
+          }
+        />
         <div>
           <h2 className="text-sm font-medium text-foreground">
             {t("analytics.filters_scope_title")}

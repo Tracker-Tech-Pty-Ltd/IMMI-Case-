@@ -42,12 +42,13 @@ function OutcomeTrendChartInner({ data }: OutcomeTrendChartProps) {
     .toSorted((a, b) => a.year - b.year);
 
   return (
-    <div className="flex flex-col">
-      <ResponsiveContainer width="100%" height="100%" minHeight={300}>
-        <AreaChart
-          data={chartData}
-          margin={{ top: 20, right: 15, bottom: 5, left: -10 }}
-        >
+    <div className="flex flex-col gap-2">
+      <div className="h-[300px] min-w-0">
+        <ResponsiveContainer width="100%" height={300}>
+          <AreaChart
+            data={chartData}
+            margin={{ top: 20, right: 15, bottom: 5, left: -10 }}
+          >
           <defs>
             <linearGradient id="affirmedGrad-trend" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#2d7d46" stopOpacity={0.2} />
@@ -136,8 +137,9 @@ function OutcomeTrendChartInner({ data }: OutcomeTrendChartProps) {
             dot={{ r: 2, fill: "#2a6496", strokeWidth: 0 }}
             activeDot={{ r: 4, fill: "#2a6496", strokeWidth: 2, stroke: "#fff" }}
           />
-        </AreaChart>
-      </ResponsiveContainer>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
       {/* L4: Legend explanation note */}
       <p className="mt-1 text-xs text-muted-text">
         {t("analytics.trend_legend_note", {

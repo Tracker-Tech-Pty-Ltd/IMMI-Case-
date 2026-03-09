@@ -35,6 +35,7 @@ import { CourtBadge } from "@/components/shared/CourtBadge";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { downloadExportFile } from "@/lib/api";
 import { buildDashboardInsights } from "@/lib/dashboard-insights";
 import { normalizeTrendEntries, hasRenderableTrendSeries } from "@/lib/trends";
@@ -282,12 +283,10 @@ export function DashboardPage() {
 
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("dashboard.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("dashboard.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("dashboard.title")}
+          description={t("dashboard.subtitle")}
+        />
 
         <div
           className={`rounded-lg border p-4 shadow-xs ${
@@ -354,12 +353,10 @@ export function DashboardPage() {
         : t("errors.api_request_failed", { name: "Dashboard" });
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("dashboard.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("dashboard.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("dashboard.title")}
+          description={t("dashboard.subtitle")}
+        />
         <ApiErrorState
           title={t("errors.failed_to_load", { name: "Dashboard" })}
           message={message}
@@ -374,12 +371,10 @@ export function DashboardPage() {
   if (!stats) {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("dashboard.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("dashboard.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("dashboard.title")}
+          description={t("dashboard.subtitle")}
+        />
         <ApiErrorState
           title={t("errors.data_unavailable", { name: "Dashboard" })}
           message={t("errors.payload_error", { name: "Dashboard" })}
@@ -394,14 +389,10 @@ export function DashboardPage() {
   if (stats.total_cases === 0 && !isFetching && !stats.degraded) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("dashboard.title")}
-          </h1>
-          <p className="text-sm text-muted-text">
-            {t("dashboard.subtitle_empty")}
-          </p>
-        </div>
+        <PageHeader
+          title={t("dashboard.title")}
+          description={t("dashboard.subtitle_empty")}
+        />
         <EmptyState
           icon={<FileText className="h-10 w-10" />}
           title={t("dashboard.welcome_title")}
@@ -620,14 +611,11 @@ export function DashboardPage() {
             </p>
           </div>
           <div className="grid gap-4 px-4 py-4 md:px-5 md:py-5 lg:grid-cols-[1.6fr_1fr]">
-            <div className="space-y-2">
-              <h1 className="font-heading text-3xl font-semibold leading-tight text-foreground md:text-[2.25rem]">
-                {t("dashboard.title")}
-              </h1>
-              <p className="max-w-2xl text-sm text-muted-text">
-                {t("dashboard.subtitle")}
-              </p>
-            </div>
+            <PageHeader
+              title={t("dashboard.title")}
+              description={t("dashboard.subtitle")}
+              className="space-y-2"
+            />
 
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-md border border-border/70 bg-card px-3 py-2">

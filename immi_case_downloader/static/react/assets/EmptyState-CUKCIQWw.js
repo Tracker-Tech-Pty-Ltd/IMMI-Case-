@@ -1,0 +1,1 @@
+import{j as s}from"./query-BpkVzf1m.js";import{ar as n}from"./index-BRh_lHfE.js";function u({icon:t,title:r,description:a,action:e,className:o,contained:m=!0}){return s.jsx(n,{title:r,description:a,icon:t,action:e,contained:m,className:o})}export{u as E};

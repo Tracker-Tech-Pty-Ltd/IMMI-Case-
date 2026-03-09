@@ -5,6 +5,7 @@ import { ArrowRight, Bookmark } from "lucide-react";
 import { toast } from "sonner";
 import { SavedSearchPanel } from "@/components/saved-searches/SavedSearchPanel";
 import { SaveSearchModal } from "@/components/saved-searches/SaveSearchModal";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
 import type { CaseFilters } from "@/types/case";
 
@@ -70,30 +71,26 @@ export function SavedSearchesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("saved_searches.title")}
-          </h1>
-          <p className="text-sm text-muted-text">
-            {t("saved_searches.page_subtitle", {
-              defaultValue:
-                "Run, share, and manage saved case filters in one place.",
+      <PageHeader
+        title={t("saved_searches.title")}
+        description={t("saved_searches.page_subtitle", {
+          defaultValue:
+            "Run, share, and manage saved case filters in one place.",
+        })}
+        actions={
+          <button
+            type="button"
+            onClick={() => navigate("/cases")}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-surface"
+          >
+            <Bookmark className="h-4 w-4" />
+            {t("saved_searches.manage_in_cases", {
+              defaultValue: "Go to Cases to create new searches",
             })}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate("/cases")}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-surface"
-        >
-          <Bookmark className="h-4 w-4" />
-          {t("saved_searches.manage_in_cases", {
-            defaultValue: "Go to Cases to create new searches",
-          })}
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      </div>
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        }
+      />
 
       <SavedSearchPanel
         onExecute={handleExecuteSavedSearch}

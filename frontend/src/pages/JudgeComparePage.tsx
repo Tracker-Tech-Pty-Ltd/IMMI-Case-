@@ -2,7 +2,10 @@ import { Link, useLocation } from "react-router-dom";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { JudgeCompareCard } from "@/components/judges/JudgeCompareCard";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { useJudgeCompare } from "@/hooks/use-judges";
 
 function useQueryNames() {
@@ -30,23 +33,21 @@ export function JudgeComparePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">
-          {t("pages.judge_comparison.title")}
-        </h1>
-        <Link
-          to="/judge-profiles"
-          className="text-sm font-medium text-accent hover:underline"
-        >
-          ← {t("pages.judge_comparison.back_to_profiles")}
-        </Link>
-      </div>
-      <p className="max-w-4xl text-sm text-muted-text">
-        {t("pages.judge_comparison.interpretation_hint", {
+      <PageHeader
+        title={t("pages.judge_comparison.title")}
+        description={t("pages.judge_comparison.interpretation_hint", {
           defaultValue:
             "Compare each judge by outcome mix, top visa subclasses, and yearly approval trend. Use tooltip values to read exact case counts and percentages.",
         })}
-      </p>
+        actions={
+          <Link
+            to="/judge-profiles"
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            ← {t("pages.judge_comparison.back_to_profiles")}
+          </Link>
+        }
+      />
       {names.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-text">
@@ -66,13 +67,12 @@ export function JudgeComparePage() {
       )}
 
       {names.length < 2 ? (
-        <p className="text-sm text-muted-text">
-          {t("pages.judge_comparison.min_judges")}
-        </p>
+        <EmptyState
+          title={t("pages.judge_comparison.min_judges")}
+          description={t("pages.judge_comparison.description")}
+        />
       ) : isLoading ? (
-        <p className="text-sm text-muted-text">
-          {t("common.loading_ellipsis")}
-        </p>
+        <PageLoader />
       ) : isError ? (
         <ApiErrorState
           title={t("judges.profile_load_failed")}

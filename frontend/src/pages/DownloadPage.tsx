@@ -15,6 +15,7 @@ import { startDownload, fetchJobStatus, downloadExportFile } from "@/lib/api";
 import { useStats } from "@/hooks/use-stats";
 import { ProgressRing } from "@/components/shared/ProgressRing";
 import { StatCard } from "@/components/dashboard/StatCard";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { toast } from "sonner";
 
 export function DownloadPage() {
@@ -54,12 +55,10 @@ export function DownloadPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">
-          {t("download.title")}
-        </h1>
-        <p className="mt-1 text-sm text-muted-text">{t("download.subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("download.title")}
+        description={t("download.subtitle")}
+      />
 
       {/* Stats cards */}
       <div className="grid gap-4 sm:grid-cols-3">

@@ -11,8 +11,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useLegislationDetail } from "@/hooks/use-legislations";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { LegislationTextViewer } from "@/components/legislation/LegislationTextViewer";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { cn } from "@/lib/utils";
 
 const AUSTLII_BASE = "https://www.austlii.edu.au/au/legis/cth";
@@ -62,26 +66,25 @@ function MetaChip({ icon, label, value, mono, accent }: MetaChipProps) {
 function NotScrapedState({ onUpdate }: { onUpdate: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card p-12 text-center">
-      <BookOpen className="mb-3 h-10 w-10 text-muted-text" />
-      <h3 className="font-heading text-base font-semibold text-foreground">
-        {t("legislations.not_scraped_title", {
-          defaultValue: "Full text not yet downloaded",
-        })}
-      </h3>
-      <p className="mt-1 text-sm text-muted-text">
-        {t("legislations.not_scraped_description", {
-          defaultValue:
-            'Click "Update Laws" on the legislations list to download section text from AustLII.',
-        })}
-      </p>
-      <button
-        onClick={onUpdate}
-        className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90"
-      >
-        {t("legislations.back_button")}
-      </button>
-    </div>
+    <EmptyState
+      icon={<BookOpen className="h-8 w-8" />}
+      title={t("legislations.not_scraped_title", {
+        defaultValue: "Full text not yet downloaded",
+      })}
+      description={t("legislations.not_scraped_description", {
+        defaultValue:
+          'Click "Update Laws" on the legislations list to download section text from AustLII.',
+      })}
+      action={
+        <button
+          type="button"
+          onClick={onUpdate}
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+        >
+          {t("legislations.back_button")}
+        </button>
+      }
+    />
   );
 }
 
@@ -106,18 +109,17 @@ export function LegislationDetailPage() {
             { label: t("common.not_found") },
           ]}
         />
-        <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-danger/30 bg-danger/5 p-8 text-center">
-          <h2 className="font-heading text-lg font-semibold text-foreground">
-            {t("common.not_found")}
-          </h2>
-          <p className="mt-2 text-sm text-muted-text">
-            {t("legislations.not_found_description", {
-              defaultValue: "This legislation could not be found",
-            })}
-          </p>
+        <ApiErrorState
+          title={t("common.not_found")}
+          message={t("legislations.not_found_description", {
+            defaultValue: "This legislation could not be found",
+          })}
+        />
+        <div>
           <button
+            type="button"
             onClick={() => navigate("/legislations")}
-            className="mt-4 flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90"
+            className="flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent/90"
           >
             <ArrowLeft className="h-4 w-4" />
             {t("common.back")}
@@ -128,11 +130,7 @@ export function LegislationDetailPage() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.loading_ellipsis")}
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const legislation = data.data;
@@ -162,65 +160,47 @@ export function LegislationDetailPage() {
         </button>
       </div>
 
-      {/* Unified Hero + Metadata */}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {/* Accent header stripe */}
         <div className="border-b border-border bg-accent/5 px-5 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Scale className="h-4 w-4 text-accent" />
-              <span className="text-xs font-semibold uppercase tracking-widest text-accent">
-                {legislation.type ||
-                  t("legislations.type", { defaultValue: "Legislation" })}
-              </span>
-              {legislation.jurisdiction && (
-                <>
-                  <span className="text-muted-text/50">·</span>
-                  <span className="flex items-center gap-1 text-xs text-muted-text">
+          <PageHeader
+            title={legislation.title}
+            description={legislation.description}
+            eyebrow={
+              legislation.type ||
+              t("legislations.type", { defaultValue: "Legislation" })
+            }
+            icon={<Scale className="h-5 w-5" />}
+            meta={
+              <>
+                {legislation.jurisdiction ? (
+                  <span className="inline-flex items-center gap-1">
                     <Globe className="h-3 w-3" />
                     {legislation.jurisdiction}
                   </span>
-                </>
-              )}
-            </div>
-            <a
-              href={austliiUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 rounded text-xs text-accent transition-colors hover:underline"
-            >
-              <ExternalLink className="h-3 w-3" />
-              AustLII
-            </a>
-          </div>
+                ) : null}
+                {legislation.shortcode ? (
+                  <span className="inline-flex items-center gap-1 font-mono">
+                    <Hash className="h-3 w-3" />
+                    {legislation.shortcode}
+                  </span>
+                ) : null}
+              </>
+            }
+            actions={
+              <a
+                href={austliiUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 rounded-md border border-accent/30 bg-background px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                AustLII
+              </a>
+            }
+          />
         </div>
 
-        {/* Title area */}
         <div className="px-5 py-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="font-heading text-xl font-bold leading-snug text-foreground">
-                {legislation.title}
-              </h1>
-              {legislation.description && (
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-text">
-                  {legislation.description}
-                </p>
-              )}
-            </div>
-            {legislation.shortcode && (
-              <div className="shrink-0 rounded-md border border-accent/30 bg-accent/8 px-2.5 py-1.5 text-center">
-                <p className="font-mono text-xs font-bold text-accent">
-                  {legislation.shortcode}
-                </p>
-                <p className="mt-0.5 text-[9px] uppercase tracking-wider text-muted-text">
-                  shortcode
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Metadata chips */}
           <h2 className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wider text-muted-text">
             {t("legislations.legislation_information", {
               defaultValue: "Legislation Information",

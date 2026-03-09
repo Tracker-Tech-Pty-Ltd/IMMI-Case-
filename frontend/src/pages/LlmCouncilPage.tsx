@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useLlmCouncil, useLlmCouncilHealthCheck } from "@/hooks/use-llm-council";
 import type { LlmCouncilHealthResponse, LlmCouncilResponse } from "@/lib/api";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { humanizeIdentifier } from "@/lib/display";
 
 const DEFAULT_MODELS: LlmCouncilResponse["models"] = {
@@ -337,22 +338,14 @@ export function LlmCouncilPage() {
   return (
     <div className="space-y-8">
       <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <Scale className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="font-heading text-2xl font-semibold text-foreground">
-              {t("llm_council.title", { defaultValue: "LLM IMMI Council" })}
-            </h1>
-            <p className="mt-1 text-sm text-muted-text">
-              {t("llm_council.subtitle", {
-                defaultValue:
-                  "Direct multi-provider council with OpenAI, Gemini Pro, Anthropic Sonnet, then Gemini Flash for ranking, critique, voting, and synthesis.",
-              })}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          title={t("llm_council.title", { defaultValue: "LLM IMMI Council" })}
+          description={t("llm_council.subtitle", {
+            defaultValue:
+              "Direct multi-provider council with OpenAI, Gemini Pro, Anthropic Sonnet, then Gemini Flash for ranking, critique, voting, and synthesis.",
+          })}
+          icon={<Scale className="h-5 w-5" />}
+        />
       </section>
 
       <section className="rounded-xl border border-border/80 bg-card p-6 shadow-sm">

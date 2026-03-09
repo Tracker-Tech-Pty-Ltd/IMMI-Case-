@@ -14,6 +14,8 @@ import { LineageFilters } from "@/components/lineage/LineageFilters";
 import { CourtVolumeTable } from "@/components/lineage/CourtVolumeTable";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { getCourtColor } from "@/tokens/tokens";
 import { cn } from "@/lib/utils";
 import type { CourtGroup } from "@/lib/lineage-transforms";
@@ -138,15 +140,11 @@ export function CourtLineagePage() {
   if (isLoading && !lineageData) {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("lineage.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("lineage.subtitle")}</p>
-        </div>
-        <div className="flex h-48 items-center justify-center rounded-lg border border-border bg-card text-muted-text">
-          {t("common.loading_ellipsis")}
-        </div>
+        <PageHeader
+          title={t("lineage.title")}
+          description={t("lineage.subtitle")}
+        />
+        <PageLoader />
         <p className="text-xs text-muted-text">
           {t("lineage.loading_hint", {
             defaultValue:
@@ -164,12 +162,10 @@ export function CourtLineagePage() {
         : t("errors.api_request_failed", { name: t("nav.court_lineage") });
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("lineage.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("lineage.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("lineage.title")}
+          description={t("lineage.subtitle")}
+        />
         <ApiErrorState
           title={t("errors.failed_to_load", { name: t("nav.court_lineage") })}
           message={message}
@@ -184,12 +180,10 @@ export function CourtLineagePage() {
   if (!lineageData) {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("lineage.title")}
-          </h1>
-          <p className="text-sm text-muted-text">{t("lineage.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("lineage.title")}
+          description={t("lineage.subtitle")}
+        />
         <ApiErrorState
           title={t("errors.data_unavailable", { name: t("nav.court_lineage") })}
           message={t("errors.payload_error", { name: t("nav.court_lineage") })}
@@ -204,14 +198,10 @@ export function CourtLineagePage() {
   if (lineageData.total_cases === 0 && !isFetching) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("lineage.title")}
-          </h1>
-          <p className="text-sm text-muted-text">
-            {t("lineage.subtitle_empty")}
-          </p>
-        </div>
+        <PageHeader
+          title={t("lineage.title")}
+          description={t("lineage.subtitle_empty")}
+        />
         <EmptyState
           icon={<GitBranch className="h-10 w-10" />}
           title={t("lineage.no_data_title")}
@@ -224,12 +214,10 @@ export function CourtLineagePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">
-          {t("lineage.title")}
-        </h1>
-        <p className="text-sm text-muted-text">{t("lineage.subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("lineage.title")}
+        description={t("lineage.subtitle")}
+      />
 
       {/* Filters */}
       <LineageFilters

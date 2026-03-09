@@ -17,9 +17,12 @@ import {
   useLegislationUpdateStatus,
   useStartLegislationUpdate,
 } from "@/hooks/use-legislations";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { Pagination } from "@/components/shared/Pagination";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { cn } from "@/lib/utils";
 import type { Legislation } from "@/lib/api";
 
@@ -53,18 +56,26 @@ export function LegislationsPage() {
   const startUpdate = useStartLegislationUpdate();
   const job = updateStatus.data?.status;
 
-  const { data: paginatedData, isLoading: paginatedLoading } = useLegislations(
-    searchQuery ? 1 : page,
-    limit,
-  );
-  const { data: searchData, isLoading: searchLoading } = useLegislationSearch(
-    searchQuery,
-    limit,
-  );
+  const {
+    data: paginatedData,
+    isLoading: paginatedLoading,
+    isError: isPaginatedError,
+    error: paginatedError,
+    refetch: refetchPaginated,
+  } = useLegislations(searchQuery ? 1 : page, limit);
+  const {
+    data: searchData,
+    isLoading: searchLoading,
+    isError: isSearchError,
+    error: searchError,
+    refetch: refetchSearch,
+  } = useLegislationSearch(searchQuery, limit);
 
   // Combine results
   const data = searchQuery ? searchData : paginatedData;
   const isLoading = searchQuery ? searchLoading : paginatedLoading;
+  const isError = searchQuery ? isSearchError : isPaginatedError;
+  const activeError = searchQuery ? searchError : paginatedError;
 
   const legislations = useMemo((): Legislation[] => {
     if (!data) return [];
@@ -139,42 +150,45 @@ export function LegislationsPage() {
         ]}
       />
 
-      {/* Header + Search (combined) */}
       <div className="rounded-lg border border-border bg-card p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-md bg-accent/10 p-2">
-              <Scale className="h-5 w-5 text-accent" />
-            </div>
-            <div>
-              <h1 className="font-heading text-xl font-semibold text-foreground">
-                {t("legislations.title", { defaultValue: "Legislations" })}
-              </h1>
-              <p className="mt-0.5 text-sm text-muted-text">
-                {t("legislations.description", {
-                  defaultValue:
-                    "Browse and search legislation relevant to immigration law",
+        <PageHeader
+          title={t("legislations.title", { defaultValue: "Legislations" })}
+          description={t("legislations.description", {
+            defaultValue:
+              "Browse and search legislation relevant to immigration law",
+          })}
+          icon={<Scale className="h-5 w-5" />}
+          meta={
+            totalItems > 0 ? (
+              <span>
+                {totalItems.toLocaleString()}{" "}
+                {t("legislations.results_heading", {
+                  defaultValue: "results",
                 })}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => startUpdate.mutate(undefined)}
-            disabled={job?.running || startUpdate.isPending}
-            className={cn(
-              "flex shrink-0 items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium",
-              "text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            <RefreshCw
-              className={cn("h-3.5 w-3.5", job?.running && "animate-spin")}
-            />
-            {job?.running
-              ? t("legislations.updating", { defaultValue: "Updating..." })
-              : t("legislations.update_laws", { defaultValue: "Update Laws" })}
-          </button>
-        </div>
+              </span>
+            ) : null
+          }
+          actions={
+            <button
+              type="button"
+              onClick={() => startUpdate.mutate(undefined)}
+              disabled={job?.running || startUpdate.isPending}
+              className={cn(
+                "flex shrink-0 items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm font-medium",
+                "text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", job?.running && "animate-spin")}
+              />
+              {job?.running
+                ? t("legislations.updating", { defaultValue: "Updating..." })
+                : t("legislations.update_laws", {
+                    defaultValue: "Update Laws",
+                  })}
+            </button>
+          }
+        />
 
         {/* Integrated search bar */}
         <div className="relative mt-4">
@@ -235,12 +249,21 @@ export function LegislationsPage() {
 
       {/* Legislations List */}
       {isLoading ? (
-        <div className="flex h-64 items-center justify-center gap-2 text-muted-text">
-          <div className="animate-spin">
-            <RefreshCw className="h-4 w-4" />
-          </div>
-          <span className="text-sm">{t("common.loading_ellipsis")}</span>
-        </div>
+        <PageLoader />
+      ) : isError ? (
+        <ApiErrorState
+          title={t("errors.failed_to_load", {
+            name: t("legislations.title", { defaultValue: "Legislations" }),
+          })}
+          message={
+            activeError instanceof Error
+              ? activeError.message
+              : t("errors.unable_to_load_message")
+          }
+          onRetry={() => {
+            void (searchQuery ? refetchSearch() : refetchPaginated());
+          }}
+        />
       ) : legislations.length === 0 ? (
         <EmptyState
           icon={<BookOpen className="h-8 w-8" />}
@@ -250,6 +273,20 @@ export function LegislationsPage() {
           description={t("legislations.empty_description", {
             defaultValue: "No legislation found matching your criteria.",
           })}
+          action={
+            searchQuery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setInputValue("");
+                  setSearchParams(new URLSearchParams());
+                }}
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface"
+              >
+                {t("common.clear", { defaultValue: "Clear" })}
+              </button>
+            ) : null
+          }
         />
       ) : (
         <div className="space-y-2">

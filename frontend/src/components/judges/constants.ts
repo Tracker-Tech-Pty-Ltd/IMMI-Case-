@@ -8,7 +8,7 @@ export const OUTCOME_COLORS = [
 ];
 
 export function approvalBadgeClass(rate: number): string {
-  if (rate >= 35) return "bg-semantic-success/15 text-semantic-success";
-  if (rate >= 20) return "bg-semantic-warning/15 text-semantic-warning";
-  return "bg-semantic-danger/15 text-semantic-danger";
+  if (rate >= 35) return "bg-success/15 text-success";
+  if (rate >= 20) return "bg-warning/15 text-warning";
+  return "bg-danger/15 text-danger";
 }

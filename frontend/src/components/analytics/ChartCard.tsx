@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 interface ChartCardProps {
   title: string;
@@ -50,8 +51,12 @@ function ChartCardInner({
           onRetry={onRetry}
         />
       ) : isEmpty ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-text">
-          {emptyMessage ?? t("chart.no_data")}
+        <div className="flex flex-1 items-center justify-center py-4">
+          <EmptyState
+            title={emptyMessage ?? t("chart.no_data")}
+            contained={false}
+            className="py-0"
+          />
         </div>
       ) : (
         <div className="min-h-0 flex-1">{children}</div>

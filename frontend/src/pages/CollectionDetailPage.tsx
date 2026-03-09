@@ -21,6 +21,8 @@ import { Download, Edit, Trash2, BookmarkCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { CollectionEditor } from "@/components/collections/CollectionEditor";
 import { SortableCaseItem } from "@/components/collections/SortableCaseItem";
 import {
@@ -124,8 +126,33 @@ export function CollectionDetailPage() {
 
   if (!collection) {
     return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.not_found", "Not Found")}
+      <div className="space-y-4">
+        <Breadcrumb
+          items={[
+            {
+              label: t("bookmarks.collections", "Collections"),
+              href: "/collections",
+            },
+            { label: t("common.not_found", "Not Found") },
+          ]}
+        />
+        <EmptyState
+          icon={<BookmarkCheck className="h-8 w-8" />}
+          title={t("common.not_found", "Not Found")}
+          description={t(
+            "bookmarks.collection_not_found_description",
+            "This collection could not be found. It may have been deleted or renamed.",
+          )}
+          action={
+            <button
+              type="button"
+              onClick={() => navigate("/collections")}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+            >
+              {t("bookmarks.collections", "Collections")}
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -138,60 +165,64 @@ export function CollectionDetailPage() {
 
   return (
     <div className="space-y-4">
-      {/* Breadcrumb + actions */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Breadcrumb
-          items={[
-            {
-              label: t("bookmarks.collections", "Collections"),
-              href: "/collections",
-            },
-            { label: collection.name },
-          ]}
-        />
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExport}
-            disabled={exporting || collection.case_order.length === 0}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface disabled:opacity-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            {exporting
-              ? t("common.loading_ellipsis", "Loading...")
-              : t("bookmarks.export_html", "Export as HTML")}
-          </button>
-          <button
-            onClick={() => setEditorOpen(true)}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface"
-          >
-            <Edit className="h-3.5 w-3.5" />
-            {t("common.edit", "Edit")}
-          </button>
-          <button
-            onClick={() => setDeleteOpen(true)}
-            className="flex items-center gap-1.5 rounded-md border border-danger/30 px-3 py-1.5 text-sm text-danger hover:bg-danger/5"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t("common.delete", "Delete")}
-          </button>
-        </div>
-      </div>
+      <Breadcrumb
+        items={[
+          {
+            label: t("bookmarks.collections", "Collections"),
+            href: "/collections",
+          },
+          { label: collection.name },
+        ]}
+      />
 
-      {/* Collection header */}
       <div className="rounded-lg border border-border bg-card p-5">
-        <div className="flex items-center gap-2">
-          <BookmarkCheck className="h-5 w-5 text-accent" />
-          <h1 className="font-heading text-xl font-semibold text-foreground">
-            {collection.name}
-          </h1>
-        </div>
-        {collection.description && (
-          <p className="mt-1 text-sm text-muted-text">
-            {collection.description}
-          </p>
-        )}
+        <PageHeader
+          title={collection.name}
+          description={collection.description}
+          icon={<BookmarkCheck className="h-5 w-5" />}
+          meta={
+            <span>
+              {orderedBookmarks.length === 1
+                ? t("bookmarks.cases_count_one", "1 case")
+                : t("bookmarks.cases_count_other", "{{count}} cases", {
+                    count: orderedBookmarks.length,
+                  })}
+            </span>
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exporting || collection.case_order.length === 0}
+                className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                {exporting
+                  ? t("common.loading_ellipsis", "Loading...")
+                  : t("bookmarks.export_html", "Export as HTML")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface"
+              >
+                <Edit className="h-3.5 w-3.5" />
+                {t("common.edit", "Edit")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-danger/30 px-3 py-1.5 text-sm text-danger hover:bg-danger/5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("common.delete", "Delete")}
+              </button>
+            </>
+          }
+        />
         {collection.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-4 flex flex-wrap gap-1.5">
             {collection.tags.map((tag) => (
               <span
                 key={tag}
@@ -202,29 +233,21 @@ export function CollectionDetailPage() {
             ))}
           </div>
         )}
-        <p className="mt-2 text-xs text-muted-text">
-          {orderedBookmarks.length === 1
-            ? t("bookmarks.cases_count_one", "1 case")
-            : t("bookmarks.cases_count_other", "{{count}} cases", {
-                count: orderedBookmarks.length,
-              })}
-        </p>
       </div>
 
       {/* Sortable case list */}
       {orderedBookmarks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
-          <BookmarkCheck className="mb-3 h-8 w-8 text-muted-text" />
-          <p className="text-sm font-semibold text-foreground">
-            {t("bookmarks.collection_detail_empty", "No cases in this collection yet.")}
-          </p>
-          <p className="mt-1 text-xs text-muted-text">
-            {t(
-              "bookmarks.collection_detail_empty_desc",
-              "Add cases from the case list or detail view.",
-            )}
-          </p>
-        </div>
+        <EmptyState
+          icon={<BookmarkCheck className="h-8 w-8" />}
+          title={t(
+            "bookmarks.collection_detail_empty",
+            "No cases in this collection yet.",
+          )}
+          description={t(
+            "bookmarks.collection_detail_empty_desc",
+            "Add cases from the case list or detail view.",
+          )}
+        />
       ) : (
         <DndContext
           sensors={sensors}

@@ -20,6 +20,8 @@ import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { CaseTextViewer } from "@/components/cases/CaseTextViewer";
 import { BookmarkButton } from "@/components/shared/BookmarkButton";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -78,11 +80,7 @@ export function CaseDetailPage() {
   }
 
   if (isLoading || !data) {
-    return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.loading_ellipsis")}
-      </div>
-    );
+    return <PageLoader />;
   }
 
   const c = data.case;
@@ -131,40 +129,49 @@ export function CaseDetailPage() {
         </div>
       </div>
 
-      {/* Hero */}
       <div className="rounded-lg border border-border bg-card p-5">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <CourtBadge court={c.court_code} />
           <OutcomeBadge outcome={c.outcome} />
           <NatureBadge nature={c.case_nature} />
         </div>
-        <div className="flex items-start gap-2">
-          <h1 className="font-heading text-xl font-semibold text-foreground">
-            {c.citation || c.title}
-          </h1>
-          <button
-            onClick={copyCitation}
-            className="mt-1 shrink-0 rounded-md p-1 text-muted-text hover:bg-surface hover:text-foreground"
-            title={t("case_detail.copy_citation")}
-          >
-            {copied ? (
-              <Check className="h-4 w-4 text-success" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
-          </button>
-          <BookmarkButton
-            caseId={c.case_id}
-            caseTitle={c.title || c.citation || ""}
-            caseCitation={c.citation || ""}
-            courtCode={c.court_code}
-            date={c.date || ""}
-            size="md"
-          />
-        </div>
-        {c.title && c.citation && c.title !== c.citation && (
-          <p className="mt-1 text-sm text-muted-text">{c.title}</p>
-        )}
+        <PageHeader
+          title={c.citation || c.title}
+          description={
+            c.title && c.citation && c.title !== c.citation ? c.title : undefined
+          }
+          meta={
+            <>
+              {c.date ? <span>{c.date}</span> : null}
+              {c.court ? <span>{c.court}</span> : null}
+              {c.year ? <span>{c.year}</span> : null}
+            </>
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={copyCitation}
+                className="rounded-md border border-border px-2.5 py-1.5 text-muted-text hover:bg-surface hover:text-foreground"
+                title={t("case_detail.copy_citation")}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-success" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </button>
+              <BookmarkButton
+                caseId={c.case_id}
+                caseTitle={c.title || c.citation || ""}
+                caseCitation={c.citation || ""}
+                courtCode={c.court_code}
+                date={c.date || ""}
+                size="md"
+              />
+            </>
+          }
+        />
       </div>
 
       {/* Case Information — consolidated single card */}

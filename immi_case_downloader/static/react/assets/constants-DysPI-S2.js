@@ -1,1 +1,0 @@
-const e=["#1a5276","#2d7d46","#6c3483","#b9770e","#a83232","#117864"];function n(a){return a>=35?"bg-semantic-success/15 text-semantic-success":a>=20?"bg-semantic-warning/15 text-semantic-warning":"bg-semantic-danger/15 text-semantic-danger"}export{e as O,n as a};

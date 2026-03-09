@@ -2,8 +2,10 @@ import { lazy, Suspense, Component, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
+import { AlertTriangle } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageLoader } from "@/components/shared/PageLoader";
+import { StatePanel } from "@/components/shared/StatePanel";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -17,21 +19,21 @@ class ErrorBoundary extends Component<
     if (this.state.error) {
       const err = this.state.error as Error;
       return (
-        <div
-          style={{
-            padding: 32,
-            fontFamily: "monospace",
-            color: "#ff6b6b",
-            background: "#1a1a1a",
-            minHeight: "100vh",
-          }}
-        >
-          <h2 style={{ color: "#ff4444" }}>⚠ React 錯誤</h2>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-            {err.message}
-            {"\n\n"}
-            {err.stack}
-          </pre>
+        <div className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
+          <StatePanel
+            tone="error"
+            align="start"
+            icon={<AlertTriangle className="h-5 w-5" />}
+            title="Application error"
+            description="A rendering error interrupted the current view. The diagnostic details are shown below for debugging."
+            className="max-w-3xl"
+          >
+            <pre className="overflow-x-auto rounded-xl border border-danger/15 bg-background px-4 py-3 font-mono text-xs leading-6 text-danger">
+              {err.message}
+              {"\n\n"}
+              {err.stack}
+            </pre>
+          </StatePanel>
         </div>
       );
     }

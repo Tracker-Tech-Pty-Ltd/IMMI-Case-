@@ -14,6 +14,7 @@ import {
   BookMarked,
   AlertTriangle,
 } from "lucide-react";
+import { PageHeader } from "@/components/shared/PageHeader";
 import type { JudgeProfile, JudgeBio } from "@/types/case";
 import { formatCourtTypeLabel } from "@/lib/display";
 
@@ -52,6 +53,16 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
   const { t } = useTranslation();
   const [imgError, setImgError] = useState(false);
@@ -64,6 +75,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
   const currentYear = new Date().getFullYear();
   const age = bio.birth_year ? currentYear - bio.birth_year : null;
   const hasPhoto = bio.found && bio.photo_url && !imgError;
+  const initials = getInitials(displayName);
 
   const trendLabel = useMemo(() => {
     const trend = profile.recent_3yr_trend;
@@ -104,11 +116,12 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
               onError={() => setImgError(true)}
             />
           ) : (
-            <img
-              src={`https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundColor=1a5276,2d7d46,6c3483,b9770e,a83232,117864&textColor=ffffff&fontSize=36`}
-              alt={displayName}
-              className="h-20 w-20 rounded-full border border-border"
-            />
+            <div
+              aria-label={displayName}
+              className="flex h-20 w-20 items-center justify-center rounded-full border border-accent/20 bg-accent-muted text-xl font-semibold tracking-wide text-accent"
+            >
+              {initials || "J"}
+            </div>
           )}
         </div>
 
@@ -121,41 +134,43 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
             </div>
           ) : (
             <>
-              <h1 className="text-2xl font-semibold text-foreground">
-                {displayName}
-              </h1>
-              {bio.found && bio.role && (
-                <p className="text-sm text-muted-text">{bio.role}</p>
-              )}
-              {bio.found && bio.court && (
-                <p className="text-sm text-muted-text">{bio.court}</p>
-              )}
-              {bio.found && bio.registry && (
-                <p className="flex items-center gap-1 text-xs text-muted-text">
-                  <MapPin className="h-3 w-3" />
-                  {bio.registry}
-                </p>
-              )}
-              {bio.found && bio.specialization && (
-                <p className="flex items-center gap-1 text-xs font-medium text-accent">
-                  <Scale className="h-3 w-3" />
-                  {bio.specialization}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-3 pt-1 text-xs text-muted-text">
-                {bio.found && bio.appointed_year && (
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    {t("judges.appointed")} {bio.appointed_year}
-                  </span>
-                )}
-                {age && age > 0 && age < 120 && (
-                  <span className="flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    {t("judges.age", { age })}
-                  </span>
-                )}
-              </div>
+              <PageHeader
+                title={displayName}
+                description={
+                  [bio.found ? bio.role : null, bio.found ? bio.court : null]
+                    .filter(Boolean)
+                    .join(" • ") || undefined
+                }
+                className="space-y-2"
+                meta={
+                  <>
+                    {bio.found && bio.registry ? (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {bio.registry}
+                      </span>
+                    ) : null}
+                    {bio.found && bio.specialization ? (
+                      <span className="inline-flex items-center gap-1 text-accent">
+                        <Scale className="h-3 w-3" />
+                        {bio.specialization}
+                      </span>
+                    ) : null}
+                    {bio.found && bio.appointed_year ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {t("judges.appointed")} {bio.appointed_year}
+                      </span>
+                    ) : null}
+                    {age && age > 0 && age < 120 ? (
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {t("judges.age", { age })}
+                      </span>
+                    ) : null}
+                  </>
+                }
+              />
             </>
           )}
         </div>

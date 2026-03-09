@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BookmarkCheck, Bookmark, Plus } from "lucide-react";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { CollectionCard } from "@/components/collections/CollectionCard";
 import { CollectionEditor } from "@/components/collections/CollectionEditor";
 import {
@@ -39,27 +41,34 @@ export function CollectionsPage() {
         items={[{ label: t("bookmarks.collections", "Collections") }]}
       />
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-heading text-xl font-semibold text-foreground">
-            {t("bookmarks.collections", "Collections")}
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-text">
-            {t(
-              "bookmarks.collections_subtitle",
-              "Organise cases into named collections",
-            )}
-          </p>
-        </div>
-        <button
-          onClick={() => setEditorOpen(true)}
-          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
-        >
-          <Plus className="h-4 w-4" />
-          {t("bookmarks.new_collection", "New Collection")}
-        </button>
-      </div>
+      <PageHeader
+        title={t("bookmarks.collections", "Collections")}
+        description={t(
+          "bookmarks.collections_subtitle",
+          "Organise cases into named collections",
+        )}
+        icon={<BookmarkCheck className="h-5 w-5" />}
+        meta={
+          <>
+            <span>
+              {bookmarks.length} {t("units.cases", "cases")}
+            </span>
+            <span>
+              {collections.length} {t("bookmarks.collections", "collections")}
+            </span>
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => setEditorOpen(true)}
+            className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+          >
+            <Plus className="h-4 w-4" />
+            {t("bookmarks.new_collection", "New Collection")}
+          </button>
+        }
+      />
 
       {/* Stats */}
       <div className="flex gap-4">
@@ -81,25 +90,24 @@ export function CollectionsPage() {
 
       {/* Collections grid */}
       {collections.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
-          <BookmarkCheck className="mb-3 h-10 w-10 text-muted-text" />
-          <p className="font-heading text-sm font-semibold text-foreground">
-            {t("bookmarks.no_collections", "No collections yet")}
-          </p>
-          <p className="mt-1 text-xs text-muted-text">
-            {t(
-              "bookmarks.no_collections_description",
-              "Create a collection to organise your bookmarked cases.",
-            )}
-          </p>
-          <button
-            onClick={() => setEditorOpen(true)}
-            className="mt-4 flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
-          >
-            <Plus className="h-4 w-4" />
-            {t("bookmarks.new_collection", "New Collection")}
-          </button>
-        </div>
+        <EmptyState
+          icon={<BookmarkCheck className="h-8 w-8" />}
+          title={t("bookmarks.no_collections", "No collections yet")}
+          description={t(
+            "bookmarks.no_collections_description",
+            "Create a collection to organise your bookmarked cases.",
+          )}
+          action={
+            <button
+              type="button"
+              onClick={() => setEditorOpen(true)}
+              className="flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+            >
+              <Plus className="h-4 w-4" />
+              {t("bookmarks.new_collection", "New Collection")}
+            </button>
+          }
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {collections.map((col) => (
@@ -133,15 +141,6 @@ export function CollectionsPage() {
             ))}
           </div>
         </div>
-      )}
-
-      {bookmarks.length === 0 && collections.length === 0 && (
-        <p className="text-center text-sm text-muted-text">
-          {t(
-            "bookmarks.no_bookmarks_description",
-            "Bookmark cases from the case list or detail view.",
-          )}
-        </p>
       )}
 
       {/* Editor modal */}

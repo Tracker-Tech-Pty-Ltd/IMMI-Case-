@@ -18,6 +18,7 @@ import { VisaBreakdownChart } from "@/components/judges/VisaBreakdownChart";
 import { NatureBreakdownChart } from "@/components/judges/NatureBreakdownChart";
 import { ConceptEffectivenessTable } from "@/components/judges/ConceptEffectivenessTable";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { useJudgeProfile, useJudgeBio } from "@/hooks/use-judges";
 
 const SECTION_NAV = [
@@ -41,9 +42,7 @@ export function JudgeDetailPage() {
   const { data: bioData, isLoading: bioLoading } = useJudgeBio(decodedName);
 
   if (isLoading) {
-    return (
-      <p className="text-sm text-muted-text">{t("judges.loading_profile")}</p>
-    );
+    return <PageLoader />;
   }
 
   if (isError) {

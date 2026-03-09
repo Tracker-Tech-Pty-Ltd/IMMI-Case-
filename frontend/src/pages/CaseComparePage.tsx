@@ -6,7 +6,9 @@ import { CourtBadge } from "@/components/shared/CourtBadge";
 import { OutcomeBadge } from "@/components/shared/OutcomeBadge";
 import { NatureBadge } from "@/components/shared/NatureBadge";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PageLoader } from "@/components/shared/PageLoader";
 import { cn } from "@/lib/utils";
 import { GitCompare, ExternalLink } from "lucide-react";
 import type { ImmigrationCase } from "@/types/case";
@@ -34,7 +36,7 @@ export function CaseComparePage() {
   const navigate = useNavigate();
   const ids = searchParams.getAll("ids");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["compare", ids],
     queryFn: () => compareCases(ids),
     enabled: ids.length >= 2,
@@ -58,11 +60,35 @@ export function CaseComparePage() {
     );
   }
 
-  if (isLoading || !data) {
+  if (isLoading) {
+    return <PageLoader />;
+  }
+
+  if (isError) {
     return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.loading_ellipsis")}
-      </div>
+      <ApiErrorState
+        title={t("errors.failed_to_load", { name: t("cases.comparison") })}
+        message={
+          error instanceof Error
+            ? error.message
+            : t("errors.api_request_failed", { name: t("cases.comparison") })
+        }
+        onRetry={() => {
+          void refetch();
+        }}
+      />
+    );
+  }
+
+  if (!data) {
+    return (
+      <ApiErrorState
+        title={t("errors.data_unavailable", { name: t("cases.comparison") })}
+        message={t("errors.payload_error", { name: t("cases.comparison") })}
+        onRetry={() => {
+          void refetch();
+        }}
+      />
     );
   }
 

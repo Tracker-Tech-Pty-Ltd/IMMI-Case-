@@ -2,6 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { fetchDataDictionary } from "@/lib/api";
 import { BookOpen, Hash, Scale, FileText, Brain, User } from "lucide-react";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { PageLoader } from "@/components/shared/PageLoader";
 
 interface FieldDef {
   name: string;
@@ -68,17 +72,33 @@ const TYPE_COLORS: Record<string, string> = {
 
 export function DataDictionaryPage() {
   const { t } = useTranslation();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["data-dictionary"],
     queryFn: fetchDataDictionary,
     staleTime: 300_000,
   });
 
   if (isLoading) {
+    return <PageLoader />;
+  }
+
+  if (isError) {
     return (
-      <div className="flex h-64 items-center justify-center text-muted-text">
-        {t("common.loading_ellipsis")}
-      </div>
+      <ApiErrorState
+        title={t("errors.failed_to_load", {
+          name: t("pages.data_dictionary.title"),
+        })}
+        message={
+          error instanceof Error
+            ? error.message
+            : t("errors.api_request_failed", {
+                name: t("pages.data_dictionary.title"),
+              })
+        }
+        onRetry={() => {
+          void refetch();
+        }}
+      />
     );
   }
 
@@ -93,19 +113,45 @@ export function DataDictionaryPage() {
     user_data: t("pages.data_dictionary.user_data"),
   };
 
+  if (fields.length === 0) {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title={t("pages.data_dictionary.title")}
+          description={t("pages.data_dictionary.subtitle", {
+            defaultValue:
+              "Reference every field used across cases, courts, extracted content, and user-managed data.",
+          })}
+          icon={<BookOpen className="h-5 w-5" />}
+        />
+        <EmptyState
+          icon={<BookOpen className="h-8 w-8" />}
+          title={t("errors.data_unavailable", {
+            name: t("pages.data_dictionary.title"),
+          })}
+          description={t("errors.payload_error", {
+            name: t("pages.data_dictionary.title"),
+          })}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <BookOpen className="h-6 w-6 text-accent" />
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("pages.data_dictionary.title")}
-          </h1>
-          <p className="text-sm text-muted-text">
+      <PageHeader
+        title={t("pages.data_dictionary.title")}
+        description={t("pages.data_dictionary.subtitle", {
+          defaultValue:
+            "Reference every field used across cases, courts, extracted content, and user-managed data.",
+        })}
+        icon={<BookOpen className="h-5 w-5" />}
+        meta={
+          <span>
             {fields.length} {t("pages.data_dictionary.fields")}
-          </p>
-        </div>
-      </div>
+          </span>
+        }
+      />
 
       {/* Summary stats */}
       <div className="grid gap-3 sm:grid-cols-5">

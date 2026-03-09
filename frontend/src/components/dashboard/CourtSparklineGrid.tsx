@@ -58,7 +58,7 @@ function CourtSparklineGridInner({ data }: CourtSparklineGridProps) {
               total: total.toLocaleString(),
               defaultValue: `${court}: ${total.toLocaleString()} total cases`,
             })}
-            className="rounded-lg border border-border bg-card p-3"
+            className="min-w-0 rounded-lg border border-border bg-card p-3"
             data-testid={`court-sparkline-${court}`}
           >
             <p className="mb-1 text-xs font-semibold text-foreground">
@@ -68,8 +68,8 @@ function CourtSparklineGridInner({ data }: CourtSparklineGridProps) {
               {total.toLocaleString()}{" "}
               {t("chart.cases", { defaultValue: "cases" })}
             </p>
-            <div className="h-[60px]">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[60px] min-w-0">
+              <ResponsiveContainer width="100%" height={60}>
                 <LineChart
                   data={chartData}
                   margin={{ top: 2, right: 2, bottom: 2, left: 2 }}

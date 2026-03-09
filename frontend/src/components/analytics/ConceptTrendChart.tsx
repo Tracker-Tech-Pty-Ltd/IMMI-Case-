@@ -96,8 +96,8 @@ function ConceptTrendChartInner({ data }: ConceptTrendChartProps) {
         ))}
       </div>
 
-      <div className="flex-1">
-        <ResponsiveContainer width="100%" height="100%" minHeight={220}>
+      <div className="h-[240px] min-w-0 flex-1">
+        <ResponsiveContainer width="100%" height={240}>
           <LineChart
             data={rows}
             margin={{ top: 5, right: 10, left: -20, bottom: 10 }}

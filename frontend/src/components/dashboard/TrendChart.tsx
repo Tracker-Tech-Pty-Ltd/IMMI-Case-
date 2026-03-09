@@ -58,8 +58,8 @@ function TrendChartInner({ data }: TrendChartProps) {
   });
 
   return (
-    <div className="min-h-[300px] flex-1">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-[300px] min-w-0 flex-1">
+      <ResponsiveContainer width="100%" height={300}>
         <AreaChart
           data={normalizedData}
           margin={{ top: 5, right: 20, bottom: 5, left: 0 }}

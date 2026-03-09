@@ -1,0 +1,1 @@
+const e=["#1a5276","#2d7d46","#6c3483","#b9770e","#a83232","#117864"];function n(a){return a>=35?"bg-success/15 text-success":a>=20?"bg-warning/15 text-warning":"bg-danger/15 text-danger"}export{e as O,n as a};

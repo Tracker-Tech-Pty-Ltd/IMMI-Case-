@@ -21,6 +21,7 @@ import {
 } from "@/hooks/use-taxonomy";
 import { CaseCard } from "@/components/cases/CaseCard";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { Pagination } from "@/components/shared/Pagination";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -243,35 +244,31 @@ export function GuidedSearchPage() {
   if (results) {
     return (
       <div className="container-padding space-y-6">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-3xl" aria-live="polite">
-            <h1 className="text-2xl font-semibold text-foreground">
-              {t("guided_search.results_heading", {
-                defaultValue: "Search Results",
+        <PageHeader
+          title={t("guided_search.results_heading", {
+            defaultValue: "Search Results",
+          })}
+          description={t("guided_search.results_found_count", {
+            defaultValue: "Found {{count}} cases matching your criteria",
+            count: results.length,
+          })}
+          actions={
+            <button
+              type="button"
+              onClick={() => {
+                setResults(null);
+                setSelectedFlow(null);
+                setCurrentPage(1);
+              }}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("guided_search.new_search_btn", {
+                defaultValue: "New Search",
               })}
-            </h1>
-            <p className="mt-1 text-sm text-muted-text">
-              {t("guided_search.results_found_count", {
-                defaultValue: "Found {{count}} cases matching your criteria",
-                count: results.length,
-              })}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setResults(null);
-              setSelectedFlow(null);
-              setCurrentPage(1);
-            }}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {t("guided_search.new_search_btn", {
-              defaultValue: "New Search",
-            })}
-          </button>
-        </div>
+            </button>
+          }
+        />
 
         {paginatedResults.length === 0 ? (
           <EmptyState
@@ -313,19 +310,15 @@ export function GuidedSearchPage() {
   if (!selectedFlow) {
     return (
       <div className="container-padding space-y-8">
-        <div className="max-w-3xl">
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("guided_search.page_title", {
-              defaultValue: "Guided Search",
-            })}
-          </h1>
-          <p className="mt-1 text-sm text-muted-text">
-            {t("guided_search.page_subtitle", {
-              defaultValue:
-                "Choose a search flow to get started with finding relevant cases or judge information",
-            })}
-          </p>
-        </div>
+        <PageHeader
+          title={t("guided_search.page_title", {
+            defaultValue: "Guided Search",
+          })}
+          description={t("guided_search.page_subtitle", {
+            defaultValue:
+              "Choose a search flow to get started with finding relevant cases or judge information",
+          })}
+        />
 
         <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
           {(Object.keys(flowConfig) as FlowType[])
