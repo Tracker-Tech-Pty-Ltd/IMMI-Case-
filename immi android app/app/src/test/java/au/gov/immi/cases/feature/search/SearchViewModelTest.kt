@@ -175,15 +175,12 @@ class SearchViewModelTest {
             Response.success(SearchResponse(cases = emptyList()))
         }
 
-        val job = launch {
-            vm.updateQuery("test")
-            vm.search()
-        }
+        vm.updateQuery("test")
+        vm.search()
+        advanceUntilIdle()
 
-        // 完成後 isLoading 要回到 false
-        job.cancel()
-        // flexible — just verify the state machine transitions don't crash
-        assertTrue(vm.uiState.value.isLoading || !vm.uiState.value.isLoading)
+        // 搜尋完成後 isLoading 必須回到 false
+        assertFalse(vm.uiState.value.isLoading)
     }
 
     @Test

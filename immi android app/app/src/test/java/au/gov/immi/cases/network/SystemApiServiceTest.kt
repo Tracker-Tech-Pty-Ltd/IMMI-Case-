@@ -78,15 +78,7 @@ class SystemApiServiceTest {
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """
-                    {
-                        "success": true,
-                        "data": {
-                            "total_cases": 149016,
-                            "courts": {"AATA": 39203, "FCA": 14987}
-                        }
-                    }
-                    """.trimIndent()
+                    """{"total_cases": 149016, "courts": {"AATA": 39203, "FCA": 14987}}"""
                 )
         )
 
