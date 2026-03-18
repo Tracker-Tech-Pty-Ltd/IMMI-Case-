@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import au.gov.immi.cases.ui.theme.DesignTokens
 import androidx.navigation.NavController
 import au.gov.immi.cases.core.model.DashboardStats
 import au.gov.immi.cases.ui.components.ErrorState
@@ -78,8 +79,8 @@ private fun DashboardContent(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(DesignTokens.Spacing.base),
+        verticalArrangement = Arrangement.spacedBy(DesignTokens.Spacing.base)
     ) {
         item {
             PageHeader(title = "Dashboard")
@@ -88,9 +89,9 @@ private fun DashboardContent(
         item {
             // ── Stat cards (2-column grid using Rows — LazyVerticalGrid cannot
             // be nested inside LazyColumn items due to unbounded height constraints)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(DesignTokens.Spacing.sm)) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(DesignTokens.Spacing.sm),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     StatCard(
@@ -107,7 +108,7 @@ private fun DashboardContent(
                     )
                 }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(DesignTokens.Spacing.sm),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     StatCard(
@@ -157,7 +158,7 @@ private fun CourtsBarChart(
         Text(
             text = "Cases by Court",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(bottom = DesignTokens.Spacing.sm)
         )
         CartesianChartHost(
             chart = rememberCartesianChart(
@@ -179,7 +180,7 @@ private fun CourtsBarChart(
             modelProducer = modelProducer,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp)
+                .padding(top = DesignTokens.Spacing.sm)
         )
     }
 }
