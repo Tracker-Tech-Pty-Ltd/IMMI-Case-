@@ -13,7 +13,7 @@ bookmarks_bp = Blueprint("bookmarks", __name__, url_prefix="/api/v1/collections"
 
 
 def _error(msg: str, status: int = 400):
-    return jsonify({"success": False, "error": msg}), status
+    return jsonify({"error": msg}), status
 
 
 def _safe_filename(name: str) -> str:
