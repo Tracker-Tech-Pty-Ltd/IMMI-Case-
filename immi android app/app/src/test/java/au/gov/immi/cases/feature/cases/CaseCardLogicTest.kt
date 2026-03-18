@@ -123,9 +123,8 @@ class CaseCardLogicTest {
     }
 
     @Test
-    fun `accent bar width is visually thin (less than card radius)`() {
-        // The accent bar should be 3dp — much thinner than 16dp card radius
-        val accentBarWidth = 3f  // dp, as per design spec
-        assertTrue(accentBarWidth < DesignTokens.Radius.default.value)
+    fun `accent bar width matches webapp 3dp design spec`() {
+        assertEquals(3, ACCENT_BAR_WIDTH_DP)
+        assertTrue(ACCENT_BAR_WIDTH_DP < DesignTokens.Radius.default.value.toInt())
     }
 }
