@@ -9,7 +9,7 @@ function resolveApiProxyTarget(mode: string): string {
   const env = { ...sharedEnv, ...localEnv, ...process.env };
   const backendHost =
     env.BACKEND_HOST || env.VITE_BACKEND_HOST || "127.0.0.1";
-  const backendPort = env.BACKEND_PORT || env.VITE_BACKEND_PORT || "5000";
+  const backendPort = env.BACKEND_PORT || env.VITE_BACKEND_PORT || "8080";
 
   // Highest priority override for non-standard environments.
   if (env.VITE_API_PROXY_TARGET) {

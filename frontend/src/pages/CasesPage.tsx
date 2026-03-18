@@ -686,7 +686,10 @@ export function CasesPage() {
 
       {/* Batch bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md bg-accent-muted px-4 py-2 text-sm">
+        <div
+          data-testid="cases-batch-bar"
+          className="flex items-center gap-3 rounded-md bg-accent-muted px-4 py-2 text-sm"
+        >
           <span className="font-medium text-accent">
             {selected.size} {t("cases.selected") || "selected"}
           </span>
@@ -707,6 +710,7 @@ export function CasesPage() {
           {selected.size >= 2 && selected.size <= 5 && (
             <button
               type="button"
+              data-testid="cases-compare-button"
               onClick={() => {
                 const ids = Array.from(selected);
                 const params = new URLSearchParams();
@@ -815,11 +819,12 @@ export function CasesPage() {
             ))}
           </div>
           <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table data-testid="cases-table" className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface">
                   <th className="w-10 px-2 py-2.5 text-left">
                     <input
+                      data-testid="cases-select-all"
                       type="checkbox"
                       checked={
                         selected.size === cases.length && cases.length > 0
@@ -864,6 +869,8 @@ export function CasesPage() {
                 {cases.map((c, i) => (
                   <tr
                     key={c.case_id}
+                    data-testid="cases-row"
+                    data-case-id={c.case_id}
                     className={cn(
                       "border-b border-border-light transition-colors cursor-pointer",
                       clampedFocusedIdx === i
@@ -887,8 +894,11 @@ export function CasesPage() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <input
+                        data-testid="cases-row-checkbox"
+                        data-case-id={c.case_id}
                         type="checkbox"
                         checked={selected.has(c.case_id)}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleSelect(c.case_id)}
                         className="rounded"
                         aria-label={t("cases.select_case", {
@@ -897,7 +907,11 @@ export function CasesPage() {
                         })}
                       />
                     </td>
-                    <td className="max-w-xs px-2 py-2">
+                    <td
+                      data-testid="cases-row-title"
+                      data-case-id={c.case_id}
+                      className="max-w-xs px-2 py-2"
+                    >
                       <span
                         className="block truncate font-medium text-foreground"
                         title={c.title || c.citation}
@@ -916,6 +930,8 @@ export function CasesPage() {
                       )}
                     </td>
                     <td
+                      data-testid="cases-row-citation"
+                      data-case-id={c.case_id}
                       className="whitespace-nowrap px-2 py-2 text-xs text-muted-text"
                       title={c.citation}
                     >

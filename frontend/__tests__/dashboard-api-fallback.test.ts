@@ -75,7 +75,8 @@ describe("dashboard api fallback", () => {
     const second = await fetchStats();
 
     expect(first.total_cases).toBe(149_016);
-    expect(second).toEqual(first);
+    expect(second).toMatchObject(first);
+    expect(second.degraded).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

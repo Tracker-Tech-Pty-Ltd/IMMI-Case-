@@ -264,8 +264,10 @@ describe("CasesPage", () => {
 
     renderPage();
 
-    // Loading branch renders t("common.loading_ellipsis") → key
-    expect(screen.getByText("common.loading_ellipsis")).toBeInTheDocument();
+    expect(screen.getByText("Loading")).toBeInTheDocument();
+    expect(
+      screen.getByText("Preparing the latest data and interface state."),
+    ).toBeInTheDocument();
   });
 
   // Test 4: Shows case cards in card view
@@ -335,12 +337,10 @@ describe("CasesPage", () => {
 
     renderPage();
 
-    // Header <p> shows `{total} {t("units.cases")}` — 999 and "units.cases" are
-    // in separate text nodes; use a partial regex on the containing paragraph
-    const totalParagraph = screen.getByText((_, el) => {
-      return el?.tagName === "P" && el.textContent?.includes("999") === true;
+    const totalMeta = screen.getByText(/999\s+units\.cases/, {
+      selector: "span",
     });
-    expect(totalParagraph).toBeInTheDocument();
+    expect(totalMeta).toBeInTheDocument();
   });
 
   // Test 8: Error state renders when cases fail to load

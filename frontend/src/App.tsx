@@ -6,6 +6,7 @@ import { AlertTriangle } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { StatePanel } from "@/components/shared/StatePanel";
+import { resolveRouterBasename } from "@/lib/router";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -161,10 +162,12 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  const basename = resolveRouterBasename(window.location.pathname);
+
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter basename="/">
+        <BrowserRouter basename={basename}>
           <Routes>
             <Route element={<AppLayout />}>
               <Route

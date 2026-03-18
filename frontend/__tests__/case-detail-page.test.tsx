@@ -188,8 +188,10 @@ describe("CaseDetailPage", () => {
 
     renderPage();
 
-    // Loading branch returns t("common.loading_ellipsis") — returns key via i18n mock
-    expect(screen.getByText("common.loading_ellipsis")).toBeInTheDocument();
+    expect(screen.getByText("Loading")).toBeInTheDocument();
+    expect(
+      screen.getByText("Preparing the latest data and interface state."),
+    ).toBeInTheDocument();
   });
 
   // Test 2: citation and title
@@ -219,8 +221,8 @@ describe("CaseDetailPage", () => {
     // outcome appears in OutcomeBadge and MetaField — use getAllByText
     const dismissedElements = screen.getAllByText("Dismissed");
     expect(dismissedElements.length).toBeGreaterThan(0);
-    // date value appears in MetaField
-    expect(screen.getByText("2024-01-15")).toBeInTheDocument();
+    const dateElements = screen.getAllByText("2024-01-15");
+    expect(dateElements.length).toBeGreaterThan(0);
   });
 
   // Test 4: legal concepts shown as links
