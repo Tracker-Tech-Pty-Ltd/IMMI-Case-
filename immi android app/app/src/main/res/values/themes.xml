@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Base application theme for the Activity window.
+        Compose Material3 takes over all UI rendering — this XML theme
+        only provides the window chrome needed to launch the activity.
+        Uses AppCompat (transitively included via activity-compose).
+    -->
+    <style name="Theme.ImmiAndroid" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

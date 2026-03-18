@@ -1,0 +1,36 @@
+# Android / Gradle
+*.iml
+.gradle/
+.idea/
+.kotlin/
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+keystore.properties
+
+# Android app build outputs
+app/build/
+app/release/
+
+# Gradle wrapper (keep .properties, exclude binaries)
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
+
+# Generated code
+app/src/main/java/**/BuildConfig.java
+
+# Secrets (never commit)
+*.jks
+*.keystore
+google-services.json
