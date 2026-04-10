@@ -1,6 +1,6 @@
 """Shared helper functions and constants for the web interface."""
 
-from flask import current_app
+from flask import current_app, jsonify
 
 from ..config import OUTPUT_DIR
 from ..repository import CaseRepository
@@ -18,6 +18,18 @@ EDITABLE_FIELDS = [
     "applicant_name", "respondent", "country_of_origin",
     "visa_subclass_number", "hearing_date", "is_represented", "representative",
 ]
+
+
+# ── API response helpers ─────────────────────────────────────────────────
+
+
+def error_response(msg: str, status: int = 400):
+    """Return a unified error JSON response for all API endpoints.
+
+    All error responses share the same envelope:
+      {"success": False, "error": "<message>"}
+    """
+    return jsonify({"success": False, "error": msg}), status
 
 
 # ── Input validation helpers ─────────────────────────────────────────────

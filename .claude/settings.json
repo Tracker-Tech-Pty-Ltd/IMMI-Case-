@@ -105,5 +105,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "impeccable@impeccable": true
   }
 }

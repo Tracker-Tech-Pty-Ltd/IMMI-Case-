@@ -1,5 +1,5 @@
 /* Auto-generated from tokens.json — do not edit manually */
-/* Generated: 2026-03-18T20:15:41.361Z */
+/* Generated: 2026-03-18T23:50:20.280Z */
 
 export const tokens = {
   "color": {

@@ -5,15 +5,11 @@ POST /api/v1/collections/export
   Returns: HTML report for download.
 """
 
-from flask import Blueprint, Response, request, jsonify
-from ..helpers import get_repo
+from flask import Blueprint, Response, request
+from ..helpers import get_repo, error_response as _error
 from ..security import rate_limit
 
 bookmarks_bp = Blueprint("bookmarks", __name__, url_prefix="/api/v1/collections")
-
-
-def _error(msg: str, status: int = 400):
-    return jsonify({"error": msg}), status
 
 
 def _safe_filename(name: str) -> str:

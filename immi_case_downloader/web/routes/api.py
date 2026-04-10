@@ -39,7 +39,7 @@ from ...visa_registry import (
     group_by_family,
     VISA_REGISTRY,
 )
-from ..helpers import get_repo, get_output_dir, safe_int, _filter_cases, EDITABLE_FIELDS
+from ..helpers import get_repo, get_output_dir, safe_int, _filter_cases, EDITABLE_FIELDS, error_response as _error
 from ..jobs import _run_download_job, job_manager
 from ..security import rate_limit
 logger = logging.getLogger(__name__)
@@ -1254,10 +1254,6 @@ DATA_DICTIONARY_FIELDS = [
 
 def _valid_case_id(case_id: str) -> bool:
     return bool(_HEX_ID.match(case_id))
-
-
-def _error(msg: str, status: int = 400):
-    return jsonify({"error": msg}), status
 
 
 def _parse_court_year_trends_rows(trends_rows) -> tuple[dict[str, dict[int, int]], set[int], int]:

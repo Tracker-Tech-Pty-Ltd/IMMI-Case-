@@ -20,6 +20,7 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 from ...sources.legislation_scraper import KNOWN_LAWS, LegislationScraper
+from ..helpers import error_response as _error
 from ..job_manager import JobManager
 from ..security import rate_limit
 
@@ -91,10 +92,6 @@ def _strip_sections(leg: dict) -> dict:
     Used for list and search endpoints to keep response sizes small.
     """
     return {k: v for k, v in leg.items() if k != "sections"}
-
-
-def _error(msg: str, status: int = 400):
-    return jsonify({"error": msg}), status
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
