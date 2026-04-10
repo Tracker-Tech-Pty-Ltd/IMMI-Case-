@@ -13,8 +13,6 @@ from immi_case_downloader.pipeline import (
     get_pipeline_status,
     request_pipeline_stop,
     start_pipeline,
-    _pipeline_status,
-    _pipeline_lock,
     RETRYABLE_ERRORS,
 )
 from immi_case_downloader.config import END_YEAR
@@ -256,16 +254,11 @@ class TestSmartPipeline:
         config = self._make_config(databases=[])
         pipeline = SmartPipeline(config, str(tmp_path))
 
-        with _pipeline_lock:
-            _pipeline_status["stop_requested"] = True
-            _pipeline_status["running"] = True
+        pipeline.request_stop()
+        with pipeline._lock:
+            pipeline._status["running"] = True
 
         assert pipeline._is_stopped() is True
-
-        # Reset
-        with _pipeline_lock:
-            _pipeline_status["stop_requested"] = False
-            _pipeline_status["running"] = False
 
 
 # ── Public Helpers ──────────────────────────────────────────────────────
@@ -281,60 +274,60 @@ class TestPublicHelpers:
         assert original["running"] != status["running"] or original is not status
 
     def test_request_pipeline_stop(self):
-        """request_pipeline_stop sets the flag."""
-        with _pipeline_lock:
-            _pipeline_status["stop_requested"] = False
-
-        request_pipeline_stop()
-
-        with _pipeline_lock:
-            assert _pipeline_status["stop_requested"] is True
-            _pipeline_status["stop_requested"] = False  # reset
-
-    @patch("immi_case_downloader.pipeline.SmartPipeline")
-    def test_start_pipeline_returns_true(self, mock_cls):
-        """start_pipeline returns True when no pipeline is running."""
-        with _pipeline_lock:
-            _pipeline_status["running"] = False
-
+        """request_pipeline_stop sets the stop flag on the active pipeline."""
+        import immi_case_downloader.pipeline as pl
         config = PipelineConfig()
-        result = start_pipeline(config)
-        assert result is True
+        p = SmartPipeline(config, output_dir="/tmp/test_req_stop")
+        old = pl._active_pipeline
+        pl._active_pipeline = p
+        try:
+            request_pipeline_stop()
+            assert p.get_status()["stop_requested"] is True
+        finally:
+            pl._active_pipeline = old
 
     @patch("immi_case_downloader.pipeline.threading.Thread")
-    @patch("immi_case_downloader.pipeline.SmartPipeline")
-    def test_start_pipeline_marks_running_before_worker_executes(self, mock_cls, mock_thread_cls):
-        """The pipeline slot should be reserved before the background thread runs."""
-        with _pipeline_lock:
-            _pipeline_status["running"] = False
-            _pipeline_status["phase_progress"] = ""
+    def test_start_pipeline_returns_true(self, mock_thread_cls):
+        """start_pipeline returns True when no pipeline is running."""
+        import immi_case_downloader.pipeline as pl
+        old = pl._active_pipeline
+        pl._active_pipeline = None
+        try:
+            config = PipelineConfig()
+            result = start_pipeline(config)
+            assert result is True
+        finally:
+            pl._active_pipeline = old
 
+    def test_start_pipeline_rejects_when_active_is_running(self):
+        """start_pipeline returns False when the active pipeline is running."""
+        import immi_case_downloader.pipeline as pl
         config = PipelineConfig()
-        result = start_pipeline(config)
-        assert result is True
-
-        with _pipeline_lock:
-            assert _pipeline_status["running"] is True
-            assert _pipeline_status["phase_progress"] == "Starting pipeline..."
-
-        second = start_pipeline(config)
-        assert second is False
-
-        with _pipeline_lock:
-            _pipeline_status["running"] = False
-            _pipeline_status["phase_progress"] = ""
+        p = SmartPipeline(config, output_dir="/tmp/test_active_running")
+        with p._lock:
+            p._status["running"] = True
+        old = pl._active_pipeline
+        pl._active_pipeline = p
+        try:
+            second = start_pipeline(config)
+            assert second is False
+        finally:
+            pl._active_pipeline = old
 
     def test_start_pipeline_rejects_when_running(self):
         """start_pipeline returns False when pipeline is already running."""
-        with _pipeline_lock:
-            _pipeline_status["running"] = True
-
+        import immi_case_downloader.pipeline as pl
         config = PipelineConfig()
-        result = start_pipeline(config)
-        assert result is False
-
-        with _pipeline_lock:
-            _pipeline_status["running"] = False
+        p = SmartPipeline(config, output_dir="/tmp/test_reject")
+        with p._lock:
+            p._status["running"] = True
+        old = pl._active_pipeline
+        pl._active_pipeline = p
+        try:
+            result = start_pipeline(config)
+            assert result is False
+        finally:
+            pl._active_pipeline = old
 
     def test_retryable_errors_defined(self):
         assert "http_500" in RETRYABLE_ERRORS

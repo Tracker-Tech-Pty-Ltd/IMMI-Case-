@@ -1,0 +1,17 @@
+downloaded_cases/
+*.png
+*.jpeg
+*.jpg
+node_modules/
+frontend/node_modules/
+.git/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.ruff_cache/
+audit/
+data_quality_reports/
+docs/
+scripts/

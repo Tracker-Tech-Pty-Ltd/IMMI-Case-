@@ -1,6 +1,5 @@
 """Shared test fixtures for IMMI-Case tests."""
 
-import copy
 import os
 import pytest
 import responses
@@ -10,7 +9,6 @@ from immi_case_downloader.storage import save_cases_csv, save_cases_json, ensure
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
-_PIPELINE_STATUS_BASELINE = None
 
 
 def _load_fixture(name: str) -> str:
@@ -46,16 +44,11 @@ def reset_rate_limiter():
 
 
 def _reset_pipeline_status():
-    """Restore the shared pipeline status dict to its baseline shape."""
+    """Reset the active pipeline reference so no state leaks across tests."""
     from immi_case_downloader import pipeline as pipeline_module
 
-    global _PIPELINE_STATUS_BASELINE
-    if _PIPELINE_STATUS_BASELINE is None:
-        _PIPELINE_STATUS_BASELINE = copy.deepcopy(pipeline_module._pipeline_status)
-
-    with pipeline_module._pipeline_lock:
-        pipeline_module._pipeline_status.clear()
-        pipeline_module._pipeline_status.update(copy.deepcopy(_PIPELINE_STATUS_BASELINE))
+    with pipeline_module._active_pipeline_lock:
+        pipeline_module._active_pipeline = None
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +59,31 @@ def reset_pipeline_state():
         yield
     finally:
         _reset_pipeline_status()
+
+
+@pytest.fixture(autouse=True)
+def reset_analytics_caches():
+    """Prevent in-memory analytics/stats caches from leaking across tests."""
+    from immi_case_downloader.web.routes import api as api_mod
+
+    def _clear():
+        api_mod._stats_cache_payload = None
+        api_mod._stats_cache_ts = 0.0
+        api_mod._filter_options_cache_payload = None
+        api_mod._filter_options_cache_ts = 0.0
+        api_mod._lineage_cache_payload = None
+        api_mod._lineage_cache_ts = 0.0
+        api_mod._all_cases_cache.clear()
+        api_mod._all_cases_ts = 0.0
+        api_mod._analytics_cases_cache.clear()
+        api_mod._analytics_cases_ts = 0.0
+        api_mod._analytics_cache_obj.invalidate()
+
+    _clear()
+    try:
+        yield
+    finally:
+        _clear()
 
 
 @pytest.fixture

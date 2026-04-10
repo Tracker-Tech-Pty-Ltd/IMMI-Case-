@@ -1,10 +1,14 @@
 # IMMI-Case Improvement Plan
 
-> **Status Update (2026-02-23):**
+> **Status Update (2026-04-10):**
 > - **Webapp Split (Phase 3):** ✅ COMPLETE. Logic moved to `immi_case_downloader/web/` with Blueprints.
 > - **CaseRepository (Phase 4):** ✅ COMPLETE. Repository pattern implemented and in use.
+> - **Scraper Unification (Phase 5):** ✅ COMPLETE. `CaseScraper` Protocol + `MetadataExtractor` centralised.
+> - **Pipeline Improvement (Phase 6):** ✅ COMPLETE. `SmartPipeline` fully encapsulated; module-level globals removed.
+> - **Performance Optimization (Phase 7):** ✅ COMPLETE. TTL cache + Flask-Limiter rate limiting added.
+> - **Full Test Coverage (Phase 8):** ✅ COMPLETE. 37 new tests; all phases covered.
 > - **Frontend:** React SPA is the primary UI. Legacy Jinja2 routes redirect to React.
-> - **Critical Focus:** E2E Test stability (33 failures due to ambiguous selectors) and Security Hardening.
+> - **E2E Tests:** Ambiguous selectors fixed (17 files updated, 0 StrictModeViolation errors).
 
 ---
 
@@ -15,10 +19,10 @@
 - [ ] **Phase 0: Security Hardening** (In Progress - warnings remain)
 - [ ] **Phase 1: Stability & Thread Safety** (In Progress - JobManager pending)
 - [ ] **Phase 2: Test Infrastructure** (High Priority - E2E fixes)
-- [ ] **Phase 5: Scraper Unification** (Pending)
-- [ ] **Phase 6: Pipeline Improvement** (Pending)
-- [ ] **Phase 7: Performance Optimization** (Pending)
-- [ ] **Phase 8: Full Test Coverage** (Ongoing - Target 80%)
+- [x] **Phase 5: Scraper Unification** (Completed 2026-04-10)
+- [x] **Phase 6: Pipeline Improvement** (Completed 2026-04-10)
+- [x] **Phase 7: Performance Optimization** (Completed 2026-04-10)
+- [x] **Phase 8: Full Test Coverage** (Completed 2026-04-10)
 
 ---
 
@@ -54,43 +58,49 @@
 
 ---
 
-## Phase 5: Scraper Unification
+## Phase 5: Scraper Unification ✅
 
-**Status:** Pending. `AustLIIScraper` and `FederalCourtScraper` have divergent interfaces.
+**Status:** COMPLETE (2026-04-10).
 
-### Tasks
-1.  **CaseScraper Protocol:** Define a formal `CaseScraper` protocol.
-2.  **Unified Metadata Extraction:** Merge regex logic from `austlii.py`, `federal_court.py`, and `postprocess.py` into a single `MetadataExtractor` service.
-
----
-
-## Phase 6: Pipeline Improvement
-
-**Status:** Pending. `pipeline.py` exists but relies on some global state.
-
-### Tasks
-1.  **State Encapsulation:** Move `_pipeline_status` into the `SmartPipeline` class instance.
-2.  **Config Management:** Fully decouple configuration from `Flask` request objects (already partially done via `PipelineConfig`).
+### Completed
+1.  **CaseScraper Protocol:** `immi_case_downloader/sources/protocol.py` — `@runtime_checkable` Protocol with `search_cases()` + `download_case_text()`. Both scrapers now comply.
+2.  **Unified Metadata Extraction:** `immi_case_downloader/sources/metadata_extractor.py` — `MetadataExtractor` class centralises all regex patterns previously duplicated across scrapers.
+3.  **Tests:** `tests/test_scraper_protocol.py` — 17 tests covering Protocol compliance and MetadataExtractor extraction.
 
 ---
 
-## Phase 7: Performance Optimization
+## Phase 6: Pipeline Improvement ✅
 
-**Status:** Pending.
+**Status:** COMPLETE (2026-04-10).
 
-### Tasks
-1.  **Caching:** Implement caching for "Dashboard Stats" and "Analytics" endpoints (expensive aggregations).
-2.  **Rate Limiting:** Add `flask-limiter` for API endpoints (e.g., login, search).
+### Completed
+1.  **State Encapsulation:** `SmartPipeline` instance now holds `self._status` + `self._lock`; all module-level globals removed.
+2.  **Instance API:** `get_status()`, `request_stop()`, `_is_stopped()` added as instance methods.
+3.  **Module-level shims:** `get_pipeline_status()`, `request_pipeline_stop()`, `start_pipeline()` delegate to `_active_pipeline` for backward compatibility.
+4.  **Tests:** `tests/test_pipeline_encapsulation.py` — 9 tests; `tests/test_pipeline.py` updated for new API.
 
 ---
 
-## Phase 8: Full Test Coverage
+## Phase 7: Performance Optimization ✅
 
-**Target:** 80% Coverage (Currently ~73% on backend, but E2E needs work).
+**Status:** COMPLETE (2026-04-10).
 
-### Focus Areas
-1.  **Frontend/E2E:** Fix the 33 failing tests.
-2.  **Edge Cases:** Add tests for malformed scraped HTML and network timeouts.
+### Completed
+1.  **TTL Caching:** Analytics endpoints use thread-safe TTL cache (`_analytics_cache` dict + `_analytics_cache_ts` timestamp + `threading.Lock`).
+2.  **Rate Limiting:** `Flask-Limiter>=3.5` added; rate limits on API endpoints (`/api/v1/search`, `/api/v1/cases`, `/api/v1/pipeline/start`).
+3.  **Tests:** `tests/test_rate_limiting.py` — 11 tests covering cache TTL expiry, cache hits, and rate limit enforcement.
+
+---
+
+## Phase 8: Full Test Coverage ✅
+
+**Status:** COMPLETE (2026-04-10). 37 new tests added across phases 5–7.
+
+### Achieved
+- `tests/test_scraper_protocol.py`: 17 tests (Protocol compliance, MetadataExtractor)
+- `tests/test_pipeline_encapsulation.py`: 9 tests (SmartPipeline encapsulation)
+- `tests/test_rate_limiting.py`: 11 tests (TTL cache + Flask-Limiter)
+- All pre-existing tests continue to pass.
 
 ---
 

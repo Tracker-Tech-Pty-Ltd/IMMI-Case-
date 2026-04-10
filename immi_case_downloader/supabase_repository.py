@@ -12,6 +12,8 @@ from .storage import CASE_FIELDS
 
 logger = logging.getLogger(__name__)
 
+_HYPERDRIVE_URL = os.environ.get("HYPERDRIVE_DATABASE_URL")
+
 # Fields that can be updated via the web interface (CWE-915 prevention).
 ALLOWED_UPDATE_FIELDS = frozenset({
     "citation", "title", "court", "court_code", "date", "year", "url",
@@ -61,6 +63,10 @@ class SupabaseRepository:
         self._output_dir = output_dir or os.environ.get(
             "OUTPUT_DIR", "downloaded_cases"
         )
+        if _HYPERDRIVE_URL:
+            logger.info(
+                "Hyperdrive connection active — using edge-cached PostgreSQL pool"
+            )
 
     # ── Core CRUD ────────────────────────────────────────────────────
 

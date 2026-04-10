@@ -72,7 +72,7 @@ class TestSearchCases:
         responses.add(responses.GET, FEDERAL_COURT_SEARCH, body=fedcourt_search_html, status=200)
 
         scraper = FederalCourtScraper(delay=0)
-        cases = scraper.search_cases(start_year=2020, end_year=2026, max_results=100)
+        cases = scraper.search_cases(start_year=2020, end_year=2026, max_results_per_db=100)
 
         urls = [c.url for c in cases]
         assert len(urls) == len(set(urls))
@@ -83,7 +83,7 @@ class TestSearchCases:
         responses.add(responses.GET, FEDERAL_COURT_SEARCH, body=fedcourt_search_html, status=200)
 
         scraper = FederalCourtScraper(delay=0)
-        cases = scraper.search_cases(start_year=2020, end_year=2026, max_results=1)
+        cases = scraper.search_cases(start_year=2020, end_year=2026, max_results_per_db=1)
         assert len(cases) <= 1
 
     @responses.activate
@@ -93,7 +93,7 @@ class TestSearchCases:
         responses.add(responses.GET, FEDERAL_COURT_SEARCH, body=req.ConnectionError("DNS fail"))
 
         scraper = FederalCourtScraper(delay=0)
-        cases = scraper.search_cases(start_year=2024, end_year=2024, max_results=10)
+        cases = scraper.search_cases(start_year=2024, end_year=2024, max_results_per_db=10)
         assert cases == []
 
 

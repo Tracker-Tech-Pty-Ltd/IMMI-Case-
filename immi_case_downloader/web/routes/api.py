@@ -18,9 +18,10 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from itertools import combinations
 from collections import Counter, defaultdict
 from datetime import datetime
+from typing import Any
 
 import numpy as np
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, send_file, current_app, Response
 from flask_wtf.csrf import generate_csrf
 
 from ...config import START_YEAR, END_YEAR
@@ -39,6 +40,7 @@ from ...visa_registry import (
     group_by_family,
     VISA_REGISTRY,
 )
+from ..cache import AnalyticsCache
 from ..helpers import get_repo, get_output_dir, safe_int, _filter_cases, EDITABLE_FIELDS, error_response as _error
 from ..jobs import _run_download_job, job_manager
 from ..security import rate_limit
@@ -114,9 +116,44 @@ _lineage_cache_lock = threading.Lock()
 _lineage_cache_payload: dict | None = None
 _lineage_cache_ts: float = 0.0
 _LINEAGE_CACHE_TTL_SECONDS = 300.0
-_analytics_cache: dict[str, tuple[dict, float]] = {}
-_analytics_cache_lock = threading.Lock()
 _ANALYTICS_CACHE_TTL_SECONDS = 600.0  # 10 min — pre-computed aggregates
+_analytics_cache_obj = AnalyticsCache(ttl=_ANALYTICS_CACHE_TTL_SECONDS)
+# Legacy aliases kept for _invalidate_cases_cache compatibility:
+_analytics_cache: dict[str, tuple[dict, float]] = _analytics_cache_obj._store
+_analytics_cache_lock = _analytics_cache_obj._lock
+
+
+# ── Supabase response helpers ──────────────────────────────────────────
+# Supabase Python client types .data as JSON | None, which is too broad.
+# These helpers narrow it safely for Pyright without altering runtime behaviour.
+
+def _supabase_rows(resp: Any) -> list[dict[str, Any]]:
+    """Extract list[dict] from a Supabase APIResponse, returning [] on failure."""
+    data = getattr(resp, "data", None) if resp is not None else None
+    return data if isinstance(data, list) else []  # type: ignore[return-value]
+
+
+def _supabase_row(resp: Any) -> dict[str, Any] | None:
+    """Extract a single dict from a Supabase maybe_single() APIResponse."""
+    data = getattr(resp, "data", None) if resp is not None else None
+    return data if isinstance(data, dict) else None
+
+
+# ── HTTP Cache-Control helpers ────────────────────────────────────────
+
+def _stats_response(payload: dict) -> "Response":
+    """Return a JSON response with stats-appropriate Cache-Control headers."""
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=60"
+    return resp
+
+
+def _analytics_response(payload: dict) -> "Response":
+    """Return a JSON response with analytics-appropriate Cache-Control headers."""
+    resp = jsonify(payload)
+    resp.headers["Cache-Control"] = "public, max-age=600, stale-while-revalidate=120"
+    return resp
+
 
 # ── Outcome normalisation ──────────────────────────────────────────────
 
@@ -1081,16 +1118,12 @@ def _analytics_cache_key() -> str:
 
 def _analytics_get(key: str) -> dict | None:
     """Return cached analytics payload if still fresh, else None."""
-    entry = _analytics_cache.get(key)
-    if entry and (time.time() - entry[1]) < _ANALYTICS_CACHE_TTL_SECONDS:
-        return entry[0]
-    return None
+    return _analytics_cache_obj.get(key)
 
 
 def _analytics_set(key: str, payload: dict) -> None:
     """Store analytics payload in the cache."""
-    with _analytics_cache_lock:
-        _analytics_cache[key] = (payload, time.time())
+    _analytics_cache_obj.set(key, payload)
 
 
 def _fill_all_cases_cache() -> None:
@@ -1555,12 +1588,13 @@ def _lightweight_stats_fallback(repo):
     with _stats_cache_lock:
         _stats_cache_payload = payload
         _stats_cache_ts = time.time()
-    return jsonify(payload)
+    return _stats_response(payload)
 
 
 # ── CSRF ────────────────────────────────────────────────────────────────
 
 @api_bp.route("/csrf-token")
+@rate_limit(30, 60, scope="csrf-token")
 def get_csrf_token():
     return jsonify({"csrf_token": generate_csrf()})
 
@@ -1603,7 +1637,7 @@ def stats():
             for c in recent_sorted
         ]
 
-        return jsonify({
+        return _stats_response({
             "total_cases": len(cases),
             "with_full_text": with_text,
             "courts": dict(by_court),
@@ -1619,7 +1653,7 @@ def stats():
     repo = get_repo()
     with _stats_cache_lock:
         if _stats_cache_payload is not None and (time.time() - _stats_cache_ts) < _STATS_CACHE_TTL_SECONDS:
-            return jsonify(_stats_cache_payload)
+            return _stats_response(_stats_cache_payload)
 
     try:
         if hasattr(repo, "count_cases"):
@@ -1632,12 +1666,12 @@ def stats():
         with _stats_cache_lock:
             cached = _stats_cache_payload
         if cached is not None:
-            return jsonify(cached)
+            return _stats_response(cached)
         payload = _empty_stats_payload()
         with _stats_cache_lock:
             _stats_cache_payload = payload
             _stats_cache_ts = time.time()
-        return jsonify(payload)
+        return _stats_response(payload)
     except Exception:
         logger.warning("get_statistics failed; returning lightweight fallback", exc_info=True)
         return _lightweight_stats_fallback(repo)
@@ -1690,7 +1724,7 @@ def stats():
     with _stats_cache_lock:
         _stats_cache_payload = payload
         _stats_cache_ts = time.time()
-    return jsonify(payload)
+    return _stats_response(payload)
 
 
 def _fill_stats_cache() -> None:
@@ -1746,13 +1780,13 @@ def stats_trends():
                 resp = _call_with_timeout(
                     lambda: repo._client.rpc("get_court_year_trends").execute()
                 )
-                return jsonify({"trends": resp.data or []})
+                return _stats_response({"trends": resp.data or []})
             except FuturesTimeoutError:
                 logger.warning("Supabase RPC get_court_year_trends timed out; returning empty trends")
-                return jsonify({"trends": []})
+                return _stats_response({"trends": []})
             except Exception:
                 logger.warning("Supabase RPC get_court_year_trends failed, falling back to local", exc_info=True)
-                return jsonify({"trends": []})
+                return _stats_response({"trends": []})
 
     all_cases = _apply_filters(_get_all_cases())
 
@@ -1766,7 +1800,7 @@ def stats_trends():
 
     trends = [{"year": year, **year_court_counts[year]} for year in sorted(year_court_counts.keys())]
 
-    return jsonify({"trends": trends})
+    return _stats_response({"trends": trends})
 
 
 @api_bp.route("/court-lineage")
@@ -2252,13 +2286,13 @@ def similar_cases(case_id):
             .maybe_single()
             .execute()
         )
-        if not emb_resp.data or not emb_resp.data.get("embedding"):
+        emb_row = _supabase_row(emb_resp)
+        if not emb_row or not emb_row.get("embedding"):
             return jsonify({"similar": [], "available": True})
 
-        row = emb_resp.data
-        provider = row.get("embedding_provider", "openai")
-        model = row.get("embedding_model", "text-embedding-3-small")
-        embedding = row["embedding"]
+        provider = emb_row.get("embedding_provider", "openai")
+        model = emb_row.get("embedding_model", "text-embedding-3-small")
+        embedding = emb_row["embedding"]
 
         # Step 2: call the existing RPC for ANN search, requesting limit+1
         # so we can exclude the query case itself from results.
@@ -2271,7 +2305,7 @@ def similar_cases(case_id):
 
         similar_ids_scores: list[tuple[str, float]] = [
             (r["case_id"], float(r["similarity"]))
-            for r in (rpc_resp.data or [])
+            for r in _supabase_rows(rpc_resp)
             if r.get("case_id") and r["case_id"] != case_id
         ][:limit]
 
@@ -2288,7 +2322,7 @@ def similar_cases(case_id):
             .execute()
         )
         meta_by_id: dict[str, dict] = {
-            r["case_id"]: r for r in (meta_resp.data or [])
+            r["case_id"]: r for r in _supabase_rows(meta_resp)
         }
 
         # Step 4: assemble result list preserving similarity order.
@@ -2534,6 +2568,7 @@ def _semantic_rerank_cases(
     return hybrid_ranked[:limit], provider_used, model_used
 
 @api_bp.route("/search")
+@rate_limit(60, 60, scope="search")
 def search():
     query = request.args.get("q", "").strip()
     limit = safe_int(request.args.get("limit"), default=DEFAULT_SEARCH_LIMIT, min_val=1, max_val=MAX_SEARCH_LIMIT)
@@ -2854,7 +2889,7 @@ def analytics_filter_options():
         if outcome
     ]
 
-    return jsonify(
+    return _analytics_response(
         {
             "query": {
                 "court": court or None,
@@ -2874,7 +2909,7 @@ def analytics_outcomes():
     ck = "outcomes:" + _analytics_cache_key()
     cached = _analytics_get(ck)
     if cached is not None:
-        return jsonify(cached)
+        return _analytics_response(cached)
 
     repo = get_repo()
     by_court: dict[str, dict[str, int]] = defaultdict(Counter)
@@ -2925,7 +2960,7 @@ def analytics_outcomes():
         "by_family": {k: dict(v) for k, v in sorted(by_family.items(), key=lambda x: sum(x[1].values()), reverse=True)},
     }
     _analytics_set(ck, result)
-    return jsonify(result)
+    return _analytics_response(result)
 
 
 @api_bp.route("/analytics/judges")
@@ -2934,7 +2969,7 @@ def analytics_judges():
     ck = "judges:" + _analytics_cache_key()
     cached = _analytics_get(ck)
     if cached is not None:
-        return jsonify(cached)
+        return _analytics_response(cached)
 
     limit = safe_int(request.args.get("limit"), default=20, min_val=1, max_val=100)
     judge_counter: Counter = Counter()
@@ -2989,7 +3024,7 @@ def analytics_judges():
 
     result = {"judges": judges}
     _analytics_set(ck, result)
-    return jsonify(result)
+    return _analytics_response(result)
 
 
 @api_bp.route("/analytics/legal-concepts")
@@ -2998,7 +3033,7 @@ def analytics_legal_concepts():
     ck = "legal-concepts:" + _analytics_cache_key()
     cached = _analytics_get(ck)
     if cached is not None:
-        return jsonify(cached)
+        return _analytics_response(cached)
 
     limit = safe_int(request.args.get("limit"), default=20, min_val=1, max_val=100)
     concept_counter: Counter = Counter()
@@ -3029,7 +3064,7 @@ def analytics_legal_concepts():
 
     result = {"concepts": concepts}
     _analytics_set(ck, result)
-    return jsonify(result)
+    return _analytics_response(result)
 
 
 @api_bp.route("/analytics/nature-outcome")
@@ -3038,7 +3073,7 @@ def analytics_nature_outcome():
     ck = "nature-outcome:" + _analytics_cache_key()
     cached = _analytics_get(ck)
     if cached is not None:
-        return jsonify(cached)
+        return _analytics_response(cached)
 
     nature_outcome: dict[str, dict[str, int]] = defaultdict(Counter)
     repo = get_repo()
@@ -3082,7 +3117,7 @@ def analytics_nature_outcome():
         "matrix": matrix,
     }
     _analytics_set(ck, result)
-    return jsonify(result)
+    return _analytics_response(result)
 
 
 @api_bp.route("/analytics/success-rate")
@@ -3198,7 +3233,7 @@ def analytics_success_rate():
         for year in sorted(year_totals.keys())
     ]
 
-    return jsonify(
+    return _analytics_response(
         {
             "query": {
                 "court": request.args.get("court", "").strip() or None,
@@ -3298,7 +3333,7 @@ def analytics_judge_leaderboard():
         rows.sort(key=lambda row: (row["total_cases"], row["approval_rate"]), reverse=True)
 
     total_judges = len(rows)
-    return jsonify({"judges": rows[:limit], "total_judges": total_judges})
+    return _analytics_response({"judges": rows[:limit], "total_judges": total_judges})
 
 
 @api_bp.route("/analytics/judge-profile")
@@ -3328,7 +3363,7 @@ def analytics_judge_profile():
         display_name, judge_cases, include_recent_cases=True, court_baselines=court_baselines
     )
     payload["judge"]["canonical_name"] = canonical_name
-    return jsonify(payload)
+    return _analytics_response(payload)
 
 
 @api_bp.route("/analytics/judge-compare")
@@ -3382,7 +3417,7 @@ def analytics_judge_compare():
         profile["judge"]["canonical_name"] = canonical_name
         profiles.append(profile)
 
-    return jsonify({"judges": profiles})
+    return _analytics_response({"judges": profiles})
 
 
 @api_bp.route("/analytics/concept-effectiveness")
@@ -3432,7 +3467,7 @@ def analytics_concept_effectiveness():
             }
         )
 
-    return jsonify({"baseline_rate": baseline_rate, "concepts": concepts})
+    return _analytics_response({"baseline_rate": baseline_rate, "concepts": concepts})
 
 
 @api_bp.route("/analytics/concept-cooccurrence")
@@ -3490,7 +3525,7 @@ def analytics_concept_cooccurrence():
         )
 
     top_pairs.sort(key=lambda item: item["count"], reverse=True)
-    return jsonify(
+    return _analytics_response(
         {
             "concepts": top_concepts,
             "matrix": dict(matrix),
@@ -3579,7 +3614,7 @@ def analytics_concept_trends():
     emerging.sort(key=lambda item: item["growth_pct"], reverse=True)
     declining.sort(key=lambda item: item["decline_pct"])
 
-    return jsonify(
+    return _analytics_response(
         {
             "series": series,
             "emerging": emerging,
@@ -3660,7 +3695,7 @@ def analytics_flow_matrix():
         if src is not None and tgt is not None:
             links.append({"source": src, "target": tgt, "value": value})
 
-    return jsonify({"nodes": nodes, "links": links})
+    return _analytics_response({"nodes": nodes, "links": links})
 
 
 # ── Monthly Trends ─────────────────────────────────────────────────────
@@ -3701,7 +3736,7 @@ def analytics_monthly_trends():
         rate = round(wins / total * 100, 1) if total > 0 else 0
         series.append({"month": month_key, "total": total, "wins": wins, "win_rate": rate})
 
-    return jsonify({"series": series, "events": _POLICY_EVENTS})
+    return _analytics_response({"series": series, "events": _POLICY_EVENTS})
 
 
 # ── Judge Bio ──────────────────────────────────────────────────────────
@@ -3757,7 +3792,7 @@ def analytics_judge_bio():
         return _error("name is required")
     bios = _load_judge_bios()
     if not bios:
-        return jsonify({"found": False})
+        return _analytics_response({"found": False})
 
     bio = None
     for alias in _judge_query_aliases(name):
@@ -3765,8 +3800,8 @@ def analytics_judge_bio():
         if bio:
             break
     if not bio:
-        return jsonify({"found": False})
-    return jsonify({"found": True, **bio})
+        return _analytics_response({"found": False})
+    return _analytics_response({"found": True, **bio})
 
 
 # ── Visa Registry ──────────────────────────────────────────────────────
@@ -4314,7 +4349,32 @@ def analytics_visa_families():
             "win_rate": round(wins / total * 100, 1) if total else 0,
         })
 
-    return jsonify({"families": families, "total_cases": len(cases)})
+    return _analytics_response({"families": families, "total_cases": len(cases)})
+
+
+# ── Cache Invalidation ───────────────────────────────────────────────────
+
+@api_bp.route("/cache/invalidate", methods=["POST"])
+def invalidate_cache():
+    """Invalidate all in-memory caches. Useful after bulk data import."""
+    global _stats_cache_payload, _stats_cache_ts
+    global _filter_options_cache_payload, _filter_options_cache_ts
+    global _lineage_cache_payload, _lineage_cache_ts
+
+    with _stats_cache_lock:
+        _stats_cache_payload = None
+        _stats_cache_ts = 0.0
+    with _filter_options_cache_lock:
+        _filter_options_cache_payload = None
+        _filter_options_cache_ts = 0.0
+    with _lineage_cache_lock:
+        _lineage_cache_payload = None
+        _lineage_cache_ts = 0.0
+
+    _analytics_cache_obj.invalidate()
+    _invalidate_cases_cache()
+
+    return jsonify({"invalidated": True, "timestamp": time.time()})
 
 
 # ── LLM Council ──────────────────────────────────────────────────────────
@@ -4439,7 +4499,7 @@ def _run_semantic_search(
 
         id_score: list[tuple[str, float]] = [
             (r["case_id"], float(r["similarity"]))
-            for r in (rpc_resp.data or [])
+            for r in _supabase_rows(rpc_resp)
             if r.get("case_id")
         ][:limit]
 
@@ -4455,7 +4515,7 @@ def _run_semantic_search(
             .in_("case_id", ids)
             .execute()
         )
-        meta_by_id = {r["case_id"]: r for r in (meta_resp.data or [])}
+        meta_by_id = {r["case_id"]: r for r in _supabase_rows(meta_resp)}
 
         results = []
         for cid, score in id_score:

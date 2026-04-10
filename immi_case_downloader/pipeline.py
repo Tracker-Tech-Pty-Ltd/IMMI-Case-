@@ -214,9 +214,9 @@ class PipelineLog:
             return [e.to_dict() for e in self._events]
 
 
-# ── Pipeline Status (global, shared with web UI) ────────────────────────
+# ── Pipeline Runner ─────────────────────────────────────────────────────
 
-_pipeline_status = {
+_INITIAL_STATUS = {
     "running": False,
     "phase": "",
     "phase_progress": "",
@@ -235,21 +235,6 @@ _pipeline_status = {
     "stop_requested": False,
 }
 
-_pipeline_lock = threading.Lock()
-
-
-def get_pipeline_status() -> dict:
-    """Return a deep copy of the pipeline status, safe for cross-thread reads."""
-    with _pipeline_lock:
-        return copy.deepcopy(_pipeline_status)
-
-
-def request_pipeline_stop():
-    with _pipeline_lock:
-        _pipeline_status["stop_requested"] = True
-
-
-# ── Pipeline Runner ─────────────────────────────────────────────────────
 
 class SmartPipeline:
     """Three-phase pipeline: crawl -> clean -> download."""
@@ -260,12 +245,23 @@ class SmartPipeline:
         self.log = PipelineLog()
         self._strategy_state: dict[str, int] = {}  # db_code -> strategy index
         self._consecutive_failures: dict[str, int] = {}  # db_code -> fail count
+        self._status = copy.deepcopy(_INITIAL_STATUS)
+        self._lock = threading.Lock()
+
+    def get_status(self) -> dict:
+        """Return a deep copy of pipeline status, safe for cross-thread reads."""
+        with self._lock:
+            return copy.deepcopy(self._status)
+
+    def request_stop(self):
+        """Signal the pipeline to stop after the current unit of work."""
+        with self._lock:
+            self._status["stop_requested"] = True
 
     def run(self):
         """Execute all pipeline phases. Called in a background thread."""
-        global _pipeline_status
-        with _pipeline_lock:
-            _pipeline_status.update({
+        with self._lock:
+            self._status.update({
                 "running": True,
                 "phase": "",
                 "phase_progress": "",
@@ -310,10 +306,10 @@ class SmartPipeline:
             self._update_status(phase_progress=f"Pipeline failed: {e}")
 
         finally:
-            with _pipeline_lock:
-                _pipeline_status["running"] = False
-                _pipeline_status["log"] = self.log.to_json()
-                _pipeline_status["errors"] = self.log.get_events(level="error")
+            with self._lock:
+                self._status["running"] = False
+                self._status["log"] = self.log.to_json()
+                self._status["errors"] = self.log.get_events(level="error")
 
     # ── Phase 1: Crawl ───────────────────────────────────────────────
 
@@ -377,13 +373,13 @@ class SmartPipeline:
             save_cases_csv(existing, self.output_dir)
             save_cases_json(existing, self.output_dir)
 
-        with _pipeline_lock:
-            _pipeline_status["stats"]["crawl"] = {
+        with self._lock:
+            self._status["stats"]["crawl"] = {
                 "total_found": total_found,
                 "new_added": total_added,
                 "strategies_used": dict(self._strategy_state),
             }
-            _pipeline_status["phases_completed"].append("crawl")
+            self._status["phases_completed"].append("crawl")
 
         self.log.add(
             "crawl", "success", "phase_done",
@@ -404,8 +400,8 @@ class SmartPipeline:
                 if cases is not None:
                     # Success — reset failure counter
                     self._consecutive_failures[db_code] = 0
-                    with _pipeline_lock:
-                        _pipeline_status["current_strategy"] = strategy
+                    with self._lock:
+                        self._status["current_strategy"] = strategy
                     return cases if cases else []
             except Exception as e:
                 self.log.add(
@@ -538,13 +534,13 @@ class SmartPipeline:
         save_cases_csv(cases, self.output_dir)
         save_cases_json(cases, self.output_dir)
 
-        with _pipeline_lock:
-            _pipeline_status["stats"]["clean"] = {
+        with self._lock:
+            self._status["stats"]["clean"] = {
                 "year_fixed": year_fixed,
                 "dupes_removed": dupes_removed,
                 "validated": validated,
             }
-            _pipeline_status["phases_completed"].append("clean")
+            self._status["phases_completed"].append("clean")
 
         self.log.add(
             "clean", "success", "phase_done",
@@ -573,8 +569,8 @@ class SmartPipeline:
 
         if not targets:
             self.log.add("download", "info", "no_targets", "No cases to download.")
-            with _pipeline_lock:
-                _pipeline_status["phases_completed"].append("download")
+            with self._lock:
+                self._status["phases_completed"].append("download")
             return
 
         self.log.add("download", "info", "targets", f"{len(targets)} cases queued for download.")
@@ -655,15 +651,15 @@ class SmartPipeline:
         # Final save
         self._save_download_progress(targets)
 
-        with _pipeline_lock:
-            _pipeline_status["stats"]["download"] = {
+        with self._lock:
+            self._status["stats"]["download"] = {
                 "downloaded": downloaded + retried,
                 "failed": failed,
                 "skipped": skipped,
                 "retried": retried,
             }
-            _pipeline_status["retry_queue"] = retry_queue
-            _pipeline_status["phases_completed"].append("download")
+            self._status["retry_queue"] = retry_queue
+            self._status["phases_completed"].append("download")
 
         self.log.add(
             "download", "success", "phase_done",
@@ -682,57 +678,65 @@ class SmartPipeline:
     # ── Helpers ──────────────────────────────────────────────────────
 
     def _is_stopped(self) -> bool:
-        with _pipeline_lock:
-            stopped = _pipeline_status.get("stop_requested", False)
+        with self._lock:
+            stopped = self._status.get("stop_requested", False)
         if stopped:
             self.log.add("pipeline", "warn", "stopped", "Pipeline stopped by user.")
-            with _pipeline_lock:
-                _pipeline_status["running"] = False
-                _pipeline_status["phase_progress"] = "Stopped by user."
-                _pipeline_status["log"] = self.log.to_json()
-                _pipeline_status["errors"] = self.log.get_events(level="error")
+            with self._lock:
+                self._status["running"] = False
+                self._status["phase_progress"] = "Stopped by user."
+                self._status["log"] = self.log.to_json()
+                self._status["errors"] = self.log.get_events(level="error")
         return stopped
 
     def _update_status(self, **kwargs):
-        with _pipeline_lock:
-            _pipeline_status.update(kwargs)
-            _pipeline_status["log"] = self.log.to_json()
-            _pipeline_status["errors"] = self.log.get_events(level="error")
+        with self._lock:
+            self._status.update(kwargs)
+            self._status["log"] = self.log.to_json()
+            self._status["errors"] = self.log.get_events(level="error")
 
 
 # ── Public helpers for webapp integration ────────────────────────────────
 
+# Module-level reference to the most recently started pipeline instance.
+# Used by get_pipeline_status() and request_pipeline_stop() for backward compat.
+_active_pipeline: "SmartPipeline | None" = None
+_active_pipeline_lock = threading.Lock()
+
+
+def get_pipeline_status() -> dict:
+    """Return a deep copy of the current pipeline status, safe for cross-thread reads."""
+    with _active_pipeline_lock:
+        p = _active_pipeline
+    if p is not None:
+        return p.get_status()
+    return copy.deepcopy(_INITIAL_STATUS)
+
+
+def request_pipeline_stop():
+    """Signal the active pipeline to stop after the current unit of work."""
+    with _active_pipeline_lock:
+        p = _active_pipeline
+    if p is not None:
+        p.request_stop()
+
+
 def start_pipeline(config: PipelineConfig, output_dir: str = OUTPUT_DIR) -> bool:
     """Start the pipeline in a background thread. Returns False if already running."""
-    with _pipeline_lock:
-        if _pipeline_status["running"]:
-            return False
-        _pipeline_status.update({
-            "running": True,
-            "phase": "",
-            "phase_progress": "Starting pipeline...",
-            "overall_progress": 0,
-            "config": config.to_dict(),
-            "phases_completed": [],
-            "stats": {
-                "crawl": {"total_found": 0, "new_added": 0, "strategies_used": {}},
-                "clean": {"year_fixed": 0, "dupes_removed": 0, "validated": 0},
-                "download": {"downloaded": 0, "failed": 0, "skipped": 0, "retried": 0},
-            },
-            "errors": [],
-            "log": [],
-            "retry_queue": [],
-            "current_strategy": "direct",
-            "stop_requested": False,
-        })
+    global _active_pipeline
 
-    pipeline = SmartPipeline(config, output_dir)
+    with _active_pipeline_lock:
+        if _active_pipeline is not None and _active_pipeline.get_status()["running"]:
+            return False
+        pipeline = SmartPipeline(config, output_dir)
+        _active_pipeline = pipeline
+
     thread = threading.Thread(target=pipeline.run, daemon=True)
     try:
         thread.start()
     except Exception:
-        with _pipeline_lock:
-            _pipeline_status.update({
+        with pipeline._lock:
+            pipeline._status.update({
                 "running": False,
                 "phase_progress": "Failed to start pipeline thread.",
             })

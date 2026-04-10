@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper
+from .metadata_extractor import MetadataExtractor
 from ..config import FEDERAL_COURT_SEARCH, START_YEAR, END_YEAR
 from ..models import ImmigrationCase
 
@@ -23,20 +24,29 @@ class FederalCourtScraper(BaseScraper):
 
     def search_cases(
         self,
+        databases: list[str] | None = None,
+        keywords: list[str] | None = None,
         start_year: int = START_YEAR,
         end_year: int = END_YEAR,
-        max_results: int = 500,
+        max_results_per_db: int = 500,
     ) -> list[ImmigrationCase]:
         """Search Federal Court for immigration-related judgments.
 
+        The ``databases`` and ``keywords`` parameters are accepted for
+        Protocol compatibility but are not used — the Federal Court search
+        endpoint has a single database and uses hard-coded immigration terms.
+
         Args:
+            databases: Ignored (Federal Court has one search endpoint).
+            keywords: Ignored (hard-coded immigration search terms are used).
             start_year: Start year for search.
             end_year: End year for search.
-            max_results: Maximum number of results.
+            max_results_per_db: Maximum number of results.
 
         Returns:
             List of ImmigrationCase objects.
         """
+        max_results = max_results_per_db
         cases = []
 
         search_terms = [
@@ -227,29 +237,20 @@ class FederalCourtScraper(BaseScraper):
 
         return text
 
+    def download_case_text(self, case: ImmigrationCase) -> str | None:
+        """Protocol-compatible alias for download_case_detail."""
+        return self.download_case_detail(case)
+
+    _metadata_extractor = MetadataExtractor()
+
     def _extract_metadata(self, text: str, case: ImmigrationCase):
-        """Extract metadata from judgment text."""
-        # Extract judges
-        judge_match = re.search(
-            r"(?:BEFORE|Coram)[:\s]+([^\n]+)", text, re.IGNORECASE
-        )
-        if judge_match:
-            case.judges = judge_match.group(1).strip()
+        """Extract metadata from judgment text.
 
-        # Extract date
-        date_match = re.search(
-            r"(?:DATE OF ORDER|DATE|JUDGMENT DATE)[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
-            text,
-            re.IGNORECASE,
+        Delegates to the shared MetadataExtractor, which consolidates all
+        regex patterns previously duplicated across scrapers.
+        """
+        extracted = self._metadata_extractor.extract(
+            text, citation=case.citation or ""
         )
-        if date_match:
-            case.date = date_match.group(1).strip()
-
-        # Extract catchwords
-        catchwords_match = re.search(
-            r"CATCHWORDS[:\s]*\n?(.*?)(?=\n\s*\n|LEGISLATION|CASES CITED)",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if catchwords_match:
-            case.catchwords = catchwords_match.group(1).strip()[:500]
+        for key, value in extracted.items():
+            setattr(case, key, value)

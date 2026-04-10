@@ -14,6 +14,8 @@ import logging
 from urllib.parse import urljoin, urlencode, quote_plus
 from bs4 import BeautifulSoup
 
+from .metadata_extractor import MetadataExtractor
+
 from .base import BaseScraper
 from ..config import (
     AUSTLII_BASE,
@@ -339,84 +341,24 @@ class AustLIIScraper(BaseScraper):
 
         return soup.get_text(separator="\n", strip=True)
 
+    def download_case_text(self, case: ImmigrationCase) -> str | None:
+        """Protocol-compatible alias for download_case_detail."""
+        return self.download_case_detail(case)
+
+    _metadata_extractor = MetadataExtractor()
+
     def _extract_metadata(self, soup: BeautifulSoup, case: ImmigrationCase):
-        """Extract metadata fields from a case page."""
+        """Extract metadata fields from a case page.
+
+        Delegates to the shared MetadataExtractor, which consolidates all
+        regex patterns previously duplicated across scrapers.
+        """
         text = soup.get_text()
-
-        # Extract judges/members
-        judge_patterns = [
-            r"(?:JUDGE|MEMBER|JUSTICE|TRIBUNAL MEMBER)[:\s]+([^\n]+)",
-            r"(?:Before|Coram)[:\s]+([^\n]+)",
-        ]
-        for pattern in judge_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                case.judges = match.group(1).strip()
-                break
-
-        # Extract date
-        date_patterns = [
-            r"(?:Date of (?:decision|hearing|judgment|order))[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
-            r"(?:Decision date|Judgment date|Date)[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
-            r"(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})",
-        ]
-        for pattern in date_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                case.date = match.group(1).strip()
-                break
-
-        # Extract catchwords
-        catchwords_match = re.search(
-            r"CATCHWORDS[:\s]*\n?(.*?)(?=\n\s*\n|\nLEGISLATION|\nCASES|\nORDER)",
-            text,
-            re.IGNORECASE | re.DOTALL,
+        extracted = self._metadata_extractor.extract(
+            text, citation=case.citation or ""
         )
-        if catchwords_match:
-            case.catchwords = catchwords_match.group(1).strip()[:500]
-
-        # Extract citation if not already set
-        if not case.citation:
-            citation_match = re.search(
-                r"\[\d{4}\]\s+(?:AATA|ARTA|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+\d+",
-                text,
-            )
-            if citation_match:
-                case.citation = citation_match.group(0)
-
-        # Extract outcome/decision
-        outcome_patterns = [
-            r"(?:DECISION|ORDER|ORDERS|THE COURT ORDERS)[:\s]*\n?(.*?)(?:\n\s*\n)",
-            r"(?:The Tribunal|The Court)\s+(affirms|remits|sets aside|dismisses|allows|refuses|grants)[^\n]*",
-        ]
-        for pattern in outcome_patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                case.outcome = match.group(0).strip()[:300]
-                break
-
-        # Extract visa type
-        visa_patterns = [
-            r"((?:protection|skilled|partner|student|visitor|bridging|"
-            r"temporary|permanent|subclass\s+\d+)\s*visa)",
-        ]
-        for pattern in visa_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                case.visa_type = match.group(1).strip()
-                break
-
-        # Extract legislation references
-        legislation_patterns = [
-            r"(Migration Act 1958[^.]*)",
-            r"(Migration Regulations 1994[^.]*)",
-        ]
-        leg_refs = []
-        for pattern in legislation_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            leg_refs.extend(matches[:2])
-        if leg_refs:
-            case.legislation = "; ".join(leg_refs)[:300]
+        for key, value in extracted.items():
+            setattr(case, key, value)
 
     @staticmethod
     def _is_immigration_case(text: str, keywords: list[str]) -> bool:
