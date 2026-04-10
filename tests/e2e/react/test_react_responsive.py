@@ -39,7 +39,7 @@ class TestDesktopLayout:
         """Search bar trigger should be visible on desktop (sm:flex)."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
-        search_btn = react_page.locator("header").get_by_text("Search...")
+        search_btn = react_page.locator("header").get_by_text("Search...", exact=True)
         assert search_btn.is_visible()
 
     def test_theme_toggle_visible(self, react_page):
@@ -95,7 +95,7 @@ class TestMobileLayout:
         react_navigate(react_mobile, "/")
         wait_for_loading_gone(react_mobile)
         # Just verify stat cards are present and visible
-        cards = react_mobile.locator("text=Total Cases")
+        cards = react_mobile.get_by_text("Total Cases", exact=True)
         assert cards.count() >= 1
 
     def test_mobile_cases_table_scrollable(self, react_mobile):

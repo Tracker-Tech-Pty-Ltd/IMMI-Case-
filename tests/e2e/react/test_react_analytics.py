@@ -25,12 +25,12 @@ class TestAnalyticsPage:
     def test_outcome_by_court_section(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Outcome Rate by Court").is_visible()
+        assert react_page.get_by_role("heading", name="Outcome Rate by Court").is_visible()
 
     def test_affirmed_rate_trend_section(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Affirmed Rate Trend").is_visible()
+        assert react_page.get_by_role("heading", name="Affirmed Rate Trend").is_visible()
 
     def test_top_judges_section(self, react_page):
         react_navigate(react_page, "/analytics")
@@ -41,7 +41,7 @@ class TestAnalyticsPage:
     def test_legal_concepts_section(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Legal Concepts Frequency").is_visible()
+        assert react_page.get_by_role("heading", name="Legal Concepts Frequency").is_visible()
 
     def test_chart_cards_render(self, react_page):
         """ChartCard components should render with loading or content state."""
@@ -62,7 +62,7 @@ class TestAnalyticsFilters:
     def test_all_courts_button_active_by_default(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        all_btn = react_page.get_by_text("All Courts", exact=True)
+        all_btn = react_page.get_by_role("button", name="All Courts", exact=True)
         assert all_btn.is_visible()
         classes = all_btn.get_attribute("class") or ""
         assert "bg-accent" in classes
@@ -71,13 +71,13 @@ class TestAnalyticsFilters:
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
         for court in ["AATA", "FCA", "FCCA", "HCA"]:
-            assert react_page.get_by_text(court, exact=True).first.is_visible()
+            assert react_page.get_by_role("button", name=court, exact=True).first.is_visible()
 
     def test_click_court_filter(self, react_page):
         """Clicking a court pill activates it and deactivates 'All Courts'."""
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        fca_btn = react_page.get_by_text("FCA", exact=True).first
+        fca_btn = react_page.get_by_role("button", name="FCA", exact=True)
         fca_btn.click()
         react_page.wait_for_timeout(500)
         classes = fca_btn.get_attribute("class") or ""
@@ -86,15 +86,15 @@ class TestAnalyticsFilters:
     def test_time_preset_buttons(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("All Time", exact=True).is_visible()
-        assert react_page.get_by_text("Last 5y", exact=True).is_visible()
-        assert react_page.get_by_text("Last 10y", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="All Time", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="Last 5y", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="Last 10y", exact=True).is_visible()
 
     def test_click_time_preset(self, react_page):
         """Clicking a time preset activates it."""
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        btn = react_page.get_by_text("Last 5y", exact=True)
+        btn = react_page.get_by_role("button", name="Last 5y", exact=True)
         btn.click()
         react_page.wait_for_timeout(500)
         classes = btn.get_attribute("class") or ""
@@ -110,18 +110,18 @@ class TestAnalyticsFilters:
     def test_reset_button_shows_after_filter_change(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        react_page.get_by_text("FCA", exact=True).first.click()
+        react_page.get_by_role("button", name="FCA", exact=True).click()
         react_page.wait_for_timeout(300)
-        assert react_page.get_by_text("Reset Filters", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="Reset Filters", exact=True).is_visible()
 
     def test_keyboard_r_resets_filters(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        react_page.get_by_text("FCA", exact=True).first.click()
+        react_page.get_by_role("button", name="FCA", exact=True).click()
         react_page.wait_for_timeout(300)
         react_page.locator("h1").first.click()
         react_page.keyboard.press("r")
         react_page.wait_for_timeout(400)
-        all_btn = react_page.get_by_text("All Courts", exact=True)
+        all_btn = react_page.get_by_role("button", name="All Courts", exact=True)
         classes = all_btn.get_attribute("class") or ""
         assert "bg-accent" in classes

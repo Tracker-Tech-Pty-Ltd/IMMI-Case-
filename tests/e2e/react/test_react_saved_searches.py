@@ -376,7 +376,7 @@ class TestResultCountBadge:
         # Look for the count badge (should show a number)
         panel = _saved_searches_panel(react_page)
         # Count badge should contain a numeric value
-        card = panel.locator("text=Count Badge Test").locator("..")
+        card = panel.get_by_text("Count Badge Test", exact=True).locator("..")
         card_text = card.inner_text()
         # Should contain at least one digit (the count)
         assert any(c.isdigit() for c in card_text)
@@ -513,7 +513,7 @@ class TestEmptyStates:
 
         # If user has no saved searches, the section might be hidden
         # This test just verifies the dashboard loads
-        assert react_page.get_by_role("heading", name="Dashboard").is_visible() or react_page.get_by_text("Total Cases").is_visible()
+        assert react_page.get_by_role("heading", name="Dashboard").is_visible() or react_page.get_by_text("Total Cases", exact=True).is_visible()
 
 
 class TestPersistence:

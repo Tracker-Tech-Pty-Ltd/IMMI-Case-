@@ -12,9 +12,9 @@ class TestCasesTable:
     def test_heading_shows_total(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Cases").first.is_visible()
+        assert react_page.get_by_role("heading", name="Cases").first.is_visible()
         # Should show "10 cases" from seed data (i18n: units.cases = "cases")
-        assert react_page.get_by_text("cases").first.is_visible()
+        assert react_page.get_by_text("cases", exact=True).first.is_visible()
 
     def test_table_has_header_columns(self, react_page):
         react_navigate(react_page, "/cases")
@@ -44,7 +44,7 @@ class TestCasesTable:
         select_all = react_page.locator("thead input[type='checkbox']")
         select_all.click()
         # Batch bar should appear with count
-        assert react_page.get_by_text("selected").is_visible()
+        assert react_page.get_by_text("selected", exact=True).is_visible()
 
     def test_individual_checkbox(self, react_page):
         """Individual row checkbox selects a single case."""
@@ -52,7 +52,7 @@ class TestCasesTable:
         wait_for_loading_gone(react_page)
         first_checkbox = react_page.locator("tbody input[type='checkbox']").first
         first_checkbox.click()
-        assert react_page.get_by_text("1 selected").is_visible()
+        assert react_page.get_by_text("1 selected", exact=True).is_visible()
 
 
 class TestCardsView:
@@ -177,7 +177,7 @@ class TestPagination:
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         # With 10 seed cases and page_size=50, no pagination
-        page_indicator = react_page.get_by_text("Page 1 of")
+        page_indicator = react_page.get_by_text("Page 1 of", exact=False)  # intentional substring match
         assert page_indicator.count() == 0
 
 
@@ -223,4 +223,4 @@ class TestCasesKeyboardEnhancements:
     def test_table_shortcuts_hint_visible(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Keyboard: j/k move row").is_visible()
+        assert react_page.get_by_text("Keyboard: j/k move row", exact=True).is_visible()

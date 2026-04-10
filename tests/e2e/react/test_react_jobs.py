@@ -17,28 +17,28 @@ class TestDownloadPage:
     def test_download_full_text_section(self, react_page):
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Download Full Text").is_visible()
+        assert react_page.get_by_text("Download Full Text", exact=True).is_visible()
 
     def test_start_download_button(self, react_page):
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        btn = react_page.get_by_text("Start Download")
+        btn = react_page.get_by_role("button", name="Start Download")
         assert btn.is_visible()
 
     def test_export_data_section(self, react_page):
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Export Data").is_visible()
+        assert react_page.get_by_text("Export Data", exact=True).is_visible()
 
     def test_export_csv_button(self, react_page):
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Export CSV").is_visible()
+        assert react_page.get_by_role("button", name="Export CSV").is_visible()
 
     def test_export_json_button(self, react_page):
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Export JSON").is_visible()
+        assert react_page.get_by_role("button", name="Export JSON").is_visible()
 
 
 class TestJobStatusPage:
@@ -89,15 +89,15 @@ class TestPipelinePage:
         react_navigate(react_page, "/pipeline")
         wait_for_loading_gone(react_page)
         # Click the logs section header to collapse
-        react_page.get_by_text("Collapse").click()
+        react_page.get_by_role("button", name="Collapse").click()
         react_page.wait_for_timeout(300)
-        assert react_page.get_by_text("Expand").is_visible()
+        assert react_page.get_by_role("button", name="Expand").is_visible()
         # Click again to expand
-        react_page.get_by_text("Expand").click()
+        react_page.get_by_role("button", name="Expand").click()
         react_page.wait_for_timeout(300)
-        assert react_page.get_by_text("Collapse").is_visible()
+        assert react_page.get_by_role("button", name="Collapse").is_visible()
 
     def test_pipeline_shows_idle_status(self, react_page):
         react_navigate(react_page, "/pipeline")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Idle").is_visible()
+        assert react_page.get_by_text("Idle", exact=True).is_visible()

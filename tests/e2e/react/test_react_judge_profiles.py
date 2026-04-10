@@ -14,7 +14,7 @@ class TestJudgeProfilesPage:
     def test_page_loads_with_heading(self, react_page):
         react_navigate(react_page, "/judge-profiles")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Judge Profiles").first.is_visible()
+        assert react_page.get_by_role("heading", name="Judge Profiles").is_visible()
 
     def test_leaderboard_shows_judges(self, react_page):
         react_navigate(react_page, "/judge-profiles")
@@ -50,7 +50,7 @@ class TestJudgeProfilesPage:
     def test_profile_shows_outcome_chart(self, react_page):
         react_navigate(react_page, "/judge-profiles/Senior%20Member%20Jones")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Outcome Distribution").is_visible()
+        assert react_page.get_by_role("heading", name="Outcome Distribution").is_visible()
 
     def test_profile_no_js_errors(self, react_page):
         react_navigate(react_page, "/judge-profiles")
@@ -72,12 +72,12 @@ class TestJudgeProfilesPage:
         )
         react_navigate(react_page, "/judge-profiles/Senior%20Member%20Jones")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Judge profile failed to load").is_visible()
+        assert react_page.get_by_text("Judge profile failed to load", exact=True).is_visible()
 
     def test_sidebar_nav_link_exists(self, react_page):
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
-        assert react_page.locator("aside").get_by_text("Judge Profiles").is_visible()
+        assert react_page.locator("aside").get_by_role("link", name="Judge Profiles", exact=True).is_visible()
 
     def test_slash_focuses_judge_search(self, react_page):
         react_navigate(react_page, "/judge-profiles")

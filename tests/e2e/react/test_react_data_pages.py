@@ -19,7 +19,7 @@ class TestDataDictionaryPage:
         wait_for_loading_gone(react_page)
         # 5 group tables share the same headers; check first occurrence
         for col in ["Field", "Type", "Description", "Example"]:
-            assert react_page.locator("th").get_by_text(col).first.is_visible()
+            assert react_page.locator("th").get_by_text(col, exact=True).first.is_visible()
 
     def test_table_has_fields(self, react_page):
         react_navigate(react_page, "/data-dictionary")
@@ -30,12 +30,12 @@ class TestDataDictionaryPage:
     def test_case_id_field_present(self, react_page):
         react_navigate(react_page, "/data-dictionary")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("case_id").is_visible()
+        assert react_page.get_by_text("case_id", exact=True).is_visible()
 
     def test_citation_field_present(self, react_page):
         react_navigate(react_page, "/data-dictionary")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("citation").first.is_visible()
+        assert react_page.get_by_text("citation", exact=True).first.is_visible()
 
 
 class TestDesignTokensPage:

@@ -43,7 +43,7 @@ def _navigate_to_edit(page):
         lambda r: "/api/v1/cases/" in r.url and r.request.method == "GET",
         timeout=15000,
     ):
-        main.get_by_text("Edit", exact=True).click()
+        main.get_by_role("link", name="Edit").click()
     page.wait_for_timeout(500)
     wait_for_loading_gone(page)
 
@@ -54,8 +54,8 @@ class TestCreateCase:
     def test_add_page_has_form(self, react_page, skip_if_live):
         react_navigate(react_page, "/cases/add")
         wait_for_loading_gone(react_page)
-        assert react_page.locator("main").get_by_text("Add Case").first.is_visible()
-        assert react_page.locator("label").get_by_text("Title").is_visible()
+        assert react_page.locator("main").get_by_role("heading", name="Add Case").is_visible()
+        assert react_page.locator("label").get_by_text("Title", exact=True).is_visible()
 
     def test_create_case_success(self, react_page, skip_if_live):
         """Fill form and create a case, verify toast and redirect."""
@@ -71,7 +71,7 @@ class TestCreateCase:
         if inputs.count() >= 4:
             inputs.nth(3).fill("TEST")
 
-        react_page.locator("main").get_by_text("Create").click()
+        react_page.locator("main").get_by_role("button", name="Create").click()
         react_page.wait_for_load_state("networkidle")
 
         toast = get_toast_text(react_page)
@@ -82,7 +82,7 @@ class TestCreateCase:
         """Submitting without title shows error toast."""
         react_navigate(react_page, "/cases/add")
         wait_for_loading_gone(react_page)
-        react_page.locator("main").get_by_text("Create").click()
+        react_page.locator("main").get_by_role("button", name="Create").click()
         toast = get_toast_text(react_page)
         assert "required" in toast.lower() or "Title" in toast
 
@@ -105,7 +105,7 @@ class TestEditCase:
         # CaseEditPage has Breadcrumb (Cases > citation > Edit) + h2 "Case Metadata"
         breadcrumb = react_page.locator("nav").filter(has_text="Edit")
         assert breadcrumb.is_visible()
-        assert react_page.locator("h2").get_by_text("Case Metadata").is_visible()
+        assert react_page.locator("h2").get_by_text("Case Metadata", exact=True).is_visible()
 
     def test_edit_form_prefilled(self, react_page, skip_if_live):
         """Edit form should be pre-filled with existing case data."""
@@ -144,7 +144,7 @@ class TestDeleteCase:
         main = react_page.locator("main")
 
         # Click Delete to open the ConfirmModal
-        main.get_by_text("Delete", exact=True).click()
+        main.get_by_role("button", name="Delete").click()
         react_page.wait_for_timeout(300)
 
         # ConfirmModal renders a danger-styled "Delete" confirm button
@@ -161,7 +161,7 @@ class TestDeleteCase:
         _navigate_to_first_case(react_page)
         main = react_page.locator("main")
 
-        main.get_by_text("Delete", exact=True).click()
+        main.get_by_role("button", name="Delete").click()
         react_page.wait_for_timeout(300)
 
         # Click Cancel in the modal

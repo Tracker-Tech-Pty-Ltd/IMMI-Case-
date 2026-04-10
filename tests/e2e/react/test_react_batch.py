@@ -162,7 +162,7 @@ class TestBatchBar(TestBatchSelection):
         wait_for_loading_gone(react_page)
         react_page.get_by_test_id("cases-select-all").click()
         assert react_page.get_by_test_id("cases-batch-bar").is_visible()
-        react_page.get_by_text("Clear").click()
+        react_page.get_by_role("button", name="Clear").click()
         # Batch bar should disappear
         assert react_page.get_by_test_id("cases-batch-bar").count() == 0
 

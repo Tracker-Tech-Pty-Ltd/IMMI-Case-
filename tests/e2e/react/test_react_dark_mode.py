@@ -26,7 +26,7 @@ class TestDarkModeDashboard:
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
-        assert react_page.get_by_text("Total Cases").is_visible()
+        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
         assert_no_js_errors(react_page)
 
     def test_stat_cards_visible_dark(self, react_page):
@@ -34,7 +34,7 @@ class TestDarkModeDashboard:
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
         for card_title in ["Total Cases", "With Full Text", "Courts"]:
-            assert react_page.get_by_text(card_title).first.is_visible()
+            assert react_page.get_by_text(card_title, exact=True).first.is_visible()
 
     def test_charts_render_svg_dark(self, react_page):
         """Recharts SVGs should still render in dark mode."""
@@ -49,8 +49,8 @@ class TestDarkModeDashboard:
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
-        assert react_page.locator("aside").get_by_text("IMMI-Case").is_visible()
-        assert react_page.locator("aside").get_by_text("Dashboard").is_visible()
+        assert react_page.locator("aside").get_by_text("IMMI-Case", exact=True).is_visible()
+        assert react_page.locator("aside").get_by_role("link", name="Dashboard", exact=True).is_visible()
 
     def test_quick_actions_visible_dark(self, react_page):
         react_navigate(react_page, "/")
@@ -59,7 +59,7 @@ class TestDarkModeDashboard:
         main = react_page.locator("main")
         assert main.get_by_text("Download", exact=True).is_visible()
         assert main.get_by_text("Pipeline", exact=True).is_visible()
-        assert main.get_by_text("Export CSV").is_visible()
+        assert main.get_by_text("Export CSV", exact=True).is_visible()
 
 
 class TestDarkModeAnalytics:
@@ -69,14 +69,14 @@ class TestDarkModeAnalytics:
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
-        assert react_page.get_by_text("Analytics").first.is_visible()
+        assert react_page.get_by_role("heading", name="Analytics").first.is_visible()
         assert_no_js_errors(react_page)
 
     def test_analytics_chart_cards_dark(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
-        assert react_page.get_by_text("Outcome Rate by Court").is_visible()
+        assert react_page.get_by_text("Outcome Rate by Court", exact=True).is_visible()
         assert react_page.get_by_role(
             "heading",
             name="Most Active Judges / Members",
@@ -121,7 +121,7 @@ class TestDarkModeCases:
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
-        assert react_page.get_by_text("Cases").first.is_visible()
+        assert react_page.get_by_role("heading", name="Cases").first.is_visible()
         assert_no_js_errors(react_page)
 
     def test_case_detail_dark(self, react_page, seed_cases):

@@ -40,7 +40,7 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Verify data is loaded initially
-        assert react_page.get_by_text("Total Cases").is_visible()
+        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
 
         # Navigate away
         click_sidebar_link(react_page, "Cases")
@@ -49,8 +49,8 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Dashboard should show stat cards, NOT the "Welcome" empty state
-        assert react_page.get_by_text("Total Cases").is_visible()
-        welcome = react_page.get_by_text("Welcome to IMMI-Case")
+        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
+        welcome = react_page.get_by_text("Welcome to IMMI-Case", exact=True)
         assert welcome.count() == 0 or not welcome.is_visible()
 
     def test_rapid_cycle_no_welcome_flash(self, react_page):
@@ -69,7 +69,7 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Must show real data, not the welcome screen
-        assert react_page.get_by_text("Total Cases").is_visible()
+        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
         assert_no_js_errors(react_page)
 
     @pytest.mark.parametrize(
@@ -95,7 +95,7 @@ class TestDashboardFilterStability:
         """Clicking a court filter pill should show filtered data, not empty state."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Total Cases").is_visible()
+        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
 
         # Click a court filter
         fca_btn = react_page.get_by_text("FCA", exact=True).first
@@ -103,8 +103,8 @@ class TestDashboardFilterStability:
             fca_btn.click()
             react_page.wait_for_timeout(1000)
             # Should still show stat cards (possibly with lower numbers)
-            assert react_page.get_by_text("Total Cases").is_visible()
-            welcome = react_page.get_by_text("Welcome to IMMI-Case")
+            assert react_page.get_by_text("Total Cases", exact=True).is_visible()
+            welcome = react_page.get_by_text("Welcome to IMMI-Case", exact=True)
             assert welcome.count() == 0 or not welcome.is_visible()
 
     def test_time_preset_keeps_data(self, react_page):
@@ -116,7 +116,7 @@ class TestDashboardFilterStability:
         if last5.is_visible():
             last5.click()
             react_page.wait_for_timeout(1000)
-            assert react_page.get_by_text("Total Cases").is_visible()
+            assert react_page.get_by_text("Total Cases", exact=True).is_visible()
 
     def test_all_time_preset_shows_all_data(self, react_page):
         """All Time preset should show the full dataset."""
@@ -127,5 +127,5 @@ class TestDashboardFilterStability:
         if all_time.is_visible():
             all_time.click()
             react_page.wait_for_timeout(1000)
-            assert react_page.get_by_text("Total Cases").is_visible()
+            assert react_page.get_by_text("Total Cases", exact=True).is_visible()
             assert_no_js_errors(react_page)

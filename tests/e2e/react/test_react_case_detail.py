@@ -71,11 +71,11 @@ class TestMetadataGrid:
 
     def test_metadata_heading(self, react_page):
         _navigate_to_seed_case(react_page)
-        assert react_page.locator("h2").get_by_text("Case Information").is_visible()
+        assert react_page.locator("h2").get_by_text("Case Information", exact=True).is_visible()
 
     def test_metadata_has_citation(self, react_page):
         _navigate_to_seed_case(react_page)
-        assert react_page.get_by_text("Citation").first.is_visible()
+        assert react_page.get_by_text("Citation", exact=True).first.is_visible()
 
     def test_metadata_has_court(self, react_page):
         _navigate_to_seed_case(react_page)
@@ -87,7 +87,7 @@ class TestMetadataGrid:
 
     def test_metadata_has_legislation(self, react_page):
         _navigate_to_seed_case(react_page)
-        assert react_page.get_by_text("Legislation").first.is_visible()
+        assert react_page.get_by_text("Legislation", exact=True).first.is_visible()
 
 
 class TestFullTextToggle:
@@ -108,18 +108,18 @@ class TestActionButtons:
     def test_edit_link_visible(self, react_page):
         _navigate_to_seed_case(react_page)
         # Edit link is inside main, scoped to avoid sidebar matches
-        edit_link = react_page.locator("main").get_by_text("Edit", exact=True)
+        edit_link = react_page.locator("main").get_by_role("link", name="Edit")
         assert edit_link.is_visible()
 
     def test_edit_link_navigates(self, react_page):
         _navigate_to_seed_case(react_page)
-        react_page.locator("main").get_by_text("Edit", exact=True).click()
+        react_page.locator("main").get_by_role("link", name="Edit").click()
         react_page.wait_for_load_state("networkidle")
         assert "/edit" in react_page.url
 
     def test_delete_button_visible(self, react_page):
         _navigate_to_seed_case(react_page)
-        delete_btn = react_page.locator("main").get_by_text("Delete", exact=True)
+        delete_btn = react_page.locator("main").get_by_role("button", name="Delete")
         assert delete_btn.is_visible()
 
     def test_breadcrumb_visible(self, react_page):

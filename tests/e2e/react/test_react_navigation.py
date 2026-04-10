@@ -24,7 +24,7 @@ class TestDesktopSidebar:
     def test_sidebar_has_logo(self, react_page):
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
-        assert react_page.locator("aside").get_by_text("IMMI-Case").is_visible()
+        assert react_page.locator("aside").get_by_text("IMMI-Case", exact=True).is_visible()
 
     @pytest.mark.parametrize(
         "label,expected_path",
@@ -54,7 +54,7 @@ class TestDesktopSidebar:
     def test_sidebar_footer_text(self, react_page):
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
-        footer = react_page.locator("aside").get_by_text("Australian Immigration Case Database")
+        footer = react_page.locator("aside").get_by_text("Australian Immigration Case Database", exact=True)
         assert footer.is_visible()
 
 
@@ -80,7 +80,7 @@ class TestMobileDrawer:
         click_mobile_menu(react_mobile)
         # Scope to the mobile drawer to avoid matching desktop sidebar
         drawer = react_mobile.locator(".fixed.inset-y-0.left-0")
-        assert drawer.get_by_text("IMMI-Case").is_visible()
+        assert drawer.get_by_text("IMMI-Case", exact=True).is_visible()
 
     def test_close_mobile_drawer(self, react_mobile):
         react_navigate(react_mobile, "/")
@@ -131,5 +131,5 @@ class TestBackNavigation:
         breadcrumb = react_page.locator("main nav").filter(has_text="Cases")
         assert breadcrumb.is_visible()
         # "Cases" in the breadcrumb should be a link
-        cases_link = breadcrumb.get_by_text("Cases")
+        cases_link = breadcrumb.get_by_role("link", name="Cases", exact=True)
         assert cases_link.is_visible()

@@ -123,7 +123,7 @@ def wait_for_react(page: Page, timeout: int = 15000):
 def wait_for_loading_gone(page: Page, timeout: int = 10000):
     """Wait for common loading indicators to disappear."""
     # TanStack Query pages show 'Loading...' text initially
-    loading = page.locator("text=Loading")
+    loading = page.get_by_text("Loading", exact=True)
     try:
         loading.first.wait_for(state="hidden", timeout=timeout)
     except Exception:
