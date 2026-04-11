@@ -7,10 +7,28 @@ main = "workers/proxy.js"
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "REPLACE_WITH_YOUR_HYPERDRIVE_ID"
-# Run `npx wrangler hyperdrive create immi-case-db --connection-string="postgresql://..."` to get ID
-# Local dev: point to local Postgres or Supabase
+id = "c961b377ef0c4ec2a01d9d7220db7c93"
+# To create Hyperdrive, use the DIRECT connection (not Supabase pooler):
+#   npx wrangler hyperdrive create immi-case-db \
+#     --connection-string="postgresql://postgres:[DB_PASSWORD]@db.urntbuqczarkuoaosjxd.supabase.co:5432/postgres"
+#
+# DB password: Supabase Dashboard → Project Settings → Database → "Database password"
+# ⚠️  Use host db.[PROJECT_REF].supabase.co (direct), NOT the pooler host
+# ⚠️  Username is postgres (plain), NOT postgres.[PROJECT_REF]
+#
+# After creation, replace the id above with the returned Hyperdrive ID.
+# The Worker (proxy.js) injects env.HYPERDRIVE.connectionString as X-Hyperdrive-Url header
+# so the Flask container can use it for direct psycopg2 connections (analytics fast path).
 localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
+
+[durable_objects]
+bindings = [
+  { name = "FlaskBackend", class_name = "FlaskBackend" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["FlaskBackend"]
 
 [[containers]]
 class_name = "FlaskBackend"

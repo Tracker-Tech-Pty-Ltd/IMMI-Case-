@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from typing import cast
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -13,6 +14,31 @@ from .storage import CASE_FIELDS
 logger = logging.getLogger(__name__)
 
 _HYPERDRIVE_URL = os.environ.get("HYPERDRIVE_DATABASE_URL")
+
+
+def _get_hyperdrive_conn():
+    """Return a psycopg2 connection via Cloudflare Hyperdrive, or None.
+
+    Priority:
+      1. Flask request-scoped ``g.hyperdrive_url`` injected by proxy.js
+      2. ``HYPERDRIVE_DATABASE_URL`` environment variable (local dev / CI)
+    Returns None when neither is available so callers fall back to REST API.
+    """
+    url = None
+    try:
+        from flask import g
+        url = getattr(g, "hyperdrive_url", None)
+    except RuntimeError:
+        pass  # Outside Flask app context (CLI / scripts)
+    url = url or _HYPERDRIVE_URL
+    if not url:
+        return None
+    try:
+        import psycopg2  # type: ignore[import]
+        return psycopg2.connect(url)
+    except Exception:
+        logger.exception("Failed to open Hyperdrive connection; falling back to REST")
+        return None
 
 # Fields that can be updated via the web interface (CWE-915 prevention).
 ALLOWED_UPDATE_FIELDS = frozenset({
@@ -77,10 +103,11 @@ class SupabaseRepository:
         offset = 0
         while True:
             resp = self._fetch_page(cols, offset)
-            if not resp.data:
+            data: list[dict] = resp.data or []  # type: ignore[union-attr, assignment]
+            if not data:
                 break
-            cases.extend(self._row_to_case(r) for r in resp.data)
-            if len(resp.data) < PAGE_MAX:
+            cases.extend(self._row_to_case(r) for r in data)
+            if len(data) < PAGE_MAX:
                 break
             offset += PAGE_MAX
         return cases
@@ -88,22 +115,53 @@ class SupabaseRepository:
     def load_analytics_cases(self) -> list[ImmigrationCase]:
         """Load minimal analytics columns (7 vs 31) for ~4x faster loading.
 
+        Uses Cloudflare Hyperdrive (direct psycopg2) when a connection is
+        available — bypasses the Supabase REST pagination loop for a single
+        full-table scan that Hyperdrive can cache at the edge.
+
+        Falls back to Supabase REST API when Hyperdrive is not configured.
         Returns ImmigrationCase objects with only the fields required by
         analytics aggregation endpoints.  All other fields will be empty/None.
         """
+        conn = _get_hyperdrive_conn()
+        if conn:
+            return self._load_analytics_via_pg(conn)
+
         available = set(self._get_table_columns())
         cols = ",".join(c for c in ANALYTICS_COLS if c in available)
         cases: list[ImmigrationCase] = []
         offset = 0
         while True:
             resp = self._fetch_page(cols, offset)
-            if not resp.data:
+            page_data: list[dict] = resp.data or []  # type: ignore[union-attr, assignment]
+            if not page_data:
                 break
-            cases.extend(self._row_to_case(r) for r in resp.data)
-            if len(resp.data) < PAGE_MAX:
+            cases.extend(self._row_to_case(r) for r in page_data)
+            if len(page_data) < PAGE_MAX:
                 break
             offset += PAGE_MAX
         return cases
+
+    def _load_analytics_via_pg(self, conn) -> list[ImmigrationCase]:
+        """Full-table analytics scan via direct psycopg2 + Hyperdrive.
+
+        A single ``SELECT`` is faster than hundreds of paginated REST calls
+        and lets Hyperdrive cache the result at the Cloudflare edge.
+        """
+        cols_sql = ", ".join(ANALYTICS_COLS)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {cols_sql} FROM {TABLE}"  # noqa: S608 — cols are a hardcoded allowlist
+                )
+                rows = cur.fetchall()
+            logger.info("Hyperdrive analytics load: %d rows via direct SQL", len(rows))
+            return [
+                ImmigrationCase(**dict(zip(ANALYTICS_COLS, row)))
+                for row in rows
+            ]
+        finally:
+            conn.close()
 
     def _fetch_page(self, cols: str, offset: int):
         """Fetch one page of rows from Supabase with one retry on ReadError.
@@ -151,7 +209,7 @@ class SupabaseRepository:
                 if limit is not None:
                     query = query.limit(limit)
                 resp = query.execute()
-                return resp.data or []
+                return resp.data or []  # type: ignore[union-attr, return-value]
             except Exception as exc:
                 if attempt == 0 and "ReadError" in type(exc).__name__:
                     logger.warning(
@@ -172,7 +230,7 @@ class SupabaseRepository:
         for attempt in range(2):
             try:
                 resp = self._client.rpc(fn_name, params or {}).execute()
-                return resp.data or {}
+                return cast(dict, resp.data or {})  # type: ignore[union-attr]
             except Exception as exc:
                 if attempt == 0 and "ReadError" in type(exc).__name__:
                     logger.warning(
@@ -244,7 +302,8 @@ class SupabaseRepository:
             .maybe_single()
             .execute()
         )
-        return self._row_to_case(resp.data) if resp.data else None
+        row: dict | None = cast("dict | None", resp.data)  # type: ignore
+        return self._row_to_case(row) if row else None
 
     def save_many(self, cases: list[ImmigrationCase]) -> int:
         """Upsert cases in batches. Returns count of rows processed.
@@ -285,8 +344,9 @@ class SupabaseRepository:
             .limit(1)
             .execute()
         )
-        if resp.data:
-            remote_cols = set(resp.data[0].keys())
+        tbl_data: list[dict] = cast(list, resp.data or [])  # type: ignore
+        if tbl_data:
+            remote_cols = set(tbl_data[0].keys())
         else:
             # Empty table — assume all CASE_FIELDS are present
             remote_cols = set(CASE_FIELDS)
@@ -380,7 +440,7 @@ class SupabaseRepository:
         must precede .text_search() in the chain.
         """
         cols = ",".join(self._get_table_columns())
-        query = self._client.table(TABLE).select(cols, count="exact")
+        query = self._client.table(TABLE).select(cols, count="exact")  # type: ignore[call-overload]
         # Apply non-text filters first (eq, ilike stay on SyncSelectRequestBuilder)
         query = self._apply_filters(
             query, court, year, visa_type, source, tag, nature
@@ -481,7 +541,7 @@ class SupabaseRepository:
         if mode not in ALLOWED_COUNT_MODES:
             mode = "planned"
 
-        query = self._client.table(TABLE).select("case_id", count=mode).limit(1)
+        query = self._client.table(TABLE).select("case_id", count=mode).limit(1)  # type: ignore
         query = self._apply_filters(
             query, court, year, visa_type, source, tag, nature
         )
@@ -508,7 +568,8 @@ class SupabaseRepository:
             .text_search("fts", query, options={"type": "plain", "config": "english"})
             .execute()
         )
-        return [self._row_to_case(r) for r in (resp.data or [])]
+        search_rows: list[dict] = resp.data or []  # type: ignore[union-attr, assignment]
+        return [self._row_to_case(r) for r in search_rows]
 
     def find_related(self, case_id: str, limit: int = 5) -> list[ImmigrationCase]:
         """Find related cases via server-side RPC with scoring."""

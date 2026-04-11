@@ -95,6 +95,15 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
         if callable(close):
             close()
 
+    # Capture Hyperdrive connection string injected by the Cloudflare Worker proxy.
+    # Only set when running inside a Cloudflare Container (header added by proxy.js).
+    @app.before_request
+    def _capture_hyperdrive_url():
+        from flask import g, request as req
+        hd_url = req.headers.get("X-Hyperdrive-Url")
+        if hd_url:
+            g.hyperdrive_url = hd_url
+
     # Security headers on every response
     @app.after_request
     def security_headers(response):
