@@ -570,3 +570,200 @@ class TestFullText:
     def test_no_path(self, repo):
         case = _make_case(full_text_path="")
         assert repo.get_case_full_text(case) is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: Cloudflare Hyperdrive integration
+# ---------------------------------------------------------------------------
+
+
+class TestGetHyperdriveConn:
+    """Tests for _get_hyperdrive_conn() — module-level helper."""
+
+    def test_returns_none_when_no_url_available(self):
+        """Neither Flask g nor env var present → returns None."""
+        from immi_case_downloader.supabase_repository import _get_hyperdrive_conn
+
+        with patch.dict(os.environ, {}, clear=True):
+            # Reset module-level _HYPERDRIVE_URL
+            with patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL", None):
+                conn = _get_hyperdrive_conn()
+        assert conn is None
+
+    def test_returns_conn_via_env_var(self):
+        """HYPERDRIVE_DATABASE_URL env var → psycopg2 connection returned."""
+        from immi_case_downloader.supabase_repository import _get_hyperdrive_conn
+
+        mock_conn = MagicMock()
+        with (
+            patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL",
+                  "postgresql://user:pass@host/db"),
+            patch("psycopg2.connect", return_value=mock_conn) as mock_connect,
+        ):
+            conn = _get_hyperdrive_conn()
+
+        assert conn is mock_conn
+        mock_connect.assert_called_once_with("postgresql://user:pass@host/db")
+
+    def test_returns_conn_via_flask_g(self):
+        """Flask request-scoped g.hyperdrive_url takes priority over env var."""
+        from immi_case_downloader.supabase_repository import _get_hyperdrive_conn
+        from unittest.mock import MagicMock
+
+        mock_g = MagicMock()
+        mock_g.hyperdrive_url = "postgresql://via-flask/db"
+        mock_conn = MagicMock()
+
+        with (
+            patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL", None),
+            patch("flask.g", mock_g),
+            patch("psycopg2.connect", return_value=mock_conn),
+        ):
+            conn = _get_hyperdrive_conn()
+
+        assert conn is mock_conn
+
+    def test_returns_none_on_psycopg2_error(self):
+        """If psycopg2.connect raises, returns None instead of propagating."""
+        from immi_case_downloader.supabase_repository import _get_hyperdrive_conn
+
+        with (
+            patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL",
+                  "postgresql://bad/db"),
+            patch("psycopg2.connect", side_effect=Exception("connection refused")),
+        ):
+            conn = _get_hyperdrive_conn()
+
+        assert conn is None
+
+    def test_outside_flask_context_falls_back_to_env(self):
+        """Outside a Flask app context, g.hyperdrive_url throws RuntimeError.
+        The function silences it and falls back to _HYPERDRIVE_URL env var."""
+        from immi_case_downloader.supabase_repository import _get_hyperdrive_conn
+
+        mock_conn = MagicMock()
+        # We are already outside a Flask app context here (no app fixture),
+        # so accessing flask.g raises RuntimeError naturally.
+        # Just verify the env-var fallback path produces a connection.
+        with (
+            patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL",
+                  "postgresql://env/db"),
+            patch("psycopg2.connect", return_value=mock_conn),
+        ):
+            conn = _get_hyperdrive_conn()
+
+        assert conn is mock_conn
+
+
+class TestInitWithHyperdriveUrl:
+    """__init__ logs when HYPERDRIVE_DATABASE_URL is set (line 93)."""
+
+    def test_logs_hyperdrive_active(self, mock_client, caplog):
+        """When _HYPERDRIVE_URL is truthy, a log message is emitted."""
+        import logging
+
+        with (
+            patch("immi_case_downloader.supabase_repository._HYPERDRIVE_URL",
+                  "postgresql://edge/db"),
+            caplog.at_level(logging.INFO, logger="immi_case_downloader.supabase_repository"),
+        ):
+            SupabaseRepository(output_dir="/tmp/hd_test")
+
+        assert any("Hyperdrive" in r.message for r in caplog.records)
+
+
+class TestLoadAnalyticsCasesHyperdrive:
+    """load_analytics_cases() routes to Hyperdrive fast path when available."""
+
+    def test_uses_hyperdrive_when_conn_available(self, repo):
+        """When _get_hyperdrive_conn() returns a connection, _load_analytics_via_pg() is called."""
+        mock_conn = MagicMock()
+        mock_cases = [_make_case(case_id="hd1"), _make_case(case_id="hd2")]
+
+        with (
+            patch("immi_case_downloader.supabase_repository._get_hyperdrive_conn",
+                  return_value=mock_conn),
+            patch.object(repo, "_load_analytics_via_pg", return_value=mock_cases) as mock_pg,
+        ):
+            result = repo.load_analytics_cases()
+
+        mock_pg.assert_called_once_with(mock_conn)
+        assert result is mock_cases
+
+    def test_falls_back_to_rest_when_no_conn(self, repo, mock_client):
+        """When _get_hyperdrive_conn() returns None, uses Supabase REST pagination."""
+        rows = [_case_row(case_id="rest1")]
+        table = MagicMock()
+        table.select.return_value = table
+        table.range.return_value = table
+        table.execute.return_value = _mock_response(data=rows)
+        mock_client.table.return_value = table
+
+        with patch("immi_case_downloader.supabase_repository._get_hyperdrive_conn",
+                   return_value=None):
+            result = repo.load_analytics_cases()
+
+        assert len(result) == 1
+        assert result[0].case_id == "rest1"
+
+
+class TestLoadAnalyticsViaPg:
+    """_load_analytics_via_pg() — direct psycopg2 fast path."""
+
+    def _make_mock_conn(self, rows):
+        """Build a minimal psycopg2 connection mock returning given rows."""
+        cur = MagicMock()
+        cur.__enter__ = lambda s: s
+        cur.__exit__ = MagicMock(return_value=False)
+        cur.fetchall.return_value = rows
+
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        return conn, cur
+
+    def test_returns_immigration_cases(self, repo):
+        """Rows from SQL are mapped to ImmigrationCase objects."""
+        from immi_case_downloader.supabase_repository import ANALYTICS_COLS
+
+        # One row per analytics column — all empty strings
+        row = tuple("" for _ in ANALYTICS_COLS)
+        conn, _ = self._make_mock_conn([row])
+
+        result = repo._load_analytics_via_pg(conn)
+
+        assert len(result) == 1
+        assert isinstance(result[0], ImmigrationCase)
+
+    def test_closes_conn_on_success(self, repo):
+        """conn.close() is called even on success path."""
+        from immi_case_downloader.supabase_repository import ANALYTICS_COLS
+
+        row = tuple("" for _ in ANALYTICS_COLS)
+        conn, _ = self._make_mock_conn([row])
+
+        repo._load_analytics_via_pg(conn)
+        conn.close.assert_called_once()
+
+    def test_closes_conn_on_exception(self, repo):
+        """conn.close() is still called if fetchall raises."""
+        conn = MagicMock()
+        cur = MagicMock()
+        cur.__enter__ = lambda s: s
+        cur.__exit__ = MagicMock(return_value=False)
+        cur.fetchall.side_effect = Exception("DB error")
+        conn.cursor.return_value = cur
+
+        with pytest.raises(Exception, match="DB error"):
+            repo._load_analytics_via_pg(conn)
+
+        conn.close.assert_called_once()
+
+    def test_returns_correct_row_count(self, repo):
+        """150 rows → 150 ImmigrationCase objects."""
+        from immi_case_downloader.supabase_repository import ANALYTICS_COLS
+
+        rows = [tuple("" for _ in ANALYTICS_COLS) for _ in range(150)]
+        conn, _ = self._make_mock_conn(rows)
+
+        result = repo._load_analytics_via_pg(conn)
+        assert len(result) == 150
