@@ -13,21 +13,47 @@ import { DurableObject } from "cloudflare:workers";
 export class FlaskBackend extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
-    // Boot the container on first instantiation; blockConcurrencyWhile
-    // ensures no requests are handled until the container is ready.
+    // Boot the container only if it is not already running.
+    // blockConcurrencyWhile ensures no requests are handled until ready.
     this.ctx.blockConcurrencyWhile(async () => {
-      await this.ctx.container.start();
+      if (!this.ctx.container.running) {
+        await this.ctx.container.start({
+          env: {
+            SECRET_KEY: env.SECRET_KEY,
+            SUPABASE_URL: env.SUPABASE_URL,
+            SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
+            SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+            APP_ENV: "production",
+          },
+        });
+      }
     });
   }
 
   async fetch(request) {
     // Forward request to Flask running on port 8080 inside the container.
-    // Reconstruct URL so it targets the container host, preserving path + query.
+    // Retry until Flask is ready (cold start can take 5-15s for Python imports).
     const url = new URL(request.url);
     const containerUrl = `http://container${url.pathname}${url.search}`;
-    return this.ctx.container.getTcpPort(8080).fetch(
-      new Request(containerUrl, request)
-    );
+    const port = this.ctx.container.getTcpPort(8080);
+
+    const MAX_ATTEMPTS = 30;
+    const RETRY_DELAY_MS = 500;
+    let lastError;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        return await port.fetch(new Request(containerUrl, request));
+      } catch (err) {
+        if (err?.message?.includes("not listening")) {
+          lastError = err;
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError;
   }
 }
 
@@ -35,7 +61,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Health check at edge (no container needed)
+    // Health check at edge — no container needed
     if (url.pathname === "/health") {
       return Response.json({ status: "ok", worker: "immi-case-proxy" });
     }
@@ -45,8 +71,8 @@ export default {
       const id = env.FlaskBackend.idFromName("flask-singleton");
       const container = env.FlaskBackend.get(id);
 
-      // Inject Hyperdrive connection string so Flask can use direct PostgreSQL.
-      // Containers can't access bindings directly; Worker injects it as a header.
+      // Inject Hyperdrive connection string so Flask can use direct psycopg2.
+      // Containers can't access Worker bindings directly; Worker injects via header.
       if (env.HYPERDRIVE) {
         const headers = new Headers(request.headers);
         headers.set("X-Hyperdrive-Url", env.HYPERDRIVE.connectionString);
