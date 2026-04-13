@@ -18,4 +18,9 @@ EXPOSE 8080
 ENV APP_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "web.py", "--host", "0.0.0.0", "--port", "8080", "--backend", "supabase"]
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# entrypoint.sh fixes DNS (Cloudflare Containers have no resolver configured)
+# then starts Flask with the Supabase backend.
+CMD ["./entrypoint.sh"]
