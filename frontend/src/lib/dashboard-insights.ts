@@ -40,6 +40,22 @@ function roundOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/**
+ * Strip pandas ".0" float suffix from visa_subclass keys.
+ * Pandas reads numeric CSV columns as float64 ("155" → "155.0").
+ * This normalizes DB keys so "866.0" displays as "866" everywhere.
+ */
+export function normalizeVisaSubclassKeys(
+  obj: Record<string, number>,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const clean = k.replace(/\.0$/, "");
+    result[clean] = (result[clean] ?? 0) + v;
+  }
+  return result;
+}
+
 function getTopMetric(
   values: Record<string, number>,
   total: number,
@@ -104,7 +120,10 @@ export function buildDashboardInsights(
     fullTextGap: Math.max(totalCases - fullTextCount, 0),
     dominantCourt: getTopMetric(stats.courts || {}, totalCases),
     topNature: getTopMetric(stats.natures || {}, totalCases),
-    topVisaSubclass: getTopMetric(stats.visa_subclasses || {}, totalCases),
+    topVisaSubclass: getTopMetric(
+      normalizeVisaSubclassKeys(stats.visa_subclasses || {}),
+      totalCases,
+    ),
     trendWindow: getTrendWindow(yearPoints),
     latestYear: yearPoints.at(-1) ?? null,
     activeYearCount: yearPoints.length,

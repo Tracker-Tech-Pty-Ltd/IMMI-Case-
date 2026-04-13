@@ -37,7 +37,7 @@ import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { downloadExportFile } from "@/lib/api";
-import { buildDashboardInsights } from "@/lib/dashboard-insights";
+import { buildDashboardInsights, normalizeVisaSubclassKeys } from "@/lib/dashboard-insights";
 import { normalizeTrendEntries, hasRenderableTrendSeries } from "@/lib/trends";
 import type { AnalyticsFilterParams, DashboardStats } from "@/types/case";
 
@@ -168,7 +168,7 @@ export function DashboardPage() {
       stats.natures as Record<string, unknown>,
     );
     const devVisaSubclassDistribution = toRenderableDistribution(
-      stats.visa_subclasses as Record<string, unknown>,
+      normalizeVisaSubclassKeys(stats.visa_subclasses || {}) as Record<string, unknown>,
     );
     const devTrends = normalizeTrendEntries(
       (trendsData?.trends ?? []) as Record<string, unknown>[],
@@ -455,7 +455,7 @@ export function DashboardPage() {
     stats.natures as Record<string, unknown>,
   );
   const visaSubclassDistribution = toRenderableDistribution(
-    stats.visa_subclasses as Record<string, unknown>,
+    normalizeVisaSubclassKeys(stats.visa_subclasses || {}) as Record<string, unknown>,
   );
   const trends = normalizeTrendEntries(
     (trendsData?.trends ?? []) as Record<string, unknown>[],
