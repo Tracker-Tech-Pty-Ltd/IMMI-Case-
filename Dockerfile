@@ -22,20 +22,6 @@ ENV PYTHONUNBUFFERED=1
 # Instead, pre-resolve Supabase hostnames to IPs during the build (when DNS works) and
 # write them into /etc/hosts. The container runtime appends to /etc/hosts but never
 # overwrites it, so these entries survive and httpx can connect without DNS.
-RUN python3 -c "
-import socket
-hosts = ['urntbuqczarkuoaosjxd.supabase.co']
-lines = []
-for h in hosts:
-    try:
-        ip = socket.gethostbyname(h)
-        lines.append(f'{ip} {h}')
-        print(f'Resolved {h} -> {ip}')
-    except Exception as e:
-        print(f'WARN: could not resolve {h}: {e}')
-if lines:
-    with open('/etc/hosts', 'a') as f:
-        f.write('\n'.join(lines) + '\n')
-"
+RUN python3 -c "import socket; h='urntbuqczarkuoaosjxd.supabase.co'; ip=socket.gethostbyname(h); open('/etc/hosts','a').write(f'{ip} {h}\n'); print(f'hosts: {ip} {h}')"
 
 CMD ["python", "web.py", "--host", "0.0.0.0", "--port", "8080", "--backend", "supabase"]
