@@ -11,6 +11,39 @@ import argparse
 import os
 import warnings
 
+# Cloudflare Containers block DNS at the network level (UDP port 53 is filtered).
+# resolv.conf changes have no effect. Patch socket.getaddrinfo to return hardcoded
+# IPs for known hostnames so httpx / supabase-py can connect without DNS.
+if os.environ.get("APP_ENV") == "production":
+    import re
+    import socket as _socket
+
+    _supabase_url = os.environ.get("SUPABASE_URL", "")
+    _supabase_host_match = re.match(r"https?://([^/]+)", _supabase_url)
+    _supabase_host = _supabase_host_match.group(1) if _supabase_host_match else ""
+
+    # Supabase REST API is served via Cloudflare CDN (anycast).
+    # IPs resolved on 2026-04-13 from outside the container.
+    _STATIC_DNS: dict[str, list[str]] = {}
+    if _supabase_host:
+        _STATIC_DNS[_supabase_host] = ["104.18.38.10", "172.64.149.246"]
+
+    _orig_getaddrinfo = _socket.getaddrinfo
+
+    def _cf_dns_patch(host, port, *args, **kwargs):
+        if host in _STATIC_DNS:
+            results = []
+            for ip in _STATIC_DNS[host]:
+                try:
+                    results.extend(_orig_getaddrinfo(ip, port, *args, **kwargs))
+                except OSError:
+                    pass
+            if results:
+                return results
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+    _socket.getaddrinfo = _cf_dns_patch
+
 from immi_case_downloader.webapp import create_app
 
 

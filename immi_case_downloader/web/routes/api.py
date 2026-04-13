@@ -1611,7 +1611,7 @@ def debug():
     from flask import current_app
     backend = current_app.config.get("BACKEND", "unknown")
     # Version marker — confirms which container image is running
-    _img_version = "v12-hosts-runtime"
+    _img_version = "v13-socket-patch"
 
     # Read DNS config files to verify what the container sees at runtime
     def _read_file(path):
