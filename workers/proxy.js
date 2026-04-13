@@ -76,7 +76,7 @@ export default {
 
     // Proxy API and SPA routes to Flask container
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/app/")) {
-      const id = env.FlaskBackend.idFromName("flask-v3");
+      const id = env.FlaskBackend.idFromName("flask-v4");
       const container = env.FlaskBackend.get(id);
 
       // Inject Hyperdrive connection string so Flask can use direct psycopg2.
