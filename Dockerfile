@@ -18,8 +18,6 @@ EXPOSE 8080
 ENV APP_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# Cloudflare Containers have no DNS resolver. /etc/resolv.conf is overridden at runtime
-# and /etc/hosts is read-only during Docker build. Fix: at container startup (CMD),
-# write the pre-resolved Supabase IPs into /etc/hosts so httpx can connect without DNS.
-# IPs are Cloudflare anycast (supabase.co REST API is served through Cloudflare CDN).
-CMD ["/bin/sh", "-c", "echo '104.18.38.10 urntbuqczarkuoaosjxd.supabase.co' >> /etc/hosts 2>/dev/null; echo '172.64.149.246 urntbuqczarkuoaosjxd.supabase.co' >> /etc/hosts 2>/dev/null; exec python web.py --host 0.0.0.0 --port 8080 --backend supabase"]
+# Diagnostic build: revert CMD to the exact form that worked in flask-v5 to confirm
+# whether the container crash is caused by CMD or Python code changes.
+CMD ["/bin/sh", "-c", "printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\n' > /etc/resolv.conf 2>/dev/null || true && exec python web.py --host 0.0.0.0 --port 8080 --backend supabase"]
