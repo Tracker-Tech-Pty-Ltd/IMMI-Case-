@@ -1,5 +1,7 @@
 """Cases list page tests: table/card views, filters, pagination, batch bar."""
 
+import re
+
 from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
@@ -14,7 +16,8 @@ class TestCasesTable:
         wait_for_loading_gone(react_page)
         assert react_page.get_by_role("heading", name="Cases").first.is_visible()
         # Should show "10 cases" from seed data (i18n: units.cases = "cases")
-        assert react_page.get_by_text("cases", exact=True).first.is_visible()
+        # element text is "{N} cases" — use regex so count doesn't need to be hardcoded
+        assert react_page.get_by_text(re.compile(r"\d[\d,]* cases")).first.is_visible()
 
     def test_table_has_header_columns(self, react_page):
         react_navigate(react_page, "/cases")
@@ -43,8 +46,9 @@ class TestCasesTable:
         wait_for_loading_gone(react_page)
         select_all = react_page.locator("thead input[type='checkbox']")
         select_all.click()
-        # Batch bar should appear with count
-        assert react_page.get_by_text("selected", exact=True).is_visible()
+        # Batch bar should appear — span text is "{N} selected"
+        assert react_page.get_by_test_id("cases-batch-bar").is_visible()
+        assert react_page.get_by_text(re.compile(r"\d+ selected")).first.is_visible()
 
     def test_individual_checkbox(self, react_page):
         """Individual row checkbox selects a single case."""
@@ -223,4 +227,5 @@ class TestCasesKeyboardEnhancements:
     def test_table_shortcuts_hint_visible(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_text("Keyboard: j/k move row", exact=True).is_visible()
+        # Full text: "Keyboard: j/k move row • Enter open case • x select row • / focus search • a add case"
+        assert react_page.get_by_text("Keyboard: j/k move row", exact=False).is_visible()
