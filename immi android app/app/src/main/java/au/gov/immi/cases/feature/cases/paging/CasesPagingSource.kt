@@ -29,7 +29,7 @@ class CasesPagingSource(
         return try {
             val queryParams = filter.toQueryMap().toMutableMap()
             queryParams["page"] = "$page"
-            queryParams["per_page"] = "${params.loadSize}"
+            queryParams["page_size"] = "${params.loadSize}"
 
             val response = api.getCases(queryParams)
             val body = response.body()

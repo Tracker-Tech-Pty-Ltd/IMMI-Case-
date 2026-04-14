@@ -86,6 +86,8 @@ class CasesPagingSourceTest {
         assertEquals("AATA", capturedParams?.get("court"))
         assertEquals("2024", capturedParams?.get("year"))
         assertEquals("1", capturedParams?.get("page"))
+        assertEquals("20", capturedParams?.get("page_size"))
+        assertNull(capturedParams?.get("per_page"))
     }
 
     @Test

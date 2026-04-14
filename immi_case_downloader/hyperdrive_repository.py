@@ -22,7 +22,10 @@ from .storage import CASE_FIELDS
 logger = logging.getLogger(__name__)
 
 TABLE = "immigration_cases"
-ALLOWED_SORT_COLUMNS = frozenset({"year", "date", "title", "court", "citation"})
+ALLOWED_SORT_COLUMNS = frozenset({
+    "year", "date", "title", "court", "citation", "outcome",
+    "visa_subclass_number", "applicant_name", "hearing_date", "case_id",
+})
 ALLOWED_UPDATE_FIELDS = frozenset({
     "citation", "title", "court", "court_code", "date", "year", "url",
     "judges", "catchwords", "outcome", "visa_type", "legislation",
@@ -48,6 +51,9 @@ class HyperdriveRepository:
     Replicates the same public API as SupabaseRepository so the rest of
     the application needs zero changes when this backend is selected.
     """
+
+    supports_seek_pagination = True
+    pagination_backend_kind = "hyperdrive"
 
     def __init__(self, connection_string: str, output_dir: str = "downloaded_cases"):
         self._conn_str = connection_string
@@ -309,6 +315,56 @@ class HyperdriveRepository:
             f"SELECT {cols_sql} FROM {TABLE} {where} "
             f"ORDER BY {col} {direction} LIMIT %s OFFSET %s",
             params + [page_size, offset],
+        )
+        return [self._row_to_case(r) for r in rows]
+
+    def list_cases_seek(
+        self,
+        court: str = "",
+        year: Optional[int] = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        sort_by: str = "year",
+        sort_dir: str = "desc",
+        page_size: int = 50,
+        anchor: dict[str, str | int] | None = None,
+        reverse: bool = False,
+        columns: Optional[list[str]] = None,
+    ) -> list[ImmigrationCase]:
+        """Fetch a page using seek pagination on `(year, case_id)`."""
+        if keyword and keyword.strip():
+            raise ValueError("Seek pagination does not support keyword queries")
+        if sort_by not in {"year", "date"}:
+            raise ValueError(f"Seek pagination does not support sort_by='{sort_by}'")
+
+        valid = [c for c in (columns or []) if c in CASE_FIELDS] or CASE_FIELDS
+        for required in ("case_id", "year"):
+            if required not in valid:
+                valid.append(required)
+        cols_sql = ", ".join(valid)
+        where, params = self._build_where(court, year, visa_type, source, tag, nature, keyword)
+
+        descending = sort_dir == "desc"
+        effective_desc = not descending if reverse else descending
+        comparator = "<" if effective_desc else ">"
+        direction = "DESC" if effective_desc else "ASC"
+
+        if anchor and anchor.get("case_id"):
+            where = (
+                f"{where} AND ((year {comparator} %s) "
+                f"OR (year = %s AND case_id {comparator} %s))"
+            )
+            anchor_year = int(anchor.get("year") or 0)
+            anchor_case_id = str(anchor.get("case_id") or "")
+            params = params + [anchor_year, anchor_year, anchor_case_id]
+
+        rows = self._exec(
+            f"SELECT {cols_sql} FROM {TABLE} {where} "
+            f"ORDER BY year {direction}, case_id {direction} LIMIT %s",
+            params + [page_size],
         )
         return [self._row_to_case(r) for r in rows]
 

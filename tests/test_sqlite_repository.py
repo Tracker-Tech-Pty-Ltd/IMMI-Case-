@@ -268,6 +268,58 @@ class TestFilterCases:
         assert total == 2  # No SQL injection, still works
         assert len(cases) == 2
 
+    def test_list_cases_fast_matches_filter_page(self, populated_repo):
+        fast_cases = populated_repo.list_cases_fast(sort_by="year", sort_dir="desc", page=1, page_size=1)
+        slow_cases, _ = populated_repo.filter_cases(sort_by="year", sort_dir="desc", page=1, page_size=1)
+        assert [c.case_id for c in fast_cases] == [c.case_id for c in slow_cases]
+
+    def test_count_cases_matches_filter_total(self, populated_repo):
+        _, total = populated_repo.filter_cases(sort_by="year", sort_dir="desc", page=1, page_size=1)
+        assert populated_repo.count_cases() == total
+
+    def test_seek_pagination_matches_offset_for_multiple_pages(self, repo):
+        cases = []
+        for index, year in enumerate([2025, 2025, 2024, 2024, 2023, 2022], start=1):
+            case = ImmigrationCase(
+                citation=f"[{year}] AATA {100 + index}",
+                title=f"Seek Pagination Case {index}",
+                court="Administrative Appeals Tribunal",
+                court_code="AATA",
+                date=f"{index:02d} March {year}",
+                year=year,
+                url=f"https://example.com/seek-case-{index}",
+                source="AustLII",
+                case_nature="Visa Refusal",
+                legal_concepts="Migration Act",
+            )
+            case.ensure_id()
+            cases.append(case)
+        repo.save_many(cases)
+
+        page1_offset, total = repo.filter_cases(sort_by="year", sort_dir="desc", page=1, page_size=2)
+        page2_offset, _ = repo.filter_cases(sort_by="year", sort_dir="desc", page=2, page_size=2)
+        last_page_number = (total + 2 - 1) // 2
+        last_page_offset, _ = repo.filter_cases(
+            sort_by="year", sort_dir="desc", page=last_page_number, page_size=2
+        )
+
+        page1_seek = repo.list_cases_seek(sort_by="year", sort_dir="desc", page_size=2)
+        anchor_after_page1 = {"year": page1_seek[-1].year, "case_id": page1_seek[-1].case_id}
+        page2_seek = repo.list_cases_seek(
+            sort_by="year",
+            sort_dir="desc",
+            page_size=2,
+            anchor=anchor_after_page1,
+        )
+
+        tail_raw = repo.list_cases_seek(sort_by="year", sort_dir="desc", page_size=2, reverse=True)
+        last_page_seek = list(reversed(tail_raw))
+
+        assert [c.case_id for c in page1_seek] == [c.case_id for c in page1_offset]
+        assert [c.case_id for c in page2_seek] == [c.case_id for c in page2_offset]
+        assert [c.case_id for c in last_page_seek] == [c.case_id for c in last_page_offset]
+        assert set(c.case_id for c in page1_seek).isdisjoint(c.case_id for c in page2_seek)
+
 
 class TestSearchText:
     def test_fts5_search_by_title(self, populated_repo):

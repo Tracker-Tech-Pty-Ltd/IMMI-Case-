@@ -16,6 +16,10 @@ ALLOWED_UPDATE_FIELDS = frozenset({
     "judges", "catchwords", "outcome", "visa_type", "legislation",
     "text_snippet", "user_notes", "tags", "case_nature", "legal_concepts",
 })
+ALLOWED_SORT_COLUMNS = frozenset({
+    "year", "date", "title", "court", "citation", "outcome",
+    "visa_subclass_number", "applicant_name", "hearing_date", "case_id",
+})
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS cases (
@@ -99,6 +103,9 @@ class SqliteRepository:
     for safe concurrent reads from background job threads.
     """
 
+    supports_seek_pagination = True
+    pagination_backend_kind = "sqlite"
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._local = threading.local()
@@ -138,6 +145,78 @@ class SqliteRepository:
         conn.executescript(_FTS_SQL)
         conn.executescript(_TRIGGERS_SQL)
         conn.commit()
+
+    @staticmethod
+    def _build_case_filters(
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+    ) -> tuple[str, list]:
+        where_parts: list[str] = []
+        params: list = []
+
+        if court:
+            where_parts.append("court_code = ?")
+            params.append(court)
+        if year is not None:
+            where_parts.append("year = ?")
+            params.append(year)
+        if visa_type:
+            where_parts.append("visa_type LIKE ?")
+            params.append(f"%{visa_type}%")
+        if source:
+            where_parts.append("source = ?")
+            params.append(source)
+        if tag:
+            where_parts.append("tags LIKE ?")
+            params.append(f"%{tag}%")
+        if nature:
+            where_parts.append("case_nature = ?")
+            params.append(nature)
+        if keyword:
+            kw_like = f"%{keyword}%"
+            where_parts.append(
+                "(title LIKE ? OR citation LIKE ? OR catchwords LIKE ? "
+                "OR judges LIKE ? OR outcome LIKE ? OR user_notes LIKE ? "
+                "OR case_nature LIKE ? OR legal_concepts LIKE ?)"
+            )
+            params.extend([kw_like] * 8)
+
+        return (" AND ".join(where_parts) if where_parts else "1=1"), params
+
+    @staticmethod
+    def _build_sql_order_clause(sort_by: str, sort_dir: str) -> str:
+        direction = "DESC" if sort_dir == "desc" else "ASC"
+        if sort_by == "date":
+            month_num = (
+                "CASE "
+                "WHEN date LIKE '%January%' THEN 1 "
+                "WHEN date LIKE '%February%' THEN 2 "
+                "WHEN date LIKE '%March%' THEN 3 "
+                "WHEN date LIKE '%April%' THEN 4 "
+                "WHEN date LIKE '%May%' THEN 5 "
+                "WHEN date LIKE '%June%' THEN 6 "
+                "WHEN date LIKE '%July%' THEN 7 "
+                "WHEN date LIKE '%August%' THEN 8 "
+                "WHEN date LIKE '%September%' THEN 9 "
+                "WHEN date LIKE '%October%' THEN 10 "
+                "WHEN date LIKE '%November%' THEN 11 "
+                "WHEN date LIKE '%December%' THEN 12 "
+                "ELSE 0 END"
+            )
+            return (
+                f"ORDER BY CAST(SUBSTR(date, -4) AS INTEGER) {direction}, "
+                f"({month_num}) {direction}, "
+                f"CAST(date AS INTEGER) {direction}, "
+                f"case_id {direction}"
+            )
+        if sort_by == "case_id":
+            return f"ORDER BY case_id {direction}"
+        return f"ORDER BY {sort_by} {direction}, case_id {direction}"
 
     # ── Core CRUD ────────────────────────────────────────────────────
 
@@ -270,79 +349,19 @@ class SqliteRepository:
     ) -> tuple[list[ImmigrationCase], int]:
         """SQL-level filtering, sorting, and pagination."""
         conn = self._conn()
-        where_parts = []
-        params: list = []
+        where_clause, params = self._build_case_filters(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+        )
 
-        if court:
-            where_parts.append("court_code = ?")
-            params.append(court)
-        if year is not None:
-            where_parts.append("year = ?")
-            params.append(year)
-        if visa_type:
-            where_parts.append("visa_type LIKE ?")
-            params.append(f"%{visa_type}%")
-        if source:
-            where_parts.append("source = ?")
-            params.append(source)
-        if tag:
-            where_parts.append("tags LIKE ?")
-            params.append(f"%{tag}%")
-        if nature:
-            where_parts.append("case_nature = ?")
-            params.append(nature)
-        if keyword:
-            kw_like = f"%{keyword}%"
-            where_parts.append(
-                "(title LIKE ? OR citation LIKE ? OR catchwords LIKE ? "
-                "OR judges LIKE ? OR outcome LIKE ? OR user_notes LIKE ? "
-                "OR case_nature LIKE ? OR legal_concepts LIKE ?)"
-            )
-            params.extend([kw_like] * 8)
-
-        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-
-        # Allowed sort columns (prevent SQL injection)
-        allowed_sorts = {"year", "date", "title", "court", "citation"}
-        if sort_by not in allowed_sorts:
+        if sort_by not in ALLOWED_SORT_COLUMNS:
             sort_by = "year"
-        direction = "DESC" if sort_dir == "desc" else "ASC"
-
-        # Build ORDER BY clause.  The "date" column is stored as free-text
-        # ("DD Month YYYY") so alphabetical sorting is wrong (Sep > Jan).
-        # For date sort we decompose into year (int), month (1-12), day (int).
-        if sort_by == "date":
-            # "date" is stored as free-text ("DD Month YYYY").  Plain text sort
-            # is alphabetical on the month name which gives wrong order.
-            # We decompose into three numeric keys:
-            #   1. Year  — extracted from the last 4 chars of the date string
-            #              (more reliable than the citation-derived `year` column,
-            #               which can differ for ARTA/late-published cases)
-            #   2. Month — month name mapped to 1-12 via CASE
-            #   3. Day   — CAST(date AS INTEGER) reads the leading digits
-            month_num = (
-                "CASE "
-                "WHEN date LIKE '%January%' THEN 1 "
-                "WHEN date LIKE '%February%' THEN 2 "
-                "WHEN date LIKE '%March%' THEN 3 "
-                "WHEN date LIKE '%April%' THEN 4 "
-                "WHEN date LIKE '%May%' THEN 5 "
-                "WHEN date LIKE '%June%' THEN 6 "
-                "WHEN date LIKE '%July%' THEN 7 "
-                "WHEN date LIKE '%August%' THEN 8 "
-                "WHEN date LIKE '%September%' THEN 9 "
-                "WHEN date LIKE '%October%' THEN 10 "
-                "WHEN date LIKE '%November%' THEN 11 "
-                "WHEN date LIKE '%December%' THEN 12 "
-                "ELSE 0 END"
-            )
-            order_clause = (
-                f"ORDER BY CAST(SUBSTR(date, -4) AS INTEGER) {direction}, "
-                f"({month_num}) {direction}, "
-                f"CAST(date AS INTEGER) {direction}"
-            )
-        else:
-            order_clause = f"ORDER BY {sort_by} {direction}"
+        order_clause = self._build_sql_order_clause(sort_by, sort_dir)
 
         # Count total matching
         count_sql = f"SELECT COUNT(*) FROM cases WHERE {where_clause}"
@@ -359,6 +378,132 @@ class SqliteRepository:
         cases = [self._row_to_case(r) for r in rows]
 
         return cases, total
+
+    def list_cases_fast(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        sort_by: str = "year",
+        sort_dir: str = "desc",
+        page: int = 1,
+        page_size: int = 50,
+        columns: list[str] | None = None,
+    ) -> list[ImmigrationCase]:
+        """Fetch a page without recomputing the total count."""
+        conn = self._conn()
+        where_clause, params = self._build_case_filters(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+        )
+        if sort_by not in ALLOWED_SORT_COLUMNS:
+            sort_by = "year"
+        order_clause = self._build_sql_order_clause(sort_by, sort_dir)
+        valid_columns = [c for c in (columns or []) if c in CASE_FIELDS] or CASE_FIELDS
+        cols_sql = ", ".join(valid_columns)
+        offset = (max(1, page) - 1) * page_size
+        rows = conn.execute(
+            f"SELECT {cols_sql} FROM cases WHERE {where_clause} "
+            f"{order_clause} LIMIT ? OFFSET ?",
+            params + [page_size, offset],
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
+
+    def count_cases(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        count_mode: str = "planned",
+    ) -> int:
+        """Return the exact count for the matching SQLite rows."""
+        conn = self._conn()
+        where_clause, params = self._build_case_filters(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+        )
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM cases WHERE {where_clause}",
+            params,
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def list_cases_seek(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        sort_by: str = "year",
+        sort_dir: str = "desc",
+        page_size: int = 50,
+        anchor: dict[str, str | int] | None = None,
+        reverse: bool = False,
+        columns: list[str] | None = None,
+    ) -> list[ImmigrationCase]:
+        """Fetch a page using seek pagination on `(year, case_id)`."""
+        if keyword and keyword.strip():
+            raise ValueError("Seek pagination does not support keyword queries")
+        if sort_by not in {"year", "date"}:
+            raise ValueError(f"Seek pagination does not support sort_by='{sort_by}'")
+
+        conn = self._conn()
+        where_clause, params = self._build_case_filters(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+        )
+        valid_columns = [c for c in (columns or []) if c in CASE_FIELDS] or CASE_FIELDS
+        for required in ("case_id", "year"):
+            if required not in valid_columns:
+                valid_columns.append(required)
+        cols_sql = ", ".join(valid_columns)
+
+        descending = sort_dir == "desc"
+        effective_desc = not descending if reverse else descending
+        comparator = "<" if effective_desc else ">"
+        direction = "DESC" if effective_desc else "ASC"
+
+        if anchor and anchor.get("case_id"):
+            where_clause = (
+                f"{where_clause} AND ((year {comparator} ?) "
+                f"OR (year = ? AND case_id {comparator} ?))"
+            )
+            anchor_year = int(anchor.get("year") or 0)
+            anchor_case_id = str(anchor.get("case_id") or "")
+            params.extend([anchor_year, anchor_year, anchor_case_id])
+
+        rows = conn.execute(
+            f"SELECT {cols_sql} FROM cases WHERE {where_clause} "
+            f"ORDER BY year {direction}, case_id {direction} LIMIT ?",
+            params + [page_size],
+        ).fetchall()
+        return [self._row_to_case(r) for r in rows]
 
     def search_text(self, query: str, limit: int = 50) -> list[ImmigrationCase]:
         """FTS5 full-text search."""

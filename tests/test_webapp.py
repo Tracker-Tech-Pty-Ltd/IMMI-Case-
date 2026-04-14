@@ -7,6 +7,7 @@ import pytest
 
 import immi_case_downloader.web.routes.api as api_module
 import immi_case_downloader.web.routes.legislations as legislations_module
+from immi_case_downloader.models import ImmigrationCase
 
 
 # ── SPA serving ───────────────────────────────────────────────────────────
@@ -84,6 +85,84 @@ class TestApiRoutes:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+    def test_cases_accepts_per_page_alias(self, client):
+        resp = client.get("/api/v1/cases?page=1&per_page=2")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["page"] == 1
+        assert data["page_size"] == 2
+        assert len(data["cases"]) <= 2
+
+    def test_cases_page_size_wins_over_per_page(self, client):
+        resp = client.get("/api/v1/cases?page=1&page_size=3&per_page=1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["page_size"] == 3
+
+    def test_cases_seek_strategy_used_for_year_sort(self, client, monkeypatch):
+        case = ImmigrationCase(case_id="abc123def456", title="Seek Case", year=2024)
+
+        class _Repo:
+            supports_seek_pagination = True
+            pagination_backend_kind = "test-sql"
+
+            def __init__(self):
+                self.seek_calls = 0
+                self.fast_calls = 0
+
+            def count_cases(self, **_kwargs):
+                return 25
+
+            def list_cases_seek(self, **_kwargs):
+                self.seek_calls += 1
+                return [case]
+
+            def list_cases_fast(self, **_kwargs):
+                self.fast_calls += 1
+                return []
+
+        repo = _Repo()
+        monkeypatch.setattr(api_module, "get_repo", lambda: repo)
+        resp = client.get("/api/v1/cases?sort_by=year&sort_dir=desc&page=1&page_size=1")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert repo.seek_calls == 1
+        assert repo.fast_calls == 0
+        assert data["cases"][0]["case_id"] == "abc123def456"
+
+    def test_cases_q_alias_forces_offset_fallback_when_keyword_present(self, client, monkeypatch):
+        case = ImmigrationCase(case_id="abc123def456", title="Keyword Case", year=2024)
+
+        class _Repo:
+            supports_seek_pagination = True
+            pagination_backend_kind = "test-sql"
+
+            def __init__(self):
+                self.seek_calls = 0
+                self.fast_calls = 0
+                self.last_keyword = None
+
+            def count_cases(self, **_kwargs):
+                return 25
+
+            def list_cases_seek(self, **kwargs):
+                self.seek_calls += 1
+                self.last_keyword = kwargs.get("keyword")
+                return [case]
+
+            def list_cases_fast(self, **kwargs):
+                self.fast_calls += 1
+                self.last_keyword = kwargs.get("keyword")
+                return [case]
+
+        repo = _Repo()
+        monkeypatch.setattr(api_module, "get_repo", lambda: repo)
+        resp = client.get("/api/v1/cases?sort_by=year&q=Minister&page=1&page_size=1")
+        assert resp.status_code == 200
+        assert repo.seek_calls == 0
+        assert repo.fast_calls == 1
+        assert repo.last_keyword == "Minister"
 
     def test_job_status_api(self, client):
         resp = client.get("/api/v1/job-status")

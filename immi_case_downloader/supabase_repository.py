@@ -48,7 +48,10 @@ ALLOWED_UPDATE_FIELDS = frozenset({
 })
 
 # Columns safe for ORDER BY (prevent SQL injection via sort parameter).
-ALLOWED_SORT_COLUMNS = frozenset({"year", "date", "title", "court", "citation"})
+ALLOWED_SORT_COLUMNS = frozenset({
+    "year", "date", "title", "court", "citation", "outcome",
+    "visa_subclass_number", "applicant_name", "hearing_date", "case_id",
+})
 ALLOWED_COUNT_MODES = frozenset({"exact", "planned", "estimated"})
 
 TABLE = "immigration_cases"
@@ -74,6 +77,9 @@ class SupabaseRepository:
     Uses the Supabase Python SDK (postgrest) for CRUD and .rpc() for
     aggregation queries that require GROUP BY / DISTINCT / scoring.
     """
+
+    supports_seek_pagination = True
+    pagination_backend_kind = "supabase"
 
     def __init__(self, url: str | None = None, key: str | None = None,
                  output_dir: str | None = None):
@@ -355,11 +361,17 @@ class SupabaseRepository:
             .limit(1)
             .execute()
         )
-        tbl_data: list[dict] = cast(list, resp.data or [])  # type: ignore
-        if tbl_data:
-            remote_cols = set(tbl_data[0].keys())
+        raw_data = getattr(resp, "data", None)
+        if (
+            isinstance(raw_data, list)
+            and raw_data
+            and isinstance(raw_data[0], dict)
+        ):
+            remote_cols = set(raw_data[0].keys())
         else:
-            # Empty table — assume all CASE_FIELDS are present
+            # Empty table or non-standard probe response — assume the
+            # remote schema is complete instead of treating the table as
+            # missing every column.
             remote_cols = set(CASE_FIELDS)
 
         cols = [c for c in CASE_FIELDS if c in remote_cols]
@@ -534,6 +546,55 @@ class SupabaseRepository:
             )
 
         resp = query.execute()
+        return [self._row_to_case(r) for r in (resp.data or [])]
+
+    def list_cases_seek(
+        self,
+        court: str = "",
+        year: int | None = None,
+        visa_type: str = "",
+        source: str = "",
+        tag: str = "",
+        nature: str = "",
+        keyword: str = "",
+        sort_by: str = "year",
+        sort_dir: str = "desc",
+        page_size: int = 50,
+        anchor: dict[str, str | int] | None = None,
+        reverse: bool = False,
+        columns: list[str] | None = None,
+    ) -> list[ImmigrationCase]:
+        """Fetch a page using seek pagination on `(year, case_id)`."""
+        if keyword and keyword.strip():
+            raise ValueError("Seek pagination does not support keyword queries")
+        if sort_by not in {"year", "date"}:
+            raise ValueError(f"Seek pagination does not support sort_by='{sort_by}'")
+
+        table_columns = self._get_table_columns()
+        selected_columns = [c for c in (columns or table_columns) if c in table_columns]
+        for required in ("case_id", "year"):
+            if required in table_columns and required not in selected_columns:
+                selected_columns.append(required)
+        cols = ",".join(selected_columns or ["case_id", "year"])
+
+        query = self._client.table(TABLE).select(cols)
+        query = self._apply_filters(query, court, year, visa_type, source, tag, nature)
+
+        descending = sort_dir == "desc"
+        effective_desc = not descending if reverse else descending
+        comparator = "lt" if effective_desc else "gt"
+
+        query = query.order("year", desc=effective_desc).order("case_id", desc=effective_desc)
+        if anchor is not None:
+            anchor_year = int(anchor.get("year") or 0)
+            anchor_case_id = str(anchor.get("case_id") or "")
+            if anchor_case_id:
+                query = query.or_(
+                    f"year.{comparator}.{anchor_year},"
+                    f"and(year.eq.{anchor_year},case_id.{comparator}.{anchor_case_id})"
+                )
+
+        resp = query.limit(page_size).execute()
         return [self._row_to_case(r) for r in (resp.data or [])]
 
     def count_cases(

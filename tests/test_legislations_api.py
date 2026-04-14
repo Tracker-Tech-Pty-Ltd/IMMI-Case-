@@ -311,11 +311,10 @@ class TestLegislationsDetailEndpoint:
             assert "not found" in data["error"].lower()
 
     def test_get_empty_legislation_id(self, api_client, mock_legislations_data):
-        """Test 10: Empty legislation ID.
+        """Test 10: Trailing slash on the list endpoint returns the legislation list.
 
-        Expected:
-        - 400 status (or 404 depending on routing)
-        - Error message contains "required"
+        strict_slashes=False on the list route means /api/v1/legislations/ is
+        equivalent to /api/v1/legislations and returns 200 with the full list.
         """
         with patch(
             "immi_case_downloader.web.routes.legislations._load_legislations",
@@ -323,8 +322,9 @@ class TestLegislationsDetailEndpoint:
         ):
             response = api_client.get("/api/v1/legislations/")
 
-            # Flask routing may return 404 for empty path or 400 for validation
-            assert response.status_code in [400, 404]
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data is not None and "data" in data
 
     def test_detail_returns_json_content_type(self, api_client, mock_legislations_data):
         """Test that detail endpoint returns JSON content type.

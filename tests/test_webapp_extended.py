@@ -59,9 +59,9 @@ class TestRouteStatusCodes:
         assert "application/json" in resp.content_type
 
     def test_api_trailing_slash_returns_404_not_spa(self, client):
-        """Trailing slash on an API path → 404, never SPA index.html."""
-        resp = client.get("/api/v1/legislations/")
-        assert resp.status_code in (400, 404)
+        """Trailing slash on an unknown API path → 404, never SPA index.html."""
+        resp = client.get("/api/v1/nonexistent-endpoint/")
+        assert resp.status_code == 404
 
 
 # ── Pipeline JSON API ──────────────────────────────────────────────────────

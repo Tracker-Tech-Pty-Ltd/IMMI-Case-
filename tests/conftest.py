@@ -65,6 +65,7 @@ def reset_pipeline_state():
 def reset_analytics_caches():
     """Prevent in-memory analytics/stats caches from leaking across tests."""
     from immi_case_downloader.web.routes import api as api_mod
+    from immi_case_downloader.cases_pagination import clear_cases_anchor_cache
 
     def _clear():
         api_mod._stats_cache_payload = None
@@ -78,6 +79,7 @@ def reset_analytics_caches():
         api_mod._analytics_cases_cache.clear()
         api_mod._analytics_cases_ts = 0.0
         api_mod._analytics_cache_obj.invalidate()
+        clear_cases_anchor_cache()
 
     _clear()
     try:

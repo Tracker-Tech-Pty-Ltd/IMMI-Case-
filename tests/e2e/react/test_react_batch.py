@@ -4,7 +4,6 @@ from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
     get_toast_text,
-    setup_dialog_handler,
 )
 
 
@@ -167,24 +166,31 @@ class TestBatchBar(TestBatchSelection):
         assert react_page.get_by_test_id("cases-batch-bar").count() == 0
 
     def test_batch_tag_with_prompt(self, react_page, skip_if_live):
-        """Batch tag triggers a prompt dialog."""
+        """Batch tag opens a modal, accepts a tag, and shows a toast."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         self._select_first_visible_case(react_page)
-        setup_dialog_handler(react_page, accept=True, prompt_text="e2e-batch-tag")
         react_page.get_by_text("Tags", exact=True).click()
+        # Modal should appear with a focused text input
+        tag_input = react_page.get_by_placeholder("e.g. asylum, review, urgent")
+        tag_input.wait_for(state="visible", timeout=5000)
+        tag_input.fill("e2e-batch-tag")
+        react_page.get_by_role("button", name="Apply Tag").click()
         react_page.wait_for_load_state("networkidle")
         toast = get_toast_text(react_page)
         assert "updated" in toast.lower() or "cases updated" in toast.lower()
 
     def test_batch_tag_cancel(self, react_page):
-        """Cancelling the tag prompt does nothing."""
+        """Cancelling the tag modal does nothing."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         self._select_first_visible_case(react_page)
-        setup_dialog_handler(react_page, accept=False)
         react_page.get_by_text("Tags", exact=True).click()
-        react_page.wait_for_timeout(500)
+        # Modal should appear — dismiss via Cancel button
+        cancel_btn = react_page.get_by_role("button", name="Cancel")
+        cancel_btn.wait_for(state="visible", timeout=5000)
+        cancel_btn.click()
+        react_page.wait_for_timeout(300)
         # Selection should still be active
         checked = self._checked_checkboxes(react_page)
         assert checked.count() == 1

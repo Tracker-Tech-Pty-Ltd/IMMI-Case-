@@ -412,6 +412,46 @@ class TestFilterCases:
         select_call = table.select.call_args
         assert "count" not in select_call.kwargs
 
+    def test_list_cases_seek_uses_stable_year_case_id_order(self, repo, mock_client):
+        table = MagicMock()
+        mock_client.table.return_value = table
+        table.select.return_value = table
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = _mock_response(data=[_case_row(case_id="s1", year=2024)])
+
+        repo.list_cases_seek(sort_by="date", sort_dir="desc", page_size=5)
+
+        table.order.assert_has_calls([
+            call("year", desc=True),
+            call("case_id", desc=True),
+        ])
+        table.limit.assert_called_with(5)
+
+    def test_list_cases_seek_applies_anchor_or_filter(self, repo, mock_client):
+        table = MagicMock()
+        mock_client.table.return_value = table
+        table.select.return_value = table
+        table.order.return_value = table
+        table.or_.return_value = table
+        table.limit.return_value = table
+        table.execute.return_value = _mock_response(data=[])
+
+        repo.list_cases_seek(
+            sort_by="year",
+            sort_dir="asc",
+            page_size=3,
+            anchor={"year": 2023, "case_id": "abc123def456"},
+        )
+
+        table.or_.assert_called_once_with(
+            "year.gt.2023,and(year.eq.2023,case_id.gt.abc123def456)"
+        )
+
+    def test_list_cases_seek_rejects_keyword_queries(self, repo):
+        with pytest.raises(ValueError, match="keyword"):
+            repo.list_cases_seek(keyword="minister")
+
     def test_count_cases_uses_planned_mode(self, repo, mock_client):
         table = MagicMock()
         mock_client.table.return_value = table
@@ -524,8 +564,13 @@ class TestExport:
         table = MagicMock()
         mock_client.table.return_value = table
         table.select.return_value = table
-        table.range.return_value = table
-        table.execute.return_value = _mock_response(data=rows)
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.gt.return_value = table
+        table.execute.side_effect = [
+            _mock_response(data=[_case_row(case_id="schema")]),
+            _mock_response(data=rows),
+        ]
 
         result = repo.export_csv_rows()
         assert len(result) == 1
@@ -536,8 +581,13 @@ class TestExport:
         table = MagicMock()
         mock_client.table.return_value = table
         table.select.return_value = table
-        table.range.return_value = table
-        table.execute.return_value = _mock_response(data=rows)
+        table.order.return_value = table
+        table.limit.return_value = table
+        table.gt.return_value = table
+        table.execute.side_effect = [
+            _mock_response(data=[_case_row(case_id="schema")]),
+            _mock_response(data=rows),
+        ]
 
         result = repo.export_json()
         assert result["total_cases"] == 1

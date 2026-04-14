@@ -1,7 +1,6 @@
 """JSON API endpoints for the React SPA frontend.
 
 All endpoints are prefixed with /api/v1/.
-Reuses existing CaseRepository methods — no new backend logic.
 """
 
 import io
@@ -25,6 +24,12 @@ from flask import Blueprint, request, jsonify, send_file, current_app, Response
 from flask_wtf.csrf import generate_csrf
 
 from ...config import START_YEAR, END_YEAR
+from ...cases_pagination import (
+    CaseListQuery,
+    backend_kind_for_repo,
+    choose_pagination_plan,
+    remember_page_anchor,
+)
 from ...llm_council import run_immi_council, validate_council_connectivity
 from ...models import ImmigrationCase
 from ...semantic_search_eval import (
@@ -69,8 +74,8 @@ MAX_LLM_COUNCIL_QUESTION_LEN = 8_000
 MAX_LLM_COUNCIL_CONTEXT_LEN = 20_000
 MAX_LLM_COUNCIL_PRECEDENT_CASES = 8
 ALLOWED_SORT_FIELDS = frozenset({
-    "date", "title", "court", "outcome", "visa_subclass_number",
-    "applicant_name", "hearing_date", "case_id",
+    "date", "year", "title", "court", "citation", "outcome",
+    "visa_subclass_number", "applicant_name", "hearing_date", "case_id",
 })
 ALLOWED_SORT_DIRS = frozenset({"asc", "desc"})
 ALLOWED_COUNT_MODES = frozenset({"exact", "planned", "estimated"})
@@ -1344,11 +1349,239 @@ def _parse_case_list_filters() -> tuple[str, int | None, str, str, str, str, str
         except ValueError:
             year = None
     visa_type = request.args.get("visa_type", "").strip()
-    keyword = request.args.get("keyword", "").strip()
+    keyword = (request.args.get("keyword") or request.args.get("q") or "").strip()
     source = request.args.get("source", "").strip()
     tag = request.args.get("tag", "").strip()
     nature = request.args.get("nature", "").strip()
     return court, year, visa_type, keyword, source, tag, nature
+
+
+def _parse_cases_page_size() -> int:
+    """Parse `page_size` with temporary `per_page` compatibility."""
+    raw_page_size = request.args.get("page_size")
+    if raw_page_size not in (None, ""):
+        return safe_int(
+            raw_page_size,
+            default=DEFAULT_PAGE_SIZE,
+            min_val=1,
+            max_val=MAX_PAGE_SIZE,
+        )
+
+    raw_per_page = request.args.get("per_page")
+    if raw_per_page not in (None, ""):
+        return safe_int(
+            raw_per_page,
+            default=DEFAULT_PAGE_SIZE,
+            min_val=1,
+            max_val=MAX_PAGE_SIZE,
+        )
+
+    return DEFAULT_PAGE_SIZE
+
+
+def _build_case_list_query(
+    *,
+    court: str,
+    year: int | None,
+    visa_type: str,
+    source: str,
+    tag: str,
+    nature: str,
+    keyword: str,
+    sort_by: str,
+    sort_dir: str,
+) -> CaseListQuery:
+    """Create the normalized query signature for `/api/v1/cases`."""
+    return CaseListQuery(
+        court=court,
+        year=year,
+        visa_type=visa_type,
+        source=source,
+        tag=tag,
+        nature=nature,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+
+def _list_cases_offset_path(
+    repo,
+    *,
+    court: str,
+    year: int | None,
+    visa_type: str,
+    source: str,
+    tag: str,
+    nature: str,
+    keyword: str,
+    sort_by: str,
+    sort_dir: str,
+    page: int,
+    page_size: int,
+    count_mode: str,
+) -> tuple[list[ImmigrationCase], int, str]:
+    """Fetch a page using the legacy offset path."""
+    effective_count_mode = count_mode
+
+    if hasattr(repo, "count_cases"):
+        total, effective_count_mode = _count_cases_with_fallback(
+            repo,
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+            count_mode=count_mode,
+        )
+    else:
+        total = 0
+        effective_count_mode = "exact"
+
+    if hasattr(repo, "list_cases_fast"):
+        page_cases = repo.list_cases_fast(
+            court=court,
+            year=year,
+            visa_type=visa_type,
+            source=source,
+            tag=tag,
+            nature=nature,
+            keyword=keyword,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            page=page,
+            page_size=page_size,
+            columns=CASE_LIST_COLUMNS,
+        )
+        if not hasattr(repo, "count_cases"):
+            total = (page - 1) * page_size + len(page_cases)
+            effective_count_mode = "planned"
+        return page_cases, total, effective_count_mode
+
+    page_cases, filter_total = repo.filter_cases(
+        court=court,
+        year=year,
+        visa_type=visa_type,
+        source=source,
+        tag=tag,
+        nature=nature,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
+    if not hasattr(repo, "count_cases"):
+        total = filter_total
+        effective_count_mode = "exact"
+    return page_cases, total, effective_count_mode
+
+
+def _load_cases_via_seek(
+    repo,
+    *,
+    query: CaseListQuery,
+    plan,
+    page: int,
+    page_size: int,
+    total_pages: int,
+) -> tuple[list[ImmigrationCase], str, str | None]:
+    """Execute the seek strategy chosen for `/api/v1/cases`."""
+    strategy = plan.strategy
+    fallback_reason = plan.fallback_reason
+
+    if strategy == "offset_fallback":
+        return [], strategy, fallback_reason
+
+    if page > total_pages:
+        return [], "offset_fallback", "page_out_of_range"
+
+    if strategy == "seek_reverse":
+        reverse_steps = max(0, total_pages - page)
+        reverse_anchor = None
+        final_page: list[ImmigrationCase] = []
+
+        for current_page in range(total_pages, page - 1, -1):
+            raw_rows = repo.list_cases_seek(
+                court=query.court,
+                year=query.year,
+                visa_type=query.visa_type,
+                source=query.source,
+                tag=query.tag,
+                nature=query.nature,
+                keyword=query.keyword,
+                sort_by=query.sort_by,
+                sort_dir=query.sort_dir,
+                page_size=page_size,
+                anchor=reverse_anchor,
+                reverse=True,
+                columns=CASE_LIST_COLUMNS,
+            )
+            if not raw_rows:
+                final_page = []
+                break
+
+            reverse_anchor = {
+                "year": int(getattr(raw_rows[-1], "year", 0) or 0),
+                "case_id": str(getattr(raw_rows[-1], "case_id", "") or ""),
+            }
+            final_page = list(reversed(raw_rows))
+            remember_page_anchor(
+                repo=repo,
+                query=query,
+                page=current_page,
+                page_cases=final_page,
+            )
+            if reverse_steps <= 0:
+                break
+            reverse_steps -= 1
+
+        return final_page, strategy, fallback_reason
+
+    current_anchor = None
+    current_page = 1
+    if plan.anchor is not None:
+        current_anchor = {
+            "year": plan.anchor.year,
+            "case_id": plan.anchor.case_id,
+        }
+        current_page = max(1, plan.anchor_page + 1)
+
+    final_page: list[ImmigrationCase] = []
+    while current_page <= page:
+        final_page = repo.list_cases_seek(
+            court=query.court,
+            year=query.year,
+            visa_type=query.visa_type,
+            source=query.source,
+            tag=query.tag,
+            nature=query.nature,
+            keyword=query.keyword,
+            sort_by=query.sort_by,
+            sort_dir=query.sort_dir,
+            page_size=page_size,
+            anchor=current_anchor,
+            reverse=False,
+            columns=CASE_LIST_COLUMNS,
+        )
+        if not final_page:
+            break
+
+        current_anchor = {
+            "year": int(getattr(final_page[-1], "year", 0) or 0),
+            "case_id": str(getattr(final_page[-1], "case_id", "") or ""),
+        }
+        remember_page_anchor(
+            repo=repo,
+            query=query,
+            page=current_page,
+            page_cases=final_page,
+        )
+        current_page += 1
+
+    return final_page, strategy, fallback_reason
 
 
 def _empty_filter_options_payload() -> dict:
@@ -2053,6 +2286,7 @@ def court_lineage():
 
 @api_bp.route("/cases")
 def list_cases():
+    started_at = time.perf_counter()
     repo = get_repo()
     court, year, visa_type, keyword, source, tag, nature = _parse_case_list_filters()
     sort_by = request.args.get("sort_by", "date")
@@ -2062,15 +2296,29 @@ def list_cases():
     if sort_dir not in ALLOWED_SORT_DIRS:
         return jsonify({"error": f"Invalid sort_dir '{sort_dir}'. Allowed: asc, desc"}), 400
     page = safe_int(request.args.get("page"), default=1, min_val=1)
-    page_size = safe_int(request.args.get("page_size"), default=DEFAULT_PAGE_SIZE, min_val=1, max_val=MAX_PAGE_SIZE)
-    use_fast_supabase_path = hasattr(repo, "list_cases_fast") and hasattr(repo, "count_cases")
+    page_size = _parse_cases_page_size()
     count_mode = request.args.get("count_mode", "planned").strip().lower()
+    if count_mode not in ALLOWED_COUNT_MODES:
+        return _error(f"Invalid count_mode '{count_mode}'. Allowed: {sorted(ALLOWED_COUNT_MODES)}")
 
-    if use_fast_supabase_path:
-        if count_mode not in ALLOWED_COUNT_MODES:
-            return _error(f"Invalid count_mode '{count_mode}'. Allowed: {sorted(ALLOWED_COUNT_MODES)}")
-        try:
-            page_cases = repo.list_cases_fast(
+    query = _build_case_list_query(
+        court=court,
+        year=year,
+        visa_type=visa_type,
+        source=source,
+        tag=tag,
+        nature=nature,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    strategy = "offset_fallback"
+    fallback_reason: str | None = None
+
+    try:
+        if not hasattr(repo, "count_cases"):
+            page_cases, total, count_mode = _list_cases_offset_path(
+                repo,
                 court=court,
                 year=year,
                 visa_type=visa_type,
@@ -2082,12 +2330,12 @@ def list_cases():
                 sort_dir=sort_dir,
                 page=page,
                 page_size=page_size,
-                columns=CASE_LIST_COLUMNS,
+                count_mode=count_mode,
             )
-        except Exception:
-            logger.warning("list_cases_fast failed; returning empty page", exc_info=True)
-            page_cases = []
-        try:
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            strategy = "offset_fallback"
+            fallback_reason = "repo_has_no_count"
+        else:
             total, count_mode = _count_cases_with_fallback(
                 repo,
                 court=court,
@@ -2099,29 +2347,109 @@ def list_cases():
                 keyword=keyword,
                 count_mode=count_mode,
             )
-        except Exception:
-            logger.warning("Case count unavailable; falling back to page length", exc_info=True)
-            total = (page - 1) * page_size + len(page_cases)
-            count_mode = "planned"
-    else:
-        page_cases, total = repo.filter_cases(
-            court=court, year=year, visa_type=visa_type,
-            source=source, tag=tag, nature=nature, keyword=keyword,
-            sort_by=sort_by, sort_dir=sort_dir,
-            page=page, page_size=page_size,
-        )
-        count_mode = "exact"
+            total_pages = max(1, (total + page_size - 1) // page_size)
 
-    total_pages = max(1, (total + page_size - 1) // page_size)
+            if total == 0:
+                page_cases = []
+                strategy = choose_pagination_plan(
+                    repo=repo,
+                    query=query,
+                    page=page,
+                    total_pages=total_pages,
+                ).strategy
+            else:
+                plan = choose_pagination_plan(
+                    repo=repo,
+                    query=query,
+                    page=page,
+                    total_pages=total_pages,
+                )
+                strategy = plan.strategy
+                fallback_reason = plan.fallback_reason
 
-    return jsonify({
-        "cases": [c.to_dict() for c in page_cases],
-        "total": total,
-        "count_mode": count_mode,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    })
+                if strategy != "offset_fallback":
+                    try:
+                        page_cases, strategy, fallback_reason = _load_cases_via_seek(
+                            repo,
+                            query=query,
+                            plan=plan,
+                            page=page,
+                            page_size=page_size,
+                            total_pages=total_pages,
+                        )
+                    except Exception as exc:
+                        logger.warning("list_cases_seek failed; falling back to offset path", exc_info=True)
+                        strategy = "offset_fallback"
+                        fallback_reason = f"seek_error:{type(exc).__name__}"
+                        page_cases, total, count_mode = _list_cases_offset_path(
+                            repo,
+                            court=court,
+                            year=year,
+                            visa_type=visa_type,
+                            source=source,
+                            tag=tag,
+                            nature=nature,
+                            keyword=keyword,
+                            sort_by=sort_by,
+                            sort_dir=sort_dir,
+                            page=page,
+                            page_size=page_size,
+                            count_mode=count_mode,
+                        )
+                        total_pages = max(1, (total + page_size - 1) // page_size)
+                else:
+                    page_cases, total, count_mode = _list_cases_offset_path(
+                        repo,
+                        court=court,
+                        year=year,
+                        visa_type=visa_type,
+                        source=source,
+                        tag=tag,
+                        nature=nature,
+                        keyword=keyword,
+                        sort_by=sort_by,
+                        sort_dir=sort_dir,
+                        page=page,
+                        page_size=page_size,
+                        count_mode=count_mode,
+                    )
+                    total_pages = max(1, (total + page_size - 1) // page_size)
+    except Exception:
+        logger.warning("Case list request failed; returning empty page", exc_info=True)
+        page_cases = []
+        total = 0
+        count_mode = "planned"
+        total_pages = 1
+        strategy = "offset_fallback"
+        fallback_reason = fallback_reason or "list_error"
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "cases_pagination %s",
+        json.dumps(
+            {
+                "backend_kind": backend_kind_for_repo(repo),
+                "strategy": strategy,
+                "fallback_reason": fallback_reason,
+                "page": page,
+                "total_pages": total_pages,
+                "query_signature_hash": query.signature_hash(),
+                "duration_ms": duration_ms,
+            },
+            sort_keys=True,
+        ),
+    )
+
+    return jsonify(
+        {
+            "cases": [c.to_dict() for c in page_cases],
+            "total": total,
+            "count_mode": count_mode,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
+    )
 
 
 @api_bp.route("/cases/count")
