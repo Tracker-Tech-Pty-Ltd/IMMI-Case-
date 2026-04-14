@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   List,
@@ -906,9 +906,15 @@ export function CasesPage() {
                     aria-selected={selected.has(c.case_id)}
                   >
                     <td
-                      className="w-10 px-2 py-2"
+                      className="relative w-10 px-2 py-2"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <Link
+                        to={`/cases/${c.case_id}`}
+                        aria-label={`Open case ${c.citation || c.case_id}`}
+                        className="absolute inset-0 z-0"
+                        tabIndex={-1}
+                      />
                       <input
                         data-testid="cases-row-checkbox"
                         data-case-id={c.case_id}
@@ -916,7 +922,7 @@ export function CasesPage() {
                         checked={selected.has(c.case_id)}
                         onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleSelect(c.case_id)}
-                        className="rounded"
+                        className="relative z-10 rounded"
                         aria-label={t("cases.select_case", {
                           defaultValue: "Select case {{citation}}",
                           citation: c.citation || c.case_id,

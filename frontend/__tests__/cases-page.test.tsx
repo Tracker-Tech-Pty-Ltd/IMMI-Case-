@@ -328,6 +328,35 @@ describe("CasesPage", () => {
     expect(citationElements.length).toBeGreaterThan(0);
   });
 
+  // Test 6b: Checkbox must stay clickable even when the row has a click target overlay
+  it("案件列的整列連結不會蓋住選取框", () => {
+    window.localStorage.removeItem("cases-view-mode");
+
+    mockUseCases.mockReturnValue(
+      successResult(
+        makePaginatedData([
+          makeCase({
+            case_id: "ccc000000001",
+            citation: "[2024] FCA 200",
+          }),
+        ]),
+      ),
+    );
+    mockUseFilterOptions.mockReturnValue(filterOptionsSuccess());
+
+    const { container } = renderPage();
+
+    const row = screen.getByTestId("cases-row");
+    const checkbox = screen.getByTestId("cases-row-checkbox");
+    const rowLink = container.querySelector<HTMLAnchorElement>(
+      'a[aria-label="Open case [2024] FCA 200"]',
+    );
+
+    expect(row).toBeInTheDocument();
+    expect(checkbox).toHaveClass("relative", "z-10");
+    expect(rowLink).toHaveClass("absolute", "inset-0", "z-0");
+  });
+
   // Test 7: Case count displayed
   it("顯示案件總數", () => {
     mockUseCases.mockReturnValue(
