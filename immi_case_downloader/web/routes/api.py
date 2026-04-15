@@ -8,6 +8,7 @@ import os
 import csv
 import re
 import json
+import base64
 import logging
 import time
 import threading
@@ -1295,6 +1296,23 @@ def _valid_case_id(case_id: str) -> bool:
     return bool(_HEX_ID.match(case_id))
 
 
+def _encode_cursor(year: int, case_id: str) -> str:
+    """Encode a seek position as a base64url token."""
+    payload = json.dumps({"year": year, "case_id": case_id}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[int, str] | None:
+    """Decode a base64url cursor token back to (year, case_id), or None on error."""
+    try:
+        padded = cursor + "=" * (4 - len(cursor) % 4)
+        payload = base64.urlsafe_b64decode(padded).decode()
+        data = json.loads(payload)
+        return data["year"], data["case_id"]
+    except Exception:
+        return None
+
+
 def _parse_court_year_trends_rows(trends_rows) -> tuple[dict[str, dict[int, int]], set[int], int]:
     """Normalise Supabase get_court_year_trends() rows to court/year aggregates."""
     court_year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
@@ -1833,81 +1851,6 @@ def get_csrf_token():
     return jsonify({"csrf_token": generate_csrf()})
 
 
-# ── Connectivity Diagnostics (temporary — remove after debugging) ────────
-
-@api_bp.route("/debug")
-def debug():
-    """Diagnostic endpoint: checks database connectivity from inside the container."""
-    import traceback
-    import urllib.request
-    import urllib.error
-
-    from flask import current_app
-    backend = current_app.config.get("BACKEND", "unknown")
-    # Version marker — confirms which container image is running
-    _img_version = "v13-socket-patch"
-
-    # Read DNS config files to verify what the container sees at runtime
-    def _read_file(path):
-        try:
-            with open(path) as _f:
-                return _f.read().strip()
-        except Exception as _e:
-            return f"ERROR: {_e}"
-
-    result: dict = {
-        "_v": _img_version,
-        "backend": backend,
-        "resolv_conf": _read_file("/etc/resolv.conf"),
-        "etc_hosts_tail": _read_file("/etc/hosts").splitlines()[-10:],
-        "env": {},
-        "http_test": {},
-        "db_test": {},
-    }
-
-    # 1. Env var presence (first 10 chars only — not enough to authenticate)
-    for var in (
-        "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY",
-        "HYPERDRIVE_DATABASE_URL", "APP_ENV", "SECRET_KEY",
-    ):
-        val = os.environ.get(var, "")
-        result["env"][var] = (val[:10] + "…") if len(val) > 10 else ("SET" if val else "MISSING")
-
-    # 2. Raw HTTP ping to Supabase REST (shows whether external DNS works)
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-    if supabase_url and service_key:
-        try:
-            req = urllib.request.Request(
-                f"{supabase_url}/rest/v1/",
-                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                result["http_test"] = {"status": resp.status, "ok": True}
-        except urllib.error.HTTPError as e:
-            result["http_test"] = {"ok": False, "http_status": e.code, "error": str(e)}
-        except Exception as e:
-            result["http_test"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-    else:
-        result["http_test"] = {"ok": False, "error": "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing"}
-
-    # 3. Database count via active repository backend (Hyperdrive or Supabase REST)
-    try:
-        repo = get_repo()
-        if hasattr(repo, "count_cases"):
-            count = repo.count_cases(count_mode="planned")
-            result["db_test"] = {"count": int(count), "ok": True, "via": backend}
-        else:
-            result["db_test"] = {"ok": False, "error": "repo has no count_cases method"}
-    except Exception as e:
-        result["db_test"] = {
-            "ok": False,
-            "error": f"{type(e).__name__}: {e}",
-            "trace": traceback.format_exc()[-800:],
-        }
-
-    return jsonify(result)
-
 
 # ── Dashboard Stats ─────────────────────────────────────────────────────
 
@@ -2440,6 +2383,15 @@ def list_cases():
         ),
     )
 
+    # Compute next_cursor: encode the last case's position when more pages exist
+    next_cursor: str | None = None
+    if page_cases and page < total_pages:
+        last_case = page_cases[-1]
+        year_val = getattr(last_case, "year", None) or 0
+        cid = getattr(last_case, "case_id", None) or ""
+        if cid:
+            next_cursor = _encode_cursor(year_val, cid)
+
     return jsonify(
         {
             "cases": [c.to_dict() for c in page_cases],
@@ -2448,6 +2400,7 @@ def list_cases():
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
+            "next_cursor": next_cursor,
         }
     )
 
@@ -3090,6 +3043,7 @@ def filter_options():
 # ── Export ──────────────────────────────────────────────────────────────
 
 @api_bp.route("/export/csv")
+@rate_limit(5, 3600, scope="export-csv")
 def export_csv():
     repo = get_repo()
     cases = _filter_cases(repo.load_all(), request.args)[:MAX_EXPORT_ROWS]
@@ -3108,6 +3062,7 @@ def export_csv():
 
 
 @api_bp.route("/export/json")
+@rate_limit(5, 3600, scope="export-json")
 def export_json():
     repo = get_repo()
     cases = _filter_cases(repo.load_all(), request.args)[:MAX_EXPORT_ROWS]
@@ -4116,7 +4071,7 @@ _POLICY_EVENTS = [
 @api_bp.route("/analytics/monthly-trends")
 def analytics_monthly_trends():
     """Monthly case volume and win-rate time series with policy event markers."""
-    cases = _apply_filters(_get_all_cases())
+    cases = _apply_filters(_get_analytics_cases())
 
     monthly: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "wins": 0})
 
