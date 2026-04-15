@@ -243,6 +243,15 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
 - 數據狀態: 149,016 個案件記錄已同步至 Supabase
 - 認證方式: Publishable API Key (環境變數: `SUPABASE_ANON_KEY`)
 
+## Production Deployment (Cloudflare Workers)
+
+- **Production URL**: `https://immi.trackit.today` (root) — legacy `/app/*` still works
+- **Worker custom domain syntax** (auto DNS + SSL): `[[routes]]` + `pattern = "host"` + `custom_domain = true`. **NOT** `[[custom_domains]]` (invalid field). `pattern = "host/*"` only works if DNS already exists.
+- **CI must `npm ci` before `wrangler deploy`** — `postgres` package is imported by `workers/proxy.js` but not auto-installed
+- **SPA basename** — `resolveRouterBasename()` in `frontend/src/lib/router.ts` auto-detects `/` vs `/app/`; Worker routing decides which path serves the SPA
+- **Durable Object name**: `idFromName("flask-v13")` — bumping the suffix creates fresh container state; keep stable unless intentionally resetting
+- **Testing fresh domains**: macOS DNS cache lies — use `curl --resolve host:443:<CF_IP>` to bypass; flush with `sudo dscacheutil -flushcache`
+
 ## Structured Field Extraction (`extract_structured_fields.py`)
 
 - Run: `python3 extract_structured_fields.py --workers 8` (parallel, ~12min for 149K cases)
