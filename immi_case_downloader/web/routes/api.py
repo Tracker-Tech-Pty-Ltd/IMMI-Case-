@@ -2474,6 +2474,7 @@ def create_case():
 
 
 @api_bp.route("/cases/<case_id>", methods=["PUT"])
+@rate_limit(30, 60, scope="cases-update")
 def update_case(case_id):
     if not _valid_case_id(case_id):
         return _error("Invalid case ID")
@@ -2502,6 +2503,7 @@ def update_case(case_id):
 
 
 @api_bp.route("/cases/<case_id>", methods=["DELETE"])
+@rate_limit(10, 60, scope="cases-delete")
 def delete_case(case_id):
     if not _valid_case_id(case_id):
         return _error("Invalid case ID")
@@ -4715,6 +4717,7 @@ def analytics_visa_families():
 # ── Cache Invalidation ───────────────────────────────────────────────────
 
 @api_bp.route("/cache/invalidate", methods=["POST"])
+@rate_limit(3, 60, scope="cache-invalidate")
 def invalidate_cache():
     """Invalidate all in-memory caches. Useful after bulk data import."""
     global _stats_cache_payload, _stats_cache_ts
@@ -4740,6 +4743,7 @@ def invalidate_cache():
 # ── LLM Council ──────────────────────────────────────────────────────────
 
 @api_bp.route("/llm-council/health", methods=["GET"])
+@rate_limit(10, 60, scope="llm-council-health")
 def llm_council_health():
     """Validate LLM council provider configuration and optional live connectivity."""
     live_raw = str(request.args.get("live", "")).strip().lower()
@@ -4898,6 +4902,7 @@ def _run_semantic_search(
 
 
 @api_bp.route("/search/semantic")
+@rate_limit(20, 60, scope="search-semantic")
 def semantic_search():
     """Free-text vector search: embed query → HNSW ANN → return ranked cases.
 
