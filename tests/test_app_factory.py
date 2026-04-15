@@ -40,9 +40,17 @@ class TestBackendSelection:
 
     def test_sqlite_backend_selected(self, tmp_path):
         """backend='sqlite' → SqliteRepository is set as REPO."""
-        # SqliteRepository creates the DB on connect, so we just verify BACKEND.
-        app = _make_app(backend="sqlite")
-        assert app.config["BACKEND"] == "sqlite"
+        with patch.dict(os.environ, {"SECRET_KEY": "test-key"}):
+            from immi_case_downloader.web import create_app
+            app = create_app(output_dir=str(tmp_path), backend="sqlite")
+        app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
+        try:
+            assert app.config["BACKEND"] == "sqlite"
+        finally:
+            repo = app.config.get("REPO")
+            if repo and hasattr(repo, "close"):
+                repo.close()
 
     def test_supabase_backend_selected(self):
         """backend='supabase' → SupabaseRepository is set as REPO."""
@@ -70,7 +78,12 @@ class TestBackendSelection:
             app = create_app(output_dir=str(tmp_path), backend="auto")
 
         app.config["TESTING"] = True
-        assert app.config["BACKEND"] == "sqlite"
+        try:
+            assert app.config["BACKEND"] == "sqlite"
+        finally:
+            repo = app.config.get("REPO")
+            if repo and hasattr(repo, "close"):
+                repo.close()
 
     def test_auto_backend_falls_back_to_csv(self, tmp_path):
         """backend='auto' uses CSV when cases.db is absent."""
