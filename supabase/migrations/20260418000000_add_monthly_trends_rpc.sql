@@ -13,7 +13,7 @@ CREATE INDEX IF NOT EXISTS idx_date_sort_month
 -- the default 8-second Supabase PostgREST limit.
 CREATE OR REPLACE FUNCTION get_analytics_monthly_trends()
 RETURNS TABLE(month_key text, court_code text, outcome text, cnt integer)
-LANGUAGE plpgsql STABLE SECURITY DEFINER
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 AS $$
 BEGIN
   SET LOCAL statement_timeout = '60s';

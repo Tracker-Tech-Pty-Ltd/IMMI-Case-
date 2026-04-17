@@ -22,6 +22,9 @@ export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
+        <span className="whitespace-nowrap font-heading text-base font-semibold text-foreground lg:hidden">
+          IMMI-Case
+        </span>
       </div>
 
       <div className="flex items-center gap-2">

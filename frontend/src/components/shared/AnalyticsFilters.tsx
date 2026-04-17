@@ -67,43 +67,45 @@ export function AnalyticsFilters({
             {preset.label}
           </button>
         ))}
-        {/* Custom year pickers */}
-        <span className="ml-1 text-xs text-muted-text">|</span>
-        <select
-          value={yearFrom}
-          onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
-          className={cn(
-            "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
-            isCustom && "border-accent",
-          )}
-          aria-label={t("filters.year_from")}
-        >
-          {Array.from({ length: CURRENT_YEAR - 1999 }, (_, i) => 2000 + i).map(
-            (y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ),
-          )}
-        </select>
-        <span className="text-xs text-muted-text">&ndash;</span>
-        <select
-          value={yearTo}
-          onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
-          className={cn(
-            "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
-            isCustom && "border-accent",
-          )}
-          aria-label={t("filters.year_to")}
-        >
-          {Array.from({ length: CURRENT_YEAR - 1999 }, (_, i) => 2000 + i).map(
-            (y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ),
-          )}
-        </select>
+        {/* Custom year pickers — keep separator + selects as a single wrapping unit */}
+        <div className="flex items-center gap-1">
+        <span className="hidden text-xs text-muted-text sm:inline">|</span>
+          <select
+            value={yearFrom}
+            onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
+            className={cn(
+              "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
+              isCustom && "border-accent",
+            )}
+            aria-label={t("filters.year_from")}
+          >
+            {Array.from({ length: CURRENT_YEAR - 1999 }, (_, i) => 2000 + i).map(
+              (y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ),
+            )}
+          </select>
+          <span className="text-xs text-muted-text">&ndash;</span>
+          <select
+            value={yearTo}
+            onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
+            className={cn(
+              "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
+              isCustom && "border-accent",
+            )}
+            aria-label={t("filters.year_to")}
+          >
+            {Array.from({ length: CURRENT_YEAR - 1999 }, (_, i) => 2000 + i).map(
+              (y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
       </div>
 
       {/* Court pills */}

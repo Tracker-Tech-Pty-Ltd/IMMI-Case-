@@ -22,7 +22,7 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
           {eyebrow ? (
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
@@ -36,7 +36,7 @@ export function PageHeader({
               </div>
             ) : null}
             <div className="min-w-0 space-y-2">
-              <h1 className="font-heading text-[clamp(1.875rem,3vw,2.75rem)] font-semibold leading-tight tracking-tight text-foreground">
+              <h1 className="break-words font-heading text-[clamp(1.5rem,4vw,2.75rem)] font-semibold leading-tight tracking-tight text-foreground">
                 {title}
               </h1>
               {description ? (

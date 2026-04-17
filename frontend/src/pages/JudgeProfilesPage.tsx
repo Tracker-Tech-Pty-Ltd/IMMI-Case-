@@ -191,7 +191,7 @@ export function JudgeProfilesPage() {
             }}
           />
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               ref={nameInputRef}
               type="text"
@@ -201,25 +201,27 @@ export function JudgeProfilesPage() {
               aria-label={t("judges.search_placeholder")}
               aria-keyshortcuts="/"
               title={t("judges.search_shortcut_hint")}
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-text"
+              className="min-w-[140px] flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-muted-text"
             />
-            <label className="text-xs font-medium uppercase tracking-wide text-muted-text">
-              {t("judges.sort_label")}
-            </label>
-            <select
-              value={sortBy}
-              onChange={(event) =>
-                setSortBy(
-                  event.target.value as "cases" | "approval_rate" | "name",
-                )
-              }
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-              aria-label={t("judges.sort_label")}
-            >
-              <option value="cases">{t("judges.sort_cases")}</option>
-              <option value="approval_rate">{t("judges.sort_approval")}</option>
-              <option value="name">{t("judges.sort_name")}</option>
-            </select>
+            <div className="flex shrink-0 items-center gap-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-text">
+                {t("judges.sort_label")}
+              </label>
+              <select
+                value={sortBy}
+                onChange={(event) =>
+                  setSortBy(
+                    event.target.value as "cases" | "approval_rate" | "name",
+                  )
+                }
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+                aria-label={t("judges.sort_label")}
+              >
+                <option value="cases">{t("judges.sort_cases")}</option>
+                <option value="approval_rate">{t("judges.sort_approval")}</option>
+                <option value="name">{t("judges.sort_name")}</option>
+              </select>
+            </div>
           </div>
         </div>
 

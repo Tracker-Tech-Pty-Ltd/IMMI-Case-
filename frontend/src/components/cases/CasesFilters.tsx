@@ -45,7 +45,7 @@ export function CasesFilters({
         <select
           value={filters.court ?? ""}
           onChange={(e) => onUpdateFilter("court", e.target.value)}
-          className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+          className="min-w-[120px] flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground sm:flex-none"
           aria-label={t("filters.court")}
         >
           <option value="">{t("filters.all_courts")}</option>
@@ -58,7 +58,7 @@ export function CasesFilters({
         <select
           value={filters.year?.toString() ?? ""}
           onChange={(e) => onUpdateFilter("year", e.target.value)}
-          className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+          className="min-w-[120px] flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground sm:flex-none"
           aria-label={t("units.year")}
         >
           <option value="">{t("filters.year_from")}</option>
@@ -71,7 +71,7 @@ export function CasesFilters({
         <select
           value={filters.nature ?? ""}
           onChange={(e) => onUpdateFilter("nature", e.target.value)}
-          className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+          className="min-w-[120px] flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground sm:flex-none"
           aria-label={t("cases.nature")}
         >
           <option value="">{t("filters.all_natures")}</option>
@@ -81,7 +81,7 @@ export function CasesFilters({
             </option>
           ))}
         </select>
-        <div className="relative">
+        <div className="relative min-w-[160px] flex-1 sm:flex-none">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-text" />
           <input
             key={filters.keyword ?? ""}
@@ -99,7 +99,7 @@ export function CasesFilters({
                 (e.target as HTMLInputElement).blur();
               }
             }}
-            className="rounded-md border border-border bg-card py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-text"
+            className="w-full rounded-md border border-border bg-card py-2 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-text"
             aria-label={t("common.search_cases")}
             aria-keyshortcuts="/"
             title={t("cases.search_shortcut_hint")}
@@ -108,7 +108,7 @@ export function CasesFilters({
         <button
           type="button"
           onClick={onToggleAdvanced}
-          className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-text hover:text-foreground"
+          className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm text-muted-text hover:text-foreground"
           aria-expanded={showAdvanced}
           aria-controls="cases-advanced-filters"
         >
@@ -122,7 +122,7 @@ export function CasesFilters({
         <button
           type="button"
           onClick={onSaveSearch}
-          className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-muted-text hover:text-foreground"
+          className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm text-muted-text hover:text-foreground"
           title={t("saved_searches.save_description")}
         >
           <Bookmark className="h-3.5 w-3.5" />
@@ -130,14 +130,14 @@ export function CasesFilters({
         </button>
 
         {/* Sort */}
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="mt-1 flex w-full items-center gap-1.5 sm:ml-auto sm:mt-0 sm:w-auto">
           <span className="text-xs text-muted-text">
             {t("judges.sort_label")}:
           </span>
           <select
             value={filters.sort_by ?? "date"}
             onChange={(e) => onUpdateFilter("sort_by", e.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+            className="rounded-md border border-border bg-card px-2 py-2 text-xs text-foreground"
             aria-label={t("judges.sort_label")}
           >
             <option value="date">{t("cases.date")}</option>
@@ -153,7 +153,7 @@ export function CasesFilters({
                 filters.sort_dir === "asc" ? "desc" : "asc",
               )
             }
-            className="rounded-md border border-border p-1.5 text-muted-text hover:text-foreground"
+            className="rounded-md border border-border p-2 text-muted-text hover:text-foreground"
             title={`${t("cases.sorted")} ${sortLabel} ${filters.sort_dir === "asc" ? t("cases.ascending") : t("cases.descending")}`}
             aria-label={`${t("cases.sorted")} ${sortLabel} ${filters.sort_dir === "asc" ? t("cases.ascending") : t("cases.descending")}`}
           >

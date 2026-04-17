@@ -39,7 +39,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
       />
       {/* Drawer */}
       <div
-        className="fixed inset-y-0 left-0 z-50 w-64 bg-sidebar shadow-lg lg:hidden"
+        className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar shadow-lg lg:hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="mobile-nav-title"
@@ -60,7 +60,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
           </button>
         </div>
 
-        <nav className="p-2">
+        <nav className="flex-1 overflow-y-auto p-2">
           {APP_NAV_GROUPS.map((group, gi) => (
             <div key={group.titleKey} className={cn(gi > 0 && "mt-3")}>
               <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-text">
