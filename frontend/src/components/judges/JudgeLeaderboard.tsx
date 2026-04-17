@@ -53,7 +53,7 @@ function JudgeLeaderboardTable({
                 }
               }}
               tabIndex={0}
-              aria-label={`${displayName} - ${row.total_cases} cases`}
+              aria-label={`${displayName} - ${row.total_cases} ${t("judges.cases_unit", { defaultValue: "cases" })}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
