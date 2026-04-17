@@ -17,11 +17,14 @@
  *   GET /api/v1/analytics/success-rate   → Hyperdrive → parameterized SQL + JS aggregation
  *   GET /api/v1/analytics/concept-*      → Hyperdrive → LATERAL unnest + JS canonicalization
  *   GET /api/v1/analytics/judge-*        → Hyperdrive → LATERAL unnest judges + JS profile
+ *   GET /api/v1/court-lineage            → Hyperdrive → get_court_year_trends() RPC + JS lineage structure
  *   GET /api/v1/data-dictionary          → static JS const (no DB)
  *   GET /api/v1/visa-registry            → static JS const (no DB)
- *   GET /api/v1/cases/compare            → Hyperdrive → batch SELECT WHERE case_id = ANY(...)
- *   GET /api/v1/cases/:id/related        → Hyperdrive → find_related_cases() RPC
- *   GET /api/v1/taxonomy/countries       → Hyperdrive → GROUP BY country_of_origin
+ *   GET /api/v1/cases/compare                  → Hyperdrive → batch SELECT WHERE case_id = ANY(...)
+ *   GET /api/v1/cases/:id/related             → Hyperdrive → find_related_cases() RPC
+ *   GET /api/v1/cases/:id/similar             → Hyperdrive → search_cases_semantic() pgvector RPC
+ *   GET /api/v1/taxonomy/countries            → Hyperdrive → GROUP BY country_of_origin
+ *   GET /api/v1/taxonomy/judges/autocomplete  → Hyperdrive → LATERAL unnest judges + ILIKE
  *
  * Write / complex path (Flask Container):
  *   POST/PUT/DELETE /api/v1/*    → Flask Container (write operations)
@@ -1492,6 +1495,152 @@ async function handleRelatedCases(caseId, url, env) {
   return jsonOk({ cases: rows });
 }
 
+/** GET /api/v1/court-lineage — court succession metadata with per-year case counts */
+async function handleCourtLineage(env) {
+  const END_YEAR = new Date().getFullYear();
+  const sql  = getSql(env);
+  const rows = await sql`SELECT * FROM get_court_year_trends()`;
+  await sql.end();
+
+  // Parse wide-format rows: { year: 2020, AATA: 1234, FCA: 567, ... }
+  const courtYearCounts = {};
+  const allYears = new Set();
+  let totalCases = 0;
+
+  for (const row of rows) {
+    const year = parseInt(row.year, 10);
+    if (!year || year < 1900 || year > END_YEAR + 5) continue;
+    allYears.add(year);
+    for (const [key, val] of Object.entries(row)) {
+      if (key === "year" || val === null || val === "") continue;
+      const count = parseInt(val, 10);
+      if (isNaN(count) || count <= 0) continue;
+      if (!courtYearCounts[key]) courtYearCounts[key] = {};
+      courtYearCounts[key][year] = (courtYearCounts[key][year] ?? 0) + count;
+      totalCases += count;
+    }
+  }
+
+  const getYears = code => Object.assign({}, courtYearCounts[code] ?? {});
+
+  const lineages = [
+    {
+      id:   "lower-court",
+      name: "Lower Court Lineage",
+      courts: [
+        { code: "FMCA",       name: "Federal Magistrates Court of Australia",                          years: [2000, 2013],     case_count_by_year: getYears("FMCA") },
+        { code: "FCCA",       name: "Federal Circuit Court of Australia",                              years: [2013, 2021],     case_count_by_year: getYears("FCCA") },
+        { code: "FedCFamC2G", name: "Federal Circuit and Family Court of Australia (Division 2)",      years: [2021, END_YEAR], case_count_by_year: getYears("FedCFamC2G") },
+      ],
+      transitions: [
+        { from: "FMCA", to: "FCCA",       year: 2013, description: "Federal Magistrates Court renamed to Federal Circuit Court of Australia" },
+        { from: "FCCA", to: "FedCFamC2G", year: 2021, description: "Federal Circuit Court merged into Federal Circuit and Family Court (Division 2)" },
+      ],
+    },
+    {
+      id:   "tribunal",
+      name: "Tribunal Lineage",
+      courts: [
+        { code: "MRTA", name: "Migration Review Tribunal",          years: [2000, 2015],     case_count_by_year: getYears("MRTA") },
+        { code: "RRTA", name: "Refugee Review Tribunal",            years: [2000, 2015],     case_count_by_year: getYears("RRTA") },
+        { code: "AATA", name: "Administrative Appeals Tribunal",    years: [2015, 2024],     case_count_by_year: getYears("AATA") },
+        { code: "ARTA", name: "Administrative Review Tribunal",     years: [2024, END_YEAR], case_count_by_year: getYears("ARTA") },
+      ],
+      transitions: [
+        { from: "MRTA", to: "AATA", year: 2015, description: "Migration Review Tribunal merged into Administrative Appeals Tribunal" },
+        { from: "RRTA", to: "AATA", year: 2015, description: "Refugee Review Tribunal merged into Administrative Appeals Tribunal" },
+        { from: "AATA", to: "ARTA", year: 2024, description: "Administrative Appeals Tribunal replaced by Administrative Review Tribunal" },
+      ],
+    },
+  ];
+
+  const sortedYears = [...allYears].sort((a, b) => a - b);
+  const year_range  = sortedYears.length ? [sortedYears[0], sortedYears[sortedYears.length - 1]] : [2000, END_YEAR];
+
+  return jsonOk({ lineages, total_cases: totalCases, year_range }, "public, max-age=600, stale-while-revalidate=60");
+}
+
+/** GET /api/v1/taxonomy/judges/autocomplete?q=&limit=N — judge name search via LATERAL unnest */
+async function handleTaxonomyJudgesAutocomplete(url, env) {
+  const query = (url.searchParams.get("q") || "").trim();
+  const limit = safeInt(url.searchParams.get("limit"), 20, 1, 100);
+  if (!query || query.length < 2) {
+    return jsonOk({ success: true, judges: [], meta: { query, total_results: 0, limit } });
+  }
+
+  const sql = getSql(env);
+  const q_lower = query.toLowerCase();
+  const rows = await sql`
+    SELECT trim(j) AS judge_raw, COUNT(*)::int AS case_count
+    FROM ${sql(TABLE)} ic,
+    LATERAL unnest(string_to_array(regexp_replace(ic.judges, ';', ',', 'g'), ',')) AS j
+    WHERE ic.judges IS NOT NULL AND ic.judges <> ''
+      AND lower(trim(j)) LIKE ${'%' + q_lower + '%'}
+    GROUP BY 1
+    ORDER BY case_count DESC
+    LIMIT 200
+  `;
+  await sql.end();
+
+  const seen = new Set();
+  const judges = [];
+  for (const r of rows) {
+    const name = normaliseJudgeName(r.judge_raw);
+    if (!name || !isRealJudgeName(name) || _JUDGE_BLOCKLIST.has(name.toLowerCase())) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    judges.push({ name, case_count: r.case_count });
+    if (judges.length >= limit) break;
+  }
+
+  return jsonOk({ success: true, judges, meta: { query, total_results: judges.length, limit } });
+}
+
+/** GET /api/v1/cases/:id/similar?limit=N — pgvector semantic similarity via Supabase RPC */
+async function handleSimilarCases(caseId, url, env) {
+  const limit = safeInt(url.searchParams.get("limit"), 10, 1, 50);
+  const sql = getSql(env);
+
+  // Step 1: fetch the anchor case's embedding
+  const anchor = await sql`
+    SELECT embedding::text AS emb, embedding_provider AS provider, embedding_model AS model
+    FROM ${sql(TABLE)}
+    WHERE case_id = ${caseId}
+    LIMIT 1
+  `;
+  if (!anchor.length || !anchor[0].emb) {
+    await sql.end();
+    return jsonOk({ similar: [], available: false });
+  }
+  const { emb, provider, model } = anchor[0];
+
+  // Step 2: call the pgvector RPC — pass embedding back as vector literal
+  const rpcRows = await sql`
+    SELECT * FROM search_cases_semantic(
+      ${emb}::vector,
+      ${provider || 'openai'},
+      ${model || 'text-embedding-3-small'},
+      ${limit + 1}
+    )
+  `;
+  await sql.end();
+
+  // Step 3: filter out anchor, return metadata + score
+  const similar = rpcRows
+    .filter(r => r.case_id !== caseId)
+    .slice(0, limit)
+    .map(r => ({
+      case_id: r.case_id,
+      citation: r.citation,
+      title: r.title,
+      outcome: r.outcome,
+      similarity_score: r.similarity,
+    }));
+
+  return jsonOk({ similar, available: true });
+}
+
 /** GET /api/v1/taxonomy/countries?limit=N — country counts via SQL GROUP BY */
 async function handleTaxonomyCountries(url, env) {
   const limit = safeInt(url.searchParams.get("limit"), 30, 1, 200);
@@ -1594,6 +1743,8 @@ export default {
           res = await handleAnalyticsJudgeProfile(url, env);
         } else if (path === "/api/v1/analytics/judge-compare") {
           res = await handleAnalyticsJudgeCompare(url, env);
+        } else if (path === "/api/v1/court-lineage") {
+          res = await handleCourtLineage(env);
         } else if (path === "/api/v1/data-dictionary") {
           res = handleDataDictionary();
         } else if (path === "/api/v1/visa-registry") {
@@ -1602,6 +1753,8 @@ export default {
           res = await handleCompareCases(url, env);
         } else if (path === "/api/v1/taxonomy/countries") {
           res = await handleTaxonomyCountries(url, env);
+        } else if (path === "/api/v1/taxonomy/judges/autocomplete") {
+          res = await handleTaxonomyJudgesAutocomplete(url, env);
         } else {
           // Match /api/v1/cases/:id (exactly 12 lowercase hex chars)
           const m = path.match(/^\/api\/v1\/cases\/([0-9a-f]{12})$/);
@@ -1609,6 +1762,9 @@ export default {
           // Match /api/v1/cases/:id/related
           const rel = path.match(/^\/api\/v1\/cases\/([0-9a-f]{12})\/related$/);
           if (rel) res = await handleRelatedCases(rel[1], url, env);
+          // Match /api/v1/cases/:id/similar
+          const sim = path.match(/^\/api\/v1\/cases\/([0-9a-f]{12})\/similar$/);
+          if (sim) res = await handleSimilarCases(sim[1], url, env);
         }
 
         if (res !== null) return res;
