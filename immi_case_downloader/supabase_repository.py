@@ -6,7 +6,7 @@ import time
 from typing import cast
 
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 
 from .models import ImmigrationCase
 from .storage import CASE_FIELDS
@@ -91,7 +91,12 @@ class SupabaseRepository:
                 "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set "
                 "(via env vars or constructor args)."
             )
-        self._client: Client = create_client(url, key)
+        # postgrest_client_timeout bounds the httpx HTTP call so stale threads
+        # terminate ~3 s after the ThreadPoolExecutor timeout fires (28 > 25).
+        self._client: Client = create_client(
+            url, key,
+            options=ClientOptions(postgrest_client_timeout=28),
+        )
         self._output_dir = output_dir or os.environ.get(
             "OUTPUT_DIR", "downloaded_cases"
         )
