@@ -72,6 +72,9 @@ ALLOWED_SORT_DIRS = frozenset({"asc", "desc"})
 ALLOWED_COUNT_MODES = frozenset({"exact", "planned", "estimated"})
 # RPC timeout — generous enough for cold-start (Supabase free-tier wakes from sleep in ~4-6s).
 SUPABASE_RPC_TIMEOUT_SECONDS = 8.0
+# Analytics RPC timeout — analytics/outcomes calls 3 sequential RPCs (each ≤8s server timeout),
+# so client-side must allow 3×8s = 24s.  Other analytics RPCs return ≤3000 rows; also bounded here.
+ANALYTICS_RPC_TIMEOUT_SECONDS = 25.0
 # Stats cache TTL — keep warm for 5 min so Supabase cold-start only hits once per session.
 _STATS_CACHE_TTL_SECONDS = 300.0
 CASE_LIST_COLUMNS = [
@@ -98,7 +101,7 @@ CASE_LIST_COLUMNS = [
     "representative",
 ]
 
-_rpc_executor = ThreadPoolExecutor(max_workers=2)
+_rpc_executor = ThreadPoolExecutor(max_workers=4)
 _stats_cache_lock = threading.Lock()
 _stats_cache_payload: dict | None = None
 _stats_cache_ts: float = 0.0
@@ -1697,7 +1700,7 @@ def analytics_outcomes():
         try:
             # Fast path: server-side SQL aggregation — Python only normalises
             # the small result set (~1500 rows) instead of 149k case objects.
-            for r in _call_with_timeout(repo.get_analytics_outcomes):
+            for r in _call_with_timeout(repo.get_analytics_outcomes, timeout_seconds=ANALYTICS_RPC_TIMEOUT_SECONDS):
                 norm = _normalise_outcome(r["outcome"])
                 cnt = int(r["cnt"])
                 gt = r["group_type"]
@@ -1742,7 +1745,8 @@ def analytics_outcomes():
         "by_subclass": {k: dict(v) for k, v in sorted(by_subclass.items(), key=lambda x: sum(x[1].values()), reverse=True)},
         "by_family": {k: dict(v) for k, v in sorted(by_family.items(), key=lambda x: sum(x[1].values()), reverse=True)},
     }
-    _analytics_set(ck, result)
+    if _rpc_ok:
+        _analytics_set(ck, result)
     return _analytics_response(result)
 
 
@@ -1766,7 +1770,7 @@ def analytics_judges():
         try:
             # Fast path: RPC already split judge tokens server-side.
             # Each row is one pre-split name token (equiv. to _split_judges output).
-            for r in _call_with_timeout(repo.get_analytics_judges_raw):
+            for r in _call_with_timeout(repo.get_analytics_judges_raw, timeout_seconds=ANALYTICS_RPC_TIMEOUT_SECONDS):
                 raw_name = r["judge_raw"]
                 court = r["court_code"] or ""
                 cnt = int(r["cnt"])
@@ -1811,7 +1815,8 @@ def analytics_judges():
     ]
 
     result = {"judges": judges}
-    _analytics_set(ck, result)
+    if _rpc_ok:
+        _analytics_set(ck, result)
     return _analytics_response(result)
 
 
@@ -1832,7 +1837,7 @@ def analytics_legal_concepts():
         try:
             # Fast path: RPC already split and counted concept tokens.
             # Each row is one canonical-mapped concept token.
-            for r in _call_with_timeout(repo.get_analytics_concepts_raw):
+            for r in _call_with_timeout(repo.get_analytics_concepts_raw, timeout_seconds=ANALYTICS_RPC_TIMEOUT_SECONDS):
                 raw = (r["concept_raw"] or "").strip().lower()
                 canonical = _CONCEPT_CANONICAL.get(raw)
                 if canonical:
@@ -1856,7 +1861,8 @@ def analytics_legal_concepts():
     ]
 
     result = {"concepts": concepts}
-    _analytics_set(ck, result)
+    if _rpc_ok:
+        _analytics_set(ck, result)
     return _analytics_response(result)
 
 
@@ -1875,7 +1881,7 @@ def analytics_nature_outcome():
     if hasattr(repo, "get_analytics_nature_outcome") and not _has_analytics_filters():
         try:
             # Fast path: RPC returns (case_nature, outcome, cnt) — Python normalises.
-            for r in _call_with_timeout(repo.get_analytics_nature_outcome):
+            for r in _call_with_timeout(repo.get_analytics_nature_outcome, timeout_seconds=ANALYTICS_RPC_TIMEOUT_SECONDS):
                 if not r["case_nature"]:
                     continue
                 norm = _normalise_outcome(r["outcome"])
@@ -1914,7 +1920,8 @@ def analytics_nature_outcome():
         "outcomes": outcome_labels,
         "matrix": matrix,
     }
-    _analytics_set(ck, result)
+    if _rpc_ok:
+        _analytics_set(ck, result)
     return _analytics_response(result)
 
 
@@ -2642,14 +2649,10 @@ def analytics_visa_families():
 def invalidate_cache():
     """Invalidate all in-memory caches. Useful after bulk data import."""
     global _stats_cache_payload, _stats_cache_ts
-    global _filter_options_cache_payload, _filter_options_cache_ts
 
     with _stats_cache_lock:
         _stats_cache_payload = None
         _stats_cache_ts = 0.0
-    with _filter_options_cache_lock:
-        _filter_options_cache_payload = None
-        _filter_options_cache_ts = 0.0
 
     # Lineage cache lives in api_taxonomy.py; use lazy import to avoid circular dependency.
     from .api_taxonomy import _reset_lineage_cache
