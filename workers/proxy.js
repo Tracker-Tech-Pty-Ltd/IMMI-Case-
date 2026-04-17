@@ -62,24 +62,20 @@ const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 const HEX_ID_RE = /^[0-9a-f]{12}$/;
 
-// ── Database client (module-level, reused across requests per isolate) ────────
-
-/** @type {import("postgres").Sql | null} */
-let _sqlClient = null;
+// ── Database client ───────────────────────────────────────────────────────────
 
 /**
- * Return (or lazily create) the postgres client backed by Hyperdrive.
- * Hyperdrive manages the actual PostgreSQL connection pool; the Worker
- * only needs one client per isolate.
+ * Create a new postgres client per request. Module-level singletons cause
+ * "Cannot perform I/O on behalf of a different request" errors in Cloudflare
+ * Workers because I/O objects are bound to the request context they were
+ * created in. Hyperdrive manages actual PostgreSQL connection pooling, so
+ * creating a new postgres.js instance per request has negligible overhead.
  */
 function getSql(env) {
-  if (!_sqlClient) {
-    _sqlClient = postgres(env.HYPERDRIVE.connectionString, {
-      max: 5,          // max connections per Worker isolate (Hyperdrive pools beyond this)
-      idle_timeout: 20, // seconds before idle connections are released back to Hyperdrive
-    });
-  }
-  return _sqlClient;
+  return postgres(env.HYPERDRIVE.connectionString, {
+    max: 1,           // one logical slot per request; Hyperdrive pools beyond this
+    idle_timeout: 5,  // seconds — Workers are short-lived, release promptly
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -942,15 +938,21 @@ async function handleAnalyticsFilterOptions(url, env) {
 /** GET /api/v1/analytics/monthly-trends — monthly win-rate time series */
 async function handleAnalyticsMonthlyTrends(env) {
   const sql  = getSql(env);
-  const rows = await sql`
-    SELECT lpad((date_sort/100)::text,6,'0') AS month_int, court_code, outcome, COUNT(*)::int AS cnt
-    FROM immigration_cases WHERE date_sort IS NOT NULL AND date_sort > 19000000
-    GROUP BY 1,2,3 ORDER BY 1
-  `;
+  // Try monthly RPC first; fall back to year-based query if function not yet deployed
+  let rows;
+  try {
+    rows = await sql`SELECT * FROM get_analytics_monthly_trends()`;
+  } catch {
+    rows = await sql`
+      SELECT (year::text || '01') AS month_key, court_code, outcome, COUNT(*)::int AS cnt
+      FROM immigration_cases WHERE year IS NOT NULL AND year >= 2000
+      GROUP BY 1,2,3 ORDER BY 1
+    `;
+  }
   const monthly = {};
   for (const r of rows) {
-    if (!r.month_int || r.month_int.length < 6) continue;
-    const key = `${r.month_int.slice(0,4)}-${r.month_int.slice(4,6)}`;
+    if (!r.month_key || r.month_key.length < 6) continue;
+    const key = `${r.month_key.slice(0,4)}-${r.month_key.slice(4,6)}`;
     if (!monthly[key]) monthly[key] = { total:0, wins:0 };
     monthly[key].total += r.cnt;
     if (isWin(normaliseOutcome(r.outcome), r.court_code||"")) monthly[key].wins += r.cnt;
