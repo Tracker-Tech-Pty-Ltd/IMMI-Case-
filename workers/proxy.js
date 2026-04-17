@@ -8,6 +8,15 @@
  *   GET /api/v1/stats            → Hyperdrive → Supabase PostgreSQL (parallel aggregates)
  *   GET /api/v1/filter-options   → Hyperdrive → Supabase PostgreSQL (DISTINCT values)
  *   GET /api/v1/analytics/*      → Hyperdrive → Supabase PostgreSQL (RPC functions + JS normalisation)
+ *   GET /api/v1/stats/trends     → Hyperdrive → get_court_year_trends() RPC
+ *   GET /api/v1/analytics/filter-options → Hyperdrive → DISTINCT SQL aggregation
+ *   GET /api/v1/analytics/monthly-trends → Hyperdrive → date_sort GROUP BY + JS win logic
+ *   GET /api/v1/analytics/flow-matrix    → Hyperdrive → court/nature/outcome GROUP BY
+ *   GET /api/v1/analytics/judge-bio      → Hyperdrive → judge_bios table
+ *   GET /api/v1/analytics/visa-families  → Hyperdrive → visa_subclass + JS VISA_REGISTRY
+ *   GET /api/v1/analytics/success-rate   → Hyperdrive → parameterized SQL + JS aggregation
+ *   GET /api/v1/analytics/concept-*      → Hyperdrive → LATERAL unnest + JS canonicalization
+ *   GET /api/v1/analytics/judge-*        → Hyperdrive → LATERAL unnest judges + JS profile
  *
  * Write / complex path (Flask Container):
  *   POST/PUT/DELETE /api/v1/*    → Flask Container (write operations)
@@ -678,6 +687,561 @@ async function handleAnalyticsNatureOutcome(env) {
   }, "public, max-age=600, stale-while-revalidate=120");
 }
 
+// ── Win / outcome helpers (ported from Python) ───────────────────────────────
+
+const TRIBUNAL_CODES = new Set(["AATA", "ARTA", "MRTA", "RRTA"]);
+const COURT_CODES    = new Set(["FCA", "FCCA", "FMCA", "FedCFamC2G", "HCA"]);
+const TRIBUNAL_WIN   = new Set(["Remitted", "Set Aside", "Granted", "Quashed"]);
+const COURT_WIN      = new Set(["Allowed", "Set Aside", "Granted", "Quashed"]);
+const _ALL_WIN       = new Set([...TRIBUNAL_WIN, ...COURT_WIN]);
+
+function isWin(normOutcome, courtCode) {
+  if (TRIBUNAL_CODES.has(courtCode)) return TRIBUNAL_WIN.has(normOutcome);
+  if (COURT_CODES.has(courtCode))    return COURT_WIN.has(normOutcome);
+  return _ALL_WIN.has(normOutcome);
+}
+
+function roundRate(wins, total) {
+  return total > 0 ? Math.round((wins / total) * 1000) / 10 : 0.0;
+}
+
+function splitConcepts(raw) {
+  if (!raw) return [];
+  return raw.split(/[,;]/).map(s => s.trim().replace(/[.,;:]+$/, "").toLowerCase()).filter(Boolean);
+}
+
+function cleanSubclass(raw) {
+  if (!raw) return "";
+  let val = String(raw).trim();
+  if (!val || ["nan", "none", "null"].includes(val.toLowerCase())) return "";
+  if (val.endsWith(".0")) val = val.slice(0, -2);
+  return /^\d{1,4}$/.test(val) ? val : "";
+}
+
+// ── Visa Registry (ported from visa_registry.py) ──────────────────────────────
+
+const _VISA_REGISTRY = new Map([
+  ["866",["Protection","Protection"]], ["785",["Temporary Protection","Protection"]],
+  ["790",["Safe Haven Enterprise","Protection"]], ["200",["Refugee (Permanent)","Protection"]],
+  ["201",["In-Country Special Humanitarian (Permanent)","Protection"]],
+  ["202",["Global Special Humanitarian (Permanent)","Protection"]],
+  ["203",["Emergency Rescue","Protection"]], ["204",["Woman at Risk","Protection"]],
+  ["786",["Temporary (Humanitarian Concern)","Protection"]],
+  ["449",["Humanitarian Stay (Temporary)","Protection"]],
+  ["189",["Skilled Independent","Skilled"]], ["190",["Skilled Nominated","Skilled"]],
+  ["191",["Permanent Residence (Skilled Regional)","Skilled"]],
+  ["186",["Employer Nomination Scheme","Skilled"]],
+  ["187",["Regional Sponsored Migration Scheme","Skilled"]],
+  ["457",["Temporary Work (Skilled)","Skilled"]], ["482",["Temporary Skill Shortage","Skilled"]],
+  ["494",["Skilled Employer Sponsored Regional (Provisional)","Skilled"]],
+  ["491",["Skilled Work Regional (Provisional)","Skilled"]],
+  ["476",["Skilled - Recognised Graduate","Skilled"]], ["485",["Temporary Graduate","Skilled"]],
+  ["489",["Skilled Regional (Provisional)","Skilled"]], ["407",["Training","Skilled"]],
+  ["408",["Temporary Activity","Skilled"]], ["500",["Student","Student"]],
+  ["590",["Student Guardian","Student"]], ["570",["Independent ELICOS Sector","Student"]],
+  ["571",["Schools Sector","Student"]], ["572",["Vocational Education and Training Sector","Student"]],
+  ["573",["Higher Education Sector","Student"]], ["574",["Postgraduate Research Sector","Student"]],
+  ["575",["Non-award Sector","Student"]], ["576",["AusAID or Defence Sector","Student"]],
+  ["309",["Partner (Provisional)","Partner"]], ["820",["Partner (Temporary)","Partner"]],
+  ["801",["Partner (Permanent)","Partner"]], ["100",["Partner (Migrant)","Partner"]],
+  ["300",["Prospective Marriage","Partner"]],
+  ["461",["New Zealand Citizen Family Relationship (Temporary)","Partner"]],
+  ["103",["Parent","Parent"]], ["143",["Contributory Parent","Parent"]],
+  ["173",["Contributory Parent (Temporary)","Parent"]], ["804",["Aged Parent","Parent"]],
+  ["884",["Contributory Aged Parent (Temporary)","Parent"]],
+  ["864",["Contributory Aged Parent","Parent"]],
+  ["600",["Visitor","Visitor"]], ["601",["Electronic Travel Authority","Visitor"]],
+  ["651",["eVisitor","Visitor"]], ["400",["Temporary Work (Short Stay Activity)","Visitor"]],
+  ["417",["Working Holiday","Visitor"]], ["462",["Work and Holiday","Visitor"]],
+  ["188",["Business Innovation and Investment (Provisional)","Business"]],
+  ["888",["Business Innovation and Investment (Permanent)","Business"]],
+  ["132",["Business Talent (Permanent)","Business"]], ["891",["Investor","Business"]],
+  ["892",["State/Territory Sponsored Business Owner","Business"]],
+  ["893",["State/Territory Sponsored Senior Executive","Business"]],
+  ["010",["Bridging A","Bridging"]], ["020",["Bridging B","Bridging"]],
+  ["030",["Bridging C","Bridging"]], ["040",["Bridging D","Bridging"]],
+  ["050",["Bridging (General)","Bridging"]], ["051",["Bridging (Protection Visa Applicant)","Bridging"]],
+  ["060",["Bridging E","Bridging"]], ["070",["Bridging (Removal Pending)","Bridging"]],
+  ["080",["Bridging (Crew)","Bridging"]], ["101",["Child","Other"]],
+  ["102",["Adoption","Other"]], ["802",["Child","Other"]],
+  ["445",["Dependent Child","Other"]], ["155",["Resident Return","Other"]],
+  ["157",["Resident Return (5 years)","Other"]],
+  ["444",["Special Category (New Zealand citizen)","Other"]],
+  ["116",["Carer","Other"]], ["117",["Orphan Relative","Other"]],
+  ["114",["Aged Dependent Relative","Other"]], ["115",["Remaining Relative","Other"]],
+  ["836",["Carer","Other"]], ["856",["Employer Nomination Scheme (ENS)","Other"]],
+  ["858",["Distinguished Talent","Other"]],
+]);
+
+function getFamily(subclass) {
+  const entry = _VISA_REGISTRY.get(cleanSubclass(subclass));
+  return entry ? entry[1] : "Other";
+}
+
+// ── Policy Events ─────────────────────────────────────────────────────────────
+
+const _POLICY_EVENTS = [
+  { month: "2015-07", label: "RRTA/MRTA merged into AATA" },
+  { month: "2021-09", label: "FCCA → FedCFamC2G restructure" },
+  { month: "2024-10", label: "AATA → ARTA transition" },
+];
+
+// ── Shared judge profile builder ──────────────────────────────────────────────
+
+function buildJudgeProfile(name, caseRows, { courtBaselines = null, includeRecentCases = false } = {}) {
+  if (!caseRows.length) {
+    return {
+      judge: { name, total_cases: 0, courts: [], active_years: { first: null, last: null } },
+      approval_rate: 0.0, court_type: "unknown", outcome_distribution: {},
+      visa_breakdown: [], concept_effectiveness: [], yearly_trend: [], nature_breakdown: [],
+      representation_analysis: { unknown_count: 0 }, country_breakdown: [],
+      court_comparison: [], recent_3yr_trend: [],
+      ...(includeRecentCases ? { recent_cases: [] } : {}),
+    };
+  }
+  let wins = 0;
+  const outcomeDist = {}, courtCnt = {}, yearT = {}, yearW = {}, visaT = {}, visaW = {};
+  const natT = {}, natW = {}, conceptT = {}, conceptW = {}, repT = {}, repW = {};
+  const countryT = {}, countryW = {}, courtW2 = {};
+  const years = [];
+
+  for (const c of caseRows) {
+    if (c.court_code) courtCnt[c.court_code] = (courtCnt[c.court_code] || 0) + 1;
+    const norm = normaliseOutcome(c.outcome);
+    outcomeDist[norm] = (outcomeDist[norm] || 0) + 1;
+    const won = isWin(norm, c.court_code || "");
+    if (won) wins++;
+    if (c.year) {
+      years.push(c.year);
+      yearT[c.year] = (yearT[c.year] || 0) + 1;
+      if (won) yearW[c.year] = (yearW[c.year] || 0) + 1;
+    }
+    const sc = cleanSubclass(c.visa_subclass);
+    if (sc) { visaT[sc] = (visaT[sc] || 0) + 1; if (won) visaW[sc] = (visaW[sc] || 0) + 1; }
+    const nat = (c.case_nature || "").trim();
+    if (nat) { natT[nat] = (natT[nat] || 0) + 1; if (won) natW[nat] = (natW[nat] || 0) + 1; }
+    for (const raw of splitConcepts(c.legal_concepts || "")) {
+      const can = _CONCEPT_CANONICAL.get(raw);
+      if (!can) continue;
+      conceptT[can] = (conceptT[can] || 0) + 1; if (won) conceptW[can] = (conceptW[can] || 0) + 1;
+    }
+    const repRaw = (c.is_represented || "").trim().toLowerCase();
+    const repKey = ["yes","true","1","represented"].includes(repRaw) ? "represented"
+                 : ["no","false","0","unrepresented","self"].includes(repRaw) ? "self_represented" : null;
+    if (repKey) { repT[repKey] = (repT[repKey]||0)+1; if (won) repW[repKey]=(repW[repKey]||0)+1; }
+    const country = (c.country_of_origin || "").trim();
+    if (country) { countryT[country]=(countryT[country]||0)+1; if (won) countryW[country]=(countryW[country]||0)+1; }
+    if (c.court_code && won) courtW2[c.court_code] = (courtW2[c.court_code] || 0) + 1;
+  }
+
+  const total       = caseRows.length;
+  const approvalRate= roundRate(wins, total);
+  const courts      = Object.keys(courtCnt).sort();
+  const allTrib     = courts.every(c => TRIBUNAL_CODES.has(c));
+  const allCrt      = courts.every(c => COURT_CODES.has(c));
+  const courtType   = allTrib ? "tribunal" : allCrt ? "court" : "mixed";
+
+  const repAnalysis = {};
+  for (const rk of ["represented","self_represented"])
+    if (repT[rk]) repAnalysis[rk] = { total:repT[rk], win_rate:roundRate(repW[rk]||0, repT[rk]) };
+  repAnalysis.unknown_count = total - Object.values(repT).reduce((s,v)=>s+v, 0);
+
+  const courtComparison = [];
+  if (courtBaselines) {
+    for (const code of courts) {
+      const jTotal = courtCnt[code];
+      if (!jTotal) continue;
+      const avg = courtBaselines[code];
+      if (avg !== undefined) {
+        const jRate = roundRate(courtW2[code]||0, jTotal);
+        courtComparison.push({ court_code:code, judge_rate:jRate, court_avg_rate:avg, delta:Math.round((jRate-avg)*10)/10, judge_total:jTotal });
+      }
+    }
+  }
+
+  const maxYear   = years.length ? Math.max(...years) : 0;
+  const yearlyTrend = Object.keys(yearT).sort().map(y => ({ year:parseInt(y), total:yearT[y], approval_rate:roundRate(yearW[y]||0, yearT[y]) }));
+
+  const payload = {
+    judge: { name, total_cases:total, courts, active_years:{ first:years.length?Math.min(...years):null, last:maxYear||null } },
+    approval_rate: approvalRate, court_type: courtType,
+    outcome_distribution: outcomeDist,
+    visa_breakdown: Object.entries(visaT).sort((a,b)=>b[1]-a[1]).map(([sc,cnt])=>({ subclass:sc, total:cnt, win_rate:roundRate(visaW[sc]||0,cnt) })),
+    concept_effectiveness: Object.entries(conceptT).sort((a,b)=>b[1]-a[1]).slice(0,30).map(([concept,cnt])=>{ const wr=roundRate(conceptW[concept]||0,cnt); return { concept, total:cnt, win_rate:wr, baseline_rate:approvalRate, lift:approvalRate>0?Math.round((wr/approvalRate)*100)/100:0 }; }),
+    yearly_trend: yearlyTrend,
+    nature_breakdown: Object.entries(natT).sort((a,b)=>b[1]-a[1]).map(([nat,cnt])=>({ nature:nat, total:cnt, win_rate:roundRate(natW[nat]||0,cnt) })),
+    representation_analysis: repAnalysis,
+    country_breakdown: Object.entries(countryT).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([country,cnt])=>({ country, total:cnt, win_rate:roundRate(countryW[country]||0,cnt) })),
+    court_comparison: courtComparison,
+    recent_3yr_trend: yearlyTrend.filter(y => y.year >= maxYear - 2),
+  };
+  if (includeRecentCases) {
+    payload.recent_cases = [...caseRows].sort((a,b)=>(b.date_sort||0)-(a.date_sort||0)).slice(0,10).map(c => ({
+      case_id:c.case_id, citation:c.citation, title:c.title, outcome:c.outcome, court_code:c.court_code,
+      date: c.date_sort ? String(c.date_sort).replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : null,
+    }));
+  }
+  return payload;
+}
+
+// ── New Hyperdrive native handlers ────────────────────────────────────────────
+
+/** GET /api/v1/stats/trends — court × year cross-tabulation */
+async function handleStatsTrends(url, env) {
+  const sql = getSql(env);
+  const p   = url.searchParams;
+  const court    = (p.get("court") || "").trim();
+  const yearFrom = safeInt(p.get("year_from"), 0, 0, 2100);
+  const yearTo   = safeInt(p.get("year_to"),   0, 0, 2100);
+  const isFullRange = !court && (!yearFrom || yearFrom <= 2000) && (!yearTo || yearTo >= new Date().getFullYear());
+
+  if (isFullRange) {
+    const rows = await sql`SELECT * FROM get_court_year_trends()`;
+    return jsonOk({ trends: rows }, "public, max-age=300, stale-while-revalidate=60");
+  }
+  const rows = await sql`
+    SELECT year, court_code, COUNT(*)::int AS cnt FROM immigration_cases
+    WHERE year IS NOT NULL AND court_code IS NOT NULL
+    ${court    ? sql`AND court_code = ${court}` : sql``}
+    ${yearFrom ? sql`AND year >= ${yearFrom}`   : sql``}
+    ${yearTo   ? sql`AND year <= ${yearTo}`     : sql``}
+    GROUP BY year, court_code ORDER BY year
+  `;
+  const byYear = {};
+  for (const r of rows) {
+    if (!byYear[r.year]) byYear[r.year] = { year: r.year };
+    byYear[r.year][r.court_code] = r.cnt;
+  }
+  return jsonOk({ trends: Object.values(byYear).sort((a,b)=>a.year-b.year) }, "public, max-age=60");
+}
+
+/** GET /api/v1/analytics/filter-options — analytics page context-aware filter options */
+async function handleAnalyticsFilterOptions(url, env) {
+  const sql = getSql(env);
+  const p   = url.searchParams;
+  const court    = (p.get("court") || "").trim();
+  const yearFrom = safeInt(p.get("year_from"), 0, 0, 2100);
+  const yearTo   = safeInt(p.get("year_to"),   0, 0, 2100);
+
+  const [natures, subclasses, outcomes, totals] = await Promise.all([
+    sql`SELECT case_nature, COUNT(*)::int AS cnt FROM immigration_cases WHERE case_nature IS NOT NULL AND case_nature <> '' ${court?sql`AND court_code=${court}`:sql``} ${yearFrom?sql`AND year>=${yearFrom}`:sql``} ${yearTo?sql`AND year<=${yearTo}`:sql``} GROUP BY case_nature ORDER BY cnt DESC LIMIT 60`,
+    sql`SELECT visa_subclass, COUNT(*)::int AS cnt FROM immigration_cases WHERE visa_subclass IS NOT NULL AND visa_subclass <> '' ${court?sql`AND court_code=${court}`:sql``} ${yearFrom?sql`AND year>=${yearFrom}`:sql``} ${yearTo?sql`AND year<=${yearTo}`:sql``} GROUP BY visa_subclass ORDER BY cnt DESC LIMIT 80`,
+    sql`SELECT outcome, COUNT(*)::int AS cnt FROM immigration_cases WHERE outcome IS NOT NULL AND outcome <> '' ${court?sql`AND court_code=${court}`:sql``} ${yearFrom?sql`AND year>=${yearFrom}`:sql``} ${yearTo?sql`AND year<=${yearTo}`:sql``} GROUP BY outcome ORDER BY cnt DESC`,
+    sql`SELECT COUNT(*)::int AS total FROM immigration_cases WHERE 1=1 ${court?sql`AND court_code=${court}`:sql``} ${yearFrom?sql`AND year>=${yearFrom}`:sql``} ${yearTo?sql`AND year<=${yearTo}`:sql``}`,
+  ]);
+  const total = totals[0].total;
+
+  return jsonOk({
+    query: { court:court||null, year_from:yearFrom||null, year_to:yearTo||null, total_matching:total },
+    case_natures:    natures.map(r => ({ value:r.case_nature, count:r.cnt })),
+    visa_subclasses: subclasses.map(r => { const sc=cleanSubclass(r.visa_subclass); const entry=_VISA_REGISTRY.get(sc); return { value:r.visa_subclass, label:entry?`${sc} - ${entry[0]}`:`Subclass ${r.visa_subclass}`, family:entry?entry[1]:"Other", count:r.cnt }; }),
+    outcome_types:   outcomes.map(r => ({ value:normaliseOutcome(r.outcome), count:r.cnt })).filter(r=>r.value),
+  }, "public, max-age=120, stale-while-revalidate=30");
+}
+
+/** GET /api/v1/analytics/monthly-trends — monthly win-rate time series */
+async function handleAnalyticsMonthlyTrends(env) {
+  const sql  = getSql(env);
+  const rows = await sql`
+    SELECT lpad((date_sort/100)::text,6,'0') AS month_int, court_code, outcome, COUNT(*)::int AS cnt
+    FROM immigration_cases WHERE date_sort IS NOT NULL AND date_sort > 19000000
+    GROUP BY 1,2,3 ORDER BY 1
+  `;
+  const monthly = {};
+  for (const r of rows) {
+    if (!r.month_int || r.month_int.length < 6) continue;
+    const key = `${r.month_int.slice(0,4)}-${r.month_int.slice(4,6)}`;
+    if (!monthly[key]) monthly[key] = { total:0, wins:0 };
+    monthly[key].total += r.cnt;
+    if (isWin(normaliseOutcome(r.outcome), r.court_code||"")) monthly[key].wins += r.cnt;
+  }
+  const series = Object.entries(monthly).sort(([a],[b])=>a.localeCompare(b)).map(([month,{total,wins}]) => ({
+    month, total, wins, win_rate: total>0?Math.round((wins/total)*1000)/10:0,
+  }));
+  return jsonOk({ series, events: _POLICY_EVENTS }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/flow-matrix — Sankey court → nature → outcome */
+async function handleAnalyticsFlowMatrix(url, env) {
+  const sql  = getSql(env);
+  const topN = safeInt(url.searchParams.get("top_n"), 8, 1, 20);
+  const rows = await sql`SELECT court_code, case_nature, outcome, COUNT(*)::int AS cnt FROM immigration_cases GROUP BY 1,2,3`;
+
+  const natureCounts={}, outcomeCounts={};
+  for (const r of rows) {
+    const nat=(r.case_nature||"").trim()||"Unknown"; const out=normaliseOutcome(r.outcome);
+    natureCounts[nat]=(natureCounts[nat]||0)+r.cnt; outcomeCounts[out]=(outcomeCounts[out]||0)+r.cnt;
+  }
+  const topNatures  = new Set(Object.entries(natureCounts).sort((a,b)=>b[1]-a[1]).slice(0,topN).map(([n])=>n));
+  const topOutcomes = new Set(Object.entries(outcomeCounts).sort((a,b)=>b[1]-a[1]).slice(0,topN).map(([o])=>o));
+
+  const courtNature={}, natureOutcome={};
+  for (const r of rows) {
+    const court=r.court_code||"Unknown"; let nat=(r.case_nature||"").trim()||"Unknown"; let out=normaliseOutcome(r.outcome);
+    if (!topNatures.has(nat))  nat="Other Nature"; if (!topOutcomes.has(out)) out="Other";
+    courtNature[`${court}||${nat}`]   =(courtNature[`${court}||${nat}`]  ||0)+r.cnt;
+    natureOutcome[`${nat}||${out}`]   =(natureOutcome[`${nat}||${out}`]  ||0)+r.cnt;
+  }
+  const courtNames  =[...new Set(Object.keys(courtNature).map(k=>k.split("||")[0]))].sort();
+  const natureNames =[...new Set([...Object.keys(courtNature).map(k=>k.split("||")[1]),...Object.keys(natureOutcome).map(k=>k.split("||")[0])])].sort();
+  const outcomeNames=[...new Set(Object.keys(natureOutcome).map(k=>k.split("||")[1]))].sort();
+
+  const nodes=[], nodeIndex={};
+  for (const n of courtNames)   { nodeIndex[`court:${n}`]  =nodes.length; nodes.push({name:n,layer:"court"}); }
+  for (const n of natureNames)  { nodeIndex[`nature:${n}`] =nodes.length; nodes.push({name:n,layer:"nature"}); }
+  for (const n of outcomeNames) { nodeIndex[`outcome:${n}`]=nodes.length; nodes.push({name:n,layer:"outcome"}); }
+  const links=[];
+  for (const [k,v] of Object.entries(courtNature))  { const [c,n]=k.split("||"); const src=nodeIndex[`court:${c}`],tgt=nodeIndex[`nature:${n}`]; if(src!==undefined&&tgt!==undefined) links.push({source:src,target:tgt,value:v}); }
+  for (const [k,v] of Object.entries(natureOutcome)) { const [n,o]=k.split("||"); const src=nodeIndex[`nature:${n}`],tgt=nodeIndex[`outcome:${o}`]; if(src!==undefined&&tgt!==undefined) links.push({source:src,target:tgt,value:v}); }
+  return jsonOk({ nodes, links }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/judge-bio — biographical data for a judge by name */
+async function handleAnalyticsJudgeBio(url, env) {
+  const sql  = getSql(env);
+  const name = (url.searchParams.get("name") || "").trim();
+  if (!name) return jsonErr("name is required");
+  const rows = await sql`SELECT * FROM judge_bios WHERE full_name ILIKE ${"%" + name + "%"} ORDER BY length(full_name) ASC LIMIT 1`;
+  if (!rows.length) return jsonOk({ found: false });
+  return jsonOk({ found: true, ...rows[0] });
+}
+
+/** GET /api/v1/analytics/visa-families — win rates by visa family */
+async function handleAnalyticsVisaFamilies(env) {
+  const sql  = getSql(env);
+  const rows = await sql`SELECT visa_subclass, court_code, outcome, COUNT(*)::int AS cnt FROM immigration_cases WHERE visa_subclass IS NOT NULL AND visa_subclass <> '' GROUP BY 1,2,3`;
+  const familyT={}, familyW={};
+  let totalCases=0;
+  for (const r of rows) {
+    const sc=cleanSubclass(r.visa_subclass); if (!sc) continue;
+    const family=getFamily(sc); const norm=normaliseOutcome(r.outcome);
+    familyT[family]=(familyT[family]||0)+r.cnt;
+    if (isWin(norm,r.court_code||"")) familyW[family]=(familyW[family]||0)+r.cnt;
+    totalCases+=r.cnt;
+  }
+  const families=Object.entries(familyT).sort((a,b)=>b[1]-a[1]).map(([name,total])=>({ family:name, total, win_count:familyW[name]||0, win_rate:roundRate(familyW[name]||0,total) }));
+  return jsonOk({ families, total_cases: totalCases }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/success-rate — multi-factor success rate analysis */
+async function handleAnalyticsSuccessRate(url, env) {
+  const sql = getSql(env);
+  const p   = url.searchParams;
+  const court      = (p.get("court")||"").trim();
+  const yearFrom   = safeInt(p.get("year_from"),0,0,2100);
+  const yearTo     = safeInt(p.get("year_to"),  0,0,2100);
+  const visaSub    = (p.get("visa_subclass")||"").trim();
+  const caseNature = (p.get("case_nature")||"").trim();
+
+  const [baseRows, conceptRows] = await Promise.all([
+    sql`SELECT court_code, outcome, year, COUNT(*)::int AS cnt FROM immigration_cases WHERE 1=1 ${court?sql`AND court_code=${court}`:sql``} ${yearFrom?sql`AND year>=${yearFrom}`:sql``} ${yearTo?sql`AND year<=${yearTo}`:sql``} ${visaSub?sql`AND visa_subclass=${visaSub}`:sql``} ${caseNature?sql`AND lower(case_nature)=${caseNature.toLowerCase()}`:sql``} GROUP BY 1,2,3`,
+    sql`SELECT trim(c) AS concept_raw, ic.court_code, ic.outcome, COUNT(*)::int AS cnt FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.legal_concepts,';',',','g'),',')) AS c WHERE ic.legal_concepts IS NOT NULL AND ic.legal_concepts <> '' AND trim(c) <> '' ${court?sql`AND ic.court_code=${court}`:sql``} ${yearFrom?sql`AND ic.year>=${yearFrom}`:sql``} ${yearTo?sql`AND ic.year<=${yearTo}`:sql``} ${visaSub?sql`AND ic.visa_subclass=${visaSub}`:sql``} ${caseNature?sql`AND lower(ic.case_nature)=${caseNature.toLowerCase()}`:sql``} GROUP BY 1,2,3 ORDER BY cnt DESC LIMIT 3000`,
+  ]);
+
+  let total=0, wins=0; const yearT={}, yearW={}, courtCodes=new Set();
+  for (const r of baseRows) {
+    const norm=normaliseOutcome(r.outcome); const won=isWin(norm,r.court_code||"");
+    total+=r.cnt; if(won) wins+=r.cnt;
+    if(r.court_code) courtCodes.add(r.court_code);
+    if(r.year){ yearT[r.year]=(yearT[r.year]||0)+r.cnt; if(won) yearW[r.year]=(yearW[r.year]||0)+r.cnt; }
+  }
+  const overallRate=roundRate(wins,total);
+  const allTrib=[...courtCodes].every(c=>TRIBUNAL_CODES.has(c)); const allCrt=[...courtCodes].every(c=>COURT_CODES.has(c));
+  const courtType=allTrib?"tribunal":allCrt?"court":"mixed";
+  const winOutcomes=allTrib?[...TRIBUNAL_WIN]:allCrt?[...COURT_WIN]:[..._ALL_WIN];
+
+  const conceptT={}, conceptW={};
+  for (const r of conceptRows) {
+    const raw=(r.concept_raw||"").trim().replace(/[.,;:]+$/,"").toLowerCase();
+    const can=_CONCEPT_CANONICAL.get(raw); if(!can) continue;
+    const won=isWin(normaliseOutcome(r.outcome),r.court_code||"");
+    conceptT[can]=(conceptT[can]||0)+r.cnt; if(won) conceptW[can]=(conceptW[can]||0)+r.cnt;
+  }
+  const byConcept=Object.entries(conceptT).sort((a,b)=>b[1]-a[1]).slice(0,30).map(([concept,cnt])=>{ const wr=roundRate(conceptW[concept]||0,cnt); return {concept,total:cnt,win_rate:wr,lift:overallRate>0?Math.round((wr/overallRate)*100)/100:0}; });
+  const trend=Object.keys(yearT).sort().map(y=>({year:parseInt(y),rate:roundRate(yearW[y]||0,yearT[y]),count:yearT[y]}));
+
+  return jsonOk({
+    query:{court:court||null,year_from:yearFrom||null,year_to:yearTo||null,visa_subclass:visaSub||null,case_nature:caseNature||null,legal_concepts:[],total_matching:total},
+    success_rate:{overall:overallRate,court_type:courtType,win_outcomes:winOutcomes,win_count:wins,loss_count:Math.max(0,total-wins),confidence:total>100?"high":total>=20?"medium":"low"},
+    by_concept:byConcept, top_combos:[], trend,
+  }, "public, max-age=120, stale-while-revalidate=30");
+}
+
+/** GET /api/v1/analytics/concept-effectiveness — per-concept win-rate and lift */
+async function handleAnalyticsConceptEffectiveness(url, env) {
+  const sql   = getSql(env);
+  const limit = safeInt(url.searchParams.get("limit"), 30, 1, 100);
+  const [baseRows, conceptRows] = await Promise.all([
+    sql`SELECT court_code, outcome, COUNT(*)::int AS cnt FROM immigration_cases GROUP BY 1,2`,
+    sql`SELECT trim(c) AS concept_raw, ic.court_code, ic.outcome, COUNT(*)::int AS cnt FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.legal_concepts,';',',','g'),',')) AS c WHERE ic.legal_concepts IS NOT NULL AND ic.legal_concepts <> '' AND trim(c) <> '' GROUP BY 1,2,3 ORDER BY cnt DESC LIMIT 5000`,
+  ]);
+  let baseTotal=0, baseWins=0;
+  for (const r of baseRows) { baseTotal+=r.cnt; if(isWin(normaliseOutcome(r.outcome),r.court_code||"")) baseWins+=r.cnt; }
+  const baselineRate=roundRate(baseWins,baseTotal);
+
+  const conceptT={}, conceptW={}, conceptByCourt={};
+  for (const r of conceptRows) {
+    const raw=(r.concept_raw||"").trim().replace(/[.,;:]+$/,"").toLowerCase();
+    const can=_CONCEPT_CANONICAL.get(raw); if(!can) continue;
+    const won=isWin(normaliseOutcome(r.outcome),r.court_code||"");
+    conceptT[can]=(conceptT[can]||0)+r.cnt; if(won) conceptW[can]=(conceptW[can]||0)+r.cnt;
+    if(r.court_code){
+      if(!conceptByCourt[can]) conceptByCourt[can]={};
+      const d=conceptByCourt[can][r.court_code]??={total:0,wins:0};
+      d.total+=r.cnt; if(won) d.wins+=r.cnt;
+    }
+  }
+  const concepts=Object.entries(conceptT).sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([name,cnt])=>{
+    const wr=roundRate(conceptW[name]||0,cnt);
+    const byCourt={}; for(const [code,d] of Object.entries(conceptByCourt[name]||{})) byCourt[code]={total:d.total,win_rate:roundRate(d.wins,d.total)};
+    return {name,total:cnt,win_rate:wr,lift:baselineRate>0?Math.round((wr/baselineRate)*100)/100:0,by_court:byCourt};
+  });
+  return jsonOk({ baseline_rate: baselineRate, concepts }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/concept-cooccurrence — concept pair co-occurrence matrix */
+async function handleAnalyticsConceptCooccurrence(url, env) {
+  const sql      = getSql(env);
+  const limit    = safeInt(url.searchParams.get("limit"),     15, 2, 30);
+  const minCount = safeInt(url.searchParams.get("min_count"), 50, 1, 1000000);
+
+  const [topRaw, pairRows, [{ bw, bt }]] = await Promise.all([
+    sql`SELECT trim(c) AS concept_raw, COUNT(*)::int AS cnt FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.legal_concepts,';',',','g'),',')) AS c WHERE ic.legal_concepts IS NOT NULL AND ic.legal_concepts <> '' AND trim(c) <> '' GROUP BY trim(c) ORDER BY cnt DESC LIMIT 2000`,
+    sql`WITH cc AS (SELECT ic.case_id, ic.outcome, ic.court_code, trim(c) AS cr FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.legal_concepts,';',',','g'),',')) AS c WHERE ic.legal_concepts IS NOT NULL AND ic.legal_concepts <> '' AND trim(c) <> '') SELECT a.cr AS ca, b.cr AS cb, a.outcome, a.court_code, COUNT(*)::int AS cnt FROM cc a JOIN cc b ON a.case_id=b.case_id AND a.cr<b.cr GROUP BY 1,2,3,4 HAVING COUNT(*)>=5 ORDER BY cnt DESC LIMIT 2000`,
+    sql`SELECT SUM(CASE WHEN outcome ILIKE '%remit%' OR outcome ILIKE '%set aside%' OR outcome ILIKE '%allow%' OR outcome ILIKE '%grant%' OR outcome ILIKE '%quash%' THEN 1 ELSE 0 END)::int AS bw, COUNT(*)::int AS bt FROM immigration_cases`,
+  ]);
+
+  const canonCount={};
+  for (const r of topRaw) { const raw=(r.concept_raw||"").trim().replace(/[.,;:]+$/,"").toLowerCase(); const can=_CONCEPT_CANONICAL.get(raw); if(!can) continue; canonCount[can]=(canonCount[can]||0)+r.cnt; }
+  const topConcepts=Object.entries(canonCount).sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([n])=>n);
+  const baselineRate=roundRate(bw,bt);
+
+  const pairT={}, pairW={};
+  for (const r of pairRows) {
+    const rawA=(r.ca||"").trim().replace(/[.,;:]+$/,"").toLowerCase(); const rawB=(r.cb||"").trim().replace(/[.,;:]+$/,"").toLowerCase();
+    const canA=_CONCEPT_CANONICAL.get(rawA), canB=_CONCEPT_CANONICAL.get(rawB);
+    if(!canA||!canB||canA===canB) continue;
+    const [a,b]=canA<canB?[canA,canB]:[canB,canA]; const key=`${a}|||${b}`;
+    pairT[key]=(pairT[key]||0)+r.cnt;
+    if(isWin(normaliseOutcome(r.outcome),r.court_code||"")) pairW[key]=(pairW[key]||0)+r.cnt;
+  }
+  const matrix={}, topPairs=[];
+  for (const [key,count] of Object.entries(pairT)) {
+    if(count<minCount) continue;
+    const [a,b]=key.split("|||"); const wr=roundRate(pairW[key]||0,count); const cell={count,win_rate:wr};
+    (matrix[a]??={})[b]=cell; (matrix[b]??={})[a]=cell;
+    topPairs.push({a,b,count,win_rate:wr,lift:baselineRate>0?Math.round((wr/baselineRate)*100)/100:0});
+  }
+  topPairs.sort((x,y)=>y.count-x.count);
+  return jsonOk({ concepts:topConcepts, matrix, top_pairs:topPairs }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/concept-trends — concept usage time series + emerging/declining */
+async function handleAnalyticsConceptTrends(url, env) {
+  const sql   = getSql(env);
+  const limit = safeInt(url.searchParams.get("limit"), 10, 1, 30);
+  const rows  = await sql`SELECT trim(c) AS concept_raw, ic.year, ic.court_code, ic.outcome, COUNT(*)::int AS cnt FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.legal_concepts,';',',','g'),',')) AS c WHERE ic.legal_concepts IS NOT NULL AND ic.legal_concepts <> '' AND trim(c) <> '' AND ic.year IS NOT NULL GROUP BY 1,2,3,4 ORDER BY cnt DESC LIMIT 10000`;
+
+  const canonFreq={}, canonYearT={}, canonYearW={};
+  for (const r of rows) {
+    const raw=(r.concept_raw||"").trim().replace(/[.,;:]+$/,"").toLowerCase();
+    const can=_CONCEPT_CANONICAL.get(raw); if(!can) continue;
+    const won=isWin(normaliseOutcome(r.outcome),r.court_code||"");
+    canonFreq[can]=(canonFreq[can]||0)+r.cnt;
+    if(!canonYearT[can]) canonYearT[can]={}; if(!canonYearW[can]) canonYearW[can]={};
+    canonYearT[can][r.year]=(canonYearT[can][r.year]||0)+r.cnt;
+    if(won) canonYearW[can][r.year]=(canonYearW[can][r.year]||0)+r.cnt;
+  }
+  const tracked=Object.entries(canonFreq).sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([n])=>n);
+  const allYears=[...new Set(rows.map(r=>r.year).filter(Boolean))].sort((a,b)=>a-b);
+  const latestYear=allYears.length?allYears[allYears.length-1]:0;
+  const recentYrs=new Set([latestYear,latestYear-1]), previousYrs=new Set([latestYear-2,latestYear-3]);
+
+  const series={}, emerging=[], declining=[];
+  for (const concept of tracked) {
+    const yt=canonYearT[concept]||{}, yw=canonYearW[concept]||{};
+    series[concept]=Object.keys(yt).sort().map(y=>({year:parseInt(y),count:yt[y],win_rate:roundRate(yw[y]||0,yt[y])}));
+    const recent=[...recentYrs].reduce((s,y)=>s+(yt[y]||0),0);
+    const previous=[...previousYrs].reduce((s,y)=>s+(yt[y]||0),0);
+    if(recent===0&&previous===0) continue;
+    const growthPct=previous===0&&recent>0?100:previous===0?0:Math.round(((recent-previous)/previous)*1000)/10;
+    if(growthPct>25)  emerging.push({name:concept,growth_pct:growthPct,recent_count:recent});
+    if(growthPct<-25) declining.push({name:concept,decline_pct:growthPct,recent_count:recent});
+  }
+  emerging.sort((a,b)=>b.growth_pct-a.growth_pct); declining.sort((a,b)=>a.decline_pct-b.decline_pct);
+  return jsonOk({ series, emerging, declining }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/judge-leaderboard — judges ranked by cases / approval rate */
+async function handleAnalyticsJudgeLeaderboard(url, env) {
+  const sql      = getSql(env);
+  const p        = url.searchParams;
+  const sortBy   = p.get("sort_by") || "cases";
+  const nameQ    = (p.get("name_q") || "").trim().toLowerCase();
+  const limit    = safeInt(p.get("limit"),     50, 1, 200);
+  const minCases = safeInt(p.get("min_cases"),  1, 1, 100000);
+  if (!["cases","approval_rate","name"].includes(sortBy)) return jsonErr("Invalid sort_by. Allowed: approval_rate, cases, name");
+
+  const rows = await sql`SELECT trim(j) AS judge_raw, ic.court_code, ic.outcome, COUNT(*)::int AS cnt FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.judges,';',',','g'),',')) AS j WHERE ic.judges IS NOT NULL AND ic.judges <> '' AND trim(j) <> '' GROUP BY 1,2,3 ORDER BY cnt DESC LIMIT 10000`;
+
+  const judgeTotal={}, judgeWins={}, judgeCourts={}, judgeCanon={};
+  for (const r of rows) {
+    const name=normaliseJudgeName(r.judge_raw); if(!name||!isRealJudgeName(name)||_JUDGE_BLOCKLIST.has(name.toLowerCase())) continue;
+    const key=name.toLowerCase(); judgeCanon[key]??=name;
+    const won=isWin(normaliseOutcome(r.outcome),r.court_code||"");
+    judgeTotal[key]=(judgeTotal[key]||0)+r.cnt; if(won) judgeWins[key]=(judgeWins[key]||0)+r.cnt;
+    if(r.court_code){ if(!judgeCourts[key]) judgeCourts[key]=new Set(); judgeCourts[key].add(r.court_code); }
+  }
+  let judges=Object.entries(judgeTotal)
+    .filter(([key,cnt])=>cnt>=minCases&&(!nameQ||key.includes(nameQ)||judgeCanon[key].toLowerCase().includes(nameQ)))
+    .map(([key,total])=>({ name:judgeCanon[key], display_name:judgeCanon[key], total_cases:total, approval_rate:roundRate(judgeWins[key]||0,total), courts:[...(judgeCourts[key]||[])].sort(), primary_court:judgeCourts[key]?[...judgeCourts[key]][0]:null }));
+
+  if(sortBy==="approval_rate") judges.sort((a,b)=>b.approval_rate-a.approval_rate||b.total_cases-a.total_cases);
+  else if(sortBy==="name")     judges.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  else                         judges.sort((a,b)=>b.total_cases-a.total_cases||b.approval_rate-a.approval_rate);
+  return jsonOk({ judges:judges.slice(0,limit), total_judges:judges.length }, "public, max-age=600, stale-while-revalidate=120");
+}
+
+/** GET /api/v1/analytics/judge-profile — deep profile for a single judge */
+async function handleAnalyticsJudgeProfile(url, env) {
+  const sql  = getSql(env);
+  const name = (url.searchParams.get("name") || "").trim();
+  if (!name) return jsonErr("name query parameter is required");
+  const nameNorm = normaliseJudgeName(name).toLowerCase() || name.toLowerCase();
+
+  const caseRows = await sql`SELECT ic.outcome, ic.court_code, ic.year, ic.visa_subclass, ic.case_nature, ic.country_of_origin, ic.is_represented, ic.legal_concepts, ic.case_id, ic.citation, ic.title, ic.date_sort FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.judges,';',',','g'),',')) AS j WHERE ic.judges IS NOT NULL AND ic.judges <> '' AND lower(trim(j)) LIKE ${"%" + nameNorm + "%"} ORDER BY ic.date_sort DESC NULLS LAST LIMIT 5000`;
+
+  const judgeCourtCodes=[...new Set(caseRows.map(r=>r.court_code).filter(Boolean))];
+  const courtBaselines={};
+  if (judgeCourtCodes.length) {
+    const bRows=await sql`SELECT court_code, outcome, COUNT(*)::int AS cnt FROM immigration_cases WHERE court_code=ANY(${judgeCourtCodes}) GROUP BY 1,2`;
+    const ctT={}, ctW={};
+    for (const r of bRows) { ctT[r.court_code]=(ctT[r.court_code]||0)+r.cnt; if(isWin(normaliseOutcome(r.outcome),r.court_code)) ctW[r.court_code]=(ctW[r.court_code]||0)+r.cnt; }
+    for (const c of judgeCourtCodes) courtBaselines[c]=roundRate(ctW[c]||0,ctT[c]||0);
+  }
+  const displayName=normaliseJudgeName(name)||name;
+  const payload=buildJudgeProfile(displayName, caseRows, { courtBaselines, includeRecentCases:true });
+  payload.judge.canonical_name=displayName;
+  return jsonOk(payload, "public, max-age=300, stale-while-revalidate=60");
+}
+
+/** GET /api/v1/analytics/judge-compare — compare 2-4 judges side by side */
+async function handleAnalyticsJudgeCompare(url, env) {
+  const sql      = getSql(env);
+  const names    = (url.searchParams.get("names")||"").split(",").map(s=>s.trim()).filter(Boolean).slice(0,4);
+  if (names.length < 2) return jsonErr("At least two judge names are required");
+
+  const profiles = await Promise.all(names.map(name => {
+    const nameNorm=normaliseJudgeName(name).toLowerCase()||name.toLowerCase();
+    return sql`SELECT ic.outcome, ic.court_code, ic.year, ic.visa_subclass, ic.case_nature, ic.country_of_origin, ic.is_represented, ic.legal_concepts, ic.case_id, ic.citation, ic.title, ic.date_sort FROM immigration_cases ic, LATERAL unnest(string_to_array(regexp_replace(ic.judges,';',',','g'),',')) AS j WHERE ic.judges IS NOT NULL AND ic.judges <> '' AND lower(trim(j)) LIKE ${"%" + nameNorm + "%"} ORDER BY ic.date_sort DESC NULLS LAST LIMIT 3000`.then(rows => {
+      const displayName=normaliseJudgeName(name)||name;
+      const p=buildJudgeProfile(displayName, rows, { includeRecentCases:false });
+      p.judge.canonical_name=displayName; return p;
+    });
+  }));
+  return jsonOk({ judges: profiles }, "public, max-age=300, stale-while-revalidate=60");
+}
+
 // ── Flask Container Durable Object ────────────────────────────────────────────
 
 export class FlaskBackend extends DurableObject {
@@ -784,6 +1348,32 @@ export default {
           res = await handleAnalyticsLegalConcepts(url, env);
         } else if (path === "/api/v1/analytics/nature-outcome") {
           res = await handleAnalyticsNatureOutcome(env);
+        } else if (path === "/api/v1/stats/trends") {
+          res = await handleStatsTrends(url, env);
+        } else if (path === "/api/v1/analytics/filter-options") {
+          res = await handleAnalyticsFilterOptions(url, env);
+        } else if (path === "/api/v1/analytics/monthly-trends") {
+          res = await handleAnalyticsMonthlyTrends(env);
+        } else if (path === "/api/v1/analytics/flow-matrix") {
+          res = await handleAnalyticsFlowMatrix(url, env);
+        } else if (path === "/api/v1/analytics/judge-bio") {
+          res = await handleAnalyticsJudgeBio(url, env);
+        } else if (path === "/api/v1/analytics/visa-families") {
+          res = await handleAnalyticsVisaFamilies(env);
+        } else if (path === "/api/v1/analytics/success-rate") {
+          res = await handleAnalyticsSuccessRate(url, env);
+        } else if (path === "/api/v1/analytics/concept-effectiveness") {
+          res = await handleAnalyticsConceptEffectiveness(url, env);
+        } else if (path === "/api/v1/analytics/concept-cooccurrence") {
+          res = await handleAnalyticsConceptCooccurrence(url, env);
+        } else if (path === "/api/v1/analytics/concept-trends") {
+          res = await handleAnalyticsConceptTrends(url, env);
+        } else if (path === "/api/v1/analytics/judge-leaderboard") {
+          res = await handleAnalyticsJudgeLeaderboard(url, env);
+        } else if (path === "/api/v1/analytics/judge-profile") {
+          res = await handleAnalyticsJudgeProfile(url, env);
+        } else if (path === "/api/v1/analytics/judge-compare") {
+          res = await handleAnalyticsJudgeCompare(url, env);
         } else {
           // Match /api/v1/cases/:id (exactly 12 lowercase hex chars)
           const m = path.match(/^\/api\/v1\/cases\/([0-9a-f]{12})$/);
