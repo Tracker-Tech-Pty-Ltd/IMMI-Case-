@@ -1697,7 +1697,7 @@ def analytics_outcomes():
         try:
             # Fast path: server-side SQL aggregation — Python only normalises
             # the small result set (~1500 rows) instead of 149k case objects.
-            for r in repo.get_analytics_outcomes():
+            for r in _call_with_timeout(repo.get_analytics_outcomes):
                 norm = _normalise_outcome(r["outcome"])
                 cnt = int(r["cnt"])
                 gt = r["group_type"]
@@ -1712,21 +1712,25 @@ def analytics_outcomes():
                         by_subclass[cleaned][norm] += cnt
                         by_family[get_family(cleaned)][norm] += cnt
             _rpc_ok = True
-        except Exception:
-            logger.warning("analytics_outcomes RPC failed, falling back to Python")
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_outcomes RPC failed/timed out, falling back to Python")
     if not _rpc_ok:
         # Fallback: load cases into Python, apply filters, aggregate locally.
-        for c in _apply_filters(_get_analytics_cases()):
-            norm = _normalise_outcome(c.outcome)
-            if c.court_code:
-                by_court[c.court_code][norm] += 1
-            if c.year:
-                by_year[str(c.year)][norm] += 1
-            if c.visa_subclass:
-                cleaned = _clean_visa(c.visa_subclass)
-                if cleaned:
-                    by_subclass[cleaned][norm] += 1
-                    by_family[get_family(cleaned)][norm] += 1
+        try:
+            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=20.0)
+            for c in _apply_filters(cases):
+                norm = _normalise_outcome(c.outcome)
+                if c.court_code:
+                    by_court[c.court_code][norm] += 1
+                if c.year:
+                    by_year[str(c.year)][norm] += 1
+                if c.visa_subclass:
+                    cleaned = _clean_visa(c.visa_subclass)
+                    if cleaned:
+                        by_subclass[cleaned][norm] += 1
+                        by_family[get_family(cleaned)][norm] += 1
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_outcomes fallback also timed out, returning empty result")
 
     result = {
         "by_court": {k: dict(v) for k, v in sorted(by_court.items())},
@@ -1758,7 +1762,7 @@ def analytics_judges():
         try:
             # Fast path: RPC already split judge tokens server-side.
             # Each row is one pre-split name token (equiv. to _split_judges output).
-            for r in repo.get_analytics_judges_raw():
+            for r in _call_with_timeout(repo.get_analytics_judges_raw):
                 raw_name = r["judge_raw"]
                 court = r["court_code"] or ""
                 cnt = int(r["cnt"])
@@ -1772,20 +1776,24 @@ def analytics_judges():
                 if court:
                     judge_courts[key].add(court)
             _rpc_ok = True
-        except Exception:
-            logger.warning("analytics_judges RPC failed, falling back to Python")
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_judges RPC failed/timed out, falling back to Python")
     if not _rpc_ok:
-        for c in _apply_filters(_get_analytics_cases()):
-            for raw_name in _split_judges(c.judges):
-                canonical_name, display_name = _judge_identity(raw_name, c.court_code, c.year)
-                if not canonical_name:
-                    continue
-                key = canonical_name.lower()
-                judge_counter[key] += 1
-                judge_canonical_name.setdefault(key, canonical_name)
-                judge_display_name.setdefault(key, display_name)
-                if c.court_code:
-                    judge_courts[key].add(c.court_code)
+        try:
+            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=20.0)
+            for c in _apply_filters(cases):
+                for raw_name in _split_judges(c.judges):
+                    canonical_name, display_name = _judge_identity(raw_name, c.court_code, c.year)
+                    if not canonical_name:
+                        continue
+                    key = canonical_name.lower()
+                    judge_counter[key] += 1
+                    judge_canonical_name.setdefault(key, canonical_name)
+                    judge_display_name.setdefault(key, display_name)
+                    if c.court_code:
+                        judge_courts[key].add(c.court_code)
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_judges fallback also timed out, returning empty result")
 
     judges = [
         {
@@ -1819,18 +1827,22 @@ def analytics_legal_concepts():
         try:
             # Fast path: RPC already split and counted concept tokens.
             # Each row is one canonical-mapped concept token.
-            for r in repo.get_analytics_concepts_raw():
+            for r in _call_with_timeout(repo.get_analytics_concepts_raw):
                 raw = (r["concept_raw"] or "").strip().lower()
                 canonical = _CONCEPT_CANONICAL.get(raw)
                 if canonical:
                     concept_counter[canonical] += int(r["cnt"])
             _rpc_ok = True
-        except Exception:
-            logger.warning("analytics_legal_concepts RPC failed, falling back to Python")
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_legal_concepts RPC failed/timed out, falling back to Python")
     if not _rpc_ok:
-        for c in _apply_filters(_get_analytics_cases()):
-            for concept in _split_concepts(c.legal_concepts):
-                concept_counter[concept] += 1
+        try:
+            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=20.0)
+            for c in _apply_filters(cases):
+                for concept in _split_concepts(c.legal_concepts):
+                    concept_counter[concept] += 1
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_legal_concepts fallback also timed out, returning empty result")
 
     concepts = [
         {"name": name, "count": count}
@@ -1857,20 +1869,24 @@ def analytics_nature_outcome():
     if hasattr(repo, "get_analytics_nature_outcome") and not _has_analytics_filters():
         try:
             # Fast path: RPC returns (case_nature, outcome, cnt) — Python normalises.
-            for r in repo.get_analytics_nature_outcome():
+            for r in _call_with_timeout(repo.get_analytics_nature_outcome):
                 if not r["case_nature"]:
                     continue
                 norm = _normalise_outcome(r["outcome"])
                 nature_outcome[r["case_nature"]][norm] += int(r["cnt"])
             _rpc_ok = True
-        except Exception:
-            logger.warning("analytics_nature_outcome RPC failed, falling back to Python")
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_nature_outcome RPC failed/timed out, falling back to Python")
     if not _rpc_ok:
-        for c in _apply_filters(_get_analytics_cases()):
-            if not c.case_nature:
-                continue
-            norm = _normalise_outcome(c.outcome)
-            nature_outcome[c.case_nature][norm] += 1
+        try:
+            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=20.0)
+            for c in _apply_filters(cases):
+                if not c.case_nature:
+                    continue
+                norm = _normalise_outcome(c.outcome)
+                nature_outcome[c.case_nature][norm] += 1
+        except (FuturesTimeoutError, Exception):
+            logger.warning("analytics_nature_outcome fallback also timed out, returning empty result")
 
     # Get top natures by total count
     nature_totals = {n: sum(outcomes.values()) for n, outcomes in nature_outcome.items()}
