@@ -21,7 +21,7 @@ export function JudgeCard({
   const { t } = useTranslation();
   const displayName = judge.display_name ?? judge.name;
   const yearsLabel =
-    judge.active_years.first && judge.active_years.last
+    judge.active_years?.first && judge.active_years?.last
       ? judge.active_years.first === judge.active_years.last
         ? `${judge.active_years.first}`
         : `${judge.active_years.first} – ${judge.active_years.last}`

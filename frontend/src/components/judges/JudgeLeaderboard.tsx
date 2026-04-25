@@ -59,7 +59,7 @@ function JudgeLeaderboardTable({
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground truncate">{displayName}</p>
                   <p className="text-xs text-muted-text mt-0.5">
-                    {[...new Set(row.courts)].join(", ") || "-"} · {row.active_years.first ?? "-"}–{row.active_years.last ?? "-"}
+                    {[...new Set(row.courts)].join(", ") || "-"} · {row.active_years?.first ?? "-"}–{row.active_years?.last ?? "-"}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -164,8 +164,8 @@ function JudgeLeaderboardTable({
                   </div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap text-muted-text">
-                  {row.active_years.first ?? "-"} –{" "}
-                  {row.active_years.last ?? "-"}
+                  {row.active_years?.first ?? "-"} –{" "}
+                  {row.active_years?.last ?? "-"}
                 </td>
                 <td className="px-3 py-2 text-muted-text">
                   {[...new Set(row.courts)].join(", ") || "-"}
