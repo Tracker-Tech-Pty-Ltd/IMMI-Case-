@@ -27,7 +27,7 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet -r requirements.txt
-          .venv/bin/pip install --quiet pytest pytest-timeout responses Pillow
+          .venv/bin/pip install --quiet pytest pytest-timeout pytest-cov pytest-asyncio responses Pillow
 
       - name: Run Python unit tests
         env:
