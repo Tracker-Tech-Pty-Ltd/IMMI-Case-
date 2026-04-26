@@ -455,6 +455,78 @@ async function handleCacheInvalidate() {
   );
 }
 
+// ── Taxonomy guided-search (Phase 1 #7) ──────────────────────────────────────
+// Two flows:
+//   find-precedents: filter cases by visa_subclass / country / legal_concepts
+//   assess-judge:    canonical-name lookup + total case count
+// Flask uses fuzzywuzzy alias matching on judges; Worker port uses pure
+// ILIKE — documented regression in plan REVISION 1 (track follow-up).
+
+async function handleGuidedSearch(request, env) {
+  const data = await safeJson(request);
+  if (!data) return jsonErr("invalid json");
+  const flow = String(data.flow ?? "");
+  if (!["find-precedents", "assess-judge"].includes(flow)) {
+    return jsonErr("Invalid flow type");
+  }
+  const sql = getSql(env);
+
+  if (flow === "find-precedents") {
+    const visa = String(data.visa_subclass ?? "").trim();
+    const country = String(data.country ?? "").trim();
+    const concepts = Array.isArray(data.legal_concepts)
+      ? data.legal_concepts.map(String)
+      : data.legal_concepts ? [String(data.legal_concepts)] : [];
+    const limit = safeInt(data.limit, 50, 1, 200);
+
+    const where = [sql`TRUE`];
+    if (visa) where.push(sql`visa_subclass ILIKE ${`%${visa}%`}`);
+    if (country) where.push(sql`country_of_origin ILIKE ${`%${country}%`}`);
+    if (concepts.length) {
+      const ors = concepts
+        .map(c => sql`legal_concepts ILIKE ${`%${c}%`}`)
+        .reduce((a, b) => sql`${a} OR ${b}`);
+      where.push(sql`(${ors})`);
+    }
+    const whereSql = where.reduce((a, b) => sql`${a} AND ${b}`);
+
+    const [{ total }] = await sql`
+      SELECT COUNT(*)::int AS total FROM ${sql(TABLE)} WHERE ${whereSql}
+    `;
+    const rows = await sql`
+      SELECT ${sql(CASE_LIST_COLS)} FROM ${sql(TABLE)} WHERE ${whereSql}
+      ORDER BY year DESC NULLS LAST LIMIT ${limit}
+    `;
+    return Response.json({
+      success: true, flow, results: rows,
+      meta: {
+        total_results: total,
+        returned_results: rows.length,
+        limit,
+        filters_applied: { visa_subclass: visa, country, legal_concepts: concepts },
+      },
+    });
+  }
+
+  // assess-judge — pure ILIKE on judges column (no fuzzy matching for now).
+  const judgeName = String(data.judge_name ?? "").trim();
+  if (!judgeName) return jsonErr("Judge name is required for assess-judge flow");
+  const norm = normaliseJudgeName(judgeName);
+  if (!norm || !isRealJudgeName(norm)) return jsonErr("Invalid judge name");
+  const [{ count }] = await sql`
+    SELECT COUNT(*)::int AS count FROM ${sql(TABLE)}
+    WHERE judges ILIKE ${`%${norm}%`}
+  `;
+  return Response.json({
+    success: true,
+    flow: "assess-judge",
+    judge_name: norm,
+    canonical_name: norm,
+    profile_url: `/judge-profiles/${encodeURIComponent(norm)}`,
+    meta: { total_cases: count },
+  });
+}
+
 // ── Static data (ported from Python) ─────────────────────────────────────────
 
 const VISA_FAMILIES = {
@@ -2172,6 +2244,7 @@ export default {
       (method === "POST" || method === "PUT" || method === "DELETE") &&
       (path === "/api/v1/cases" || path === "/api/v1/cases/batch" ||
        path === "/api/v1/cache/invalidate" ||
+       path === "/api/v1/taxonomy/guided-search" ||
        /^\/api\/v1\/cases\/[0-9a-f]{12}$/.test(path))
     ) {
       try {
@@ -2185,6 +2258,9 @@ export default {
         }
         if (path === "/api/v1/cache/invalidate" && method === "POST") {
           return await handleCacheInvalidate();
+        }
+        if (path === "/api/v1/taxonomy/guided-search" && method === "POST") {
+          return await handleGuidedSearch(request, env);
         }
         const idMatch = path.match(/^\/api\/v1\/cases\/([0-9a-f]{12})$/);
         if (idMatch && method === "PUT") {
