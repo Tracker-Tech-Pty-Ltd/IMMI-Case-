@@ -120,7 +120,7 @@ def _extract_session_id_from_url(url: str) -> str:
 def _create_turn_1(page) -> None:
     """Navigate to /llm-council, fill TURN_1_MSG, click Send, wait for turn-card."""
     page.goto(f"{REACT_BASE}/llm-council")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("domcontentloaded")
 
     textarea = page.locator("textarea").first
     expect(textarea).to_be_visible(timeout=10_000)
@@ -161,7 +161,7 @@ class TestCouncilThreadFlow:
         Step 1: Sessions list → click "New Council Session" → lands on /llm-council.
         """
         council_page.goto(f"{REACT_BASE}/llm-council/sessions")
-        council_page.wait_for_load_state("networkidle")
+        council_page.wait_for_load_state("domcontentloaded")
 
         # Sidebar renders
         expect(council_page.get_by_test_id("sessions-sidebar")).to_be_visible(
@@ -217,7 +217,7 @@ class TestCouncilThreadFlow:
 
         # Reload the page
         council_page.reload()
-        council_page.wait_for_load_state("networkidle")
+        council_page.wait_for_load_state("domcontentloaded")
 
         # URL must still be sessions/:id
         assert council_page.url == session_url, (
@@ -278,7 +278,7 @@ class TestCouncilThreadFlow:
 
         # Navigate back to sessions list
         council_page.goto(f"{REACT_BASE}/llm-council/sessions")
-        council_page.wait_for_load_state("networkidle")
+        council_page.wait_for_load_state("domcontentloaded")
 
         sessions_list = council_page.get_by_test_id("sessions-list")
         expect(sessions_list).to_be_visible(timeout=15_000)
@@ -314,14 +314,14 @@ class TestCouncilThreadFlow:
         """
         # Sessions list page
         council_page.goto(f"{REACT_BASE}/llm-council/sessions")
-        council_page.wait_for_load_state("networkidle")
+        council_page.wait_for_load_state("domcontentloaded")
         expect(council_page.get_by_test_id("sessions-sidebar")).to_be_visible(
             timeout=15_000
         )
 
         # New session form page
         council_page.goto(f"{REACT_BASE}/llm-council")
-        council_page.wait_for_load_state("networkidle")
+        council_page.wait_for_load_state("domcontentloaded")
         expect(council_page.locator("textarea").first).to_be_visible(timeout=10_000)
 
         # Type but do not send — checks navigation-phase errors only
