@@ -151,6 +151,11 @@ const LlmCouncilPage = lazy(() =>
     default: m.LlmCouncilPage,
   })),
 );
+const LlmCouncilSessionsPage = lazy(() =>
+  import("@/pages/LlmCouncilSessionsPage").then((m) => ({
+    default: m.LlmCouncilSessionsPage,
+  })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -297,6 +302,14 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <LlmCouncilPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="llm-council/sessions"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LlmCouncilSessionsPage />
                   </Suspense>
                 }
               />

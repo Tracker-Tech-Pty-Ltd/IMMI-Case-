@@ -231,6 +231,65 @@ Reviewer: different agent type (consider oh-my-claudecode:designer for UI
 review since US-009 used code-reviewer + US-010 used critic — designer
 brings UX correctness focus).
 
+## Iteration 11 (US-011) — DONE 2026-04-28 (autopilot resume)
+
+### What was done
+- frontend/src/components/llm-council/SessionListItem.tsx (new) — Link-based
+  navigation, turns badge (singular/plural), relativeTime helper, hover-only
+  delete button, ConfirmModal integration. Delete uses e.preventDefault() +
+  stopPropagation() to avoid Link navigation when clicking delete icon.
+- frontend/src/pages/LlmCouncilSessionsPage.tsx (new) — two-pane layout
+  (300px sidebar + main placeholder), useLlmCouncilSessions list,
+  useDeleteSession mutation, loading/error/empty states, "New Council
+  Session" button → /llm-council.
+- frontend/src/App.tsx — lazy import + route /llm-council/sessions inserted
+  BEFORE /llm-council/sessions/:sessionId (React Router v6 source-order
+  matters).
+- frontend/src/lib/prefetch.ts — added /llm-council/sessions → lazy import.
+- frontend/__tests__/llm-council-sessions-page.test.tsx (new, 23 vitest)
+  — page + component + relativeTime utility coverage.
+
+### Pipeline
+- Implementer: oh-my-claudecode:executor (sonnet)
+- Reviewer: oh-my-claudecode:verifier (sonnet) — DIFFERENT from
+  US-009/code-reviewer + US-010/critic + US-011/executor ✅
+- Reviewer verdict: APPROVED (0 blockers, all 6 AC verified, high confidence)
+
+### Red-green cycle evidence (3 cycles)
+1. renders 3 session items: toHaveLength(3) → 99 RED → restored GREEN
+2. session item href: correct path → "/llm-council/sessions/WRONG-ID" RED → restored GREEN
+3. delete confirm session_id: "to-delete-123" → "WRONG-SESSION-ID" RED → restored GREEN
+
+### Verification
+- vitest llm-council-sessions-page → 23/23 in 1.11s
+- vitest llm-council-page + llm-council-thread + use-llm-council-sessions
+  + api-llm-council → 69/69 (regression check ✅)
+- Total: 92/92 vitest, tsc --noEmit exit 0
+
+### Deviations / non-blocking notes
+- relativeTime() is self-contained (date-fns not in project deps; spec
+  allowed fallback). No future-date handling — acceptable since
+  session.updated_at should never be in future.
+- ConfirmModal at frontend/src/components/shared/ConfirmModal.tsx
+  (not components/ConfirmModal.tsx as initial spec wording).
+- isDeleting=true disabled state on delete button: wired in component
+  but no test covers the visual disabled state. Low risk.
+
+### Files for next subagent context
+- frontend/src/pages/LlmCouncilSessionsPage.tsx
+- frontend/src/pages/LlmCouncilPage.tsx (US-010 thread)
+- frontend/src/components/llm-council/* (TurnCard, SessionListItem)
+
+### Next iteration
+Pick US-012: Phase 4 — Production deploy + automated browser visual test
+(THE FINAL GATE per Plan §11). Implementer: oh-my-claudecode:executor
+(opus tier — architecture-sensitive: deploy + e2e MCP browser flow).
+Reviewer: different agent type (oh-my-claudecode:critic or
+oh-my-claudecode:code-reviewer).
+
+US-013 (Python LLM council cleanup) is gated on 1-week soak after US-012
+deploy — DO NOT execute now. Add to backlog for ~2026-05-05.
+
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
 # ═════════════════════════════════════════════════════════════════════════
