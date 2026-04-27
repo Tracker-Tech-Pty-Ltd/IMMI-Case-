@@ -215,7 +215,7 @@
       "id": "US-007",
       "title": "Phase 2.3 \u2014 Wire handlers into proxy.js router + local wrangler dev verification",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "agent_tier": "opus",
       "phase": "Phase 2 \u2014 API endpoints",
       "estimated_hours": 2,
@@ -241,7 +241,8 @@
         "grep -n 'llm-council' workers/proxy.js",
         "npx vitest run workers/__tests__/proxy-routing.test.js",
         "curl -X POST http://localhost:8787/api/v1/llm-council/sessions -H 'Content-Type: application/json' -d '{\"message\":\"test\"}'"
-      ]
+      ],
+      "completion_notes": "DONE 2026-04-28: workers/proxy.js routing block added (+68 LOC) \u2014 dispatch /api/v1/llm-council/sessions* to handlers BEFORE proxyToFlask; /health stays Flask. workers/__tests__/proxy-routing.test.js with 9 tests. Full worker suite: 152/152 in 1.32s."
     },
     {
       "id": "US-008",

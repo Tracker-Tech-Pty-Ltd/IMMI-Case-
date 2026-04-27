@@ -42,6 +42,14 @@
 
 import { DurableObject } from "cloudflare:workers";
 import postgres from "postgres";
+import {
+  handleCreateSession,
+  handleAddTurn,
+  handleGetSession,
+  handleListSessions,
+  handleDeleteSession,
+  handleLegacyRun,
+} from "./llm-council/handlers.js";
 
 // ── Table / column constants ──────────────────────────────────────────────────
 
@@ -2355,6 +2363,61 @@ async function handleTaxonomyCountries(url, env) {
   });
 }
 
+// ── LLM Council router ────────────────────────────────────────────────────────
+//
+// Pure dispatch helper: maps /api/v1/llm-council/* paths to Worker-native
+// handlers (workers/llm-council/handlers.js). Returns a Response on match,
+// or null when the request should fall through to the Flask Container
+// (e.g. /llm-council/health, unknown sub-paths, or unsupported methods).
+//
+// Exported so workers/__tests__/proxy-routing.test.js can assert the
+// path → handler mapping without booting the full Worker fetch handler.
+
+const LLM_COUNCIL_PREFIX = "/api/v1/llm-council/";
+const LLM_COUNCIL_SESSION_TURNS_RE =
+  /^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})\/turns$/;
+const LLM_COUNCIL_SESSION_RE =
+  /^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})$/;
+
+export async function dispatchLlmCouncil(request, env, url, path, method) {
+  if (!path.startsWith(LLM_COUNCIL_PREFIX)) return null;
+
+  // Health stays on Flask (existing legacy behaviour).
+  if (path === "/api/v1/llm-council/health") return null;
+
+  // POST /api/v1/llm-council/sessions
+  if (path === "/api/v1/llm-council/sessions" && method === "POST") {
+    return handleCreateSession(request, env);
+  }
+
+  // GET /api/v1/llm-council/sessions
+  if (path === "/api/v1/llm-council/sessions" && method === "GET") {
+    return handleListSessions(request, env);
+  }
+
+  // POST /api/v1/llm-council/run (legacy single-shot, ephemeral)
+  if (path === "/api/v1/llm-council/run" && method === "POST") {
+    return handleLegacyRun(request, env);
+  }
+
+  // POST /api/v1/llm-council/sessions/:id/turns
+  const turnsMatch = LLM_COUNCIL_SESSION_TURNS_RE.exec(path);
+  if (turnsMatch && method === "POST") {
+    return handleAddTurn(request, env, path);
+  }
+
+  // GET    /api/v1/llm-council/sessions/:id
+  // DELETE /api/v1/llm-council/sessions/:id
+  const sessionMatch = LLM_COUNCIL_SESSION_RE.exec(path);
+  if (sessionMatch) {
+    if (method === "GET") return handleGetSession(request, env, path);
+    if (method === "DELETE") return handleDeleteSession(request, env, path);
+  }
+
+  // Unknown llm-council sub-path or unsupported method → Flask fallback.
+  return null;
+}
+
 // ── Flask proxy helper ────────────────────────────────────────────────────────
 
 async function proxyToFlask(request, env) {
@@ -2544,6 +2607,19 @@ export default {
         // If the native handler throws (DB error, Hyperdrive hiccup), fall
         // through to Flask so the user never sees a raw 500.
         console.error("[native] handler error — falling back to Flask:", nativeErr?.message);
+      }
+    }
+
+    // ── LLM Council router ────────────────────────────────────────────────────
+    // Worker-native sessions API (workers/llm-council/handlers.js). Returns
+    // null for /api/v1/llm-council/health and unknown sub-paths so they
+    // fall through to the Flask container (legacy behaviour preserved).
+    if (path.startsWith(LLM_COUNCIL_PREFIX)) {
+      try {
+        const llmRes = await dispatchLlmCouncil(request, env, url, path, method);
+        if (llmRes !== null) return llmRes;
+      } catch (llmErr) {
+        console.error("[llm-council] handler error — falling back to Flask:", llmErr?.message);
       }
     }
 
