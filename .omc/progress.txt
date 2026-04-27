@@ -420,14 +420,30 @@ US-013 (Python LLM council cleanup) is gated on 1-week production soak.
 DO NOT execute now. Add to backlog for ~2026-05-05 with daily probes
 to confirm no regression.
 
-### Follow-up backlog (US-014 candidate items)
-1. step 7 stale-session-id frontend bug investigation (DELETE targeting
-   wrong session_id; capture full network log + React DevTools timeline)
+### Follow-up backlog — promoted to formal PRD stories on 2026-04-28
+NOTE: items #1 and #4 below were promoted from informal candidate notes
+to actionable user stories in .omc/prd.json with full subagent_prompt +
+acceptanceCriteria + verification_commands. They are the next work-tickets
+a ralph lead will pick up after US-013 (the soak gate). Explicitly NOT
+marked done — see passes:false in prd.json.
+
+1. → US-014 (passes:false, sonnet tier) "Step 7 stale-closure: DELETE
+   session targets wrong session_id". Skip evidence preserved at
+   tests/e2e/playwright/test_council_thread_visual.py:306-314.
 2. step 5 turn-2 timeout strategy (SSE streaming preferred per Plan §10
-   risk register; or split test into seeded fixture)
-3. US-010 critic backlog (already cleared 1 MAJOR + 4 MINOR in 494c190)
-4. CSRF_SECRET should be added to wrangler.toml or deploy script as a
-   required secret check, not discovered post-deploy
+   risk register; or split test into seeded fixture) — NOT promoted yet,
+   still candidate; depends on streaming UX decision.
+3. US-010 critic backlog (already cleared 1 MAJOR + 4 MINOR in 494c190).
+4. → US-015 (passes:false, haiku tier) "CSRF_SECRET pre-deploy gate —
+   fail CI before wrangler deploy if required secrets missing". Root-
+   cause evidence at .github/workflows/deploy-worker.yml:36-42 (no
+   precondition check) and runtime fallback at workers/proxy.js:117-180.
+
+User directive 2026-04-28 (verbatim): Step 7 stale-closure bug 沒在這
+次 session 解決 — 列為 follow-up，不假裝 done. CSRF_SECRET 應該在 deploy
+前發現，不是 post-deploy probe — 已列入 deploy script 加固 backlog. Both
+items promoted to PRD so they survive across sessions and have machine-
+readable acceptance criteria.
 
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
