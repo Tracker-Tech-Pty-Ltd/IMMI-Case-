@@ -2387,7 +2387,9 @@ export default {
 
     // ── CSRF token endpoint ───────────────────────────────────────────────────
     // Stateless double-submit HMAC. Set wrangler secret CSRF_SECRET first.
-    if (path === "/api/v1/csrf-token" && method === "GET") {
+    // Guarded by env.CSRF_SECRET — without secret, fall through to Flask
+    // so legacy flask-wtf token mint stays live (zero-downtime invariant).
+    if (env.CSRF_SECRET && path === "/api/v1/csrf-token" && method === "GET") {
       return getCsrfToken(env);
     }
 
