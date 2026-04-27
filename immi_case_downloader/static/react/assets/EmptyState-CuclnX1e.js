@@ -1,1 +1,0 @@
-import{j as s}from"./query-Ugf0RVuJ.js";import{ar as n}from"./index-Di0s7Gec.js";function u({icon:t,title:r,description:a,action:e,className:o,contained:m=!0}){return s.jsx(n,{title:r,description:a,icon:t,action:e,contained:m,className:o})}export{u as E};
