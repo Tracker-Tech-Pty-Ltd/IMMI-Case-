@@ -48,3 +48,31 @@ max_instances = 3
 # wall-time on streamed responses is unbounded (Cloudflare exception).
 [limits]
 cpu_ms = 60000
+
+# Per plan REVISION 1 §M6: when Phase 4 retires Flask, the Python
+# @rate_limit decorators (web/security.py) are gone — Worker writes need
+# their own throttle. Bindings register here; handler code wires them in
+# a follow-up commit so this addition is inert until env.RL_* is read.
+[[unsafe.bindings]]
+name = "RL_CASES_CREATE"
+type = "ratelimit"
+namespace_id = "1100"
+simple = { limit = 30, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_CASES_BATCH"
+type = "ratelimit"
+namespace_id = "1101"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_COLLECTIONS_EXPORT"
+type = "ratelimit"
+namespace_id = "1102"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_GUIDED_SEARCH"
+type = "ratelimit"
+namespace_id = "1103"
+simple = { limit = 30, period = 60 }

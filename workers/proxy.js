@@ -221,6 +221,20 @@ async function safeJson(request) {
   } catch { return null; }
 }
 
+// Per plan REVISION 1 §M6: throttle write endpoints by CF-Connecting-IP.
+// Returns a 429 Response when over limit, or null when allowed.
+// Missing binding (e.g. `wrangler dev --local` without unsafe bindings)
+// or binding error → null (fail open) so local dev isn't blocked.
+async function throttle(request, binding) {
+  if (!binding || typeof binding.limit !== "function") return null;
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  try {
+    const { success } = await binding.limit({ key: ip });
+    if (success) return null;
+    return jsonErr("rate limited", 429);
+  } catch { return null; }
+}
+
 // ── Cases write handlers ─────────────────────────────────────────────────────
 
 async function handlePostCase(request, env) {
@@ -2390,6 +2404,23 @@ export default {
        /^\/api\/v1\/cases\/[0-9a-f]{12}$/.test(path))
     ) {
       try {
+        // Rate-limit BEFORE CSRF: over-limit shouldn't cost HMAC verify CPU.
+        let rl = null;
+        if (path === "/api/v1/cases" && method === "POST") {
+          rl = env.RL_CASES_CREATE;
+        } else if (path === "/api/v1/cases/batch") {
+          rl = env.RL_CASES_BATCH;
+        } else if (path === "/api/v1/collections/export") {
+          rl = env.RL_COLLECTIONS_EXPORT;
+        } else if (path === "/api/v1/taxonomy/guided-search") {
+          rl = env.RL_GUIDED_SEARCH;
+        } else if (/^\/api\/v1\/cases\/[0-9a-f]{12}$/.test(path) &&
+                   (method === "PUT" || method === "DELETE")) {
+          rl = env.RL_CASES_CREATE;
+        }
+        const rlFail = await throttle(request, rl);
+        if (rlFail) return rlFail;
+
         const csrfFail = await requireCsrf(request, env);
         if (csrfFail) return csrfFail;
         if (path === "/api/v1/cases" && method === "POST") {
