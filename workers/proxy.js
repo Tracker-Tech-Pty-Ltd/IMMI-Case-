@@ -1989,6 +1989,15 @@ export class FlaskBackend extends DurableObject {
             SUPABASE_ANON_KEY:         env.SUPABASE_ANON_KEY,
             SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
             APP_ENV: "production",
+            // LLM Council via Cloudflare AI Gateway (Unified Billing).
+            // CF_AIG_TOKEN authenticates ALL council calls; per-model
+            // overrides are forwarded so the Container's CouncilConfig
+            // sees them at os.environ.get() time.
+            CF_AIG_TOKEN:                    env.CF_AIG_TOKEN,
+            LLM_COUNCIL_OPENAI_MODEL:        env.LLM_COUNCIL_OPENAI_MODEL,
+            LLM_COUNCIL_GEMINI_PRO_MODEL:    env.LLM_COUNCIL_GEMINI_PRO_MODEL,
+            LLM_COUNCIL_ANTHROPIC_MODEL:     env.LLM_COUNCIL_ANTHROPIC_MODEL,
+            LLM_COUNCIL_GEMINI_FLASH_MODEL:  env.LLM_COUNCIL_GEMINI_FLASH_MODEL,
             // NOTE: HYPERDRIVE_DATABASE_URL not injected here —
             // Cloudflare Containers cannot resolve *.hyperdrive.local DNS.
             // Flask uses SupabaseRepository (REST API) instead, which works
@@ -2335,7 +2344,7 @@ async function handleTaxonomyCountries(url, env) {
 // ── Flask proxy helper ────────────────────────────────────────────────────────
 
 async function proxyToFlask(request, env) {
-  const id        = env.FlaskBackend.idFromName("flask-v14");
+  const id        = env.FlaskBackend.idFromName("flask-v15");
   const container = env.FlaskBackend.get(id);
 
   // Inject Hyperdrive connection string so Flask can optionally use direct psycopg2.
