@@ -459,14 +459,16 @@
       "title": "Step 7 stale-closure: DELETE session targets wrong session_id",
       "priority": 14,
       "passes": false,
+      "completion_notes": "PARTIAL 2026-04-28 (iteration 13): root cause located + fixed + pinned by vitest with RED-GREEN cycle. ROOT CAUSE: frontend/src/components/llm-council/SessionListItem.tsx pre-fix lines 59-62 — handleConfirm read session.session_id from props at confirm-time; function recreated each render, so re-render between hover-click and modal-confirm (TanStack Query refetch / React 18 concurrent / Playwright network stall) re-bound onClick to a different session prop. FIX: snapshot session_id into local useState (pendingDeleteId) at click-time so confirm reads from state, not from prop closure (SessionListItem.tsx:51-72). VITEST PIN: frontend/__tests__/session-list-item-stale-closure.test.tsx — 3 tests covering rerender-during-modal race + happy path + cancel. RED phase (temporarily reverted fix): test 1 fails with 'Expected SESSION-A, Received SESSION-B' which is exactly the production symptom (N83Vk vs L291). GREEN phase (fix restored): 3/3 in 145ms. Full frontend regression: 50 files / 447 tests / 12.24s green. STILL passes:false because acceptance criteria 2,3,5 require live e2e against https://immi.trackit.today with the redeployed Worker. Flip to passes:true after: (a) push to main triggers deploy, (b) E2E_BASE_URL=https://immi.trackit.today pytest tests/e2e/playwright/test_council_thread_visual.py with @pytest.mark.skip removed, observing 5/5 e2e green.",
       "agent_tier": "sonnet",
       "phase": "Phase 6 — Post-launch defects",
       "estimated_hours": 3,
       "promoted_from": "iteration 12 follow-up backlog item #1 (progress.txt:424-425); skip-evidence at tests/e2e/playwright/test_council_thread_visual.py:306-314",
-      "files_to_create": [],
+      "files_to_create": [
+        "frontend/__tests__/session-list-item-stale-closure.test.tsx"
+      ],
       "files_to_modify": [
-        "frontend/src/pages/SessionsListPage.tsx",
-        "frontend/src/hooks/use-llm-council-sessions.ts",
+        "frontend/src/components/llm-council/SessionListItem.tsx",
         "tests/e2e/playwright/test_council_thread_visual.py"
       ],
       "depends_on": [
@@ -492,6 +494,7 @@
       "title": "CSRF_SECRET pre-deploy gate — fail CI before wrangler deploy if required secrets missing",
       "priority": 15,
       "passes": false,
+      "completion_notes": "PARTIAL 2026-04-28 (iteration 13): script + workflow wiring + comment block all landed, locally verified within available auth scope. CREATED scripts/preflight_secrets.sh (chmod +x) — checks each of CSRF_SECRET, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, CF_AIG_TOKEN, HYPERDRIVE_DATABASE_URL via `npx wrangler secret list --format=json`. Exit 0/1/2 paths defined. WIRED into .github/workflows/deploy-worker.yml as new step 'Preflight — verify required Worker secrets' between Install (step 3) and Deploy (step 4); Python yaml.safe_load confirmed ordering. DOCUMENTED required-secrets list inline in wrangler.toml comment block. LOCAL self-test: bash -n syntax OK; WORKER_NAME=immi-case-test-noauth ./scripts/preflight_secrets.sh → exit 2 (FATAL path proven, wrangler 'Worker not found' included for diagnosability); the exit-1 named-missing path could NOT be locally exercised (no CLOUDFLARE_API_TOKEN bound to a real Worker in dev environment). STILL passes:false because acceptance criteria 4 (manual red-green: delete CSRF_SECRET → CI fails at preflight; restore → CI green) is destructive against production secrets and was not done; criterion 5 (no regression on happy path deploy) needs the next push-to-main to confirm. Flip to passes:true after: (a) `git push origin main` (or workflow_dispatch) triggers deploy with all secrets present → green; (b) optionally run the destructive red test on a staging Worker.",
       "agent_tier": "haiku",
       "phase": "Phase 6 — Deploy hardening",
       "estimated_hours": 1,

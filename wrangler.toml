@@ -2,6 +2,24 @@ name = "immi-case"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# ────────────────────────────────────────────────────────────────────────────
+# Required Cloudflare Worker secrets (US-015)
+# ────────────────────────────────────────────────────────────────────────────
+# These secrets are NOT declared here (wrangler does not allow secret values
+# in wrangler.toml). They MUST be set per-environment via:
+#     npx wrangler secret put <NAME> --name immi-case
+# scripts/preflight_secrets.sh asserts each is bound BEFORE `wrangler deploy`
+# runs in CI, so the iteration-12 failure mode (deploy succeeds, runtime
+# 500 because CSRF_SECRET was never bound) cannot recur.
+#
+#   CSRF_SECRET                HMAC key for double-submit CSRF token
+#   ANTHROPIC_API_KEY          Claude moderator + expert
+#   GEMINI_API_KEY             Gemini Pro / Flash expert + moderator fallback
+#   OPENAI_API_KEY             gpt-5-mini expert
+#   CF_AIG_TOKEN               Cloudflare AI Gateway routing token
+#   HYPERDRIVE_DATABASE_URL    fallback DB URL when env.HYPERDRIVE binding misses
+# ────────────────────────────────────────────────────────────────────────────
+
 # Read path: Worker handles GET /api/v1/{cases,stats,filter-options} natively via Hyperdrive → Supabase PostgreSQL.
 # Write path: POST/PUT/DELETE and complex analytics are proxied to the Flask Container.
 # React SPA at /app/* is also served via the Flask Container.

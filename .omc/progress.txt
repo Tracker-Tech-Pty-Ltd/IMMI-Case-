@@ -445,6 +445,115 @@ User directive 2026-04-28 (verbatim): Step 7 stale-closure bug 沒在這
 items promoted to PRD so they survive across sessions and have machine-
 readable acceptance criteria.
 
+## Iteration 13 (US-014 + US-015 partial) — 2026-04-28
+
+User directive update: "啟動 ralph 拉 US-014/US-015". Pulled both
+backlog items concurrently via ralph-style parallel work. Honest
+completion status below — neither flipped to passes:true because
+acceptance criteria for both include items that require live CI / live
+e2e against production and CANNOT be self-verified from this session.
+
+### US-014 — what was done
+
+ROOT CAUSE locked: frontend/src/components/llm-council/SessionListItem.tsx
+lines 59-62 (pre-fix). handleConfirm read session.session_id from props
+at confirm-time. Function was recreated on every render, so a re-render
+between hover-click and modal-confirm (TanStack Query refetch / React 18
+concurrent render / Playwright network-stall artefact) caused the latest
+handleConfirm to capture a *different* session prop, sending DELETE
+against the wrong session_id. Real browser operates too fast to hit
+this race, which is why manual delete worked but Playwright did not.
+
+FIX applied: snapshot session_id into local useState (pendingDeleteId)
+on click; handleConfirm reads from state, not from prop closure. The
+fix is in SessionListItem.tsx lines 51-72.
+
+VITEST PIN added at frontend/__tests__/session-list-item-stale-closure.test.tsx
+(3 tests, 145ms). Test 1 mounts with session A, opens modal, rerenders
+with session B, confirms — asserts onDelete called with A.session_id.
+RED→GREEN cycle demonstrated: temporarily reverted fix → test 1 failed
+with "Expected SESSION-A, Received SESSION-B" (exactly matching the
+production e2e symptom of N83Vk vs L291); restored fix → 3/3 green.
+
+REGRESSION: full frontend vitest 50 files / 447 tests / 12.24s → all
+green. SessionListItem internal API unchanged; LlmCouncilSessionsPage
+import path / call signature preserved.
+
+REMAINING acceptance criteria (NOT verified in this session):
+- step 7 @pytest.mark.skip removed: DEFERRED until production e2e green
+  is observed. Removing the skip without that observation would be
+  exactly the silent-failure pattern user explicitly forbade.
+- step 7 e2e passes against https://immi.trackit.today: requires user
+  to push and run E2E_BASE_URL=https://immi.trackit.today pytest
+  tests/e2e/playwright/test_council_thread_visual.py against the
+  redeployed Worker.
+- "No regression in step 1,2,4,8 (still 4 e2e green)": same reason.
+
+Therefore US-014 stays passes:false with completion_notes describing
+unit-level closure (root cause + vitest pin + RED→GREEN proof). User
+flips to passes:true after the production e2e run.
+
+### US-015 — what was done
+
+CREATED scripts/preflight_secrets.sh (chmod +x) — checks each of
+CSRF_SECRET, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY,
+CF_AIG_TOKEN, HYPERDRIVE_DATABASE_URL is bound on the immi-case Worker
+via `npx wrangler secret list --format=json`. Exit codes 0 (all
+present), 1 (named-missing list), 2 (wrangler call failed).
+
+WIRED into .github/workflows/deploy-worker.yml as a NEW step "Preflight
+— verify required Worker secrets" between "Install Worker dependencies"
+(step 3) and "Deploy Worker + Flask Container + Hyperdrive" (step 5).
+Python YAML parse confirms the ordering preflight=3 < deploy=4 (the
+fail-fast invariant).
+
+DOCUMENTED required-secrets list inline in wrangler.toml as a comment
+block immediately after compatibility_flags, kept in sync with the
+shell script's REQUIRED_SECRETS array. Comment is ignored by the TOML
+parser so wrangler deploy semantics are unchanged.
+
+LOCAL self-test of the script: WORKER_NAME=immi-case-test-noauth bash
+scripts/preflight_secrets.sh → exit=2 with the "wrangler secret list
+failed" path printed and wrangler's own ERROR ("Worker not found")
+included for diagnosability. The "exit 1 with named-missing list"
+path could NOT be locally exercised because the wrangler CLI cannot
+list secrets without a CLOUDFLARE_API_TOKEN bound to a real Worker
+in this dev environment.
+
+REMAINING acceptance criteria (NOT verified in this session):
+- "Manual red-green demonstrated: delete CSRF_SECRET → CI fails at
+  preflight step (NOT at deploy); restore → CI green": this is a
+  destructive operation against production secrets and was not done.
+  User-driven verification step.
+- "No regression: production deploy chain still works for happy path":
+  needs the next push-to-main to confirm. The new step is documented
+  to be inert when all secrets are present.
+
+Therefore US-015 stays passes:false with completion_notes describing
+local closure (script + wiring + comment + syntax + exit-2 path
+verified). User flips to passes:true after the next deploy run.
+
+### Files changed in iteration 13
+- frontend/src/components/llm-council/SessionListItem.tsx
+  (US-014 fix: pendingDeleteId state, handleCancel)
+- frontend/__tests__/session-list-item-stale-closure.test.tsx (NEW)
+- scripts/preflight_secrets.sh (NEW, +x)
+- .github/workflows/deploy-worker.yml (US-015 preflight step)
+- wrangler.toml (US-015 required-secrets comment block)
+- .omc/progress.txt (this entry)
+- .omc/prd.json (US-014 + US-015 completion_notes)
+
+### Verification commands run (with paste-able evidence)
+- npx vitest run session-list-item-stale-closure → 3 passed (145ms)
+- npx vitest run llm-council → 5 files, 95 passed (2.25s)
+- npx vitest run → 50 files, 447 passed (12.24s)
+- npx tsc --noEmit → 0 errors
+- bash -n scripts/preflight_secrets.sh → syntax OK
+- WORKER_NAME=test bash scripts/preflight_secrets.sh → exit 2
+  (FATAL path proven)
+- python3 yaml.safe_load deploy-worker.yml → preflight at step 3,
+  deploy at step 4, ordering correct
+
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
 # ═════════════════════════════════════════════════════════════════════════

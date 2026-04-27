@@ -35,6 +35,16 @@ jobs:
       - name: Install Worker dependencies
         run: npm ci
 
+      # US-015: fail fast if any required Worker secret is missing on the
+      # remote Worker before we attempt to deploy. iteration 12 shipped
+      # without CSRF_SECRET bound, causing /api/v1/csrf-token + write
+      # endpoints to 500 until secret was added post-deploy.
+      - name: Preflight — verify required Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/preflight_secrets.sh
+
       - name: Deploy Worker + Flask Container + Hyperdrive
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

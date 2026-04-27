@@ -48,17 +48,27 @@ export function SessionListItem({
   onDelete,
   isDeleting = false,
 }: SessionListItemProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // US-014: snapshot session_id at click-time so any subsequent re-render of
+  // this component (TanStack Query refetch, React 18 concurrent render, etc.)
+  // cannot change which id is deleted after the user confirms. Reading
+  // session.session_id inside handleConfirm previously closed over the prop
+  // and could resolve to a different session by the time the modal confirmed.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const confirmOpen = pendingDeleteId !== null;
 
   function handleDeleteClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setConfirmOpen(true);
+    setPendingDeleteId(session.session_id);
   }
 
   function handleConfirm() {
-    setConfirmOpen(false);
-    onDelete(session.session_id);
+    if (pendingDeleteId) onDelete(pendingDeleteId);
+    setPendingDeleteId(null);
+  }
+
+  function handleCancel() {
+    setPendingDeleteId(null);
   }
 
   const truncatedTitle =
@@ -115,7 +125,7 @@ export function SessionListItem({
         message={`Delete "${truncatedTitle}"? This cannot be undone.`}
         confirmLabel="Delete"
         onConfirm={handleConfirm}
-        onCancel={() => setConfirmOpen(false)}
+        onCancel={handleCancel}
       />
     </>
   );
