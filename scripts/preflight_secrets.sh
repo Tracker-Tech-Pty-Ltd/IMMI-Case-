@@ -10,12 +10,22 @@
 # Required env (CI): CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 #
 # Required secrets list (kept in sync with wrangler.toml comment block):
-#   CSRF_SECRET                — HMAC key for double-submit CSRF token
-#   ANTHROPIC_API_KEY          — Claude moderator + expert
-#   GEMINI_API_KEY             — Gemini Pro / Flash expert + moderator fallback
-#   OPENAI_API_KEY             — gpt-5-mini expert
-#   CF_AIG_TOKEN               — Cloudflare AI Gateway routing token
-#   HYPERDRIVE_DATABASE_URL    — fallback DB URL when env.HYPERDRIVE binding misses
+#   CSRF_SECRET    — HMAC key used by workers/llm-council/auth.js +
+#                    workers/proxy.js for double-submit CSRF tokens.
+#                    Without it, /api/v1/csrf-token + writes 500 with
+#                    csrf_secret_not_configured (the iteration-12 bug).
+#   CF_AIG_TOKEN   — Cloudflare AI Gateway authentication token.
+#                    workers/llm-council/runner.js routes ALL Anthropic /
+#                    Gemini / OpenAI calls through the AI Gateway, so the
+#                    provider keys (ANTHROPIC_API_KEY, GEMINI_API_KEY,
+#                    OPENAI_API_KEY) live in the Gateway provider config,
+#                    NOT as Worker secrets.
+#
+# NON-secrets (do NOT add to this list):
+#   HYPERDRIVE     — declared as a [[hyperdrive]] binding in wrangler.toml.
+#                    connectionString is derived from the binding, not a
+#                    wrangler secret. Worker reads env.HYPERDRIVE.connectionString.
+#   FlaskBackend   — Durable Object class binding for the Flask Container.
 #
 # Exit codes:
 #   0 — all required secrets present
@@ -26,11 +36,7 @@ set -euo pipefail
 
 REQUIRED_SECRETS=(
   CSRF_SECRET
-  ANTHROPIC_API_KEY
-  GEMINI_API_KEY
-  OPENAI_API_KEY
   CF_AIG_TOKEN
-  HYPERDRIVE_DATABASE_URL
 )
 
 WORKER_NAME="${WORKER_NAME:-immi-case}"
