@@ -66,6 +66,63 @@ Pick US-002: Worker LLM Council pure-helper utilities (JS port).
 Subagent: oh-my-claudecode:executor (sonnet).
 Reviewer: oh-my-claudecode:code-reviewer or :critic.
 
+## Iterations 2–7 (US-002 → US-007) — DONE & COMMITTED 2026-04-28
+
+| US | Commit | What |
+|---|---|---|
+| US-002 | 5891bc4 | workers/llm-council/runner-helpers.js + 35 vitest |
+| US-003 | 82c78c6 | workers/llm-council/runner.js (910 LOC, runCouncil + history) + 22 vitest |
+| US-004 | 5891bc4 | workers/llm-council/storage.js + 23 vitest |
+| US-005 | 5891bc4 | workers/llm-council/auth.js (HMAC-SHA256 token) + 23 vitest |
+| US-006 | e7f8482 | workers/llm-council/handlers.js (530 LOC, 6 handlers) + 40 vitest |
+| US-007 | dca3ec2 | workers/proxy.js routing block (+68 LOC) + 9 routing vitest |
+
+Worker test suite: 152/152 green in 1.32s. All red-green cycles demonstrated per subagent
+reports + lead verification.
+
+## Iteration 8 (US-008) — DONE 2026-04-28 (autopilot resume)
+
+### What was done (lead session, autopilot resume)
+- frontend/src/lib/api-llm-council.ts (327 LOC: 5 fetcher fns + 8 TS types +
+  localStorage helpers + AbortController 180s timeout)
+- frontend/__tests__/api-llm-council.test.ts (15 vitest tests covering all 5
+  endpoints + URL/method/body/header assertions + localStorage roundtrip)
+- Files were authored in prior session but never committed; autopilot resumed
+  to verify acceptance and ship.
+
+### Bug caught on first vitest run
+- Test `getSession returns null on 404` had `.not.toBeNull()` instead of
+  `.toBeNull()` — assertion direction inverted. Implementation was correct
+  (line 269-271 of api-llm-council.ts returns null on 404), but the test
+  would have shipped as a silent false-positive — the exact failure mode
+  that Test Integrity §4 (anti-false-positive) is designed to catch.
+- Fixed: flipped to `.toBeNull()` → 15/15 green.
+
+### Red-green cycle evidence (3 cases per acceptance criteria)
+1. Cycle 1 — REAL: `getSession 404` test was RED (assertion direction wrong)
+   → fix to `.toBeNull()` → GREEN.
+2. Cycle 2 — FLIP: `createSession persists token` flipped to expect
+   `INTENTIONALLY_WRONG_FOR_RED` → 1 fail → restored → GREEN.
+3. Cycle 3 — FLIP: `addTurn returns total_turns` flipped to expect `99`
+   instead of `2` → 2 fails (cumulative with cycle 2 still active) →
+   restored both → 15/15 GREEN.
+
+### Verification commands run
+- `cd frontend && npx vitest run __tests__/api-llm-council.test.ts` → 15/15
+- `cd frontend && npx tsc --noEmit` → exit 0
+
+### Files for next subagent context
+- frontend/src/lib/api-llm-council.ts
+- frontend/__tests__/api-llm-council.test.ts
+- .omc/prd.json (US-008 marked passes:true with completion_notes)
+
+### Next iteration
+Pick US-009: TanStack Query hooks for sessions
+(frontend/src/hooks/use-llm-council-sessions.ts).
+Implementer: oh-my-claudecode:executor (sonnet).
+Reviewer: different agent type (e.g. oh-my-claudecode:code-reviewer or
+oh-my-claudecode:critic) — Ralph rule: reviewer ≠ implementer.
+
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
 # ═════════════════════════════════════════════════════════════════════════
