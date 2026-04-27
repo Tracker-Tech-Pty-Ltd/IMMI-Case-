@@ -74,12 +74,12 @@ export function useCreateSession() {
       case_id?: string;
       case_context?: string;
     }) => createSession(params),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       qc.invalidateQueries({ queryKey: ["council-sessions"] });
       qc.setQueryData(["council-session", data.session_id], {
         session: {
           session_id: data.session_id,
-          case_id: null,
+          case_id: variables.case_id ?? null,
           title: data.turn.user_message,
           status: "active",
           total_turns: data.total_turns,

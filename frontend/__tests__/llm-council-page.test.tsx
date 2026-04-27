@@ -1,46 +1,134 @@
+/**
+ * frontend/__tests__/llm-council-page.test.tsx
+ *
+ * Vitest tests for LlmCouncilPage — reworked for thread UI (US-010).
+ *
+ * Tests cover:
+ *  - New-session view (no sessionId): page title, form, send button, idle hint
+ *  - Thread view (sessionId present): loads via useLlmCouncilSession,
+ *    renders TurnCards, shows turn badge, disables Send at limit
+ *
+ * Mock strategy:
+ *  - vi.mock("@/hooks/use-llm-council-sessions") — hooks replaced with vi.fn()
+ *  - Wrapped in QueryClientProvider + MemoryRouter (useParams needs Router)
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-// ─── Hoist mocks so they are available before any import ────────────────────
-const { mockUseLlmCouncil, mockUseLlmCouncilHealthCheck } = vi.hoisted(() => ({
-  mockUseLlmCouncil: vi.fn(),
-  mockUseLlmCouncilHealthCheck: vi.fn(),
+// ─── Hoist mocks ─────────────────────────────────────────────────────────────
+
+const {
+  mockUseLlmCouncilSession,
+  mockUseCreateSession,
+  mockUseAddTurn,
+} = vi.hoisted(() => ({
+  mockUseLlmCouncilSession: vi.fn(),
+  mockUseCreateSession: vi.fn(),
+  mockUseAddTurn: vi.fn(),
 }));
 
-vi.mock("@/hooks/use-llm-council", () => ({
-  useLlmCouncil: mockUseLlmCouncil,
-  useLlmCouncilHealthCheck: mockUseLlmCouncilHealthCheck,
+vi.mock("@/hooks/use-llm-council-sessions", () => ({
+  useLlmCouncilSession: mockUseLlmCouncilSession,
+  useLlmCouncilSessions: vi.fn().mockReturnValue({
+    data: undefined,
+    isLoading: false,
+  }),
+  useCreateSession: mockUseCreateSession,
+  useAddTurn: mockUseAddTurn,
+  useDeleteSession: vi.fn().mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
 }));
 
-// Sonner toast — stub so we don't need a Toaster in the tree
 vi.mock("sonner", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 import { LlmCouncilPage } from "@/pages/LlmCouncilPage";
+import type {
+  LlmCouncilTurn,
+  LlmCouncilSession,
+} from "@/lib/api-llm-council";
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-function makeQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function makeModerator() {
+  return {
+    success: true,
+    composed_answer: "The answer is yes.",
+    consensus: "Agreement",
+    disagreements: "",
+    outcome_likelihood_percent: 72,
+    outcome_likelihood_label: "high",
+    outcome_likelihood_reason: "Strong precedents.",
+    law_sections: [],
+    mock_judgment: "",
+    follow_up_questions: [],
+    ranking: [],
+    model_critiques: [],
+    vote_summary: null,
+    agreement_points: [],
+    conflict_points: [],
+    provider_law_sections: {},
+    shared_law_sections: [],
+    shared_law_sections_confidence_percent: 0,
+    shared_law_sections_confidence_reason: "",
+    raw_text: "",
+    error: "",
+    latency_ms: 1000,
+  };
 }
 
-function renderPage() {
-  return render(
-    <QueryClientProvider client={makeQueryClient()}>
-      <LlmCouncilPage />
-    </QueryClientProvider>,
-  );
+function makeTurn(index: number): LlmCouncilTurn {
+  return {
+    turn_id: `turn-${index}`,
+    turn_index: index,
+    user_message: `Question ${index}`,
+    opinions: [
+      {
+        provider_key: "openai",
+        provider_label: "OpenAI",
+        model: "gpt-5-mini",
+        success: true,
+        answer: `Answer for turn ${index}`,
+        error: "",
+        sources: [],
+        latency_ms: 500,
+      },
+    ],
+    moderator: makeModerator(),
+    created_at: "2026-04-28T04:00:00.000Z",
+  };
 }
 
-/** Default idle mutation stub */
-function idleMutation(overrides: object = {}) {
+function makeSession(totalTurns: number): LlmCouncilSession {
+  return {
+    session_id: "abc123def456",
+    case_id: null,
+    title: "Test session",
+    status: "active",
+    total_turns: totalTurns,
+    created_at: "2026-04-28T04:00:00.000Z",
+    updated_at: "2026-04-28T04:00:00.000Z",
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeQC() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+}
+
+function idleMutation(overrides = {}) {
   return {
     mutateAsync: vi.fn(),
+    mutate: vi.fn(),
     isPending: false,
     isError: false,
     isSuccess: false,
@@ -49,320 +137,197 @@ function idleMutation(overrides: object = {}) {
   };
 }
 
-// ─── Mock data ──────────────────────────────────────────────────────────────
+/** Render at /llm-council (new session form — no sessionId) */
+function renderNewSession() {
+  return render(
+    <QueryClientProvider client={makeQC()}>
+      <MemoryRouter initialEntries={["/llm-council"]}>
+        <Routes>
+          <Route path="/llm-council" element={<LlmCouncilPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
-const MOCK_COUNCIL_RESULT = {
-  question: "Is procedural fairness required?",
-  case_context: "",
-  models: {
-    openai: {
-      provider: "OpenAI",
-      model: "chatgpt-5.2",
-      reasoning: "medium",
-      web_search: true,
-    },
-    gemini_pro: {
-      provider: "Google",
-      model: "gemini-3.0-pro",
-      reasoning_budget: 1024,
-    },
-    anthropic: {
-      provider: "Anthropic",
-      model: "claude-sonnet-4-6",
-      reasoning_budget: 4096,
-    },
-    gemini_flash: {
-      provider: "Google",
-      model: "gemini-3.0-flash",
-      role: "judge_rank_vote_and_composer",
-    },
-  },
-  opinions: [
-    {
-      provider_key: "openai",
-      provider_label: "OpenAI",
-      model: "chatgpt-5.2",
-      success: true,
-      answer: "Yes, procedural fairness is required under the Migration Act.",
-      error: "",
-      sources: [],
-      latency_ms: 1200,
-    },
-    {
-      provider_key: "gemini_pro",
-      provider_label: "Gemini Pro",
-      model: "gemini-3.0-pro",
-      success: true,
-      answer: "Procedural fairness obligations apply per Kioa v West.",
-      error: "",
-      sources: [],
-      latency_ms: 900,
-    },
-    {
-      provider_key: "anthropic",
-      provider_label: "Anthropic",
-      model: "claude-sonnet-4-6",
-      success: true,
-      answer: "Yes — s.499 duty to accord procedural fairness.",
-      error: "",
-      sources: [],
-      latency_ms: 1500,
-    },
-  ],
-  moderator: {
-    success: true,
-    ranking: [
-      {
-        rank: 1,
-        provider_key: "anthropic",
-        provider_label: "Anthropic",
-        score: 9,
-        reason: "Most thorough.",
-      },
-    ],
-    model_critiques: [],
-    vote_summary: {
-      winner_provider_key: "anthropic",
-      winner_provider_label: "Anthropic",
-      winner_reason: "Best legal citations",
-      support_count: 2,
-      neutral_count: 1,
-      oppose_count: 0,
-    },
-    agreement_points: ["Procedural fairness required"],
-    conflict_points: [],
-    provider_law_sections: {},
-    shared_law_sections: ["Migration Act s.499"],
-    shared_law_sections_confidence_percent: 85,
-    shared_law_sections_confidence_reason: "All providers cited same section.",
-    consensus: "All providers agree",
-    disagreements: "None",
-    outcome_likelihood_percent: 72,
-    outcome_likelihood_label: "high",
-    outcome_likelihood_reason: "Strong precedents in applicant's favour.",
-    law_sections: ["Migration Act s.499"],
-    mock_judgment:
-      "IN THE ADMINISTRATIVE APPEALS TRIBUNAL\nThe applicant succeeds.",
-    composed_answer: "Council agrees procedural fairness is required.",
-    follow_up_questions: [],
-    raw_text: "",
-    error: "",
-    latency_ms: 2000,
-  },
-  retrieved_cases: [],
-};
+/** Render at /llm-council/sessions/:id (thread view) */
+function renderThreadSession(
+  sessionId: string,
+  totalTurns: number,
+  turns: LlmCouncilTurn[],
+) {
+  mockUseLlmCouncilSession.mockReturnValue({
+    data: { session: makeSession(totalTurns), turns },
+    isLoading: false,
+    isError: false,
+    error: null,
+  });
 
-const MOCK_HEALTH_RESULT = {
-  ok: true,
-  live_probe: false,
-  errors: [],
-  providers: {
-    openai: {
-      model: "chatgpt-5.2",
-      api_key_present: true,
-      system_prompt_preview: "You are...",
-    },
-    gemini_pro: {
-      model: "gemini-3.0-pro",
-      api_key_present: true,
-      system_prompt_preview: "Legal expert...",
-    },
-    anthropic: {
-      model: "claude-sonnet-4-6",
-      api_key_present: true,
-      system_prompt_preview: "Analyse...",
-    },
-    gemini_flash: {
-      model: "gemini-3.0-flash",
-      api_key_present: true,
-      system_prompt_preview: "Judge...",
-    },
-  },
-};
+  return render(
+    <QueryClientProvider client={makeQC()}>
+      <MemoryRouter
+        initialEntries={[`/llm-council/sessions/${sessionId}`]}
+      >
+        <Routes>
+          <Route
+            path="/llm-council/sessions/:sessionId"
+            element={<LlmCouncilPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("LlmCouncilPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseLlmCouncil.mockReturnValue(idleMutation());
-    mockUseLlmCouncilHealthCheck.mockReturnValue(idleMutation());
+    mockUseCreateSession.mockReturnValue(idleMutation());
+    mockUseAddTurn.mockReturnValue(idleMutation());
+    mockUseLlmCouncilSession.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
   });
 
-  // 1. Basic structure renders
-  it("renders the page title and subtitle", () => {
-    renderPage();
+  // 1. Page title always present
+  it("renders the page title 'LLM IMMI Council'", () => {
+    renderNewSession();
     expect(screen.getByText("LLM IMMI Council")).toBeInTheDocument();
-    // Subtitle text (via defaultValue)
-    expect(
-      screen.getByText(/Direct multi-provider council/i),
-    ).toBeInTheDocument();
   });
 
-  // 2. Form inputs are present
-  it("renders the question textarea and submit button", () => {
-    renderPage();
+  // 2. New-session form: question textarea
+  it("renders the question textarea on new-session view", () => {
+    renderNewSession();
     expect(
       screen.getByPlaceholderText(/Compare strongest review grounds/i),
     ).toBeInTheDocument();
+  });
+
+  // 3. New-session form: Send button present
+  it("renders Send button on new-session view", () => {
+    renderNewSession();
     expect(
-      screen.getByRole("button", { name: /Run LLM Council/i }),
+      screen.getByRole("button", { name: /Send/i }),
     ).toBeInTheDocument();
   });
 
-  // 3. Workflow steps section renders
-  it("renders four workflow step cards", () => {
-    renderPage();
-    expect(screen.getByText("Input Legal Issue")).toBeInTheDocument();
-    expect(screen.getByText("Find Closest Precedents")).toBeInTheDocument();
-    expect(screen.getByText("3-Model Council Debate")).toBeInTheDocument();
-    expect(screen.getByText("Compose Mock Judgment")).toBeInTheDocument();
+  // 4. Send disabled when message is empty
+  it("Send button is disabled when message textarea is empty", () => {
+    renderNewSession();
+    expect(screen.getByRole("button", { name: /Send/i })).toBeDisabled();
   });
 
-  // 4. Loading state: submit button shows spinner when mutation is pending
-  it("shows 'Running Council...' label while mutation is pending", () => {
-    mockUseLlmCouncil.mockReturnValue(idleMutation({ isPending: true }));
-    renderPage();
+  // 5. Idle hint on new-session view
+  it("shows idle hint on new-session view", () => {
+    renderNewSession();
+    expect(
+      screen.getByText(/Submit a question to start a new council session/i),
+    ).toBeInTheDocument();
+  });
+
+  // 6. Pending state on createSession
+  it("shows 'Running Council...' when createSession is pending", () => {
+    mockUseCreateSession.mockReturnValue(
+      idleMutation({ isPending: true }),
+    );
+    renderNewSession();
     expect(
       screen.getByRole("button", { name: /Running Council/i }),
     ).toBeDisabled();
   });
 
-  // 5. Advanced panel is collapsed by default and expands on click
-  it("advanced controls panel is collapsed by default and expands when toggled", () => {
-    renderPage();
-    // Before clicking — the Advanced Controls heading exists but model cards are hidden
-    const toggleBtn = screen.getByRole("button", {
-      name: /Advanced Controls/i,
+  // 7. Thread: 0 turns → 0 TurnCards
+  it("renders 0 TurnCards when session has no turns", () => {
+    renderThreadSession("abc123def456", 0, []);
+    expect(screen.queryAllByTestId("turn-card")).toHaveLength(0);
+  });
+
+  // 8. Thread: 3 turns → 3 TurnCards
+  it("renders 3 TurnCards when session has 3 turns", () => {
+    const turns = [makeTurn(1), makeTurn(2), makeTurn(3)];
+    renderThreadSession("abc123def456", 3, turns);
+    expect(screen.queryAllByTestId("turn-card")).toHaveLength(3);
+  });
+
+  // 9. Thread: 15 turns → 15 TurnCards
+  it("renders 15 TurnCards when session is at turn limit", () => {
+    const turns = Array.from({ length: 15 }, (_, i) => makeTurn(i + 1));
+    renderThreadSession("abc123def456", 15, turns);
+    expect(screen.queryAllByTestId("turn-card")).toHaveLength(15);
+  });
+
+  // 10. Send disabled at limit
+  it("Send button is disabled when total_turns >= 15", () => {
+    const turns = Array.from({ length: 15 }, (_, i) => makeTurn(i + 1));
+    renderThreadSession("abc123def456", 15, turns);
+    expect(screen.getByRole("button", { name: /Send/i })).toBeDisabled();
+  });
+
+  // 11. Turn badge
+  it("shows Turn 3/15 badge in thread view", () => {
+    const turns = [makeTurn(1), makeTurn(2), makeTurn(3)];
+    renderThreadSession("abc123def456", 3, turns);
+    const badge = screen.getByTestId("turn-count-badge");
+    expect(badge.textContent).toContain("3/15");
+  });
+
+  // 12. Limit-reached message
+  it("shows limit-reached message when turns = 15", () => {
+    const turns = Array.from({ length: 15 }, (_, i) => makeTurn(i + 1));
+    renderThreadSession("abc123def456", 15, turns);
+    expect(
+      screen.getByText(/maximum of 15 turns/i),
+    ).toBeInTheDocument();
+  });
+
+  // 13. createSession called with the typed message
+  it("calls createSession.mutateAsync on form submit with message text", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      session_id: "new-session-123",
     });
-    expect(toggleBtn).toBeInTheDocument();
-    // The "Model Council Setup" heading is only visible after expanding
-    expect(screen.queryByText(/Model Council Setup/i)).not.toBeInTheDocument();
-
-    fireEvent.click(toggleBtn);
-
-    expect(screen.getByText(/Model Council Setup/i)).toBeInTheDocument();
-  });
-
-  // 6. After expanding advanced panel, provider model cards are shown with model names
-  it("shows all three expert model cards plus moderator when advanced panel is expanded", () => {
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: /Advanced Controls/i }));
-
-    // DEFAULT_MODELS values from LlmCouncilPage.tsx (gateway-prefixed)
-    expect(
-      screen.getByText("openai/gpt-5-mini-2025-08-07"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("google-ai-studio/gemini-3.1-pro-preview"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("anthropic/claude-sonnet-4-6"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("google-ai-studio/gemini-2.5-flash"),
-    ).toBeInTheDocument();
-  });
-
-  // 7. Health check button is present inside advanced panel
-  it("shows Health Check button inside the advanced panel", () => {
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: /Advanced Controls/i }));
-    expect(
-      screen.getByRole("button", { name: /Health Check/i }),
-    ).toBeInTheDocument();
-  });
-
-  // 8. Health check shows pending state
-  it("disables Health Check button while health mutation is pending", () => {
-    mockUseLlmCouncilHealthCheck.mockReturnValue(
-      idleMutation({ isPending: true }),
-    );
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: /Advanced Controls/i }));
-    expect(screen.getByRole("button", { name: /Checking/i })).toBeDisabled();
-  });
-
-  // 9. Moderator result section renders after a successful council run
-  it("renders council moderator results when result data is available", async () => {
-    const mutateAsync = vi.fn().mockResolvedValue(MOCK_COUNCIL_RESULT);
-    mockUseLlmCouncil.mockReturnValue(idleMutation({ mutateAsync }));
-    renderPage();
-
-    // Type a question and submit the form
-    fireEvent.change(
-      screen.getByPlaceholderText(/Compare strongest review grounds/i),
-      { target: { value: "Is procedural fairness required?" } },
-    );
-    fireEvent.submit(
-      screen.getByRole("button", { name: /Run LLM Council/i }).closest("form")!,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/Gemini Flash Ranking/i)).toBeInTheDocument();
-    });
-
-    // Moderator composed answer
-    expect(
-      screen.getByText("Council agrees procedural fairness is required."),
-    ).toBeInTheDocument();
-  });
-
-  // 10. Outcome likelihood percentage is displayed
-  it("renders outcome likelihood percentage from moderator result", async () => {
-    const mutateAsync = vi.fn().mockResolvedValue(MOCK_COUNCIL_RESULT);
-    mockUseLlmCouncil.mockReturnValue(idleMutation({ mutateAsync }));
-    renderPage();
+    mockUseCreateSession.mockReturnValue(idleMutation({ mutateAsync }));
+    renderNewSession();
 
     fireEvent.change(
       screen.getByPlaceholderText(/Compare strongest review grounds/i),
       { target: { value: "Is procedural fairness required?" } },
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: /Run LLM Council/i }).closest("form")!,
+      screen.getByRole("button", { name: /Send/i }).closest("form")!,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("72%")).toBeInTheDocument();
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Is procedural fairness required?",
+        }),
+      );
     });
-    expect(screen.getByText("HIGH")).toBeInTheDocument();
   });
 
-  // 11. Health results display after health check
-  it("renders provider health result cards when health check is run", async () => {
-    const mutateAsync = vi.fn().mockResolvedValue(MOCK_HEALTH_RESULT);
-    mockUseLlmCouncilHealthCheck.mockReturnValue(idleMutation({ mutateAsync }));
-    renderPage();
+  // 14. Error banner shown on createSession failure
+  it("shows inline error banner when createSession throws", async () => {
+    const mutateAsync = vi
+      .fn()
+      .mockRejectedValue(new Error("Token missing"));
+    mockUseCreateSession.mockReturnValue(idleMutation({ mutateAsync }));
+    renderNewSession();
 
-    // Expand advanced panel
-    fireEvent.click(screen.getByRole("button", { name: /Advanced Controls/i }));
-
-    // Click health check button
-    fireEvent.click(screen.getByRole("button", { name: /^Health Check/i }));
-
-    await waitFor(() => {
-      // All four providers render "API key: present" — use getAllByText
-      const presentLabels = screen.getAllByText(/API key: present/i);
-      expect(presentLabels.length).toBeGreaterThanOrEqual(1);
-    });
-    // Verify provider model names are shown
-    expect(screen.getAllByText("chatgpt-5.2").length).toBeGreaterThanOrEqual(1);
-  });
-
-  // 12. Validation: submitting empty question shows error via toast
-  it("does not call mutateAsync when question is empty on submit", async () => {
-    const mutateAsync = vi.fn();
-    mockUseLlmCouncil.mockReturnValue(idleMutation({ mutateAsync }));
-    renderPage();
-
-    // Submit without filling in a question
-    const form = screen
-      .getByRole("button", { name: /Run LLM Council/i })
-      .closest("form")!;
-    fireEvent.submit(form);
+    fireEvent.change(
+      screen.getByPlaceholderText(/Compare strongest review grounds/i),
+      { target: { value: "Some legal question" } },
+    );
+    fireEvent.submit(
+      screen.getByRole("button", { name: /Send/i }).closest("form")!,
+    );
 
     await waitFor(() => {
-      expect(mutateAsync).not.toHaveBeenCalled();
+      expect(screen.getByText(/Token missing/i)).toBeInTheDocument();
     });
   });
 });

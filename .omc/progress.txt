@@ -168,6 +168,69 @@ Implementer: oh-my-claudecode:executor (sonnet).
 Reviewer: different agent type (oh-my-claudecode:critic recommended for UI
 correctness depth — different from code-reviewer used for US-009).
 
+## Iteration 10 (US-010) — DONE 2026-04-28 (autopilot resume)
+
+### What was done
+- frontend/src/components/llm-council/TurnCard.tsx (new) — single-turn render
+  with user message + opinions array + moderator section. Uses data-testid
+  "turn-card" and "moderator-section"; aria-label "Turn N".
+- frontend/src/pages/LlmCouncilPage.tsx (rewritten) — thread UI with two
+  modes: NewSessionForm (no sessionId in URL) and ThreadView (sessionId from
+  useParams). Send disabled when total_turns >= 15 OR isPending OR empty
+  textarea. Turn N/15 badge. Inline error banner on mutation failure.
+- frontend/src/App.tsx — added sibling route /llm-council/sessions/:sessionId
+  reusing LlmCouncilPage.
+- frontend/__tests__/llm-council-page.test.tsx (rewritten, 14 tests)
+- frontend/__tests__/llm-council-thread.test.tsx (new, 20 tests)
+- Cleanup applied: useCreateSession.onSuccess seeds cache with
+  variables.case_id ?? null (was hardcoded null) — US-009 reviewer note.
+- frontend/__tests__/use-llm-council-sessions.test.ts +1 test for case_id passthrough.
+
+### Pipeline
+- Implementer: oh-my-claudecode:executor (sonnet)
+- Reviewer: oh-my-claudecode:critic (sonnet) — DIFFERENT from US-009's
+  code-reviewer AND from US-010's executor ✅
+- Reviewer verdict: APPROVED with 1 MAJOR + 4 MINOR non-blocking findings
+
+### Red-green cycle evidence (4 cycles, AC requires ≥4)
+1. renders 3 TurnCards — toHaveLength(3) → 99 RED → restored GREEN
+2. Send disabled at 15 — toBeDisabled() → not.toBeDisabled() RED → restored GREEN
+3. renders user message text — text → "WRONG TEXT" RED → restored GREEN
+4. seeds cache with case_id from variables — toBe(CASE_ID) → "WRONG_CASE_ID" RED → restored GREEN
+
+### Verification
+- vitest llm-council-page + llm-council-thread + use-llm-council-sessions
+  → 54/54 green in 1.53s
+- tsc --noEmit → exit 0
+
+### Critic non-blocking findings (follow-up backlog)
+1. MAJOR — test 13 asserts mutateAsync but not navigate("/llm-council/sessions/${id}")
+   URL. Production code is correct, but the navigation contract is untested;
+   if someone changes the URL pattern the test wouldn't catch it. Fix:
+   add useNavigate mock + assertion. Score: medium effort, high value.
+2. MINOR — sessionId="new" is unguarded (UX dead-end, not crash; "Session
+   not found" shown).
+3. MINOR — animate-spin on <Loader2> SVG (existing project-wide pattern;
+   PageLoader.tsx + DashboardPage.tsx do same thing; not a new regression).
+4. MINOR — addTurn input-clear (setInput("")) is untested.
+5. MINOR — getSession 404 → null path is untested in LlmCouncilPage flow.
+
+None block US-011 (sessions sidebar) or US-012 (production e2e).
+
+### Files for next subagent context
+- frontend/src/components/llm-council/TurnCard.tsx
+- frontend/src/pages/LlmCouncilPage.tsx
+- frontend/src/App.tsx
+- frontend/src/hooks/use-llm-council-sessions.ts (post-cleanup)
+
+### Next iteration
+Pick US-011: Sessions sidebar / list page
+(frontend/src/pages/LlmCouncilSessionsPage.tsx + SessionListItem.tsx).
+Implementer: oh-my-claudecode:executor (sonnet).
+Reviewer: different agent type (consider oh-my-claudecode:designer for UI
+review since US-009 used code-reviewer + US-010 used critic — designer
+brings UX correctness focus).
+
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
 # ═════════════════════════════════════════════════════════════════════════

@@ -345,6 +345,37 @@ describe("use-llm-council-sessions hooks", () => {
         expect.objectContaining({ queryKey: ["council-sessions"] }),
       );
     });
+
+    it("seeds cache with case_id from variables (not null)", async () => {
+      const CASE_ID = "abc123def456";
+
+      mockCreateSession.mockResolvedValue({
+        session_id: SESSION_ID,
+        session_token: SESSION_TOKEN,
+        turn: MOCK_TURN,
+        total_turns: 1,
+      });
+
+      const { qc, Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useCreateSession(), {
+        wrapper: Wrapper,
+      });
+
+      await act(async () => {
+        result.current.mutate({
+          message: "What are my review grounds?",
+          case_id: CASE_ID,
+        });
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      const cached = qc.getQueryData(["council-session", SESSION_ID]) as
+        | { session: api.LlmCouncilSession; turns: api.LlmCouncilTurn[] }
+        | undefined;
+      // Bug fix: seeded entry's case_id must equal variables.case_id, not null
+      expect(cached?.session.case_id).toBe(CASE_ID);
+    });
   });
 
   // -------------------------------------------------------------------------

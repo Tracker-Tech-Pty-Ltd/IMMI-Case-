@@ -301,6 +301,14 @@ export default function App() {
                 }
               />
               <Route
+                path="llm-council/sessions/:sessionId"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LlmCouncilPage />
+                  </Suspense>
+                }
+              />
+              <Route
                 path="download"
                 element={
                   <Suspense fallback={<PageLoader />}>
