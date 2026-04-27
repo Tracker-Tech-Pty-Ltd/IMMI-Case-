@@ -1,0 +1,369 @@
+{
+  "documentation_gaps": [
+    {
+      "id": "doc-001",
+      "type": "documentation_gaps",
+      "title": "OpenAPI / Swagger Specification for all 50+ API endpoints",
+      "description": "The project exposes 50+ REST endpoints under /api/v1/* (confirmed by grepping @api_bp.route). None have a machine-readable OpenAPI spec. Most route handler functions lack docstrings describing parameters, query strings, response shape, or error codes — only a handful (court_lineage, stats_trends, data_dictionary) have inline docstrings.",
+      "rationale": "Developers integrating against the API (e.g. building alternative frontends, writing integration tests, or extending the scraper pipeline) cannot discover endpoint contracts without reading ~5000 lines of api.py. An OpenAPI spec also enables auto-generated client SDKs, interactive Swagger UI, and contract testing.",
+      "category": "api_docs",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "immi_case_downloader/web/routes/api.py",
+        "immi_case_downloader/web/routes/legislations.py"
+      ],
+      "currentDocumentation": "Module-level docstring says 'All endpoints are prefixed with /api/v1/'. A /api/v1/data-dictionary endpoint exists returning field metadata, but no OpenAPI spec file was found (confirmed by find . -name 'openapi*.yaml' returning nothing).",
+      "proposedContent": "1) Add flask-smorest or apispec to generate OpenAPI 3.1 from route decorators + marshmallow schemas. 2) At minimum, add docstrings to the 15 highest-traffic endpoints (stats, cases list, search, analytics/outcomes, analytics/judges, analytics/judge-profile, analytics/success-rate, court-lineage, filter-options, export/csv, llm-council/run, taxonomy/guided-search, taxonomy/visa-lookup, cases/<id>, cases/<id>/similar). 3) Serve /api/v1/docs with Swagger UI. Each docstring should cover: HTTP method, path params, query params with types/defaults, response envelope shape, and error codes.",
+      "priority": "high",
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-001-step-1",
+          "order": 1,
+          "title": "Audit all 50 route functions for missing docstrings",
+          "description": "Run grep to list every @api_bp.route without a following docstring. Produce a prioritised list of the 15 most-used endpoints.",
+          "done": false
+        },
+        {
+          "id": "doc-001-step-2",
+          "order": 2,
+          "title": "Write parameter + response docstrings for top 15 endpoints",
+          "description": "For each: HTTP method, URL, path params, query params (name, type, default, constraints), success response shape (JSON keys), error codes (400/404/422/500).",
+          "done": false
+        },
+        {
+          "id": "doc-001-step-3",
+          "order": 3,
+          "title": "Integrate apispec or flask-smorest to emit /api/v1/openapi.json",
+          "description": "Wire docstrings into apispec. Add a /api/v1/docs Swagger UI route. Validate the spec with swagger-parser in CI.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-002",
+      "type": "documentation_gaps",
+      "title": "ImmigrationCase field-level documentation (all 31 fields)",
+      "description": "The ImmigrationCase dataclass in models.py defines 31 fields with zero inline comments. A /api/v1/data-dictionary endpoint exists that presumably returns some metadata, but the dataclass itself has no per-field docstrings explaining data type, source (regex vs LLM vs scraper), fill rate, or legal meaning. Fields like is_represented, legal_test_applied, visa_outcome_reason, and legal_concepts are particularly opaque.",
+      "rationale": "Domain knowledge is critical here: a developer adding a new scraper, a researcher writing an analysis script, or a contributor extending the LLM extraction pipeline all need to know what each field means, where it comes from, and what values to expect. The CLAUDE.md fill-rate table helps developers but is not co-located with the code.",
+      "category": "inline_comments",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "immi_case_downloader/models.py",
+        "immi_case_downloader/web/routes/api.py (DATA_DICTIONARY_FIELDS)"
+      ],
+      "currentDocumentation": "Class docstring says 'Represents a single immigration court/tribunal case.' No per-field documentation. Fill rates documented only in CLAUDE.md (not in code). A /api/v1/data-dictionary endpoint exists at line 5010 of api.py but its DATA_DICTIONARY_FIELDS constant was not confirmed to have descriptions.",
+      "proposedContent": "Add a comment block above each field group in the dataclass, e.g.: # -- Core identification -- case_id (str): First 12 hex chars of SHA-256(citation|url|title). Never empty after ensure_id(). # -- Scraper-populated fields -- court (str): Full court name, e.g. 'Administrative Appeals Tribunal'. court_code (str): Short code, one of AATA|ARTA|FCA|FCCA|FedCFamC2G|HCA|RRTA|MRTA|FMCA. # -- Regex-extracted fields (fill rates vary) -- visa_subclass (str): Human-readable subclass label, e.g. 'Student (500)'. Fill ~91.6%. visa_subclass_number (str): Numeric subclass only, e.g. '500'. is_represented (str): 'Y'/'N'/'' — whether applicant had legal representation. Fill ~42.4%. legal_test_applied (str): Short label for the legal test cited, <=80 chars. Fill ~36.2%.",
+      "priority": "high",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-002-step-1",
+          "order": 1,
+          "title": "Group the 31 fields into logical sections",
+          "description": "Identify 5-6 groups: core ID, scraper-populated, regex-extracted, LLM-extracted, user-editable. Confirm fill rates from CLAUDE.md.",
+          "done": false
+        },
+        {
+          "id": "doc-002-step-2",
+          "order": 2,
+          "title": "Add inline field comments to ImmigrationCase",
+          "description": "For each field: type, source (scraper/regex/LLM/user), example values, fill rate where known, legal meaning for domain-specific fields.",
+          "done": false
+        },
+        {
+          "id": "doc-002-step-3",
+          "order": 3,
+          "title": "Sync DATA_DICTIONARY_FIELDS in api.py with the new comments",
+          "description": "Ensure /api/v1/data-dictionary returns the same descriptions. Add a test that the endpoint returns a description for all 31 fields.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-003",
+      "type": "documentation_gaps",
+      "title": "Australian court lineage & outcome taxonomy guide for end users",
+      "description": "The application serves non-legal immigration applicants who do not understand: (a) why cases appear under FMCA, FCCA, or FedCFamC2G for the same type of matter; (b) what 'Affirmed', 'Remitted', 'Set Aside', 'Quashed' mean in practice; (c) that a 'win' in a tribunal (Remitted/Set Aside) is different from a win in a court (Allowed). This domain knowledge is embedded in api.py's _OUTCOME_MAP and TRIBUNAL_CODES constants but is never surfaced to users.",
+      "rationale": "The primary user is a self-represented immigration applicant under stress. If they misread 'Affirmed' as a positive outcome (the visa was affirmed = granted) when it actually means the refusal was upheld, they will draw incorrect conclusions about case precedents. This is a trust and accuracy issue, not just a UX nicety.",
+      "category": "examples",
+      "targetAudience": "users",
+      "affectedAreas": [
+        "frontend/src/pages/ (CourtLineagePage, AnalyticsPage)",
+        "immi_case_downloader/web/routes/api.py (_OUTCOME_MAP, TRIBUNAL_CODES)"
+      ],
+      "currentDocumentation": "The /court-lineage API endpoint returns lineage metadata. A CourtLineagePage exists in the frontend. The CLAUDE.md has a Court Lineage table for developers. No user-facing glossary exists for outcomes.",
+      "proposedContent": "1) An in-app 'Outcome Glossary' tooltip or help panel on the Cases list and Case Detail pages explaining each of the 10 normalised outcomes (Affirmed, Dismissed, Remitted, Set Aside, Allowed, Granted, Quashed, Refused, Cancelled, Withdrawn) with a plain-English sentence and whether it counts as applicant success. 2) On the CourtLineagePage, add a paragraph explaining the court merger timeline and why searching across FMCA+FCCA+FedCFamC2G is needed for complete lower-court history. 3) In the README Section 5 (Usage), add a subsection 'Understanding Outcomes' with the same glossary.",
+      "priority": "high",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-003-step-1",
+          "order": 1,
+          "title": "Write plain-English definitions for all 10 normalised outcomes",
+          "description": "For each: one sentence of plain English, whether applicant 'won', which court types use it. Source from api.py _OUTCOME_MAP and TRIBUNAL_WIN_OUTCOMES constants.",
+          "done": false
+        },
+        {
+          "id": "doc-003-step-2",
+          "order": 2,
+          "title": "Add outcome glossary to i18n translation files (en + zh-TW)",
+          "description": "Add keys like outcomes.affirmed.label, outcomes.affirmed.description, outcomes.affirmed.applicantWon to frontend/src/i18n/*.json.",
+          "done": false
+        },
+        {
+          "id": "doc-003-step-3",
+          "order": 3,
+          "title": "Surface glossary as tooltip on outcome badges in CaseDetail and CaseList",
+          "description": "Wrap existing OutcomeBadge component with a Tooltip that shows the plain-English description on hover/focus.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-004",
+      "type": "documentation_gaps",
+      "title": "Developer guide: adding a new storage backend (Repository Protocol)",
+      "description": "The project has three repository implementations (CSV, SQLite, Supabase) behind a CaseRepository Protocol. A developer wanting to add a fourth backend (e.g. DuckDB, MongoDB, or a remote REST store) has no guide. The pattern is non-trivial: 15 required methods, WAL mode, FTS5 specifics, thread-local connections for SQLite, and Supabase-specific pgvector calls.",
+      "rationale": "This is the most architecturally significant extension point in the system. Without documentation, any new backend will miss thread-safety requirements or FTS integration, leading to subtle runtime bugs.",
+      "category": "architecture",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "immi_case_downloader/repository.py",
+        "immi_case_downloader/sqlite_repository.py",
+        "immi_case_downloader/supabase_repository.py",
+        "immi_case_downloader/csv_repository.py"
+      ],
+      "currentDocumentation": "CLAUDE.md lists the four files and names the Protocol but gives no implementation contract beyond method names. The repository.py Protocol file presumably has method signatures but no implementation notes.",
+      "proposedContent": "A 'Adding a Storage Backend' section in CLAUDE.md (or a docs/backends.md) covering: 1) All 15 Protocol methods with their expected contracts (return types, exception behaviour, pagination semantics). 2) Thread-safety requirements (the SQLite backend uses thread-local connections). 3) How to register a new backend with the --backend CLI flag in web.py. 4) FTS / full-text search integration (optional but needed for /search). 5) A minimal 30-line skeleton implementation. 6) Which unit tests to run to verify compliance (pytest tests/test_repository_*.py).",
+      "priority": "medium",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-004-step-1",
+          "order": 1,
+          "title": "Read repository.py Protocol and document all 15 method contracts",
+          "description": "For each method: signature, return type, semantics (e.g. does get_case raise or return None on missing?), and whether it is required or optional for the protocol.",
+          "done": false
+        },
+        {
+          "id": "doc-004-step-2",
+          "order": 2,
+          "title": "Document thread-safety and connection lifecycle patterns",
+          "description": "Explain sqlite_repository.py thread-local connection pattern. Document why CSV backend is not thread-safe for concurrent writes.",
+          "done": false
+        },
+        {
+          "id": "doc-004-step-3",
+          "order": 3,
+          "title": "Write skeleton backend implementation and add to CLAUDE.md",
+          "description": "Provide a 30-line MemoryRepository skeleton as an example. Add to CLAUDE.md under a new 'Extending the System' section.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-005",
+      "type": "documentation_gaps",
+      "title": "Design token documentation: naming conventions, theming contract, and build pipeline",
+      "description": "frontend/src/tokens/tokens.json defines the complete design token system (colors, typography, spacing, shadows, court colors for 9 courts) with no accompanying documentation. The build pipeline (scripts/build-tokens.ts) transforms this JSON into CSS variables and TypeScript constants, but the naming contract, how to add a new token, and which tokens are theme-aware (light/dark) is undocumented.",
+      "rationale": "The CLAUDE.md design context section explicitly states 'All spacing, shadows, border-radius MUST come from tokens.json, not magic numbers.' With 24 pages and a growing component library, a new frontend contributor will violate this constraint without knowing it. Court color tokens in particular have a legal/semantic meaning (each maps to a specific court) that is not obvious from hex values alone.",
+      "category": "inline_comments",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "frontend/src/tokens/tokens.json",
+        "frontend/scripts/build-tokens.ts",
+        "frontend/src/tokens/"
+      ],
+      "currentDocumentation": "tokens.json contains color, typography, spacing, shadow, and radius keys. CLAUDE.md mentions the token system exists. No README or comment explains the JSON schema, the light/dark.* nesting convention, or the build pipeline invocation.",
+      "proposedContent": "A comment header block in tokens.json (or a companion tokens.md) covering: 1) Token naming convention: color.primary.DEFAULT, color.dark.primary.DEFAULT for the dark-mode override. 2) Court color semantic meaning: each of the 9 court codes (AATA, ARTA, FCA, FCCA, FedCFamC2G, HCA, RRTA, MRTA, FMCA) maps to a specific tribunal/court — the colors must NOT be changed without verifying all court badge components. 3) Build pipeline: run 'cd frontend && npm run build:tokens' to regenerate CSS and TS outputs. 4) How to add a new token: add to tokens.json, run build:tokens, import the generated TS constant. 5) Which tokens map to which CSS custom properties (--color-primary, --color-accent, etc.).",
+      "priority": "medium",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-005-step-1",
+          "order": 1,
+          "title": "Read build-tokens.ts to map JSON keys to CSS variable names",
+          "description": "Trace how color.primary.DEFAULT becomes --color-primary in the CSS output.",
+          "done": false
+        },
+        {
+          "id": "doc-005-step-2",
+          "order": 2,
+          "title": "Write tokens.md with naming convention and court color semantics",
+          "description": "Document all top-level sections (color, typography, spacing, shadow, radius), the dark.* override pattern, and the meaning of each court color. Include the build command.",
+          "done": false
+        },
+        {
+          "id": "doc-005-step-3",
+          "order": 3,
+          "title": "Add a JSDoc comment to the top of tokens.json pointing to tokens.md",
+          "description": "Since JSON doesn't support comments natively, add a '__doc__' key at the top of the file referencing the companion documentation.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-006",
+      "type": "documentation_gaps",
+      "title": "Troubleshooting guide: AustLII scraping failures, IP blocks, and rate limit recovery",
+      "description": "AustLII is the primary data source and has multiple documented failure modes: HTTP 410 on default User-Agent, IP blocks from bulk scraping (resolves in hours), AATA 2025-2026 returning 500 (use ARTA instead), Federal Court DNS failure (search2.fedcourt.gov.au), and RRTA/MRTA anonymised case titles. These are mentioned briefly in CLAUDE.md's Gotchas section but there is no structured troubleshooting guide with diagnostic steps.",
+      "rationale": "When a scrape fails silently (returns 0 cases instead of an error), operators waste hours diagnosing. These failure modes are reproducible and each has a known fix. A structured runbook prevents repeated diagnosis cycles. Particularly important for the Cloudflare Workers deployment path where log access is limited.",
+      "category": "troubleshooting",
+      "targetAudience": "maintainers",
+      "affectedAreas": [
+        "immi_case_downloader/sources/base.py",
+        "immi_case_downloader/sources/austlii.py",
+        "immi_case_downloader/config.py",
+        "CLAUDE.md (Gotchas section)"
+      ],
+      "currentDocumentation": "CLAUDE.md Gotchas section has 8 one-liner bullets. No structured diagnostic flow. No mention of how to verify an IP block has cleared vs. a configuration error.",
+      "proposedContent": "A 'Troubleshooting Scraping Failures' section with a decision tree: 1) 0 cases returned for a court/year — check: is the court code correct? Is the year within range? Is AustLII returning HTTP 410 (UA issue)? Is IP blocked (test with curl -A 'Mozilla/5.0...' https://austlii.edu.au/au/cases/cth/AATA/2024/)? 2) AATA 2025+ returns 500 — switch to ARTA: python run.py search --databases ARTA --start-year 2025. 3) FCA cases missing — all FCA data is via AustLII (fedcourt DNS broken); confirm with: nslookup search2.fedcourt.gov.au. 4) IP block recovery — wait 2-6 hours; consider using the Cloudflare Workers distributed scraper. 5) RRTA/MRTA case titles are anonymised IDs — expected; IMMIGRATION_ONLY_DBS skips keyword filter. 6) Port 5000 conflict — use --port 8080. Each item should include the diagnostic command, expected output, and fix.",
+      "priority": "medium",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-006-step-1",
+          "order": 1,
+          "title": "Catalogue all known failure modes from CLAUDE.md Gotchas and sources/*.py",
+          "description": "Extract every error condition mentioned in CLAUDE.md, plus any exception handling in austlii.py and base.py that logs warnings.",
+          "done": false
+        },
+        {
+          "id": "doc-006-step-2",
+          "order": 2,
+          "title": "Write diagnostic decision tree for each failure mode",
+          "description": "For each: symptom, diagnostic command with expected output, root cause, fix command. Cover: 410 UA block, IP rate limit, AATA 500, FCA DNS, RRTA anonymised titles, port conflict.",
+          "done": false
+        },
+        {
+          "id": "doc-006-step-3",
+          "order": 3,
+          "title": "Add troubleshooting section to README and cross-reference from CLAUDE.md Gotchas",
+          "description": "Place the full troubleshooting guide in README Section 7 (or docs/troubleshooting.md). Update CLAUDE.md Gotchas bullets to reference it.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-007",
+      "type": "documentation_gaps",
+      "title": "Frontend CSRF + authentication pattern documentation for API consumers",
+      "description": "The api.ts file implements a CSRF token fetch-and-cache mechanism, per-method automatic token injection, AbortController signal chaining, per-endpoint timeout constants, and localStorage dashboard caching. None of this is documented. A developer adding a new hook or a third-party consumer calling the API directly will not know they need to: (1) GET /api/v1/csrf-token first, (2) include X-CSRFToken on all non-GET requests, (3) expect 429 rate-limit responses on POST endpoints.",
+      "rationale": "CSRF misconfiguration is a security gap. Any new POST/PUT/DELETE frontend call that omits the token will silently fail with a 400 CSRF error that looks like a generic API failure. The apiFetch wrapper is the correct pattern but is not documented, so contributors duplicate ad-hoc fetch calls instead of using it.",
+      "category": "inline_comments",
+      "targetAudience": "developers",
+      "affectedAreas": [
+        "frontend/src/lib/api.ts",
+        "immi_case_downloader/web/security.py",
+        "immi_case_downloader/web/routes/api.py (get_csrf_token)"
+      ],
+      "currentDocumentation": "CLAUDE.md mentions 'CSRF protection via flask-wtf; /api/v1/csrf-token endpoint for React SPA' in one sentence. api.ts has no JSDoc. security.py is not examined but presumably has CSRF configuration.",
+      "proposedContent": "JSDoc comments on the key exported functions in api.ts: apiFetch (explain CSRF injection, timeout, abort signal chaining), fetchCsrfToken (lazy cache, when it is invalidated), and each timeout constant (why ANALYTICS_HEAVY_TIMEOUT_MS is 20s vs FILTER_OPTIONS_TIMEOUT_MS is 8s). Also add a section to CLAUDE.md under 'React Frontend Gotchas': 'All non-GET API calls must go through apiFetch() from lib/api.ts — never use raw fetch() for mutation calls, as CSRF token injection is not automatic otherwise. The token is cached in module scope and reset on 403 responses.'",
+      "priority": "medium",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-007-step-1",
+          "order": 1,
+          "title": "Add JSDoc to apiFetch, fetchCsrfToken, and all timeout constants in api.ts",
+          "description": "For apiFetch: params, return, CSRF behaviour, timeout behaviour, abort signal chaining, error types thrown. For constants: explain why each value was chosen.",
+          "done": false
+        },
+        {
+          "id": "doc-007-step-2",
+          "order": 2,
+          "title": "Add 'API Security Contract' section to CLAUDE.md React Frontend Gotchas",
+          "description": "One paragraph: always use apiFetch for mutations, never raw fetch; CSRF token flow; 429 rate-limit handling; expected error envelope shape.",
+          "done": false
+        },
+        {
+          "id": "doc-007-step-3",
+          "order": 3,
+          "title": "Add a usage example comment at the top of api.ts",
+          "description": "Show a minimal GET and a minimal POST example using apiFetch with TypeScript generics, including error handling pattern used throughout the codebase.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "doc-008",
+      "type": "documentation_gaps",
+      "title": "SmartPipeline phase documentation: crawl strategies, auto-rotate logic, and checkpoint recovery",
+      "description": "pipeline.py implements a 3-phase (crawl → clean → download) pipeline with three crawl strategies ('direct', 'viewdb', 'keyword_search'), auto-rotate on consecutive failures, structured PipelineEvent logging, and checkpoint-based progress. The module-level docstring covers the high-level intent but the strategy rotation logic, what triggers a strategy switch, and how to resume a failed pipeline run are not documented.",
+      "rationale": "The pipeline is the most operationally complex component: it runs as a background daemon thread, emits structured events, and can be interrupted. An operator seeing a pipeline stall in the web UI has no guide for interpreting the event log categories (strategy_switch, http_error, parse_error) or knowing when to manually intervene vs. wait for auto-rotate.",
+      "category": "inline_comments",
+      "targetAudience": "maintainers",
+      "affectedAreas": [
+        "immi_case_downloader/pipeline.py",
+        "immi_case_downloader/web/routes/api.py (pipeline-status, pipeline-action endpoints)"
+      ],
+      "currentDocumentation": "Module docstring: 'wraps existing scraper methods with auto-fallback strategy rotation, structured debug logging, and checkpoint-based progress tracking.' PipelineConfig fields are named but not explained. PipelineEvent.phase, level, category fields have inline type hints but no value enumeration docs.",
+      "proposedContent": "1) Expand PipelineConfig docstring to explain each field: what 'auto_rotate' does (switches to next strategy after max_consecutive_failures), what each crawl_strategies value means ('direct' = listing page scrape, 'viewdb' = viewdb URL pattern, 'keyword_search' = AustLII search API fallback). 2) Add a comment block above RETRYABLE_ERRORS listing which HTTP codes trigger a retry vs. a strategy switch. 3) Document PipelineEvent category enum values: what each of strategy_switch, http_error, parse_error, checkpoint means. 4) Add a 'Resuming a Failed Pipeline' section to CLAUDE.md: how to read the web UI event log, what the three presets (quick/full/download_only) cover, and how to restart from a specific court/year.",
+      "priority": "medium",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "doc-008-step-1",
+          "order": 1,
+          "title": "Document PipelineConfig field semantics and strategy rotation logic",
+          "description": "Add docstring to PipelineConfig explaining crawl_strategies values, auto_rotate threshold, and preset behaviours (quick/full/download_only).",
+          "done": false
+        },
+        {
+          "id": "doc-008-step-2",
+          "order": 2,
+          "title": "Document PipelineEvent category and level enum values",
+          "description": "Add a CLASS-level comment or Literal type annotation enumerating all valid category values and what each means for an operator reading the web UI log.",
+          "done": false
+        },
+        {
+          "id": "doc-008-step-3",
+          "order": 3,
+          "title": "Add 'Operating the Pipeline' runbook to CLAUDE.md",
+          "description": "Cover: starting a pipeline run via web UI vs CLI, reading the event log, interpreting strategy_switch events, when to manually abort and restart, checkpoint recovery for partial runs.",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "filesAnalyzed": 9,
+    "generatedAt": "2026-04-16T08:06:51Z",
+    "filesExamined": [
+      "README.md (614 lines)",
+      "immi_case_downloader/web/routes/api.py (50+ routes, ~5000 lines)",
+      "immi_case_downloader/models.py (68 lines, 31 fields)",
+      "immi_case_downloader/pipeline.py (first 160 lines)",
+      "frontend/src/lib/api.ts (first 80 lines)",
+      "frontend/src/tokens/tokens.json (first 40 lines)",
+      "CLAUDE.md (developer guide, ~600 lines)",
+      "docs/ directory listing",
+      "find . -name openapi*.yaml (no results)"
+    ]
+  }
+}

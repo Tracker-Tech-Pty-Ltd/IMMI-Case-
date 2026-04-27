@@ -1,0 +1,384 @@
+{
+  "ui_ux_improvements": [
+    {
+      "id": "uiux-001",
+      "type": "ui_ux_improvements",
+      "title": "ConfirmModal missing ARIA dialog semantics and focus trap",
+      "description": "ConfirmModal renders a visually correct modal but lacks role=\"dialog\", aria-modal=\"true\", aria-labelledby, and aria-describedby attributes. The backdrop click dismisses but keyboard focus is not trapped inside the modal — a user tabbing past the two buttons will reach content behind the overlay.",
+      "rationale": "Screen-reader users cannot identify this as a dialog. Focus escape from modals is a WCAG 2.1 AA failure (criterion 2.1.2 No Keyboard Trap is violated in the opposite direction: focus leaves the modal unintentionally). This is the confirmation modal for destructive batch-delete actions, so accessibility here is high-stakes.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/components/shared/ConfirmModal.tsx"],
+      "current_state": "div.fixed.inset-0 wrapping two buttons. ESC closes via document listener. No role, aria-modal, aria-labelledby, or focus trap. Cancel button gets focus via useEffect but Tab will exit the modal.",
+      "proposed_change": "1) Add role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-desc\" to the inner container div. 2) Add id=\"confirm-modal-title\" to the h3 and id=\"confirm-modal-desc\" to the p. 3) Add a focus-trap via useEffect that intercepts Tab/Shift+Tab and keeps focus cycling between the Cancel and Confirm buttons only while the modal is open.",
+      "user_benefit": "Screen-reader users (including vision-impaired applicants) will hear the modal title announced on open, understand it is a dialog, and will not accidentally trigger actions behind the overlay.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-001-step-1",
+          "order": 1,
+          "title": "Add ARIA role and labelling attributes",
+          "description": "On the inner container div (the white card), add role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"confirm-modal-title\" aria-describedby=\"confirm-modal-desc\". Add matching id attributes to the existing h3 and p elements.",
+          "done": false
+        },
+        {
+          "id": "uiux-001-step-2",
+          "order": 2,
+          "title": "Implement keyboard focus trap",
+          "description": "In a useEffect that runs when open=true, collect all focusable elements inside the modal container ref. On keydown Tab, if focus is on the last element cycle to first; on Shift+Tab from first, cycle to last.",
+          "done": false
+        },
+        {
+          "id": "uiux-001-step-3",
+          "order": 3,
+          "title": "Restore focus on close",
+          "description": "Capture document.activeElement before the modal opens (store in a ref) and restore focus to that element when the modal closes, so keyboard users return to where they were.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-002",
+      "type": "ui_ux_improvements",
+      "title": "GlobalSearch dialog missing ARIA dialog role and live-region for results",
+      "description": "The GlobalSearch overlay renders a visually functional command-palette style dialog but has no role=\"dialog\", aria-modal, or aria-labelledby. The results list has no role=\"listbox\" / role=\"option\" pairing with the input's aria-activedescendant, so screen readers cannot announce the number of results or the currently highlighted item.",
+      "rationale": "WCAG 2.1 AA — 4.1.3 Status Messages and 1.3.1 Info and Relationships. The search dialog is the primary discovery mechanism for immigration applicants; if a screen-reader user cannot determine how many results appeared or which is highlighted, it is effectively unusable.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/components/shared/GlobalSearch.tsx"],
+      "current_state": "Outer fixed div with backdrop. Inner div with input + ul of results. aria-current on result buttons but no combobox/listbox pattern. No aria-live region announces result count changes.",
+      "proposed_change": "1) Add role=\"dialog\" aria-modal=\"true\" aria-label to the inner container. 2) Change the input to role=\"combobox\" aria-expanded={hasResults} aria-haspopup=\"listbox\" aria-autocomplete=\"list\" aria-controls=\"global-search-listbox\" aria-activedescendant={activeResultId}. 3) Change the ul to role=\"listbox\" id=\"global-search-listbox\". 4) Change each result button to role=\"option\" with a stable id (e.g. result-{case_id}) and aria-selected. 5) Add a visually hidden aria-live=\"polite\" region announcing result count on change.",
+      "user_benefit": "Screen-reader users will hear result counts announced as they type, hear the highlighted result on arrow-key navigation, and can select results with Enter — all without visual feedback.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-002-step-1",
+          "order": 1,
+          "title": "Convert input to combobox pattern",
+          "description": "Add role=\"combobox\", aria-expanded, aria-haspopup=\"listbox\", aria-controls, and aria-activedescendant to the input element. Assign stable IDs to each result option matching the activedescendant value.",
+          "done": false
+        },
+        {
+          "id": "uiux-002-step-2",
+          "order": 2,
+          "title": "Convert results list to listbox",
+          "description": "Change the ul to role=\"listbox\" with a matching id. Change each result li/button to role=\"option\" with aria-selected={idx === clampedActiveIdx} and id=\"global-search-result-{case_id}\".",
+          "done": false
+        },
+        {
+          "id": "uiux-002-step-3",
+          "order": 3,
+          "title": "Add live region for result count",
+          "description": "Add a visually hidden div with aria-live=\"polite\" aria-atomic=\"true\" that renders \"{n} results\" when cases.length changes. Use a 150ms debounce to avoid excessive announcements while typing.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-003",
+      "type": "ui_ux_improvements",
+      "title": "CasesPage table has no skeleton loading state — shows blank gap during data fetch",
+      "description": "When CasesPage first loads or when filters change, the table area renders nothing until isLoading is false. There is no skeleton/placeholder row structure, so the page visually collapses and reflows when data arrives. The existing skeleton pattern is used in JudgeHero, ComparisonTable, and ChartCard but not in the main cases list which has 100k+ records and meaningful load time.",
+      "rationale": "Visual continuity during loading reduces perceived latency and prevents layout shift — critical for anxious applicants who may interpret a blank table as an error. TanStack Query's keepPreviousData helps on filter changes, but first-load and hard refreshes still show a blank region.",
+      "category": "usability",
+      "affected_components": ["frontend/src/pages/CasesPage.tsx"],
+      "current_state": "isLoading guard renders PageLoader (full-page spinner with text). When loading resolves the table appears. No row-level skeleton. The filter bar and header render immediately but the content area is empty.",
+      "proposed_change": "Replace the PageLoader branch for the table section with an inline skeleton: render 8-10 rows of animate-pulse placeholder divs that match the table's column structure (a wide title column placeholder, a narrow court badge placeholder, a date placeholder). Keep the filter bar interactive during load. Use the same animate-pulse pattern already established in ComparisonTable and JudgeHero.",
+      "user_benefit": "Users see the table structure immediately and understand data is incoming. Eliminates layout shift. Matches the quality bar already set by the judge/analytics pages.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-003-step-1",
+          "order": 1,
+          "title": "Create CasesTableSkeleton component",
+          "description": "Add a small inline component (or named function) CasesTableSkeleton that renders a table with 10 rows. Each row has: a checkbox placeholder, a wide title bar (h-4 w-2/3 animate-pulse rounded bg-surface), a court badge placeholder (h-5 w-12), a date placeholder (h-4 w-20), and an outcome placeholder (h-5 w-16). Use the existing token colours.",
+          "done": false
+        },
+        {
+          "id": "uiux-003-step-2",
+          "order": 2,
+          "title": "Replace PageLoader with skeleton in table region",
+          "description": "In the CasesPage render, where isLoading currently triggers PageLoader, instead render the table header + CasesTableSkeleton rows inline so the filter bar, page header, and column headers remain visible and stable.",
+          "done": false
+        },
+        {
+          "id": "uiux-003-step-3",
+          "order": 3,
+          "title": "Verify keepPreviousData behaviour on filter change",
+          "description": "Confirm useCases passes placeholderData: keepPreviousData (TanStack Query v5 syntax). If not, add it so filter changes show stale data overlaid with a subtle isFetching opacity-50 on the table body rather than a full skeleton re-render.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-004",
+      "type": "ui_ux_improvements",
+      "title": "Sidebar collapsed mode icon-only buttons have no visible tooltip on mobile — rely solely on title attribute",
+      "description": "When the Sidebar is collapsed (w-16), nav items render only an icon with a title attribute for the label. The title attribute produces a native browser tooltip on hover (desktop), but on mobile touch devices title is never exposed, leaving icon-only nav items completely unlabelled for touch users.",
+      "rationale": "The collapsed sidebar is the primary navigation state on tablet viewports. Touch users have no way to discover what the icon means. This affects the entire navigation — 11 nav items across 4 groups.",
+      "category": "usability",
+      "affected_components": ["frontend/src/components/layout/Sidebar.tsx"],
+      "current_state": "NavLink has title={label} for collapsed state. No aria-label override. No tooltip component. On mobile title tooltips are not triggered by tap.",
+      "proposed_change": "When collapsed=true, add aria-label={label} to each NavLink (currently only title is set). Additionally, implement a lightweight CSS tooltip via a ::after pseudo-element or a small absolutely-positioned sibling span that appears on :focus-visible and :hover, showing the label text to the right of the icon. This requires no new dependency — use Tailwind group/peer utilities.",
+      "user_benefit": "Touch users on tablets can long-press or tap the icon and still read the label in the tooltip. Keyboard users navigating the collapsed sidebar will hear the label from aria-label. Eliminates a complete navigation discovery failure on mobile.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-004-step-1",
+          "order": 1,
+          "title": "Add aria-label to collapsed NavLink",
+          "description": "In Sidebar.tsx, when collapsed=true the NavLink already has title={label}. Add aria-label={label} alongside it so screen readers and assistive technology can identify the link regardless of visual mode.",
+          "done": false
+        },
+        {
+          "id": "uiux-004-step-2",
+          "order": 2,
+          "title": "Implement CSS tooltip for collapsed icons",
+          "description": "Wrap each NavLink icon in a relative container. Add a sibling span with the label text, positioned absolutely to the right of the icon (left-full ml-2), with opacity-0 invisible group-hover:opacity-100 group-focus-within:opacity-100 transition. Style as a small rounded bg-card border border-border shadow text-xs px-2 py-1 whitespace-nowrap pointer-events-none z-50.",
+          "done": false
+        },
+        {
+          "id": "uiux-004-step-3",
+          "order": 3,
+          "title": "Test collapsed sidebar on 768px viewport",
+          "description": "Resize browser to 768px, navigate the collapsed sidebar with keyboard Tab, and confirm aria-label is announced. Hover/focus each icon and confirm the tooltip appears to the right without being clipped by the sidebar boundary (overflow-visible on the nav container may be needed).",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-005",
+      "type": "ui_ux_improvements",
+      "title": "CourtBadge full name exposed only via title — inaccessible to screen readers and invisible on mobile",
+      "description": "CourtBadge uses a title attribute to show the full court name (e.g. 'Administrative Appeals Tribunal' for 'AATA') on hover. The title attribute is not announced by screen readers by default and is never shown on touch devices. For non-legal users (the primary audience), the 3-4 letter abbreviation alone is opaque.",
+      "rationale": "The design brief states 'Trust Before Beauty' and 'court colour coding is core information design'. An applicant who does not know what FMCA or FedCFamC2G means cannot build trust in the data. The full court name should be persistently accessible.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/components/shared/CourtBadge.tsx"],
+      "current_state": "span with title={fullName}. The abbreviation is the only visible text. No aria-label. No tooltip component. Mobile users never see the full name.",
+      "proposed_change": "Add aria-label={fullName ?? court} to the span so screen readers announce the full name. For sighted users, replace the raw title with a CSS tooltip (same pattern as uiux-004) that appears on hover/focus. Optionally add a variant prop (size='lg') that renders both the abbreviation and a truncated full name inline — useful in case detail page headers where there is more space.",
+      "user_benefit": "Screen reader users hear 'Administrative Appeals Tribunal' not 'AATA'. Touch users can long-press and see the tooltip. Non-legal applicants immediately understand which body decided their type of case.",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-005-step-1",
+          "order": 1,
+          "title": "Add aria-label with full court name",
+          "description": "In CourtBadge.tsx, change the span to include aria-label={fullName ?? court}. This is a one-line change with zero visual impact and immediately fixes screen-reader accessibility.",
+          "done": false
+        },
+        {
+          "id": "uiux-005-step-2",
+          "order": 2,
+          "title": "Wrap in relative container for hover tooltip",
+          "description": "Wrap the span in a relative inline-flex container. Add a sibling tooltip span (same pattern as uiux-004) showing fullName, positioned above (bottom-full mb-1) with opacity transitions. Keep the existing title attribute as a belt-and-suspenders fallback.",
+          "done": false
+        },
+        {
+          "id": "uiux-005-step-3",
+          "order": 3,
+          "title": "Verify rendering at high badge density",
+          "description": "Check the CasesPage table view where many CourtBadges appear in a column. Confirm the tooltip container does not cause layout shift or overflow issues in table cells. Adjust z-index if tooltip is clipped by table row overflow.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-006",
+      "type": "ui_ux_improvements",
+      "title": "Keyword search input in CasesPage commits only on blur or Enter — no real-time feedback indicator",
+      "description": "The keyword search input uses onBlur + Enter to commit the search (URL param update), not onChange. This is a deliberate debounce pattern to avoid per-keystroke API calls, but users receive zero visual feedback that their typed query has not yet been submitted. There is no loading spinner on the input or any indication of the pending-but-not-committed state.",
+      "rationale": "Non-technical users (immigration applicants) expect search boxes to work like Google — type and results update. When they type a query and move focus elsewhere (e.g. click a court filter), the search fires silently. If they type and immediately click a result expecting filtered results, nothing happens. The pattern is correct architecturally but needs UX affordance.",
+      "category": "usability",
+      "affected_components": ["frontend/src/pages/CasesPage.tsx"],
+      "current_state": "input defaultValue={filters.keyword} onBlur commits. onKeyDown Enter commits. No visual diff between 'typed but not committed' and 'committed' states. No loading indicator when isLoading=true after commit.",
+      "proposed_change": "1) Add local state `inputValue` that tracks the typed value in real-time. 2) Show a subtle ring-accent border when inputValue !== filters.keyword (pending state). 3) Show a small Loader2 icon (replacing the Search icon) in the left-icon position when isFetching=true. 4) Add a small helper text 'Press Enter to search' that appears only when inputValue !== filters.keyword and the input is focused.",
+      "user_benefit": "Users immediately understand when their query is pending vs. applied. The loading indicator confirms the search is running. Reduces confusion and support burden for non-technical primary users.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-006-step-1",
+          "order": 1,
+          "title": "Add controlled inputValue state",
+          "description": "Replace defaultValue with value={inputValue} and an onChange handler that updates local inputValue state without committing to URL. Keep onBlur and onKeyDown Enter as the commit triggers. Sync inputValue from filters.keyword on filter resets.",
+          "done": false
+        },
+        {
+          "id": "uiux-006-step-2",
+          "order": 2,
+          "title": "Add pending-state ring to the input",
+          "description": "Add a conditional class to the input: ring-1 ring-accent/50 when inputValue !== (filters.keyword ?? ''). This gives a subtle amber glow indicating an uncommitted change, matching the accent colour system.",
+          "done": false
+        },
+        {
+          "id": "uiux-006-step-3",
+          "order": 3,
+          "title": "Replace Search icon with Loader2 during fetch",
+          "description": "The Search icon sits absolutely-positioned left-2.5. When isFetching=true, replace it with <Loader2 className=\"animate-spin\" /> to give inline feedback that results are loading. This reuses the existing animate-spin pattern from PageLoader.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-007",
+      "type": "ui_ux_improvements",
+      "title": "Language toggle button lacks accessible label — icon-free text button with no aria context",
+      "description": "The Topbar language toggle renders a plain button with text content '中文' or 'EN' and a title attribute but no aria-label. Screen readers will announce the text content but not the purpose (switching language). More critically, there is no aria-live region to announce the language change to users who triggered it.",
+      "rationale": "A user who changes the interface language via this button receives no screen-reader confirmation the language switched. For the zh-TW speaking applicant audience, accessible language switching is important.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/components/layout/Topbar.tsx"],
+      "current_state": "button with title={t('common.toggle_language')} and text content showing current target language ('中文' or 'EN'). No aria-label. No aria-live announcement on change.",
+      "proposed_change": "1) Add aria-label={t('common.toggle_language_label', { defaultValue: 'Switch to {{lang}}', lang: isZhTW ? 'English' : '繁體中文' })} so the button announces what it will do, not the current state. 2) Add a visually-hidden aria-live=\"polite\" region in AppLayout that announces the active language name after i18n.changeLanguage resolves.",
+      "user_benefit": "Screen-reader users hear 'Switch to English' or 'Switch to Traditional Chinese' before clicking, and hear a confirmation after the switch.",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-007-step-1",
+          "order": 1,
+          "title": "Add descriptive aria-label to language button",
+          "description": "In Topbar.tsx, replace title={t('common.toggle_language')} with both title and aria-label set to a forward-looking label: 'Switch to English' (when currently zh-TW) or 'Switch to Traditional Chinese' (when currently en). Use a new i18n key common.switch_to_lang with interpolation.",
+          "done": false
+        },
+        {
+          "id": "uiux-007-step-2",
+          "order": 2,
+          "title": "Add aria-live region for language change announcement",
+          "description": "In AppLayout.tsx or Topbar.tsx, add a visually-hidden div with aria-live=\"polite\" aria-atomic=\"true\". On i18n.changeLanguage callback, update its text content to 'Language changed to English' / '已切換至繁體中文'. Clear it after 3 seconds.",
+          "done": false
+        },
+        {
+          "id": "uiux-007-step-3",
+          "order": 3,
+          "title": "Add i18n keys for both language directions",
+          "description": "Add common.switch_to_lang and common.language_changed_to keys to both en.json and zh-TW.json translation files, with appropriate values in each language.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-008",
+      "type": "ui_ux_improvements",
+      "title": "Batch action bar in CasesPage has no aria-label and action buttons lack accessible descriptions",
+      "description": "When cases are selected, a batch action bar appears with Tag, Export CSV, Compare, Delete buttons. The container has data-testid but no role or aria-label. The action buttons have only icon + text content with no aria-label. The Delete button (Trash2 icon + text) triggers a ConfirmModal but there is no aria-haspopup hint.",
+      "rationale": "Screen-reader users navigating with the virtual cursor will encounter this bar without context. The batch bar appears dynamically (after selection) — an aria-live announcement is needed to alert users it has appeared.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/pages/CasesPage.tsx"],
+      "current_state": "div with data-testid=\"cases-batch-bar\". Inner buttons have icon + translated text but no aria-label. No role on the container. No aria-live announcement when the bar appears.",
+      "proposed_change": "1) Add role=\"toolbar\" aria-label={t('cases.batch_actions', { defaultValue: 'Batch actions for selected cases' })} to the batch bar container. 2) Add aria-haspopup=\"dialog\" to the Delete button since it triggers a modal. 3) Add a visually-hidden aria-live=\"polite\" region that announces '{n} cases selected' when selected.size changes from 0 to >0.",
+      "user_benefit": "Screen-reader users are alerted when the batch toolbar appears and understand what each action does. The delete button correctly signals a confirmation dialog is coming.",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-008-step-1",
+          "order": 1,
+          "title": "Add role and aria-label to batch bar container",
+          "description": "In CasesPage.tsx, add role=\"toolbar\" and aria-label to the batch bar div. This semantically groups the actions and lets screen-reader users navigate with toolbar keyboard conventions.",
+          "done": false
+        },
+        {
+          "id": "uiux-008-step-2",
+          "order": 2,
+          "title": "Add aria-haspopup to Delete button",
+          "description": "Add aria-haspopup=\"dialog\" to the Delete/Trash button that opens ConfirmModal. This follows WAI-ARIA authoring practices for buttons that trigger dialogs.",
+          "done": false
+        },
+        {
+          "id": "uiux-008-step-3",
+          "order": 3,
+          "title": "Add selection-count live region",
+          "description": "Add a visually-hidden div with aria-live=\"assertive\" that renders '{n} cases selected, batch actions available' when selected.size transitions from 0 to any positive number. Clear it when selected.size returns to 0.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-009",
+      "type": "ui_ux_improvements",
+      "title": "Filter select elements in CasesPage have no visible label — rely on aria-label only",
+      "description": "The Court, Year, Nature, Visa Type, Source, and Tags filter selects all use aria-label for accessibility but have no visible <label> element. On mobile, where the selects stack vertically, a user cannot see which select controls which dimension without selecting it and reading the first option text.",
+      "rationale": "WCAG 2.1 AA — 1.3.1 Info and Relationships and 2.4.6 Headings and Labels require visible labels for form controls. The current selects depend entirely on placeholder options ('All Courts', 'Year From') as de-facto labels, which disappear once a value is selected.",
+      "category": "accessibility",
+      "affected_components": ["frontend/src/pages/CasesPage.tsx"],
+      "current_state": "select elements with aria-label and first option as placeholder text (e.g. 'All Courts'). No <label> element associated via htmlFor/id. On mobile the selects are stacked with no visual label showing which is which when a value is already selected.",
+      "proposed_change": "Wrap each select in a div with a visible label above it on mobile (shown only at sm: breakpoint and below). Use a pattern: <div className='flex flex-col gap-0.5 sm:contents'><label className='text-xs text-muted-text sm:hidden' htmlFor='filter-court'>{t('filters.court')}</label><select id='filter-court' ...>. The sm:hidden label is visible on mobile and invisible at desktop where the placeholder option serves adequately. The htmlFor/id association also improves screen-reader compatibility beyond aria-label.",
+      "user_benefit": "Mobile users can identify which filter control is which when values are selected. The htmlFor association is more robust than aria-label alone for screen-reader compatibility across all AT implementations.",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-009-step-1",
+          "order": 1,
+          "title": "Add id attributes to all filter selects",
+          "description": "Add id=\"filter-court\", id=\"filter-year\", id=\"filter-nature\" etc. to each select element in the primary and advanced filter sections of CasesPage.",
+          "done": false
+        },
+        {
+          "id": "uiux-009-step-2",
+          "order": 2,
+          "title": "Wrap each select in a label-aware container",
+          "description": "For each filter, wrap in a div. Add a <label htmlFor=\"filter-{key}\" className=\"text-xs text-muted-text sm:hidden\"> with the translated filter name. This label is visible only on small screens (sm:hidden). The aria-label can be kept or removed now that htmlFor is present.",
+          "done": false
+        },
+        {
+          "id": "uiux-009-step-3",
+          "order": 3,
+          "title": "Verify mobile layout at 375px and 414px",
+          "description": "At 375px, the filter row wraps. Confirm labels appear above their select, the stacked layout is readable, and no double-labelling occurs (aria-label + visible label both announcing the same thing to screen readers — remove aria-label if htmlFor covers it).",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "uiux-010",
+      "type": "ui_ux_improvements",
+      "title": "Sidebar footer is an empty div — a missed opportunity for user context and quick actions",
+      "description": "The Sidebar footer renders <div className=\"border-t border-border p-3\" /> — a decorative empty box. Given the user context (immigration applicants under stress), this prime persistent space could show: current data freshness indicator, a link to the guided search for new users, or a compact help/keyboard-shortcuts hint.",
+      "rationale": "Design principle 'Depth Over Summary' and 'Efficiency as UX'. The sidebar footer is always visible, always reachable. Leaving it empty wastes the only persistent real-estate that isn't navigation. A 'Last updated: X days ago' or a keyboard shortcut reminder (/, j/k) would directly serve the primary user goal of trusting the data and navigating efficiently.",
+      "category": "usability",
+      "affected_components": ["frontend/src/components/layout/Sidebar.tsx"],
+      "current_state": "<div className=\"border-t border-border p-3\" /> — completely empty, renders only a top border and padding.",
+      "proposed_change": "When collapsed=false, render a footer with: 1) A '?' icon button (aria-label='Keyboard shortcuts') that opens a small popover listing the j/k/Enter/x/a/slash shortcuts. 2) Optionally, below it, a one-line 'Last sync: {relative time}' using the existing stats query data. Keep the collapsed state as the empty div (space is too narrow). The popover should use the same modal focus-trap pattern as uiux-001.",
+      "user_benefit": "New users discover keyboard shortcuts organically without reading documentation. The sync timestamp builds data trust by confirming the database is current. Both serve the 'authoritative, precise' brand personality.",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "uiux-010-step-1",
+          "order": 1,
+          "title": "Design the keyboard shortcuts list content",
+          "description": "Define the shortcut list as a constant in nav-config.ts or a new keyboard-shortcuts.ts: { key: '/', description: 'Focus search' }, { key: 'j/k', description: 'Navigate rows' }, { key: 'Enter', description: 'Open case' }, { key: 'x', description: 'Toggle select' }, { key: 'a', description: 'Add case' }, { key: 'Esc', description: 'Close modal / clear' }. Add i18n keys for all descriptions.",
+          "done": false
+        },
+        {
+          "id": "uiux-010-step-2",
+          "order": 2,
+          "title": "Implement KeyboardShortcutsPopover component",
+          "description": "Create a small popover that anchors above the footer button. Use position absolute bottom-full mb-2, z-50, bg-card border border-border rounded-lg p-3 shadow-lg. Render the shortcut list as a two-column kbd/description grid. Dismiss on Escape or outside click. Apply focus-trap while open.",
+          "done": false
+        },
+        {
+          "id": "uiux-010-step-3",
+          "order": 3,
+          "title": "Integrate into Sidebar footer",
+          "description": "Replace the empty div with a footer containing the '?' button (only when !collapsed). Wire the button to toggle the popover. Add aria-haspopup=\"dialog\" to the button. Test that the popover does not overflow on short viewports (add max-h-[60vh] overflow-y-auto if needed).",
+          "done": false
+        }
+      ]
+    }
+  ]
+}

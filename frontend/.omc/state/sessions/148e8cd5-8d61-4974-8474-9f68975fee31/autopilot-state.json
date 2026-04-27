@@ -1,0 +1,11 @@
+{
+  "active": true,
+  "started_at": "2026-04-26T11:52:16.953Z",
+  "original_prompt": "/oh-my-claudecode:autopilot keep going ：續做 cases CRUD + CSRF 路由 wire-up（第一個完整 vertical slice，~150 行 JS，1 個\r  commit）。這會啟用 Worker CSRF + 寫入路徑。需要先 wrangler secret put CSRF_SECRET <random-32B> 否則回 500。 /pua:pua",
+  "session_id": "148e8cd5-8d61-4974-8474-9f68975fee31",
+  "project_path": "/Users/d/Developer/IMMI-Case-/frontend",
+  "reinforcement_count": 2,
+  "awaiting_confirmation": true,
+  "awaiting_confirmation_set_at": "2026-04-26T11:52:16.953Z",
+  "last_checked_at": "2026-04-26T12:06:25.165Z"
+}

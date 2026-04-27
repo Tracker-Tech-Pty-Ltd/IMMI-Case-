@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775915992093,
+  "lastScanned": 1776445974508,
   "projectRoot": "/Users/d/Developer/IMMI-Case-/frontend",
   "techStack": {
     "languages": [
@@ -52,8 +52,8 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "npm run build",
-    "testCommand": "npm test",
+    "buildCommand": "cd /Users/d/Developer/IMMI-Case-/frontend && npx tsc --noEmit 2>&1 | tail -20",
+    "testCommand": "npx vitest run __tests__/api-llm-council.test.ts 2>&1 | tail -10",
     "lintCommand": "npm run lint",
     "devCommand": "npm run dev",
     "scripts": {
@@ -98,21 +98,21 @@
     "__tests__": {
       "path": "__tests__",
       "purpose": "Test files",
-      "fileCount": 42,
-      "lastAccessed": 1775915992043,
+      "fileCount": 46,
+      "lastAccessed": 1776445974436,
       "keyFiles": [
         "advanced-filter-panel.test.tsx",
+        "analytics-charts-tokens.test.tsx",
         "analytics-filter-integration.test.tsx",
         "analytics-insights-panel.test.tsx",
-        "analytics-sample-size.test.tsx",
-        "api-taxonomy-normalization.test.ts"
+        "analytics-sample-size.test.tsx"
       ]
     },
     "dist": {
       "path": "dist",
       "purpose": "Distribution/build output",
       "fileCount": 3,
-      "lastAccessed": 1775915992044,
+      "lastAccessed": 1776445974437,
       "keyFiles": [
         "_redirects",
         "index.html",
@@ -123,7 +123,7 @@
       "path": "downloaded_cases",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775915992064,
+      "lastAccessed": 1776445974456,
       "keyFiles": [
         "cases.db"
       ]
@@ -132,7 +132,7 @@
       "path": "e2e",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1775915992067,
+      "lastAccessed": 1776445974461,
       "keyFiles": [
         "README.md",
         "case-crud.spec.ts",
@@ -145,14 +145,14 @@
       "path": "functions",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775915992070,
+      "lastAccessed": 1776445974462,
       "keyFiles": []
     },
     "playwright-report": {
       "path": "playwright-report",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775915992072,
+      "lastAccessed": 1776445974463,
       "keyFiles": [
         "index.html"
       ]
@@ -161,7 +161,7 @@
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1775915992075,
+      "lastAccessed": 1776445974463,
       "keyFiles": [
         "_redirects",
         "vite.svg"
@@ -171,7 +171,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 2,
-      "lastAccessed": 1775915992076,
+      "lastAccessed": 1776445974464,
       "keyFiles": [
         "build-tokens.ts",
         "translate-locales.ts"
@@ -181,7 +181,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 3,
-      "lastAccessed": 1775915992077,
+      "lastAccessed": 1776445974464,
       "keyFiles": [
         "App.tsx",
         "index.css",
@@ -192,14 +192,14 @@
       "path": "test-results",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775915992078,
+      "lastAccessed": 1776445974464,
       "keyFiles": []
     },
     "dist/assets": {
       "path": "dist/assets",
       "purpose": "Static assets",
       "fileCount": 83,
-      "lastAccessed": 1775915992081,
+      "lastAccessed": 1776445974465,
       "keyFiles": [
         "AnalyticsFilters-BefJ2kd7.js",
         "AnalyticsPage-B2KI8joT.js",
@@ -210,7 +210,7 @@
       "path": "functions/api",
       "purpose": "API routes",
       "fileCount": 1,
-      "lastAccessed": 1775915992083,
+      "lastAccessed": 1776445974465,
       "keyFiles": [
         "[[path]].js"
       ]
@@ -219,25 +219,25 @@
       "path": "src/components",
       "purpose": "UI components",
       "fileCount": 0,
-      "lastAccessed": 1775915992086,
+      "lastAccessed": 1776445974465,
       "keyFiles": []
     },
     "src/lib": {
       "path": "src/lib",
       "purpose": "Library code",
-      "fileCount": 11,
-      "lastAccessed": 1775915992087,
+      "fileCount": 13,
+      "lastAccessed": 1776445974466,
       "keyFiles": [
-        "api.ts",
-        "court-events.ts",
-        "dashboard-insights.ts"
+        "api-analytics.ts",
+        "api-cases.ts",
+        "api.ts"
       ]
     },
     "src/pages": {
       "path": "src/pages",
       "purpose": "Page components",
       "fileCount": 26,
-      "lastAccessed": 1775915992087,
+      "lastAccessed": 1776445974466,
       "keyFiles": [
         "AnalyticsPage.tsx",
         "CaseAddPage.tsx",
@@ -247,219 +247,33 @@
   },
   "hotPaths": [
     {
-      "path": "src/index.css",
-      "accessCount": 11,
-      "lastAccessed": 1775995815754,
-      "type": "directory"
-    },
-    {
-      "path": "src/i18n/locales/en.json",
-      "accessCount": 10,
-      "lastAccessed": 1775995282333,
-      "type": "directory"
-    },
-    {
-      "path": "src/i18n/locales/zh-TW.json",
-      "accessCount": 9,
-      "lastAccessed": 1775995282905,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/legislation/LegislationTextViewer.tsx",
-      "accessCount": 6,
-      "lastAccessed": 1775995278805,
-      "type": "file"
-    },
-    {
-      "path": "src/components/layout/AppLayout.tsx",
-      "accessCount": 5,
-      "lastAccessed": 1775995263441,
-      "type": "file"
-    },
-    {
-      "path": "src/components/cases/CaseTextViewer.tsx",
-      "accessCount": 5,
-      "lastAccessed": 1775995274651,
-      "type": "file"
-    },
-    {
-      "path": "src/pages/CaseAddPage.tsx",
-      "accessCount": 3,
-      "lastAccessed": 1775993452016,
-      "type": "file"
-    },
-    {
       "path": "src",
-      "accessCount": 3,
-      "lastAccessed": 1775993681343,
+      "accessCount": 6,
+      "lastAccessed": 1776446117345,
       "type": "directory"
     },
     {
-      "path": "src/components/shared/CourtBadge.tsx",
-      "accessCount": 3,
-      "lastAccessed": 1775995271678,
-      "type": "file"
-    },
-    {
-      "path": "src/components/layout/CelestialToggle.tsx",
-      "accessCount": 3,
-      "lastAccessed": 1775995275239,
-      "type": "file"
-    },
-    {
-      "path": "src/components/shared/GlobalSearch.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993215154,
-      "type": "file"
-    },
-    {
-      "path": "src/components/shared/ConfirmModal.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993216285,
-      "type": "file"
-    },
-    {
-      "path": "src/components/saved-searches/SaveSearchModal.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993217718,
-      "type": "file"
-    },
-    {
-      "path": "src/components/layout/MobileNav.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993222199,
-      "type": "file"
-    },
-    {
-      "path": "src/components/collections/CollectionEditor.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993223331,
-      "type": "file"
-    },
-    {
-      "path": "src/components/analytics/SuccessRateDeepModal.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775993224447,
-      "type": "file"
-    },
-    {
-      "path": "src/components/cases/CaseCard.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775995262699,
+      "path": "src/pages/JudgeProfilesPage.tsx",
+      "accessCount": 6,
+      "lastAccessed": 1776446153317,
       "type": "directory"
     },
     {
-      "path": "src/components/layout/Sidebar.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775995263187,
+      "path": "__tests__/api-llm-council.test.ts",
+      "accessCount": 6,
+      "lastAccessed": 1777318889685,
       "type": "file"
     },
     {
-      "path": "src/components/judges/JudgeCard.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775995263290,
-      "type": "directory"
-    },
-    {
-      "path": "src/pages/DashboardPage.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775995270991,
-      "type": "directory"
-    },
-    {
-      "path": "src/i18n/index.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775995769752,
+      "path": "src/components/shared/AnalyticsFilters.tsx",
+      "accessCount": 5,
+      "lastAccessed": 1776446365352,
       "type": "file"
     },
     {
-      "path": "index.html",
-      "accessCount": 2,
-      "lastAccessed": 1775995821475,
-      "type": "file"
-    },
-    {
-      "path": "src/App.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775995823860,
-      "type": "file"
-    },
-    {
-      "path": "vite.config.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775995825090,
-      "type": "file"
-    },
-    {
-      "path": "src/i18n",
+      "path": "src/components/judges/JudgeLeaderboard.tsx",
       "accessCount": 1,
-      "lastAccessed": 1775993235392,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/shared",
-      "accessCount": 1,
-      "lastAccessed": 1775995257833,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/saved-searches",
-      "accessCount": 1,
-      "lastAccessed": 1775995259104,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/layout",
-      "accessCount": 1,
-      "lastAccessed": 1775995259677,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/collections",
-      "accessCount": 1,
-      "lastAccessed": 1775995259962,
-      "type": "directory"
-    },
-    {
-      "path": "src/components/analytics",
-      "accessCount": 1,
-      "lastAccessed": 1775995260501,
-      "type": "directory"
-    },
-    {
-      "path": "src/i18n/locales",
-      "accessCount": 1,
-      "lastAccessed": 1775995264092,
-      "type": "directory"
-    },
-    {
-      "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1775995746175,
-      "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 1,
-      "lastAccessed": 1775995751336,
-      "type": "directory"
-    },
-    {
-      "path": "src/lib/prefetch.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775995755629,
-      "type": "file"
-    },
-    {
-      "path": "src/main.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1775995757000,
-      "type": "file"
-    },
-    {
-      "path": "src/tokens",
-      "accessCount": 1,
-      "lastAccessed": 1775995769253,
+      "lastAccessed": 1776446085982,
       "type": "directory"
     }
   ],

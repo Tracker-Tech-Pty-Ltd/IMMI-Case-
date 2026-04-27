@@ -1,0 +1,418 @@
+{
+  "security_hardening": [
+    {
+      "id": "sec-001",
+      "type": "security_hardening",
+      "title": "Unauthenticated /api/v1/debug endpoint leaks infra internals",
+      "description": "The /api/v1/debug endpoint (api.py:1856) is publicly accessible with no authentication, no rate limiting, and no environment guard. It returns: (1) the full /etc/resolv.conf and last 10 lines of /etc/hosts, (2) first 10 chars of SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, HYPERDRIVE_DATABASE_URL, and APP_ENV, (3) a live HTTP probe to Supabase REST using the service role key, and (4) a full Python traceback on DB failure. The in-code comment says 'temporary — remove after debugging' but the route is still live in production.",
+      "rationale": "Even truncated secrets (10 chars) can be used to narrow brute-force attacks. DNS/hosts exposure reveals cloud infra topology. Full tracebacks expose library versions and internal paths. The service role key used in the live HTTP probe is logged in Supabase audit logs whenever /debug is called, creating an audit trail linkage.",
+      "category": "configuration",
+      "severity": "critical",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "vulnerability": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+      "currentRisk": "Any internet user can call GET /api/v1/debug on the production URL (https://immi.trackit.today/api/v1/debug) to enumerate: partial SECRET_KEY value, partial Supabase service role key, partial Hyperdrive DB URL, container DNS config, and live database connection status with Python tracebacks on failure.",
+      "remediation": "Remove the /api/v1/debug route entirely (the comment already marks it temporary). If debugging capability is needed, gate it behind: (1) APP_ENV != 'production' check at the top of the function, and (2) an internal-only IP allowlist or shared secret header check. Never return env var values — even partial ones — in any response.",
+      "references": [
+        "https://owasp.org/www-project-top-ten/2021/A05_2021-Security_Misconfiguration",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html"
+      ],
+      "compliance": ["OWASP Top 10 A05:2021", "CIS Control 3.3"],
+      "severity_normalized": "critical",
+      "estimated_effort": "trivial",
+      "status": "completed",
+      "created_at": "2026-04-16T08:06:51Z",
+      "completed_at": "2026-04-16T00:00:00Z",
+      "plan": [
+        {
+          "id": "sec-001-step-1",
+          "order": 1,
+          "title": "Confirm endpoint is live in production",
+          "description": "curl https://immi.trackit.today/api/v1/debug and verify it returns JSON with env keys and system info.",
+          "done": true
+        },
+        {
+          "id": "sec-001-step-2",
+          "order": 2,
+          "title": "Remove the debug route",
+          "description": "Delete the @api_bp.route('/debug') function (api.py lines 1856-1927) entirely. The comment already marks it as temporary.",
+          "done": true,
+          "commit": "e0e6e78"
+        },
+        {
+          "id": "sec-001-step-3",
+          "order": 3,
+          "title": "Write a security regression test",
+          "description": "Add a pytest test asserting GET /api/v1/debug returns 404 in all environments.",
+          "done": true,
+          "notes": "Added TestDebugEndpointRemoved class in tests/test_security.py — 3 tests: 404 on GET, no env key leakage in body, 404/405 on POST"
+        }
+      ]
+    },
+    {
+      "id": "sec-002",
+      "type": "security_hardening",
+      "title": "X-Hyperdrive-Url header trusted from any HTTP client — potential DB connection hijack",
+      "description": "web/__init__.py lines 113-118 read the X-Hyperdrive-Url header from every incoming request and store it in flask.g without any validation, origin check, or secret verification. The comment says it is 'injected by the Cloudflare Worker proxy', but Flask receives HTTP directly and cannot distinguish a request from the legitimate Worker from a request crafted by an attacker. If any code path later uses g.hyperdrive_url to open a psycopg2 connection, an attacker can supply an arbitrary PostgreSQL connection string pointing to their own server to exfiltrate queries or inject credentials.",
+      "rationale": "The HyperdriveRepository is instantiated at app startup from the env var HYPERDRIVE_DATABASE_URL, so currently g.hyperdrive_url is captured but not used for new connections at request time. However the pattern is dangerous: the hook silently persists attacker-supplied data into the request context with no validation. Future refactoring could inadvertently start using it, and the current code is one line away from being exploitable.",
+      "category": "injection",
+      "severity": "high",
+      "affectedFiles": [
+        "immi_case_downloader/web/__init__.py"
+      ],
+      "vulnerability": "CWE-441: Unintended Proxy or Intermediary ('Confused Deputy')",
+      "currentRisk": "If g.hyperdrive_url is ever used to open a DB connection, an attacker can supply an arbitrary PostgreSQL DSN via the X-Hyperdrive-Url header, potentially redirecting DB connections to an attacker-controlled server. Currently the value is stored but not used for new connections, reducing immediate exploitability — but the code path is one refactor away from being fully exploitable.",
+      "remediation": "Either: (a) Remove the _capture_hyperdrive_url before_request hook entirely and read HYPERDRIVE_DATABASE_URL exclusively from os.environ at startup, or (b) If the header is genuinely needed for per-request routing, validate it against a HMAC-SHA256 shared secret set in both the Worker (as a Cloudflare Secret) and the Flask app (as an env var) before trusting it.",
+      "references": [
+        "https://owasp.org/www-project-top-ten/2021/A03_2021-Injection",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html"
+      ],
+      "compliance": ["OWASP Top 10 A03:2021"],
+      "severity_normalized": "high",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-002-step-1",
+          "order": 1,
+          "title": "Audit all usages of g.hyperdrive_url",
+          "description": "grep -rn 'g.hyperdrive_url' in the entire codebase to confirm no current request-time DB connection is opened with it.",
+          "done": false
+        },
+        {
+          "id": "sec-002-step-2",
+          "order": 2,
+          "title": "Remove or sign the header",
+          "description": "If g.hyperdrive_url is unused: delete the _capture_hyperdrive_url hook. If it is needed: add HMAC-SHA256 verification using a WORKER_INTERNAL_SECRET env var shared between the CF Worker and Flask.",
+          "done": false
+        },
+        {
+          "id": "sec-002-step-3",
+          "order": 3,
+          "title": "Add test for header rejection",
+          "description": "Write a test confirming that a crafted X-Hyperdrive-Url header from an untrusted source is either ignored or rejected with 400.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-003",
+      "type": "security_hardening",
+      "title": "Missing Permissions-Policy and HSTS headers; unsafe-inline in CSP",
+      "description": "security.py lines 152-166 set five security headers but are missing: (1) Strict-Transport-Security (HSTS) — required on any TLS-terminated service; without it, a first-visit HTTP downgrade is possible even when Cloudflare enforces HTTPS at the edge. (2) Permissions-Policy — browsers will grant camera, microphone, geolocation, and payment APIs by default without an explicit denial. (3) The Content-Security-Policy includes 'unsafe-inline' for both script-src and style-src, which allows any inline script or style to execute, defeating XSS protection for the React SPA. X-XSS-Protection is also absent (deprecated but still set by defense-in-depth best practice for older browsers).",
+      "rationale": "The CSP unsafe-inline in script-src is the most significant gap: it means a stored or reflected XSS payload in any case text field that reaches the DOM will execute even with CSP enabled. The React SPA uses no dangerouslySetInnerHTML, reducing immediate XSS surface, but the header policy does not enforce this at the transport layer.",
+      "category": "configuration",
+      "severity": "medium",
+      "affectedFiles": [
+        "immi_case_downloader/web/security.py"
+      ],
+      "vulnerability": "CWE-693: Protection Mechanism Failure",
+      "currentRisk": "Without HSTS, first-visit HTTP requests on non-Cloudflare paths are not protected. Without Permissions-Policy, browser APIs are unrestricted. CSP unsafe-inline means a future XSS injection would not be blocked by the policy. Without a nonce or hash-based CSP, inline scripts can execute.",
+      "remediation": "In add_security_headers(): (1) Add Strict-Transport-Security: max-age=31536000; includeSubDomains; preload. (2) Add Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(). (3) Remove 'unsafe-inline' from script-src and replace with a per-request nonce injected into Flask's response and the React index.html, or use a hash-based CSP. For style-src, unsafe-inline is often unavoidable with Tailwind; document it as accepted risk.",
+      "references": [
+        "https://owasp.org/www-project-secure-headers/",
+        "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+        "https://hstspreload.org/"
+      ],
+      "compliance": ["OWASP Top 10 A05:2021", "CIS Control 9.2"],
+      "severity_normalized": "medium",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-003-step-1",
+          "order": 1,
+          "title": "Add HSTS and Permissions-Policy headers",
+          "description": "In add_security_headers() in security.py, add Strict-Transport-Security and Permissions-Policy headers after the existing ones. Gate HSTS on secure_cookie_required() to avoid breaking local dev.",
+          "done": false
+        },
+        {
+          "id": "sec-003-step-2",
+          "order": 2,
+          "title": "Replace CSP unsafe-inline with nonce",
+          "description": "Generate a per-request nonce in security_headers(), store in g.csp_nonce, and replace 'unsafe-inline' with 'nonce-{nonce}' in script-src. Update Flask templates to inject the nonce attribute on script tags.",
+          "done": false
+        },
+        {
+          "id": "sec-003-step-3",
+          "order": 3,
+          "title": "Verify with security headers scanner",
+          "description": "Run securityheaders.com scan against staging URL and confirm A rating.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-004",
+      "type": "security_hardening",
+      "title": "FTS5 full-text search query double-quote escaping is insufficient — FTS5 operator injection",
+      "description": "sqlite_repository.py lines 523-524 sanitize the FTS5 search query by wrapping in double-quotes and escaping internal double-quotes (replace('\"', '\"\"')). This prevents basic SQL injection, but FTS5 has its own query language. The double-quote wrapping forces phrase search, but FTS5 phrase queries can still be escaped by a user who supplies a query ending in a double-quote. For example, the input 'visa\" OR title:* --' becomes the FTS5 expression '\"visa\"\" OR title:* --\"' which SQLite parses as the phrase 'visa\"' followed by operator tokens. On SQLite 3.44+ the parser is stricter, but on older embedded versions FTS5 operator injection (NEAR, OR, NOT, column:) can cause unexpected result sets, DoS via extremely expensive queries (e.g. prefix match '*'), or errors that leak the internal query structure.",
+      "rationale": "The immediate risk is performance-based DoS: a query like '\"a* OR b*' after escaping becomes a broad prefix scan across the FTS5 index, potentially scanning the entire 149,016-case corpus. This exhausts SQLite I/O for the duration of the request. On older SQLite builds, the operational error is caught and silently ignored, returning an empty result, but the CPU/IO spike still occurs.",
+      "category": "injection",
+      "severity": "medium",
+      "affectedFiles": [
+        "immi_case_downloader/sqlite_repository.py"
+      ],
+      "vulnerability": "CWE-89: Improper Neutralization of Special Elements used in an SQL Command",
+      "currentRisk": "An attacker can craft a search query that triggers expensive FTS5 prefix/wildcard scans, causing per-request CPU/IO spikes. On some SQLite versions, FTS5 operator syntax may partially leak through the escaping, causing unexpected query behavior.",
+      "remediation": "Strip or reject FTS5 special characters before issuing the query. Safe approach: strip all characters except alphanumeric, spaces, and hyphens before wrapping in double-quotes. Alternatively, do not use the FTS5 MATCH operator for user-supplied queries — instead use parameterized LIKE on indexed columns, accepting slightly lower relevance ranking. Add a max-length check (e.g., 200 chars) before the query reaches SQLite.",
+      "references": [
+        "https://www.sqlite.org/fts5.html#full_text_query_syntax",
+        "https://owasp.org/www-project-top-ten/2021/A03_2021-Injection"
+      ],
+      "compliance": ["OWASP Top 10 A03:2021"],
+      "severity_normalized": "medium",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-004-step-1",
+          "order": 1,
+          "title": "Reproduce FTS5 operator injection",
+          "description": "Write a pytest test that calls search_text() with 'visa\" OR case_id:*' and confirms it returns a controlled result set without triggering an OperationalError or full-table scan.",
+          "done": false
+        },
+        {
+          "id": "sec-004-step-2",
+          "order": 2,
+          "title": "Sanitize FTS5 query input",
+          "description": "In sqlite_repository.py search_text(), add: safe_query = re.sub(r'[^\\w\\s\\-]', ' ', query).strip() before the double-quote wrapping. Also add: if len(query) > 200: return []. This prevents FTS5 operator injection and limits query size.",
+          "done": false
+        },
+        {
+          "id": "sec-004-step-3",
+          "order": 3,
+          "title": "Add fuzz tests for FTS5 inputs",
+          "description": "Add parameterized tests with FTS5 special chars (*, OR, NOT, NEAR, column:) verifying search_text() always returns a list without raising.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-005",
+      "type": "security_hardening",
+      "title": "LLM Council /run endpoint lacks authentication — arbitrary LLM queries billed to owner's API keys",
+      "description": "POST /api/v1/llm-council/run (api.py:4827) is publicly accessible. It accepts a 'question' and 'context' body, calls three external LLM providers (OpenAI, Gemini, Anthropic) using the application owner's API keys from environment variables, and returns synthesized legal analysis. Rate limiting is applied (5 req/60s per IP), but IP-based rate limiting is trivially bypassed via distributed requests, proxies, or IPv6 rotation. There is no user authentication, no API key header requirement, and no cost attribution.",
+      "rationale": "Each call to /llm-council/run triggers parallel API calls to up to 3 LLM providers. At current pricing (gpt-5.4 ~$15/1M output tokens, claude-sonnet-4-6 ~$15/1M output tokens), a 1000-request campaign across IPv6 addresses could generate $30-$50+ in API charges within minutes. The 5/60s rate limit per IP provides minimal protection against distributed abuse.",
+      "category": "authorization",
+      "severity": "high",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "vulnerability": "CWE-306: Missing Authentication for Critical Function",
+      "currentRisk": "Any internet user can generate unlimited LLM API charges against the application owner's OpenAI, Gemini, and Anthropic accounts by calling POST /api/v1/llm-council/run from distributed IPs or IPv6 addresses. The rate limiter (5/60s per IP) is the only protection.",
+      "remediation": "Add one or more layers of protection: (1) Require a CSRF token for the POST request (CSRF protection is configured but its application to this endpoint should be verified). (2) Add a global per-day request budget check against a shared counter (Redis or SQLite). (3) Require a user-supplied application token header (even a simple shared secret in localStorage or a sign-up flow). (4) Increase rate limit aggressiveness: 3/60s per IP, 20/hour per IP, and a global 500/day cap. (5) Consider proxying LLM calls through a Cloudflare Worker with spend alerts.",
+      "references": [
+        "https://owasp.org/www-project-top-ten/2021/A01_2021-Broken_Access_Control",
+        "https://cheatsheetseries.owasp.org/cheatsheets/API_Security_Cheat_Sheet.html"
+      ],
+      "compliance": ["OWASP Top 10 A01:2021", "OWASP API Security Top 10 API2"],
+      "severity_normalized": "high",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-005-step-1",
+          "order": 1,
+          "title": "Confirm endpoint is callable without authentication",
+          "description": "curl -X POST https://immi.trackit.today/api/v1/llm-council/run -H 'Content-Type: application/json' -d '{\"question\":\"test\"}' and observe whether LLM providers are invoked.",
+          "done": false
+        },
+        {
+          "id": "sec-005-step-2",
+          "order": 2,
+          "title": "Add global daily request budget",
+          "description": "Add a thread-safe SQLite or in-memory counter for llm-council calls. Reject with 429 when daily_count > 500. Reset at UTC midnight. Log each call with remote IP.",
+          "done": false
+        },
+        {
+          "id": "sec-005-step-3",
+          "order": 3,
+          "title": "Add spend alerting",
+          "description": "Configure OpenAI, Anthropic, and Google budget alerts at $5/day thresholds to catch abuse early.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-006",
+      "type": "security_hardening",
+      "title": "Applicant names (PII) stored in localStorage bookmarks without encryption or expiry",
+      "description": "use-bookmarks.ts stores bookmark entries in localStorage under the key 'immi-bookmarks'. Each BookmarkEntry includes case_id, citation, title, court_code, date, outcome — and the title field routinely contains applicant full names (e.g. 'Smith and Minister for Immigration'). The use-saved-searches.ts similarly stores CaseFilters (including applicant_name filter values) under 'saved-searches'. This data: (1) persists indefinitely with no TTL, (2) is accessible to any JavaScript running on the same origin (including injected ads or XSS payloads), (3) is never cleared on session end, (4) is transmitted in clear text in browser sync if the user has Chrome/Safari sync enabled.",
+      "rationale": "Australian immigration case applicants are real people in sensitive legal proceedings. Persistent storage of their names in an unencrypted, unexipring localStorage key violates the Privacy Act 1988 (Cth) and the Australian Privacy Principles (APP 11 — Security of Personal Information). If an XSS vulnerability is ever introduced, localStorage contents including applicant names would be immediately exfiltrated.",
+      "category": "data_protection",
+      "severity": "medium",
+      "affectedFiles": [
+        "frontend/src/hooks/use-bookmarks.ts",
+        "frontend/src/hooks/use-saved-searches.ts",
+        "frontend/src/lib/api.ts"
+      ],
+      "vulnerability": "CWE-312: Cleartext Storage of Sensitive Information",
+      "currentRisk": "Applicant names from Australian immigration proceedings are stored indefinitely in browser localStorage. Any XSS attack would immediately exfiltrate this data. Data also persists after the user closes the browser, potentially exposing names on shared or public computers.",
+      "remediation": "(1) Implement TTL for localStorage entries: wrap reads/writes with a timestamp and expire entries older than 30 days. (2) Avoid storing applicant_name in bookmark titles — store only case_id and citation, and fetch the full title on demand. (3) Add a 'Clear local data' button in the UI settings. (4) Consider sessionStorage instead of localStorage for saved searches (clears on tab close). (5) Document the data retention behaviour in a privacy notice.",
+      "references": [
+        "https://owasp.org/www-project-top-ten/2021/A02_2021-Cryptographic_Failures",
+        "https://www.oaic.gov.au/privacy/australian-privacy-principles/australian-privacy-principles-guidelines/chapter-11-app-11-security-of-personal-information"
+      ],
+      "compliance": ["APP 11 (Privacy Act 1988 Cth)", "OWASP Top 10 A02:2021", "GDPR Art. 25 (privacy by design)"],
+      "severity_normalized": "medium",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-006-step-1",
+          "order": 1,
+          "title": "Audit what PII is stored in localStorage",
+          "description": "Enumerate all BookmarkEntry and SavedSearch fields that contain or derive from applicant_name, title, or citation. Document which are necessary for functionality.",
+          "done": false
+        },
+        {
+          "id": "sec-006-step-2",
+          "order": 2,
+          "title": "Add TTL wrapper for localStorage reads/writes",
+          "description": "In use-bookmarks.ts and use-saved-searches.ts, wrap stored values with {data, expires_at} envelope. On read, discard entries older than 30 days. Implement a purgeExpired() call on app startup.",
+          "done": false
+        },
+        {
+          "id": "sec-006-step-3",
+          "order": 3,
+          "title": "Add 'Clear local data' UI control",
+          "description": "Add a settings page option that calls localStorage.removeItem() for all app keys. Include a note explaining what is stored.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-007",
+      "type": "security_hardening",
+      "title": "In-process rate limiter bypassed by multi-worker / multi-container deployments",
+      "description": "security.py lines 59-97 implement InMemoryRateLimiter — a per-process sliding window limiter stored in a Python dict. The Cloudflare Durable Object ('flask-v13') hosts a single Flask process, so within a single container this is functionally correct. However: (1) If the container is ever scaled horizontally (multiple instances), each instance has its own limiter state and the effective rate limit multiplies by the number of instances. (2) The limiter resets on every container restart (cold start). (3) For the LLM council endpoint (5/60s) this means a restart clears all hit counters, and a client timing requests around container idle-timeout cycling can exceed the limit. (4) TRUST_PROXY_HEADERS defaults to False, so all requests from the Cloudflare proxy appear to come from the same IP (the container-internal IP), causing all requests to share a single rate limit bucket.",
+      "rationale": "The TRUST_PROXY_HEADERS=false default means request.remote_addr is the Worker's internal IP, not the client's real IP. This causes all users to share one rate limit bucket — a single aggressive user can trigger rate limiting for all users, and the bucket resets when the container restarts.",
+      "category": "configuration",
+      "severity": "medium",
+      "affectedFiles": [
+        "immi_case_downloader/web/security.py",
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "vulnerability": "CWE-770: Allocation of Resources Without Limits or Throttling",
+      "currentRisk": "With TRUST_PROXY_HEADERS=false (default), all clients behind the Cloudflare proxy share one rate limit bucket keyed by the proxy's internal IP. One user hitting the limit blocks all users. Conversely, a client can restart the container to reset rate limit counters.",
+      "remediation": "(1) Set TRUST_PROXY_HEADERS=true in production (the Worker always forwards the real client IP via X-Forwarded-For). (2) Validate that X-Forwarded-For is only trusted from the Cloudflare IP ranges (validate in the rate limit key function, not app-wide). (3) For the LLM council endpoint, supplement in-process rate limiting with a Cloudflare Worker rate limit rule at the edge (CF Rate Limiting product) so it persists across container restarts.",
+      "references": [
+        "https://developers.cloudflare.com/fundamentals/reference/cloudflare-ip-ranges/",
+        "https://owasp.org/www-project-top-ten/2021/A05_2021-Security_Misconfiguration"
+      ],
+      "compliance": ["OWASP Top 10 A05:2021"],
+      "severity_normalized": "medium",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-007-step-1",
+          "order": 1,
+          "title": "Verify TRUST_PROXY_HEADERS in production",
+          "description": "Check that the production .env or Cloudflare Worker secret sets TRUST_PROXY_HEADERS=true. Confirm X-Forwarded-For reaches the Flask container from proxy.js.",
+          "done": false
+        },
+        {
+          "id": "sec-007-step-2",
+          "order": 2,
+          "title": "Restrict X-Forwarded-For trust to CF IP ranges",
+          "description": "In _rate_limit_key() in security.py, only trust X-Forwarded-For if the direct peer IP (request.remote_addr) is a known Cloudflare IP range. Add a CLOUDFLARE_IP_RANGES constant sourced from https://www.cloudflare.com/ips-v4.",
+          "done": false
+        },
+        {
+          "id": "sec-007-step-3",
+          "order": 3,
+          "title": "Add Cloudflare edge rate limiting rule",
+          "description": "Add a CF Rate Limiting rule in wrangler.toml targeting /api/v1/llm-council/run at 10 req/min per IP. This persists across container restarts.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "sec-008",
+      "type": "security_hardening",
+      "title": "Export endpoints load all cases into memory without authentication — potential DoS + mass data exfiltration",
+      "description": "GET /api/v1/export/csv and /api/v1/export/json (api.py:3120-3153) call repo.load_all() which loads all matched cases from the database, then slices to MAX_EXPORT_ROWS (50,000). These endpoints: (1) require no authentication, (2) have no rate limiting applied, (3) load up to 50,000 full case records (all 31 fields including applicant_name, country_of_origin, visa_subclass, hearing_date) into Python memory per request, (4) stream the result as a downloadable file. A single request to /api/v1/export/csv with no filters triggers a full 149,016-row database scan and serializes 50,000 rows of PII-containing case data. Multiple concurrent requests will exhaust container memory.",
+      "rationale": "This combines a DoS vector (memory exhaustion from concurrent bulk exports) with a mass data exfiltration path (50,000 records of applicant names, nationalities, and visa details per unauthenticated request). The existing known issue #5 (unauthenticated destructive endpoints) is separate from this read-path concern.",
+      "category": "authorization",
+      "severity": "high",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "vulnerability": "CWE-359: Exposure of Private Personal Information to an Unauthorized Actor",
+      "currentRisk": "Any internet user can download up to 50,000 immigration case records including applicant full names, countries of origin, visa subclasses, and hearing dates via a single unauthenticated HTTP GET request. Concurrent requests can exhaust container memory.",
+      "remediation": "(1) Add @rate_limit(2, 60, scope='export') to both export endpoints. (2) Add a lower default MAX_EXPORT_ROWS cap (e.g., 5,000) unless a privileged token is provided. (3) Require a CSRF token or session cookie for export endpoints. (4) Consider whether export endpoints should be disabled in production entirely, given the public nature of the data; if kept, add logging of all export requests with client IP.",
+      "references": [
+        "https://owasp.org/www-project-top-ten/2021/A01_2021-Broken_Access_Control",
+        "https://www.oaic.gov.au/privacy/australian-privacy-principles"
+      ],
+      "compliance": ["OWASP Top 10 A01:2021", "APP 6 (Privacy Act 1988 Cth)", "OWASP Top 10 A04:2021 Insecure Design"],
+      "severity_normalized": "high",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "sec-008-step-1",
+          "order": 1,
+          "title": "Add rate limiting to export endpoints",
+          "description": "Decorate export_csv() and export_json() with @rate_limit(2, 60, scope='export') and @rate_limit(10, 3600, scope='export-hourly').",
+          "done": false
+        },
+        {
+          "id": "sec-008-step-2",
+          "order": 2,
+          "title": "Reduce default MAX_EXPORT_ROWS",
+          "description": "Lower MAX_EXPORT_ROWS from 50,000 to 5,000 for unauthenticated requests. Document this in the API.",
+          "done": false
+        },
+        {
+          "id": "sec-008-step-3",
+          "order": 3,
+          "title": "Log all export requests",
+          "description": "Add a logger.info() call to both export functions recording the client IP, filter params, and row count returned.",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "criticalIssues": 1,
+    "highIssues": 3,
+    "mediumIssues": 4,
+    "lowIssues": 0,
+    "filesAnalyzed": 18,
+    "knownIssuesExcluded": 5,
+    "generatedAt": "2026-04-16T08:06:51Z",
+    "analyzedFiles": [
+      "immi_case_downloader/web/routes/api.py",
+      "immi_case_downloader/web/__init__.py",
+      "immi_case_downloader/web/security.py",
+      "immi_case_downloader/web/helpers.py",
+      "immi_case_downloader/sqlite_repository.py",
+      "immi_case_downloader/supabase_repository.py",
+      "immi_case_downloader/hyperdrive_repository.py",
+      "workers/proxy.js",
+      "frontend/src/lib/api.ts",
+      "frontend/src/hooks/use-bookmarks.ts",
+      "frontend/src/hooks/use-saved-searches.ts",
+      "frontend/src/hooks/use-theme-preset.ts",
+      "requirements.txt",
+      "wrangler.toml",
+      ".env.example",
+      "web.py",
+      "immi_case_downloader/web/routes/export.py",
+      "immi_case_downloader/web/routes/legislations.py"
+    ],
+    "dependenciesStatus": "all_patched",
+    "notes": "pip-audit unavailable in this environment; manual CVE check performed against installed versions: requests 2.32.5, flask 3.1.2, lxml 6.0.2, pillow 12.0.0, jinja2 3.1.6 — all above known vulnerability thresholds. No hardcoded secrets found in source. No dangerouslySetInnerHTML found in React components. sort_by and sort_dir validated against allowlists at API layer before reaching repositories. Path traversal protected via Path.relative_to() in judge-photo endpoint. Export routes use in-memory byte buffers (no filesystem paths)."
+  }
+}

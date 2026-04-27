@@ -1,0 +1,11 @@
+{
+  "active": true,
+  "started_at": "2026-04-27T22:25:46.949Z",
+  "original_prompt": "/autopilot ⚠️  Step 7 stale-closure bug 沒在這次 session 解決 — 列為 follow-up，不假裝 done                                     \n  - ⚠️  CSRF_SECRET 應該在 deploy 前發現，不是 post-deploy probe — 已列入 deploy script 加固 backlog",
+  "session_id": "7eca126b-2d06-4933-a082-d94ce5ef135e",
+  "project_path": "/Users/d/Developer/IMMI-Case-",
+  "reinforcement_count": 0,
+  "awaiting_confirmation": true,
+  "awaiting_confirmation_set_at": "2026-04-27T22:25:46.949Z",
+  "last_checked_at": "2026-04-27T22:25:46.949Z"
+}

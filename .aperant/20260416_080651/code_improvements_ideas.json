@@ -1,0 +1,329 @@
+{
+  "code_improvements": [
+    {
+      "id": "ci-001",
+      "type": "code_improvements",
+      "title": "Add missing keyboard shortcuts for major routes",
+      "description": "The `use-keyboard.ts` hook wires global single-key shortcuts only for `/`, `d`, `c`, `g`, `p`. Major routes like `/analytics` (a), `/judge-profiles` (j), `/legislations` (l), `/saved-searches` (s), and `/collections` (b) have no shortcuts. Adding them is a 5-line change inside the existing switch block.",
+      "rationale": "use-keyboard.ts already has the exact switch/case pattern and is mounted globally in AppLayout.tsx. Every new key is one case block — no new abstractions needed.",
+      "builds_upon": [
+        "frontend/src/hooks/use-keyboard.ts",
+        "frontend/src/components/layout/AppLayout.tsx"
+      ],
+      "estimated_effort": "trivial",
+      "affected_files": [
+        "frontend/src/hooks/use-keyboard.ts"
+      ],
+      "existing_patterns": [
+        "case \"c\": navigate(\"/cases\") pattern in use-keyboard.ts:33"
+      ],
+      "implementation_approach": "Add case blocks: 'a'→/analytics, 'j'→/judge-profiles, 'l'→/legislations, 's'→/saved-searches, 'b'→/collections inside the existing switch in use-keyboard.ts. Update the interface comment if it lists shortcuts.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-001-step-1",
+          "order": 1,
+          "title": "Add 5 new case blocks to the switch in use-keyboard.ts",
+          "description": "Insert case 'a', 'j', 'l', 's', 'b' after the existing 'p' case. Each navigates to the corresponding route.",
+          "done": false
+        },
+        {
+          "id": "ci-001-step-2",
+          "order": 2,
+          "title": "Add i18n keys for the shortcut hints if a help overlay exists",
+          "description": "Search for any shortcut help panel (e.g. '?' key navigates /design-tokens); if keys are documented there, add new entries. If not, skip.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-002",
+      "type": "code_improvements",
+      "title": "Export CSV/JSON buttons on AnalyticsPage and JudgeProfilesPage",
+      "description": "CasesPage already has a client-side exportCsv() function (lines 180-209) that builds a Blob from current filtered data and triggers a download. AnalyticsPage and JudgeProfilesPage have filtered data in memory (outcomes, judge leaderboard) but no export button. Adding a Download icon button following the exact CasesPage pattern gives users access to the filtered analytics data.",
+      "rationale": "exportCsv() in CasesPage.tsx:180-209 is a self-contained pattern: build headers array, map rows, join as CSV, create Blob, trigger anchor click. The analytics and judge hooks already expose the data needed. The Download icon is already imported in CasesPage.",
+      "builds_upon": [
+        "frontend/src/pages/CasesPage.tsx (exportCsv at line 180)",
+        "frontend/src/hooks/use-analytics.ts",
+        "frontend/src/hooks/use-judges.ts"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "frontend/src/pages/AnalyticsPage.tsx",
+        "frontend/src/pages/JudgeProfilesPage.tsx"
+      ],
+      "existing_patterns": [
+        "exportCsv useCallback in CasesPage.tsx:180-209",
+        "Download icon button at CasesPage.tsx:721-724"
+      ],
+      "implementation_approach": "1) In AnalyticsPage: after outcomes/judges data is loaded, add an exportCsv useCallback that serialises the currently-visible chart data rows (court, outcome, count, rate) into CSV. Place a Download button in the PageHeader actions slot. 2) In JudgeProfilesPage: serialise filteredJudges array (name, court, cases, approval_rate) and add a Download button beside the existing List/Grid toggle.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-002-step-1",
+          "order": 1,
+          "title": "Add exportCsv to AnalyticsPage following CasesPage pattern",
+          "description": "Import Download from lucide-react, import useCallback. Create exportCsv that flattens useOutcomes data rows into CSV columns [court, year_from, year_to, outcome, count]. Wire to a button in the page header.",
+          "done": false
+        },
+        {
+          "id": "ci-002-step-2",
+          "order": 2,
+          "title": "Add exportCsv to JudgeProfilesPage following CasesPage pattern",
+          "description": "Create exportCsv that serialises filteredJudges (display_name, courts, total_cases, approval_rate) to CSV. Wire to a Download button beside the List/LayoutGrid toggle at line 4.",
+          "done": false
+        },
+        {
+          "id": "ci-002-step-3",
+          "order": 3,
+          "title": "Add i18n keys for export buttons",
+          "description": "Add 'analytics.export_csv' and 'judges.export_csv' keys to en.json and zh-TW.json following the 'buttons.export_csv' key already present for cases.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-003",
+      "type": "code_improvements",
+      "title": "Cursor-based pagination in CasesPage (replace offset page param with next_cursor)",
+      "description": "The backend already emits `next_cursor` on every `/api/v1/cases` response and `use-cases.ts` already exposes `nextCursor`. However CasesPage.tsx uses the legacy offset `page` query-param in the URL and passes `page: Number(searchParams.get('page') ?? 1)` to useCases. Switching the CasesPage to use the cursor token for forward navigation (and keeping offset for backwards/direct-link) would eliminate the O(n) DB offset scans on large datasets.",
+      "rationale": "Backend seek implementation exists in sqlite_repository.py:460 and supabase_repository.py:551. The cursor encode/decode is in api.py:1299-1315. use-cases.ts:41-43 already exposes nextCursor. CasesPage just needs to thread the cursor token into filters instead of incrementing the page number.",
+      "builds_upon": [
+        "frontend/src/hooks/use-cases.ts (nextCursor at line 41)",
+        "immi_case_downloader/web/routes/api.py (_encode_cursor at 1299)",
+        "immi_case_downloader/sqlite_repository.py (list_cases_seek at 460)"
+      ],
+      "estimated_effort": "medium",
+      "affected_files": [
+        "frontend/src/pages/CasesPage.tsx",
+        "frontend/src/hooks/use-cases.ts",
+        "frontend/src/lib/api.ts",
+        "frontend/src/types/case.ts"
+      ],
+      "existing_patterns": [
+        "nextCursor from use-cases.ts:41-43",
+        "next_cursor in api.py list_cases response at line 2478",
+        "_encode_cursor/_decode_cursor in api.py:1299-1315"
+      ],
+      "implementation_approach": "1) Add optional `cursor` field to CaseFilters type. 2) Thread cursor into fetchCases API call as query param. 3) In CasesPage, on 'next page' click pass nextCursor instead of incrementing page number. Keep offset fallback when cursor is null. 4) For Pagination component backwards navigation retain offset approach. This is additive — no existing behaviour changes unless cursor is present.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-003-step-1",
+          "order": 1,
+          "title": "Add cursor field to CaseFilters type and fetchCases API call",
+          "description": "In frontend/src/types/case.ts add optional cursor?: string to CaseFilters. In lib/api.ts pass cursor as query param when present.",
+          "done": false
+        },
+        {
+          "id": "ci-003-step-2",
+          "order": 2,
+          "title": "Store cursor stack in CasesPage for forward/back navigation",
+          "description": "Add a cursorStack: string[] state to CasesPage. On next-page click push nextCursor, on prev-page click pop the stack. Pass the top cursor to useCases filters.",
+          "done": false
+        },
+        {
+          "id": "ci-003-step-3",
+          "order": 3,
+          "title": "Verify backend seek strategy is selected when cursor param is present",
+          "description": "Read api.py list_cases route (~line 2333) to confirm the seek strategy branch is taken when cursor is in request.args. Add integration test confirming cursor round-trip.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-004",
+      "type": "code_improvements",
+      "title": "VisaSubclassBadge component following CourtBadge/OutcomeBadge/NatureBadge pattern",
+      "description": "CaseDetailPage.tsx:210-216 renders visa_subclass as plain text labels. CourtBadge, OutcomeBadge, NatureBadge all follow the same interface (`{value, className}`) with colour-coded pill styling. A VisaSubclassBadge that groups common subclasses into colour families (protection 866/790, skilled 186/187/189/190, family 100/309/820, bridging 010/020/050) would make visa subclass values scannable in the cases table and detail pages — matching the design principle of court colour-coding.",
+      "rationale": "CourtBadge.tsx, OutcomeBadge.tsx, and NatureBadge.tsx all have an identical shape: interface with value + className, a colour lookup map, and a pill span. Creating a fourth badge in the same pattern is copy-extend with a new colour map.",
+      "builds_upon": [
+        "frontend/src/components/shared/CourtBadge.tsx",
+        "frontend/src/components/shared/OutcomeBadge.tsx",
+        "frontend/src/components/shared/NatureBadge.tsx"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "frontend/src/components/shared/VisaSubclassBadge.tsx",
+        "frontend/src/pages/CaseDetailPage.tsx",
+        "frontend/src/pages/CasesPage.tsx",
+        "frontend/src/components/cases/CaseCard.tsx"
+      ],
+      "existing_patterns": [
+        "CourtBadge pattern in frontend/src/components/shared/CourtBadge.tsx",
+        "OutcomeBadge pattern in frontend/src/components/shared/OutcomeBadge.tsx"
+      ],
+      "implementation_approach": "1) Create VisaSubclassBadge.tsx: copy NatureBadge.tsx structure, replace colour map with visa family groups (protection=blue, skilled=green, family=amber, bridging=gray, other=muted). 2) Replace plain visa_subclass text in CaseDetailPage with the badge. 3) Optionally add it to CasesPage table column and CaseCard.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-004-step-1",
+          "order": 1,
+          "title": "Create VisaSubclassBadge.tsx following NatureBadge shape",
+          "description": "Copy NatureBadge.tsx as base. Define VISA_FAMILY_COLOURS map keyed on subclass prefix ranges. Export VisaSubclassBadge component.",
+          "done": false
+        },
+        {
+          "id": "ci-004-step-2",
+          "order": 2,
+          "title": "Replace plain text visa_subclass in CaseDetailPage",
+          "description": "Import VisaSubclassBadge, replace the plain value label at CaseDetailPage.tsx:210-216.",
+          "done": false
+        },
+        {
+          "id": "ci-004-step-3",
+          "order": 3,
+          "title": "Add visa_subclass column badge to CasesPage table view",
+          "description": "In the CasesPage table row, add VisaSubclassBadge beside the existing court/outcome/nature badges.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-005",
+      "type": "code_improvements",
+      "title": "Persist analytics filter state to URL search params (matching CasesPage pattern)",
+      "description": "CasesPage uses useSearchParams() to store all filter values in the URL — enabling deep-linking and browser back/forward. AnalyticsPage and JudgeProfilesPage use local useState only, so refreshing or sharing a filtered analytics view loses all selections. Migrating analytics filters to useSearchParams follows the exact CasesPage pattern.",
+      "rationale": "CasesPage.tsx:50-87 is the canonical pattern: useSearchParams(), useMemo to derive filter object from searchParams, updateFilter callback that calls setSearchParams. AnalyticsPage currently uses plain useState for court, yearFrom, yearTo, selectedNatures, selectedSubclasses, selectedOutcomes.",
+      "builds_upon": [
+        "frontend/src/pages/CasesPage.tsx (useSearchParams pattern at lines 50-118)",
+        "frontend/src/pages/AnalyticsPage.tsx",
+        "frontend/src/pages/JudgeProfilesPage.tsx"
+      ],
+      "estimated_effort": "medium",
+      "affected_files": [
+        "frontend/src/pages/AnalyticsPage.tsx",
+        "frontend/src/pages/JudgeProfilesPage.tsx"
+      ],
+      "existing_patterns": [
+        "useSearchParams + updateFilter in CasesPage.tsx:50-118",
+        "clearAllFilters in CasesPage.tsx:120-122"
+      ],
+      "implementation_approach": "1) In AnalyticsPage: replace useState for court/yearFrom/yearTo/selectedNatures/selectedSubclasses/selectedOutcomes with useSearchParams + useMemo derivation. Serialise array values as comma-separated strings (matching taxonomy page pattern). Add resetAllFilters that calls setSearchParams(new URLSearchParams()). 2) Apply same treatment to JudgeProfilesPage for court, yearFrom, yearTo, sortBy, nameFilter, viewMode.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-005-step-1",
+          "order": 1,
+          "title": "Migrate AnalyticsPage filter state to useSearchParams",
+          "description": "Replace all useState filter vars in AnalyticsPage with a single useSearchParams hook. Derive filter params via useMemo from searchParams. Update all set* callbacks to call setSearchParams.",
+          "done": false
+        },
+        {
+          "id": "ci-005-step-2",
+          "order": 2,
+          "title": "Migrate JudgeProfilesPage filter state to useSearchParams",
+          "description": "Same migration for JudgeProfilesPage: court, yearFrom, yearTo, sortBy, nameFilter. Persist viewMode in localStorage (already done) and the rest in URL.",
+          "done": false
+        },
+        {
+          "id": "ci-005-step-3",
+          "order": 3,
+          "title": "Verify resetAllFilters clears URL params not useState",
+          "description": "Ensure the existing resetAllFilters / hasActiveFilters logic reads from searchParams after migration, not stale useState values.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-006",
+      "type": "code_improvements",
+      "title": "Analytics export endpoint pair (CSV + JSON) for judge leaderboard data",
+      "description": "The `/api/v1/export/csv` and `/api/v1/export/json` endpoints in api.py:3120-3153 apply `_filter_cases()` to case data. There is no parallel export for analytics aggregates (judge leaderboard, outcome distributions). Adding `/api/v1/export/judges/csv` that serialises the judge leaderboard payload (same query params as analytics_judge_leaderboard) follows the exact export_csv function shape.",
+      "rationale": "export_csv at api.py:3120-3135 is a 15-line function: get_repo(), filter, build CSV, send_file. analytics_judge_leaderboard at api.py:3699 already returns the structured data with the same filter params. Combining these two patterns requires no new infrastructure.",
+      "builds_upon": [
+        "immi_case_downloader/web/routes/api.py (export_csv at 3120)",
+        "immi_case_downloader/web/routes/api.py (analytics_judge_leaderboard at 3699)"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "immi_case_downloader/web/routes/api.py",
+        "frontend/src/lib/api.ts"
+      ],
+      "existing_patterns": [
+        "export_csv / export_json function shape at api.py:3120-3153",
+        "analytics_judge_leaderboard filter+payload pattern at api.py:3699"
+      ],
+      "implementation_approach": "1) Add @api_bp.route('/export/judges/csv') that reads the same court/year_from/year_to query params as analytics_judge_leaderboard, calls _collect_judges_data(), serialises to CSV with csv.DictWriter, returns send_file. 2) Add corresponding fetchExportJudgesCsv() in lib/api.ts following fetchCases pattern. 3) Wire to ci-002 Download button in JudgeProfilesPage as the server-side option for full (non-paginated) export.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-006-step-1",
+          "order": 1,
+          "title": "Add /export/judges/csv route to api.py",
+          "description": "After existing export_json route, add export_judges_csv() that reuses _collect_cases_for_judge logic, builds DictWriter with columns [name, display_name, total_cases, approval_rate, courts], returns send_file.",
+          "done": false
+        },
+        {
+          "id": "ci-006-step-2",
+          "order": 2,
+          "title": "Add fetchExportJudgesCsv helper in frontend/src/lib/api.ts",
+          "description": "Add a function that builds the export URL with current filter params and triggers window.location assignment (matching the pattern used in CasesPage exportCsv for server-side export).",
+          "done": false
+        },
+        {
+          "id": "ci-006-step-3",
+          "order": 3,
+          "title": "Wire server-side export to JudgeProfilesPage Download button",
+          "description": "Use server-side export (full untruncated dataset) rather than the client-side slice in ci-002. This handles the 200-judge limit in the current leaderboard query.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "ci-007",
+      "type": "code_improvements",
+      "title": "Job status polling hook (use-job-status.ts) following TanStack Query pattern",
+      "description": "JobStatusPage.tsx currently polls `/api/v1/job-status` via a raw useEffect + setInterval (or re-fetch pattern). The entire codebase uses TanStack Query hooks for all data fetching. Extracting a `useJobStatus` hook with `refetchInterval` matches the use-cases/use-analytics hook shape and makes job status reusable on DownloadPage and PipelinePage which both need live job state.",
+      "rationale": "use-stats.ts, use-cases.ts, use-analytics.ts all follow the same `useQuery({ queryKey, queryFn, staleTime, placeholderData: keepPreviousData })` pattern. TanStack Query's `refetchInterval` option replaces manual setInterval polling. The job-status endpoint at api.py:3158 already returns a stable JSON shape.",
+      "builds_upon": [
+        "frontend/src/hooks/use-stats.ts",
+        "frontend/src/hooks/use-cases.ts",
+        "immi_case_downloader/web/routes/api.py (job_status at 3158)"
+      ],
+      "estimated_effort": "small",
+      "affected_files": [
+        "frontend/src/hooks/use-job-status.ts",
+        "frontend/src/pages/JobStatusPage.tsx",
+        "frontend/src/pages/DownloadPage.tsx",
+        "frontend/src/pages/PipelinePage.tsx"
+      ],
+      "existing_patterns": [
+        "useQuery hook shape in use-stats.ts:1-25",
+        "refetchInterval pattern available in TanStack Query v5"
+      ],
+      "implementation_approach": "1) Create use-job-status.ts: export useJobStatus(options?) that calls useQuery with queryKey ['job-status'], queryFn calling fetchJobStatus from lib/api.ts, refetchInterval: (data) => data?.running ? 1000 : false. 2) Replace manual polling in JobStatusPage, DownloadPage, PipelinePage with useJobStatus(). 3) Add fetchJobStatus to lib/api.ts if not already present.",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "ci-007-step-1",
+          "order": 1,
+          "title": "Create frontend/src/hooks/use-job-status.ts",
+          "description": "Follow use-stats.ts shape. Use refetchInterval: (query) => query.state.data?.running ? 1500 : false to poll only when a job is running. Export useJobStatus hook.",
+          "done": false
+        },
+        {
+          "id": "ci-007-step-2",
+          "order": 2,
+          "title": "Add fetchJobStatus to lib/api.ts if missing",
+          "description": "Check lib/api.ts for existing fetchJobStatus; add if absent, matching the apiFetch pattern used throughout the file.",
+          "done": false
+        },
+        {
+          "id": "ci-007-step-3",
+          "order": 3,
+          "title": "Replace manual polling in JobStatusPage, DownloadPage, PipelinePage",
+          "description": "Swap out useEffect+setInterval patterns for useJobStatus(). Verify no duplicate polling remains.",
+          "done": false
+        }
+      ]
+    }
+  ]
+}

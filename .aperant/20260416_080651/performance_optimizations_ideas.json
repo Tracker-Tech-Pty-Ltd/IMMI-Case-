@@ -1,0 +1,339 @@
+{
+  "performance_optimizations": [
+    {
+      "id": "perf-001",
+      "type": "performance_optimizations",
+      "title": "analytics/monthly-trends uses full load_all() instead of analytics-optimised loader",
+      "description": "The /api/v1/analytics/monthly-trends endpoint calls _get_all_cases() (31-column full load) instead of _get_analytics_cases() (7-column lightweight loader). Every other analytics endpoint uses the lightweight path. monthly-trends only needs date, outcome, and court_code — all available in the analytics loader — yet it loads all 31 fields for 149,016 cases. Additionally, the endpoint skips the _analytics_set() / _analytics_get() pre-computed result cache used by every other analytics endpoint, so the 149k-row Python loop runs on every request.",
+      "rationale": "On Supabase free tier, load_all() takes ~57s vs ~13s for load_analytics_cases(). With no result cache the 149k-row aggregation loop also re-executes on every page visit. This is the single highest-impact backend fix.",
+      "category": "database",
+      "impact": "high",
+      "affectedAreas": [
+        "immi_case_downloader/web/routes/api.py:4144-4172"
+      ],
+      "currentMetric": "~57s Supabase load (full 31 cols) + uncached Python aggregation loop on every request",
+      "expectedImprovement": "~13s load (analytics 7 cols, 4x faster) + result served from 10-min cache on subsequent requests — effectively < 50ms after warm",
+      "implementation": "1. Replace `_get_all_cases()` with `_get_analytics_cases()` in analytics_monthly_trends. 2. Add cache key: `ck = 'monthly-trends:' + _analytics_cache_key()`. 3. Add early return if `_analytics_get(ck) is not None`. 4. Add `_analytics_set(ck, result)` before returning. 5. Verify date and outcome fields are included in the analytics column list in supabase_repository.py.",
+      "tradeoffs": "Analytics cases loader omits full_text and some metadata fields — not needed for monthly aggregation. If a future version of monthly_trends needs additional columns, load_analytics_cases() would need updating.",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-001-step-1",
+          "order": 1,
+          "title": "Switch to _get_analytics_cases()",
+          "description": "In analytics_monthly_trends (api.py:4147), change `_apply_filters(_get_all_cases())` to `_apply_filters(_get_analytics_cases())`",
+          "done": false
+        },
+        {
+          "id": "perf-001-step-2",
+          "order": 2,
+          "title": "Add result cache",
+          "description": "Before the aggregation loop, add: `ck = 'monthly-trends:' + _analytics_cache_key(); cached = _analytics_get(ck); if cached is not None: return _analytics_response(cached)`. After building `result`, add `_analytics_set(ck, result)` before the return.",
+          "done": false
+        },
+        {
+          "id": "perf-001-step-3",
+          "order": 3,
+          "title": "Verify analytics columns include date/outcome/court_code",
+          "description": "Confirm supabase_repository.py load_analytics_cases() selects date, outcome, court_code — these are the three fields consumed by this endpoint.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-002",
+      "type": "performance_optimizations",
+      "title": "CasesPage renders up to 100 table rows with inline JSX on every state change",
+      "description": "CasesPage renders up to 100 row `<tr>` elements directly inside the component body (api.py:885-992 table loop; line 1001-1009 cards loop). Each row contains badge components (CourtBadge, OutcomeBadge, NatureBadge), a formatDateCompact call, and string expressions. CaseCard is memo-wrapped but the table rows are raw JSX — not memoised at all. Any state change that touches the parent (e.g. selection checkbox toggle, keyboard focus, viewMode toggle) causes all 100 rows to re-evaluate their JSX and badge components even though most rows have not changed.",
+      "rationale": "The table row `<tr>` is the hot render path — called 100 times per render. With 100 rows and multiple child components per row, a single checkbox toggle triggers O(100) child re-evaluations. Extracting rows to a memo component reduces this to O(1) changed row.",
+      "category": "rendering",
+      "impact": "high",
+      "affectedAreas": [
+        "frontend/src/pages/CasesPage.tsx:884-994"
+      ],
+      "currentMetric": "100 un-memoised row evaluations per any state change in CasesPage",
+      "expectedImprovement": "Only changed row(s) re-render on selection/focus changes; full list re-renders only when data or filters change",
+      "implementation": "1. Extract a CaseTableRow component from the inline `<tr>` JSX (lines 886-992). 2. Wrap with React.memo comparing case_id, selected state, and focusedIdx. 3. Pass only the required props: case object, isSelected boolean, isFocused boolean, onSelect callback, onNavigate callback. 4. Similarly extract CaseCardItem from the cards loop (line 1002-1009) if not already the memoised CaseCard. 5. Ensure all callbacks passed to rows use useCallback (toggleSelect already is — verify navigate is stable).",
+      "tradeoffs": "Adds a small component extraction refactor. The Set<string> `selected` must not be passed directly as a prop (referential equality will always fail); instead pass a derived `isSelected: boolean` per row.",
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-002-step-1",
+          "order": 1,
+          "title": "Extract CaseTableRow memo component",
+          "description": "Create `CaseTableRow = memo(function CaseTableRow({ c, isSelected, isFocused, onSelect, onNavigate }: Props) { ... })` using the existing inline `<tr>` JSX. Derive `isSelected` and `isFocused` booleans before the map call.",
+          "done": false
+        },
+        {
+          "id": "perf-002-step-2",
+          "order": 2,
+          "title": "Update CasesPage render to use CaseTableRow",
+          "description": "Replace the inline `<tr>` JSX inside `cases.map()` with `<CaseTableRow key={c.case_id} c={c} isSelected={selected.has(c.case_id)} isFocused={clampedFocusedIdx === i} onSelect={toggleSelect} onNavigate={...} />`.",
+          "done": false
+        },
+        {
+          "id": "perf-002-step-3",
+          "order": 3,
+          "title": "Verify stable callbacks",
+          "description": "Confirm navigate from useNavigate is stable (it is in react-router-dom v7). Add useCallback wrapper for onNavigate if needed.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-003",
+      "type": "performance_optimizations",
+      "title": "QueryClient has no gcTime configured — inactive queries evicted after default 5 minutes",
+      "description": "App.tsx creates QueryClient with only `staleTime: 5 * 60 * 1000` in defaultOptions. The `gcTime` (garbage collection time, formerly cacheTime) is not set, leaving it at the TanStack Query v5 default of 5 minutes. For this app — where legal DB data is static within a session and analytics results are expensive to recompute — evicting cache entries after 5 minutes of inactivity means returning to a page like /analytics after navigating away triggers a full refetch from scratch even though the data is still fresh. Setting gcTime to 30+ minutes would keep the pre-warmed analytics responses in memory for the typical session duration.",
+      "rationale": "Analytics endpoints load 149k-case aggregations that take 13-57s cold. A user who navigates Dashboard → Analytics → Cases → Analytics gets a full re-fetch on the second analytics visit if more than 5 minutes elapsed, even though staleTime is 5 min and the data is still valid. gcTime should exceed staleTime by a substantial margin.",
+      "category": "caching",
+      "impact": "medium",
+      "affectedAreas": [
+        "frontend/src/App.tsx:155-163"
+      ],
+      "currentMetric": "gcTime = 300_000ms (default); inactive queries evicted 5 min after last use",
+      "expectedImprovement": "Analytics cache survives typical session navigation (30-60 min); eliminates redundant re-fetches on page revisit within a session",
+      "implementation": "1. In App.tsx QueryClient constructor, add `gcTime: 30 * 60 * 1000` to defaultOptions.queries. 2. Optionally override per-hook for data that should age out faster (e.g. job status, pipeline state). 3. For analytics hooks that rarely change, consider increasing staleTime to 15 * 60_000 to match server-side 10-min analytics cache TTL.",
+      "tradeoffs": "Higher memory usage if many distinct query keys are cached simultaneously. With ~15 analytics endpoints × ~10 filter combinations each, worst case is ~150 cached responses — acceptable for a legal research tool used in focused sessions.",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-003-step-1",
+          "order": 1,
+          "title": "Add gcTime to QueryClient defaultOptions",
+          "description": "In App.tsx line 155-163, add `gcTime: 30 * 60 * 1000` inside `defaultOptions.queries`. This extends cache lifetime to 30 minutes.",
+          "done": false
+        },
+        {
+          "id": "perf-003-step-2",
+          "order": 2,
+          "title": "Increase analytics staleTime to match server cache TTL",
+          "description": "In use-analytics.ts, change `staleTime: 5 * 60_000` to `staleTime: 10 * 60_000` to align with the server-side 10-minute analytics cache TTL. This prevents unnecessary background refetches when the server would return the same cached result anyway.",
+          "done": false
+        },
+        {
+          "id": "perf-003-step-3",
+          "order": 3,
+          "title": "Override gcTime for live-data hooks",
+          "description": "For hooks like job status (use-stats.ts staleTime 30s) and pipeline state, add explicit `gcTime: 60_000` to prevent stale job data from being served from cache after inactivity.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-004",
+      "type": "performance_optimizations",
+      "title": "DesignTokensPage is 2663 lines in a single module — loaded into the lazy chunk with no internal splitting",
+      "description": "DesignTokensPage.tsx is 2663 lines. While it is correctly lazy-loaded, the entire file is parsed and executed when a user first visits /design-tokens. The page appears to contain large static token display tables, color swatches, and documentation sections that could be split into sub-sections. Additionally, it imports lucide-react icons (1 import statement across 63 files) — lucide-react v0.564.0 ships individual ESM files so tree-shaking should work correctly with Vite, but the sheer volume of icons imported across 63 files means any barrel-import style can degrade chunk quality.",
+      "rationale": "A 2663-line file takes significantly longer to parse and evaluate at runtime than smaller modules, even if code-split at the route level. The DesignTokensPage is a developer/internal page not on the critical user path, so its parse cost should be deferred further with internal lazy sub-sections.",
+      "category": "bundle_size",
+      "impact": "medium",
+      "affectedAreas": [
+        "frontend/src/pages/DesignTokensPage.tsx"
+      ],
+      "currentMetric": "2663 lines parsed/evaluated on first visit to /design-tokens route",
+      "expectedImprovement": "Split into 3-4 lazy sub-sections (Colors, Typography, Spacing, Components); each section evaluates only when scrolled into view or tab-selected — reducing initial parse by ~60-70%",
+      "implementation": "1. Audit DesignTokensPage.tsx to identify major sections (Color Palette, Typography Scale, Spacing, Component tokens). 2. Extract each section into its own component file (e.g. TokenColorsSection.tsx, TokenTypographySection.tsx). 3. Lazy-load sections with React.lazy() + Suspense inside DesignTokensPage if it uses a tabbed/section UI. 4. Alternatively, split the page into sub-routes under /design-tokens/:section. 5. Verify lucide-react named imports are individual (e.g. `import { CheckCircle } from 'lucide-react'`) not namespace imports.",
+      "tradeoffs": "Internal developer page — lower priority than user-facing optimisations. The effort to split a 2663-line file may not be worth it unless the page is actively used during development sessions.",
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-004-step-1",
+          "order": 1,
+          "title": "Audit DesignTokensPage section boundaries",
+          "description": "Read DesignTokensPage.tsx to identify the major section components/JSX blocks. Map line ranges to logical sections.",
+          "done": false
+        },
+        {
+          "id": "perf-004-step-2",
+          "order": 2,
+          "title": "Extract section components",
+          "description": "Move each major section (≥400 lines) into a dedicated file under frontend/src/components/design-tokens/. Keep section components non-lazy for now; simply reducing file size improves parse time and editor performance.",
+          "done": false
+        },
+        {
+          "id": "perf-004-step-3",
+          "order": 3,
+          "title": "Lazy-load heavy sections",
+          "description": "If DesignTokensPage uses tabs or accordion sections, wrap the non-visible sections in React.lazy() + Suspense so they are only evaluated when the user navigates to them.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-005",
+      "type": "performance_optimizations",
+      "title": "No HTTP cache headers on paginated case list responses — every navigation refetches from server",
+      "description": "The /api/v1/cases endpoint does not set Cache-Control response headers (unlike /analytics/* which correctly sets `public, max-age=600`). The TanStack Query staleTime for useCases is only 10_000ms (10 seconds). Users navigating between pages (Cases → Case Detail → back to Cases) trigger a fresh server round-trip after 10 seconds even though the underlying data has not changed. For a 149k-row legal database with infrequent writes, the case list is effectively static within a user session.",
+      "rationale": "With staleTime=10s, a user browsing cases who looks at a case detail for 15 seconds and navigates back will always see a loading state before the list reappears. Increasing staleTime to 60s (matching the count query) and adding server-side Cache-Control headers allows CDN/browser caching and eliminates the majority of redundant API calls.",
+      "category": "network",
+      "impact": "medium",
+      "affectedAreas": [
+        "frontend/src/hooks/use-cases.ts:34",
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "currentMetric": "staleTime=10s for case list; no Cache-Control on /api/v1/cases responses; every navigation after 10s triggers network round-trip",
+      "expectedImprovement": "With staleTime=60s and server Cache-Control max-age=60, users browsing cases see instant list restores for typical navigation patterns; reduces API calls by ~70% for browse-heavy sessions",
+      "implementation": "1. In use-cases.ts, increase staleTime from 10_000 to 60_000 (matching useCaseCount). 2. In api.py, find the cases list endpoint and add a _cases_list_response() helper that sets Cache-Control: public, max-age=60, stale-while-revalidate=30. 3. For write-heavy mutations (createCase, updateCase, deleteCase), the existing qc.invalidateQueries already handles cache busting correctly. 4. Optionally set Vary: Accept-Encoding on the response.",
+      "tradeoffs": "10-second staleTime was likely chosen to show newly created/edited cases promptly. Increasing to 60s means edits take up to 60s to reflect — acceptable since mutations already call invalidateQueries which bypasses staleTime entirely for that session.",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-005-step-1",
+          "order": 1,
+          "title": "Increase useCases staleTime to 60s",
+          "description": "In frontend/src/hooks/use-cases.ts line 34, change `staleTime: 10_000` to `staleTime: 60_000`.",
+          "done": false
+        },
+        {
+          "id": "perf-005-step-2",
+          "order": 2,
+          "title": "Add Cache-Control to case list endpoint",
+          "description": "In api.py, find the /api/v1/cases endpoint handler. Add a response helper (like _stats_response) that sets Cache-Control: public, max-age=60, stale-while-revalidate=30 on case list responses.",
+          "done": false
+        },
+        {
+          "id": "perf-005-step-3",
+          "order": 3,
+          "title": "Verify mutation cache invalidation still works",
+          "description": "Run the existing test suite to confirm that useCreateCase/useUpdateCase/useDeleteCase onSuccess callbacks still invalidate the cache correctly and the updated list appears immediately after a write.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-006",
+      "type": "performance_optimizations",
+      "title": "No virtualisation for the 100-row case table — all 100 rows are DOM nodes simultaneously",
+      "description": "CasesPage renders all 100 cases (the full page_size) as DOM nodes at once in both table view (lines 884-994) and card view (lines 1001-1009). With 100 rows each containing ~8 cells and 3 badge sub-components, this produces ~800 DOM nodes per render. There is no virtual scrolling — rows outside the viewport are still in the DOM and contribute to layout and paint time. For the cards view (3 columns), all 100 cards including their full-text truncated descriptions are rendered simultaneously.",
+      "rationale": "Modern browsers handle 100 DOM nodes reasonably, but each of the ~800 nodes in the table participates in layout. A 100-row table with wide columns (min-width: 1100px) forces a layout calculation across the full scrollable width. Virtualising to ~15-20 visible rows would reduce DOM node count by ~80% and eliminate layout of off-screen rows.",
+      "category": "rendering",
+      "impact": "medium",
+      "affectedAreas": [
+        "frontend/src/pages/CasesPage.tsx:837-1011"
+      ],
+      "currentMetric": "~800 DOM nodes for 100-row table (8 cells × 100 rows); full layout calculated for all rows including off-screen",
+      "expectedImprovement": "With virtualisation (~20 visible rows), reduce active DOM nodes to ~160; initial paint and scroll performance improved especially on low-end devices",
+      "implementation": "1. Install @tanstack/react-virtual (already a TanStack family dependency, small addition). 2. In CasesPage, replace the `cases.map()` inside `<tbody>` with a virtualised row renderer using useVirtualizer from @tanstack/react-virtual. 3. Set estimateSize to the measured row height (~40px). 4. Apply the virtualizer's totalSize to the container and offset each row with a translateY transform. 5. The table header stays fixed; only tbody is virtualised. 6. For card view, use a CSS grid with content-visibility: auto on each card as a lower-effort alternative.",
+      "tradeoffs": "Table virtualisation requires fixed or estimated row heights. Variable-height rows (e.g. multi-line titles) need measured heights or a min-height estimate. The existing 100-row page_size is already small enough that this is a medium-priority optimisation rather than critical.",
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-006-step-1",
+          "order": 1,
+          "title": "Add @tanstack/react-virtual dependency",
+          "description": "Run `npm install @tanstack/react-virtual` in the frontend directory. This is a tiny (3kb) sibling package to the already-used @tanstack/react-query.",
+          "done": false
+        },
+        {
+          "id": "perf-006-step-2",
+          "order": 2,
+          "title": "Implement useVirtualizer in CasesPage table",
+          "description": "Wrap the tableRef container with useVirtualizer({ count: cases.length, getScrollElement: () => tableRef.current, estimateSize: () => 40 }). Replace `cases.map()` with `virtualizer.getVirtualItems().map()`, applying offsetTop to each row.",
+          "done": false
+        },
+        {
+          "id": "perf-006-step-3",
+          "order": 3,
+          "title": "Apply content-visibility to card view",
+          "description": "As a lower-effort alternative for the cards grid, add `content-visibility: auto; contain-intrinsic-size: 200px` CSS to each CaseCard container div. This allows the browser to skip rendering off-screen cards without a JS virtualiser.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "perf-007",
+      "type": "performance_optimizations",
+      "title": "lucide-react imported across 63 files without a shared icon barrel — may fragment tree-shaking in some bundler configurations",
+      "description": "lucide-react is imported in 63 out of ~151 frontend files. Each file imports named icons directly (`import { Search, ChevronDown } from 'lucide-react'`). While Vite + Rollup should tree-shake these correctly via ESM named exports, the current manualChunks config in vite.config.ts does not include lucide-react in any chunk definition. This means Rollup will inline icon SVG code into whichever chunk first imports it, potentially splitting icon code across multiple lazy-loaded page chunks and duplicating SVG path data. Adding lucide-react to manualChunks as a shared 'icons' chunk ensures all icon code is deduplicated into a single chunk loaded once.",
+      "rationale": "lucide-react v0.564.0 is a large package (~100+ icons used across 63 files). Without a dedicated chunk, Rollup may duplicate commonly used icons (Search, ChevronDown, etc.) across multiple code-split chunks. A shared icons chunk is downloaded once and cached.",
+      "category": "bundle_size",
+      "impact": "medium",
+      "affectedAreas": [
+        "frontend/vite.config.ts:38-48"
+      ],
+      "currentMetric": "lucide-react split across multiple lazy chunks; icon SVG code potentially duplicated; no shared icons chunk",
+      "expectedImprovement": "Single icons chunk downloaded once and cached; eliminates icon code duplication across page chunks; reduces per-page-chunk size by the icon code that was duplicated",
+      "implementation": "1. In vite.config.ts manualChunks, add `icons: ['lucide-react']` alongside the existing vendor/query/charts/dnd entries. 2. Run `npm run build` and inspect the chunk output to confirm all lucide-react code is in the icons chunk. 3. Verify no icon code appears in other chunks using `npx rollup-plugin-visualizer` or `vite-bundle-visualizer`.",
+      "tradeoffs": "Adding a shared icons chunk adds one more initial HTTP request for pages that use icons (all of them). However, since all pages use icons, the icons chunk is effectively part of the critical path and will be cached after first load — the deduplication benefit outweighs the extra request.",
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "perf-007-step-1",
+          "order": 1,
+          "title": "Add icons chunk to vite.config.ts manualChunks",
+          "description": "In frontend/vite.config.ts lines 38-48, add `icons: ['lucide-react']` to the manualChunks object.",
+          "done": false
+        },
+        {
+          "id": "perf-007-step-2",
+          "order": 2,
+          "title": "Build and verify chunk output",
+          "description": "Run `cd frontend && npm run build` and check the dist output. Confirm a single icons-*.js chunk exists and that other page chunks do not contain lucide SVG paths.",
+          "done": false
+        },
+        {
+          "id": "perf-007-step-3",
+          "order": 3,
+          "title": "Optional: add i18next to shared chunks",
+          "description": "i18next + react-i18next are imported across many pages. Add `i18n: ['i18next', 'react-i18next', 'i18next-browser-languagedetector']` to manualChunks to similarly deduplicate the i18n runtime.",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "filesAnalyzed": 18,
+    "filesAnalyzedList": [
+      "frontend/package.json",
+      "frontend/vite.config.ts",
+      "frontend/src/App.tsx",
+      "frontend/src/hooks/use-cases.ts",
+      "frontend/src/hooks/use-analytics.ts",
+      "frontend/src/hooks/use-judges.ts",
+      "frontend/src/hooks/use-stats.ts",
+      "frontend/src/hooks/use-legislations.ts",
+      "frontend/src/hooks/use-taxonomy.ts",
+      "frontend/src/hooks/use-lineage-data.ts",
+      "frontend/src/hooks/use-semantic-search.ts",
+      "frontend/src/hooks/use-similar-cases.ts",
+      "frontend/src/pages/CasesPage.tsx",
+      "frontend/src/pages/AnalyticsPage.tsx",
+      "frontend/src/components/cases/CaseCard.tsx",
+      "immi_case_downloader/web/routes/api.py (full, 5012 lines)",
+      "immi_case_downloader/supabase_repository.py (analytics sections)",
+      "frontend/src/pages/DesignTokensPage.tsx (line count + imports)"
+    ],
+    "generatedAt": "2026-04-16T08:06:51Z",
+    "confidenceThreshold": 0.7,
+    "notes": [
+      "CaseCard is already memo-wrapped (export const CaseCard = memo(CaseCardInner)) — no action needed there",
+      "analytics/outcomes, judges, legal-concepts, nature-outcome all correctly use _get_analytics_cases() + _analytics_set/get cache — only monthly-trends is missing both",
+      "No React.memo found on any TSX component except CaseCard — table row extraction (perf-002) is the highest-value rendering fix",
+      "vite.config.ts already has manualChunks for vendor/query/charts/dnd — lucide-react and i18n are missing from this list",
+      "QueryClient defaultOptions has no gcTime — all inactive queries evicted after default 5 min even when staleTime is longer",
+      "useCases staleTime is 10s (much lower than all other hooks at 60s+) — inconsistency suggests it was set conservatively but is now too aggressive"
+    ]
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "project": {
+    "name": "IMMI-Case-",
+    "description": "Australian immigration court/tribunal case downloader and manager. Scrapes 149,016 cases from AustLII, stores in CSV/SQLite/Supabase, serves via Flask API + React SPA.",
+    "version": "production",
+    "productionUrl": "https://immi.trackit.today",
+    "repo": "/Users/d/Developer/IMMI-Case-"
+  },
+  "techStack": {
+    "backend": ["Python 3.14", "Flask 3.x", "flask-wtf (CSRF)", "SQLite FTS5+WAL", "pandas", "BeautifulSoup4", "requests"],
+    "frontend": ["React 18", "TypeScript", "Vite 6", "Tailwind v4", "Recharts", "TanStack Query v5", "react-i18next"],
+    "infrastructure": ["Cloudflare Workers (proxy)", "Supabase (PostgreSQL)", "Durable Objects"],
+    "testing": ["pytest", "Playwright (E2E)", "Vitest (frontend unit)"]
+  },
+  "architecture": {
+    "dualUI": "React SPA at /app/ + legacy Jinja2 at /. API at /api/v1/*",
+    "storageBackends": ["CSV (default)", "SQLite FTS5+WAL", "Supabase PostgreSQL"],
+    "repositoryPattern": "CaseRepository Protocol abstraction (csv_repository.py, sqlite_repository.py, supabase_repository.py)",
+    "backgroundJobs": "Daemon threads with _job_status dict, one job at a time",
+    "caseId": "First 12 chars of SHA-256(citation/URL/title)"
+  },
+  "criticalFiles": {
+    "backend": [
+      {"path": "immi_case_downloader/web/routes/api.py", "lines": 5012, "note": "CRITICAL: Monolithic API file, 5012 lines — far exceeds 800 line limit"},
+      {"path": "immi_case_downloader/models.py", "lines": "~300", "note": "ImmigrationCase dataclass, 22 fields"},
+      {"path": "immi_case_downloader/web/__init__.py", "lines": "~150", "note": "Flask app factory"},
+      {"path": "immi_case_downloader/web/helpers.py", "lines": "~120", "note": "get_repo(), safe_int(), safe_float(), EDITABLE_FIELDS"},
+      {"path": "immi_case_downloader/web/jobs.py", "lines": "~200", "note": "4 background job runners"},
+      {"path": "immi_case_downloader/sqlite_repository.py", "lines": "~600", "note": "SQLite FTS5+WAL implementation"},
+      {"path": "immi_case_downloader/supabase_repository.py", "lines": "~500", "note": "Supabase backend, 15 methods"},
+      {"path": "immi_case_downloader/pipeline.py", "lines": "~400", "note": "SmartPipeline: 3-phase crawl→clean→download"},
+      {"path": "immi_case_downloader/sources/austlii.py", "lines": "~350", "note": "AustLII scraper"},
+      {"path": "immi_case_downloader/config.py", "lines": "~200", "note": "Constants, court DB definitions"},
+      {"path": "web.py", "lines": "~50", "note": "Web entry point"},
+      {"path": "run.py", "lines": "~50", "note": "CLI entry point"}
+    ],
+    "frontend": [
+      {"path": "frontend/src/pages/DesignTokensPage.tsx", "lines": 2663, "note": "CRITICAL: 2663 lines — massively oversized page"},
+      {"path": "frontend/src/pages/CasesPage.tsx", "lines": 1061, "note": "MAJOR: 1061 lines — needs hook/component extraction"},
+      {"path": "frontend/src/App.tsx", "lines": "~200", "note": "Router + 14 pages"},
+      {"path": "frontend/src/lib/api.ts", "lines": "~150", "note": "CSRF-aware fetch wrapper"},
+      {"path": "frontend/src/lib/router.ts", "lines": "~50", "note": "SPA basename auto-detection"},
+      {"path": "frontend/src/tokens/tokens.json", "lines": "~300", "note": "Design token source of truth"}
+    ],
+    "components": [
+      "frontend/src/components/layout/ (Sidebar, Topbar, MobileNav, AppLayout, CelestialToggle)",
+      "frontend/src/components/shared/ (CourtBadge, OutcomeBadge, NatureBadge, BookmarkButton, GlobalSearch, ConfirmModal, Pagination, FilterPill, etc.)",
+      "frontend/src/components/cases/ (CaseCard, SimilarCasesPanel, CaseTextViewer)",
+      "frontend/src/components/judges/ (JudgeHero, JudgeCard, JudgeCompareCard, DualMetricChart, RepresentationCard)",
+      "frontend/src/components/analytics/",
+      "frontend/src/components/dashboard/"
+    ],
+    "pages": [
+      "Dashboard, Analytics, CasesPage, CaseDetailPage, CaseEditPage, CaseAddPage",
+      "JudgeProfilesPage, JudgeDetailPage, JudgeComparePage",
+      "LegislationsPage, LegislationDetailPage",
+      "CourtLineagePage, DownloadPage, PipelinePage, DesignTokensPage"
+    ],
+    "hooks": [
+      "use-cases.ts (TanStack Query, cursor pagination)",
+      "use-stats.ts",
+      "use-theme-preset.ts (localStorage, 3 keys)",
+      "use-keyboard.ts",
+      "use-legislations.ts"
+    ]
+  },
+  "apiEndpoints": {
+    "count": 22,
+    "base": "/api/v1/",
+    "key": [
+      "GET /cases (filter, sort, cursor pagination)",
+      "GET /cases/:id, PUT /cases/:id, DELETE /cases/:id",
+      "POST /cases/batch-delete",
+      "GET /stats",
+      "GET /analytics/outcomes, /judges, /legal-concepts, /nature-outcome",
+      "GET /analytics/judge-profile/:name, /judge-bio",
+      "GET /legislations/, /legislations/:id, /legislations/search",
+      "POST /pipeline/start, /pipeline/status, /pipeline/stop",
+      "GET /csrf-token",
+      "GET /export/csv, /export/json"
+    ]
+  },
+  "security": {
+    "csrfProtection": "flask-wtf, /api/v1/csrf-token for React SPA",
+    "securityHeaders": "CSP, X-Frame-Options, etc. via @app.after_request",
+    "authentication": "NONE — all endpoints are unauthenticated",
+    "knownIssues": [
+      "No API rate limiting — DoS vulnerability",
+      "CSRF-exempt pipeline-action endpoint allows unauthorized server-side actions",
+      "Missing session cookie security attributes (SameSite, Secure, HttpOnly)",
+      "Unchecked integer conversion in pipeline_log_api causes 500 on crafted input",
+      "Unauthenticated destructive API endpoints: delete, batch-delete, pipeline, scrape",
+      "Verbose error messages may expose internals"
+    ]
+  },
+  "testingStatus": {
+    "total": 610,
+    "pythonUnit": 296,
+    "e2ePlaywright": 231,
+    "frontendUnit": 83,
+    "testFiles": 78
+  },
+  "dependencies": {
+    "frontendKey": ["react 18", "vite 6", "tailwindcss v4", "recharts", "@tanstack/react-query v5", "react-i18next", "lucide-react", "class-variance-authority", "axios"],
+    "backendKey": ["flask", "flask-wtf", "pandas", "requests", "beautifulsoup4", "lxml", "supabase", "aiohttp"],
+    "devTools": ["ruff (Python linter/formatter)", "pytest", "playwright", "vitest", "typescript", "eslint"]
+  },
+  "dataContext": {
+    "totalCases": 149016,
+    "courts": ["MRTA 52970", "AATA 39203", "FCA 14987", "RRTA 13765", "FCCA 11157", "FMCA 10395", "FedCFamC2G 4109", "ARTA 2260", "HCA 176"],
+    "fields": "31 fields per case, 9 structured extracted (applicant_name 90%, visa_subclass 91.6%, hearing_date 78.7%, etc.)",
+    "fullText": "148966 cases with full text (99.96%)"
+  },
+  "previousIdeationSummary": {
+    "source": ".auto-claude/ideation/ideation.json",
+    "ideas": [
+      "Add API rate limiting to prevent resource exhaustion DoS",
+      "CSRF-exempt pipeline-action endpoint allows unauthorized server-side actions",
+      "Missing session cookie security attributes (SameSite, Secure, HttpOnly)",
+      "Unchecked integer conversion in pipeline_log_api causes 500 on crafted input",
+      "Unauthenticated destructive API endpoints",
+      "Split monolithic api.py (now 5012 lines) into domain modules",
+      "Extract DesignTokensPage.tsx (2663 lines) into sub-components",
+      "Extract duplicated Counter-based analytics aggregation into shared utilities",
+      "Refactor CasesPage.tsx (1061 lines) by extracting hooks and sub-components",
+      "Eliminate repository filter_cases() duplication with shared base mixin"
+    ]
+  },
+  "existingRoadmap": {
+    "phases": 5,
+    "features": 30,
+    "phase0": "Completed Foundation (12 features)",
+    "phase1": "Data Quality & Judge Intelligence (4 features)",
+    "phase2": "User Platform & Engagement (4 features)",
+    "phase3": "Advanced Intelligence & Analytics (5 features)",
+    "phase4": "Scale, Public Portal & Market Expansion (5 features)"
+  },
+  "existingSpecs": [
+    "001-immigration-specific-search-taxonomy",
+    "002-court-lineage-timeline-visualization",
+    "003-saved-searches-with-quick-re-execution",
+    "004-case-bookmarks-collections",
+    "005-public-facing-judge-analytics-reports",
+    "007-report-generation-for-legal-submissions",
+    "008-production-infrastructure-with-ci-cd",
+    "009-enhanced-structured-field-extraction",
+    "010-advanced-search-with-transparent-result-scoring",
+    "011-external-rest-api-with-rate-limiting-documentation",
+    "012-case-citation-network-visualization"
+  ],
+  "designContext": {
+    "aesthetic": "Legal Codex — warm off-white (#f5f4f1) + deep navy (#1b2838) + amber gold (#d4a017)",
+    "fonts": "Crimson Text (headings serif), IBM Plex Sans / DM Sans (body)",
+    "tokenSystem": "Design tokens in frontend/src/tokens/tokens.json → CSS + TS via build pipeline",
+    "themingKeys": "localStorage: theme-preset, theme-dark, theme-custom-vars",
+    "darkMode": "Deep navy night theme, toggle animation ≤150ms",
+    "chartColors": "9 court-specific colors, Grafana/Metabase data-first style for analytics"
+  },
+  "outputDir": "/Users/d/Developer/IMMI-Case-/.aperant/20260416_080651",
+  "graphHints": {
+    "enabled": false,
+    "note": "No previous hints — first clean run"
+  },
+  "generatedAt": "2026-04-16T08:06:51Z"
+}

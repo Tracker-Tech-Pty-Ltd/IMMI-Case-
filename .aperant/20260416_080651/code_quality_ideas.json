@@ -1,0 +1,621 @@
+{
+  "code_quality": [
+    {
+      "id": "cq-001",
+      "type": "code_quality",
+      "title": "Split api.py monolith (5012 lines) into domain-scoped route modules",
+      "description": "api.py has grown to 5012 lines containing 51 route handlers, 119 functions, and all analytics/search/taxonomy/LLM logic. It is the single largest file in the project and the primary source of every maintenance problem in the backend.",
+      "rationale": "A 5012-line file violates every established file-size convention (project CLAUDE.md ceiling: 800 lines). It makes navigation, testing, code review, and incremental refactoring extremely hard. Each domain area (analytics, cases CRUD, search, taxonomy, jobs, LLM council) is independently testable and should live in its own module.",
+      "category": "large_files",
+      "severity": "critical",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "currentState": "5012 lines, 51 route handlers, 119 helper functions all in a single Blueprint file. Key domains mixed together: case CRUD (lines 2305-2680), analytics (lines 3339-4186), search (lines 3003-3118), taxonomy (lines 4242-4756), LLM council (lines 4815-4972), jobs/pipeline (lines 3158-3241).",
+      "proposedChange": "Split into domain modules under immi_case_downloader/web/routes/: cases.py (~250 lines), analytics_core.py (~400 lines), analytics_judges.py (~300 lines), analytics_concepts.py (~250 lines), search.py (~200 lines), taxonomy.py (~300 lines), llm_council.py (~200 lines), jobs.py (~100 lines). Shared helpers (_normalise_outcome, _is_win, _split_judges, etc.) go into a new immi_case_downloader/web/analytics_helpers.py module. All blueprints registered in web/__init__.py.",
+      "codeExample": "# Before: api.py lines 3339-5012 — all analytics in one place\n# After:\n# routes/analytics/__init__.py  — registers sub-blueprint\n# routes/analytics/outcomes.py  — analytics_outcomes()\n# routes/analytics/judges.py    — analytics_judges(), analytics_judge_leaderboard(), ...\n# routes/analytics/concepts.py  — analytics_legal_concepts(), analytics_concept_effectiveness(), ...",
+      "bestPractice": "Single Responsibility Principle, file cohesion ≤800 lines (project CLAUDE.md)",
+      "metrics": {
+        "lineCount": 5012,
+        "routeCount": 51,
+        "functionCount": 119
+      },
+      "estimatedEffort": "large",
+      "estimated_effort": "large",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "in_progress",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan_detail_ref": ".omc/plans/api-split.md",
+      "implementation_strategy": "Side-effect import pattern: api.py defines api_bp + all shared helpers + constants. Sub-modules import from api.py and register routes onto api_bp. api.py's end imports sub-modules as side effects (noqa: F401, E402). URL structure unchanged. No breaking changes.",
+      "shared_helpers_stay_in_api_py": [
+        "_get_all_cases", "_get_analytics_cases", "_apply_filters",
+        "_analytics_response", "_normalise_outcome", "_is_win", "_round_rate",
+        "_split_judges", "_split_concepts", "_error", "_analytics_cache",
+        "_stats_cache", "_filter_options_cache", "MAX_EXPORT_ROWS",
+        "CASE_LIST_COLUMNS", "EDITABLE_FIELDS"
+      ],
+      "plan": [
+        {
+          "id": "cq-001-phase-a",
+          "order": 1,
+          "phase": "A",
+          "risk": "low",
+          "title": "Extract api_export.py (2 routes)",
+          "routes": [
+            "GET /export/csv (api.py ~line 3045)",
+            "GET /export/json (api.py ~line 3064)"
+          ],
+          "description": "Create immi_case_downloader/web/routes/api_export.py. Move export_csv() and export_json() into it. Import api_bp, _get_all_cases, _apply_filters, _error from .api. Add `from . import api_export  # noqa: F401, E402` at the end of api.py. Run: python3 -m pytest tests/ -x -q to confirm no regressions. Target: 0 test failures.",
+          "done": false,
+          "estimated_time": "1h"
+        },
+        {
+          "id": "cq-001-phase-b",
+          "order": 2,
+          "phase": "B",
+          "risk": "medium",
+          "title": "Extract api_pipeline.py (7 routes, including LLM council)",
+          "routes": [
+            "GET /job-status (~line 3085)",
+            "POST /download/start (~line 3092)",
+            "GET /pipeline-status (~line 3128)",
+            "POST /pipeline-action (~line 3134)",
+            "GET /llm-council/health (~line 4742)",
+            "POST /llm-council/run (~line 4754)",
+            "POST /cache/invalidate (~line 4717)"
+          ],
+          "description": "Create api_pipeline.py. Move the 7 routes. Note: /pipeline-action has rate limiting decorator — verify @rate_limit is imported correctly from security.py. The llm_council module (llm_council.py) is already a separate file; api_pipeline.py just needs to import LlmCouncil and call its methods. Run: python3 -m pytest tests/ -x -q after. Watch for: _job_status dict is module-level in api.py — api_pipeline.py must import it, not redefine it.",
+          "done": false,
+          "estimated_time": "2h"
+        },
+        {
+          "id": "cq-001-phase-c",
+          "order": 3,
+          "phase": "C",
+          "risk": "medium",
+          "title": "Extract api_taxonomy.py (7 routes, pure query endpoints)",
+          "routes": [
+            "GET /visa-registry (~line 4169)",
+            "GET /taxonomy/visa-lookup (~line 4177)",
+            "GET /taxonomy/legal-concepts (~line 4282)",
+            "GET /taxonomy/judges/autocomplete (~line 4348)",
+            "GET /taxonomy/countries (~line 4469)",
+            "POST /taxonomy/guided-search (~line 4540)",
+            "GET /data-dictionary (~line 4937)"
+          ],
+          "description": "Create api_taxonomy.py. These routes are mostly read-only lookups against VehicleRegistry, LegalConceptsRegistry, and in-memory config. Import visa_registry, legal_concepts_registry from their respective modules. No shared mutable state used. Run tests after. Expected: taxonomy routes are the most self-contained and carry lowest regression risk.",
+          "done": false,
+          "estimated_time": "3h"
+        },
+        {
+          "id": "cq-001-phase-d-cases",
+          "order": 4,
+          "phase": "D1",
+          "risk": "high",
+          "title": "Extract api_cases.py (13 routes, case CRUD + search)",
+          "routes": [
+            "GET /cases (~line 2230)",
+            "GET /cases/count (~line 2408)",
+            "GET /cases/<case_id> (~line 2451)",
+            "POST /cases (~line 2463)",
+            "PUT /cases/<case_id> (~line 2476)",
+            "DELETE /cases/<case_id> (~line 2504)",
+            "POST /cases/batch (~line 2517)",
+            "GET /cases/compare (~line 2566)",
+            "GET /cases/<case_id>/related (~line 2590)",
+            "GET /cases/<case_id>/similar (~line 2606)",
+            "GET /search (~line 2928)",
+            "GET /search/semantic (~line 4900)",
+            "GET /filter-options (~line 3000)"
+          ],
+          "description": "Create api_cases.py. Import CASE_LIST_COLUMNS, EDITABLE_FIELDS, _get_all_cases, _apply_filters, _error from .api. The batch-delete and delete routes have @rate_limit decorators — import rate_limit from web.security. After extraction, api.py should have only: Blueprint definition, all helper functions, constants, csrf-token route, and the 5 side-effect imports. Run full test suite: python3 -m pytest tests/ -q. Verify all 296 Python unit tests pass.",
+          "done": false,
+          "estimated_time": "4h"
+        },
+        {
+          "id": "cq-001-phase-d-analytics",
+          "order": 5,
+          "phase": "D2",
+          "risk": "high",
+          "title": "Extract api_analytics.py (20 routes, all analytics + stats)",
+          "routes": [
+            "GET /stats (~line 1857)",
+            "GET /stats/trends (~line 2016)",
+            "GET /court-lineage (~line 2059)",
+            "GET /analytics/filter-options (~line 3169)",
+            "GET /analytics/outcomes (~line 3266)",
+            "GET /analytics/judges (~line 3326)",
+            "GET /analytics/legal-concepts (~line 3390)",
+            "GET /analytics/nature-outcome (~line 3430)",
+            "GET /analytics/success-rate (~line 3483)",
+            "GET /analytics/judge-leaderboard (~line 3625)",
+            "GET /analytics/judge-profile (~line 3699)",
+            "GET /analytics/judge-compare (~line 3729)",
+            "GET /analytics/concept-effectiveness (~line 3783)",
+            "GET /analytics/concept-cooccurrence (~line 3833)",
+            "GET /analytics/concept-trends (~line 3897)",
+            "GET /analytics/flow-matrix (~line 3989)",
+            "GET /analytics/monthly-trends (~line 4071)",
+            "GET /analytics/judge-bio (~line 4147)",
+            "GET /analytics/visa-families (~line 4683)",
+            "GET /judge-photo/<path:filename> (~line 4114)"
+          ],
+          "description": "Create api_analytics.py. This is the largest extraction (~2000 lines). Import all shared helpers from .api: _normalise_outcome, _is_win, _round_rate, _split_judges, _split_concepts, _determine_court_type, _win_outcomes_for_court_type, _judge_identity, _collect_cases_for_judge, _judge_profile_payload, _analytics_cache, _analytics_get, _analytics_set, _analytics_cache_key, _get_analytics_cases, _get_all_cases, _apply_filters, _analytics_response, _error, _has_analytics_filters. After this phase, api.py should be ~800 lines. Run full test suite. Key risk: _analytics_cache is module-level — must be the same object referenced by both api.py and api_analytics.py. Verify by checking analytics endpoints still serve cached results between requests.",
+          "done": false,
+          "estimated_time": "1 day"
+        },
+        {
+          "id": "cq-001-phase-verify",
+          "order": 6,
+          "phase": "verify",
+          "risk": "low",
+          "title": "Post-split verification",
+          "description": "1. Run python3 -m pytest tests/ -q — all 296 unit tests must pass. 2. Check api.py line count: wc -l immi_case_downloader/web/routes/api.py — target ≤ 900 lines. 3. Start server: python web.py --port 8080 and verify /app/ loads. 4. Spot-check 3 analytics endpoints via curl to confirm cache is shared. 5. Run cd frontend && npm run build to confirm no frontend breakage. 6. Update .aperant status to 'completed'.",
+          "done": false,
+          "estimated_time": "1h"
+        }
+      ]
+    },
+    {
+      "id": "cq-002",
+      "type": "code_quality",
+      "title": "Deduplicate RPC fast-path/fallback pattern repeated in 4+ analytics endpoints",
+      "description": "Every analytics endpoint that supports server-side aggregation (analytics_outcomes, analytics_judges, analytics_legal_concepts, analytics_nature_outcome) contains an identical _rpc_ok = False / try RPC / except Exception: logger.warning / if not _rpc_ok: fallback pattern. This is copy-pasted verbatim 4+ times with only the RPC method name and Counter variable names changing.",
+      "rationale": "DRY principle. Copy-pasted exception handling is the #1 source of silent divergence — when one copy gets a bug fix, the others do not. A generic helper reduces the risk and cuts ~30 lines per endpoint.",
+      "category": "duplication",
+      "severity": "major",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "currentState": "Lines 3353-3374 (outcomes), 3414-3434 (judges), 3475-3487 (legal-concepts), 3514-3525 (nature-outcome) all contain:\n  _rpc_ok = False\n  if hasattr(repo, 'get_analytics_*') and not _has_analytics_filters():\n      try:\n          for r in repo.get_analytics_*(): ...\n          _rpc_ok = True\n      except Exception:\n          logger.warning('... RPC failed, falling back to Python')\n  if not _rpc_ok:\n      for c in _apply_filters(_get_analytics_cases()): ...",
+      "proposedChange": "Introduce a helper:\n  def _rpc_with_fallback(rpc_callable, rpc_handler, fallback_handler):\n      if rpc_callable is not None and not _has_analytics_filters():\n          try:\n              for r in rpc_callable(): rpc_handler(r)\n              return True\n          except Exception:\n              logger.warning('RPC failed, falling back')\n      for c in _apply_filters(_get_analytics_cases()): fallback_handler(c)\n      return False",
+      "codeExample": "# Before (repeated 4x):\n_rpc_ok = False\nif hasattr(repo, 'get_analytics_outcomes') and not _has_analytics_filters():\n    try:\n        for r in repo.get_analytics_outcomes(): ...\n        _rpc_ok = True\n    except Exception:\n        logger.warning('analytics_outcomes RPC failed, falling back to Python')\nif not _rpc_ok:\n    for c in _apply_filters(_get_analytics_cases()): ...\n\n# After:\n_rpc_with_fallback(\n    getattr(repo, 'get_analytics_outcomes', None),\n    lambda r: update_counters_from_rpc_row(r),\n    lambda c: update_counters_from_case(c),\n)",
+      "bestPractice": "DRY (Don't Repeat Yourself), error handling at single point",
+      "metrics": {
+        "duplicatedBlockCount": 4,
+        "linesPerBlock": 10,
+        "totalDuplicatedLines": 40
+      },
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "breakingChange": false,
+      "prerequisites": ["cq-001"],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-002-step-1",
+          "order": 1,
+          "title": "Implement _rpc_with_fallback helper in analytics_helpers.py",
+          "description": "Write a generic helper that accepts an optional RPC callable, an RPC row handler, and a fallback case handler. Handles the try/except/logger.warning pattern centrally.",
+          "done": false
+        },
+        {
+          "id": "cq-002-step-2",
+          "order": 2,
+          "title": "Refactor the 4 analytics endpoints to use the helper",
+          "description": "Replace the _rpc_ok pattern in analytics_outcomes, analytics_judges, analytics_legal_concepts, and analytics_nature_outcome with calls to _rpc_with_fallback. Run test suite after each change.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-003",
+      "type": "code_quality",
+      "title": "Deduplicate filter_cases() across CsvRepository, SqliteRepository, SupabaseRepository",
+      "description": "All three repository implementations define a filter_cases() method with the same 12-parameter signature (court, year, visa_type, source, tag, nature, keyword, sort_by, sort_dir, page, page_size). The CSV and SQLite versions share identical in-Python filtering logic for the non-database-native filters.",
+      "rationale": "Triplicated filtering logic means any bug fix or new filter field must be applied in three places. This has already caused divergence: HyperdriveRepository also has a 4th copy at line 266. A shared FilterParams dataclass and common validation layer would prevent drift.",
+      "category": "duplication",
+      "severity": "major",
+      "affectedFiles": [
+        "immi_case_downloader/csv_repository.py",
+        "immi_case_downloader/sqlite_repository.py",
+        "immi_case_downloader/supabase_repository.py",
+        "immi_case_downloader/hyperdrive_repository.py"
+      ],
+      "currentState": "csv_repository.py:74-124 has Python in-memory filter_cases. sqlite_repository.py:343+ builds SQL WHERE clauses. supabase_repository.py:442+ builds PostgREST queries. hyperdrive_repository.py:266+ is a 4th copy. All four share the identical 12-parameter signature and identical parameter validation logic.",
+      "proposedChange": "1) Create immi_case_downloader/filter_params.py with a FilterParams dataclass and validate() method. 2) Add a CaseRepositoryMixin with shared parameter validation. Each repo's filter_cases() delegates to its native query approach (SQL, PostgREST, in-memory) but shares the parameter validation and sort direction logic via the mixin.",
+      "codeExample": "# Before: 4 copies of:\ndef filter_cases(self, court='', year=None, visa_type='', source='', tag='', nature='', keyword='', sort_by='year', sort_dir='desc', page=1, page_size=50):\n\n# After:\n@dataclass\nclass FilterParams:\n    court: str = ''\n    year: int | None = None\n    # ... 10 more fields\n    def validate(self) -> 'FilterParams': ...\n\nclass CaseRepositoryMixin:\n    def _parse_filter_params(self, **kwargs) -> FilterParams: ...",
+      "bestPractice": "DRY, Repository Pattern with shared interface",
+      "metrics": {
+        "duplicatedSignatures": 4,
+        "parameterCount": 12
+      },
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-003-step-1",
+          "order": 1,
+          "title": "Create FilterParams dataclass in filter_params.py",
+          "description": "Define a dataclass with the 12 shared parameters, their defaults, and a validate() method that checks sort_by is in ALLOWED_SORT_FIELDS and sort_dir in ('asc', 'desc').",
+          "done": false
+        },
+        {
+          "id": "cq-003-step-2",
+          "order": 2,
+          "title": "Update CsvRepository.filter_cases to accept FilterParams",
+          "description": "Refactor csv_repository.py filter_cases to use FilterParams. Keep backward-compat **kwargs wrapper. Run existing tests.",
+          "done": false
+        },
+        {
+          "id": "cq-003-step-3",
+          "order": 3,
+          "title": "Update SqliteRepository and SupabaseRepository to use FilterParams",
+          "description": "Repeat for sqlite_repository.py and supabase_repository.py. Update hyperdrive_repository.py last. Verify all test_*_repository.py tests pass.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-004",
+      "type": "code_quality",
+      "title": "_judge_profile_payload() is a 235-line god function — extract sub-computations",
+      "description": "_judge_profile_payload() at api.py line 836 is 235 lines long. It initialises 14 Counter objects, runs a single mega-loop over all judge cases accumulating every possible metric (wins, visa breakdown, concept effectiveness, representation, country, court comparison), then assembles a large dict. It violates the 50-line function guideline and is the single most complex function in the codebase.",
+      "rationale": "A 235-line function with 14 mutable counter variables is extremely hard to unit-test, debug, and extend. Each sub-computation (visa breakdown, concept effectiveness, yearly trend, representation analysis) is independently testable as a pure function.",
+      "category": "complexity",
+      "severity": "major",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "currentState": "Single function lines 836-1070 with: 14 Counter initialisations, 1 mega accumulation loop covering 8 different metrics simultaneously, and a large dict assembly block. Called by analytics_judge_leaderboard, analytics_judge_profile, and analytics_judge_compare.",
+      "proposedChange": "Extract into composable sub-functions:\n  _compute_win_stats(cases) -> WinStats\n  _compute_visa_breakdown(cases, wins_by_case) -> list[dict]\n  _compute_concept_effectiveness(cases, wins_by_case) -> list[dict]\n  _compute_yearly_trend(cases, wins_by_case) -> list[dict]\n  _compute_representation_analysis(cases, wins_by_case) -> dict\n  _compute_country_breakdown(cases, wins_by_case) -> list[dict]\nEach takes the judge_cases list and a pre-computed wins_by_case set. _judge_profile_payload() becomes an orchestrator calling these sub-functions.",
+      "bestPractice": "Functions <50 lines (coding-style.md), Single Responsibility Principle",
+      "metrics": {
+        "lineCount": 235,
+        "counterVariables": 14,
+        "callers": 3
+      },
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "breakingChange": false,
+      "prerequisites": ["cq-001"],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-004-step-1",
+          "order": 1,
+          "title": "Extract _compute_win_stats and pre-compute wins_by_case set",
+          "description": "Create _compute_win_stats(cases) -> dict that returns total, wins, losses, overall_rate, court_type. Pre-compute a set of case_ids that are wins to avoid re-calling _is_win in every sub-function.",
+          "done": false
+        },
+        {
+          "id": "cq-004-step-2",
+          "order": 2,
+          "title": "Extract the 6 sub-computation functions",
+          "description": "Extract _compute_visa_breakdown, _compute_concept_effectiveness, _compute_yearly_trend, _compute_nature_breakdown, _compute_representation_analysis, _compute_country_breakdown. Each receives cases list and win_set.",
+          "done": false
+        },
+        {
+          "id": "cq-004-step-3",
+          "order": 3,
+          "title": "Refactor _judge_profile_payload to orchestrator",
+          "description": "Replace the 235-line body with calls to the extracted functions. Confirm test_analytics_judge_api.py still passes.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-005",
+      "type": "code_quality",
+      "title": "DesignTokensPage.tsx at 2663 lines — split into composable token section components",
+      "description": "DesignTokensPage.tsx is the largest frontend file at 2663 lines. It is a single component that renders the entire design token documentation/playground: color palettes, typography, spacing, shadows, court colors, semantic colors, component examples, theme export/import. Each section is a large JSX block with no sub-component extraction.",
+      "rationale": "At 2663 lines this page has 3x the project ceiling of 800 lines. Each token section (colors, typography, spacing, court palette, export panel) is fully independent and benefits from lazy-loading since DesignTokensPage is only used by developers.",
+      "category": "large_files",
+      "severity": "major",
+      "affectedFiles": [
+        "frontend/src/pages/DesignTokensPage.tsx"
+      ],
+      "currentState": "2663-line single component with sections for: color palette display, typography scale, spacing scale, shadow scale, court color swatches, semantic color swatches, component previews (StatCard, CourtBadge, OutcomeBadge, CaseCard), and theme export/import. All rendered inline with no sub-components.",
+      "proposedChange": "Split into components under frontend/src/components/design-tokens/:\n  TokenColorSection.tsx — color palettes\n  TokenTypographySection.tsx — type scale\n  TokenSpacingSection.tsx — spacing/shadows\n  TokenCourtSection.tsx — court + semantic colors\n  TokenComponentPreview.tsx — live component previews\n  TokenExportPanel.tsx — export/import functionality\nDesignTokensPage.tsx becomes a ~100-line orchestrator with lazy imports.",
+      "bestPractice": "File size ≤800 lines (CLAUDE.md), High cohesion / low coupling",
+      "metrics": {
+        "lineCount": 2663
+      },
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-005-step-1",
+          "order": 1,
+          "title": "Create frontend/src/components/design-tokens/ directory and extract TokenExportPanel",
+          "description": "Start with the self-contained export/import block (lines ~2474-2663) as TokenExportPanel.tsx. It has clear state boundaries (imported, importError). Run vitest to confirm no regressions.",
+          "done": false
+        },
+        {
+          "id": "cq-005-step-2",
+          "order": 2,
+          "title": "Extract color, typography, spacing, court token sections",
+          "description": "Extract each display-only section into its own component. These are stateless — they only receive the tokens object as props. Apply React.lazy to each for code-split.",
+          "done": false
+        },
+        {
+          "id": "cq-005-step-3",
+          "order": 3,
+          "title": "Reduce DesignTokensPage to orchestrator and verify build",
+          "description": "Replace inline JSX with lazy-loaded section components. Run npm run build to confirm TypeScript compiles. Target: DesignTokensPage.tsx ≤150 lines.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-006",
+      "type": "code_quality",
+      "title": "39 broad `except Exception` catches in api.py swallow errors silently",
+      "description": "api.py contains 39 `except Exception` clauses. Of these, many (lines 323, 357, 1312, 1676, 1805, 1836, 2003, 2035, 2066, 2115, 2175, 2435, 2505, 3103, 3193) log nothing or only log at WARNING without the exception details, making production debugging very difficult. Several are marked 'pragma: no cover' indicating they are never tested.",
+      "rationale": "Broad catches without logging the exception type/traceback turn transient bugs into silent failures. The Flask error model means unhandled exceptions become 500s with full traceback — which is often more useful than a swallowed exception returning a degraded result.",
+      "category": "code_smells",
+      "severity": "major",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py"
+      ],
+      "currentState": "39 `except Exception` clauses. Many examples:\n- Line 323: `except Exception: pass` (completely silent)\n- Line 1312: `except Exception: return None` (silent)\n- Line 2003/2035/2066: cache-fill fallbacks that swallow all errors\n- Lines 3373/3433/3486/3524: RPC fallbacks only log at WARNING without exc_info=True",
+      "proposedChange": "1) For every `except Exception: pass` or `except Exception: return X` with no log — add `logger.debug(..., exc_info=True)` at minimum. 2) For RPC fallbacks that are expected failures — keep WARNING but add `exc_info=True` so the traceback is captured at DEBUG level. 3) For cache-fill exceptions — re-raise after logging or use `logger.exception()`. Audit all 39 instances against this policy.",
+      "codeExample": "# Before:\nexcept Exception:\n    logger.warning('analytics_outcomes RPC failed, falling back to Python')\n\n# After:\nexcept Exception:\n    logger.warning('analytics_outcomes RPC failed, falling back to Python', exc_info=True)",
+      "bestPractice": "Error handling: log detailed error context on server side (coding-style.md), never silently swallow errors",
+      "metrics": {
+        "broadExceptCount": 39,
+        "silentExceptCount": 8
+      },
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-006-step-1",
+          "order": 1,
+          "title": "Audit all 39 except Exception sites and categorise",
+          "description": "Create a list of: (a) completely silent catches, (b) catches that log without exc_info, (c) catches that correctly use logger.exception or exc_info=True. Target: every site in category (a) or (b) gets fixed.",
+          "done": false
+        },
+        {
+          "id": "cq-006-step-2",
+          "order": 2,
+          "title": "Add exc_info=True to all RPC fallback logger.warning calls",
+          "description": "The 4 RPC fallback catches in analytics endpoints (lines 3373, 3433, 3486, 3524) should all use logger.warning(..., exc_info=True) so the underlying cause is traceable without changing behavior.",
+          "done": false
+        },
+        {
+          "id": "cq-006-step-3",
+          "order": 3,
+          "title": "Replace silent catches with at minimum logger.debug",
+          "description": "For completely silent `except Exception: pass` patterns, add `logger.debug('Context description', exc_info=True)`. For cache-miss patterns, use `logger.exception()` to always capture full traceback.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-007",
+      "type": "code_quality",
+      "title": "LlmCouncilPage.tsx at 1305 lines exceeds the 800-line ceiling",
+      "description": "LlmCouncilPage.tsx is 1305 lines — 63% over the project ceiling. It renders the entire LLM Council UI: model config panel, question form, per-model opinion cards, consensus section, and a detailed model comparison table. These are independent UI concerns that can be extracted.",
+      "rationale": "1305 lines means the component has too many responsibilities. The model configuration display and the opinion rendering are both independently testable and reusable UI units.",
+      "category": "large_files",
+      "severity": "minor",
+      "affectedFiles": [
+        "frontend/src/pages/LlmCouncilPage.tsx"
+      ],
+      "currentState": "1305 lines. Sections: DEFAULT_MODELS constant block (~50 lines), model label helpers (~30 lines), opinion card render (~150 lines inline), consensus section (~100 lines inline), model config table (~200 lines inline), main form/state logic (~400 lines).",
+      "proposedChange": "Extract into frontend/src/components/llm-council/:\n  ModelConfigTable.tsx — shows provider/model/settings table\n  OpinionCard.tsx — renders a single model's opinion with status\n  ConsensusPanel.tsx — renders the synthesised answer\n  CouncilQuestionForm.tsx — question input + context + submit\nLlmCouncilPage.tsx becomes ~200 lines of state + layout.",
+      "bestPractice": "File size ≤800 lines (CLAUDE.md), component decomposition",
+      "metrics": {
+        "lineCount": 1305
+      },
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-007-step-1",
+          "order": 1,
+          "title": "Extract OpinionCard and ConsensusPanel as stateless components",
+          "description": "Both sections are pure display components driven by the council response object. Extract them first as they have zero state and clear props interfaces.",
+          "done": false
+        },
+        {
+          "id": "cq-007-step-2",
+          "order": 2,
+          "title": "Extract ModelConfigTable and CouncilQuestionForm",
+          "description": "ModelConfigTable takes the models dict and renders the config table. CouncilQuestionForm wraps the question/context inputs and submit handler.",
+          "done": false
+        },
+        {
+          "id": "cq-007-step-3",
+          "order": 3,
+          "title": "Reduce LlmCouncilPage to orchestrator, verify vitest",
+          "description": "LlmCouncilPage retains only state management and component composition. Run vitest to confirm no TypeScript errors.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-008",
+      "type": "code_quality",
+      "title": "25% of Python functions across the project are missing return type hints",
+      "description": "Across 487 Python functions in the project, 125 (25%) have no return type annotation. In api.py specifically, 51 public route handler functions have no return type. The project uses Python 3.14 with full type-annotation support available.",
+      "rationale": "Missing return type hints prevent pyright/mypy from catching return-value misuse. Flask route handlers should all be annotated as `-> Response` or `-> tuple[Response, int]` to catch the common bug of accidentally returning a plain dict instead of jsonify(dict).",
+      "category": "type_safety",
+      "severity": "minor",
+      "affectedFiles": [
+        "immi_case_downloader/web/routes/api.py",
+        "immi_case_downloader/web/helpers.py",
+        "immi_case_downloader/web/jobs.py",
+        "immi_case_downloader/web/__init__.py"
+      ],
+      "currentState": "125 of 487 Python functions (25%) lack return type hints. All 51 public route handlers in api.py are missing return annotations (get_csrf_token, stats, list_cases, analytics_outcomes, etc.). Private helpers like _is_win, _round_rate, _split_judges do have type hints — the problem is concentrated in public-facing functions.",
+      "proposedChange": "Add return type annotations to all 51 route handlers using `from flask import Response`: route handlers return `Response`, handlers that return error tuples return `tuple[Response, int]`. Enable pyright in strict mode for the web/routes/ directory via a per-directory pyrightconfig. Fix all type errors surfaced.",
+      "codeExample": "# Before:\ndef analytics_outcomes():\n    ...\n    return _analytics_response(result)\n\n# After:\nfrom flask import Response\ndef analytics_outcomes() -> Response:\n    ...\n    return _analytics_response(result)",
+      "bestPractice": "Type safety, Python 3.14 type annotation best practices",
+      "metrics": {
+        "missingHints": 125,
+        "totalFunctions": 487,
+        "missingPercent": 25,
+        "routeHandlersMissing": 51
+      },
+      "estimatedEffort": "small",
+      "estimated_effort": "small",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-008-step-1",
+          "order": 1,
+          "title": "Add return type hints to all 51 public route handlers in api.py",
+          "description": "Each Flask route handler returns either Response (via jsonify/_analytics_response/send_file) or tuple[Response, int] for error cases. Add these annotations and run python3 -m pyright immi_case_downloader/web/routes/api.py to surface any type errors.",
+          "done": false
+        },
+        {
+          "id": "cq-008-step-2",
+          "order": 2,
+          "title": "Add return type hints to helpers.py, jobs.py, web/__init__.py",
+          "description": "Apply the same annotation pass to the remaining files with missing hints. Focus on public functions first.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-009",
+      "type": "code_quality",
+      "title": "frontend/src/lib/api.ts at 1291 lines — split typed API client by domain",
+      "description": "api.ts is 1291 lines containing all API call functions, TypeScript response types, and the CSRF-aware fetch wrapper for every domain: cases, analytics, search, taxonomy, LLM council, legislations, export, jobs. It is imported by nearly every hook file.",
+      "rationale": "A 1291-line single file for all API types and calls creates wide import surface area. Any change to one domain type causes the entire file to be re-evaluated by TypeScript. Splitting by domain enables tree-shaking, improves build-time type checking, and makes it clear which types belong to which feature.",
+      "category": "large_files",
+      "severity": "minor",
+      "affectedFiles": [
+        "frontend/src/lib/api.ts"
+      ],
+      "currentState": "1291 lines with 79 exports. All API call functions and their return types live in a single file. The file has been incrementally extended for every new feature (legislations, LLM council, taxonomy, semantic search) without a split strategy.",
+      "proposedChange": "Split into domain-scoped modules under frontend/src/lib/api/:\n  core.ts — fetchWithCsrf, ApiError, shared types\n  cases.ts — CaseFilters, ImmigrationCase, fetchCases, fetchCase, ...\n  analytics.ts — AnalyticsOutcomes, fetchAnalyticsOutcomes, ...\n  taxonomy.ts — VisaLookup, fetchTaxonomyJudges, ...\n  search.ts — SearchResult, fetchSearch, fetchSemanticSearch\n  llm-council.ts — LlmCouncilResponse, fetchLlmCouncil, ...\n  legislations.ts — Legislation, fetchLegislations, ...\nfrontend/src/lib/api.ts becomes a re-export barrel.",
+      "bestPractice": "File size ≤800 lines, high cohesion modules",
+      "metrics": {
+        "lineCount": 1291,
+        "exportCount": 79
+      },
+      "estimatedEffort": "medium",
+      "estimated_effort": "medium",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-009-step-1",
+          "order": 1,
+          "title": "Extract core.ts with fetchWithCsrf and shared error types",
+          "description": "Move the CSRF fetch wrapper, ApiError class, and any base types used across all domains into frontend/src/lib/api/core.ts. Update api.ts to re-export from core.ts.",
+          "done": false
+        },
+        {
+          "id": "cq-009-step-2",
+          "order": 2,
+          "title": "Extract domain modules: cases, analytics, taxonomy, search",
+          "description": "Create domain-specific files. Each imports from core.ts. Move function + type pairs together so the type is co-located with its API call. Update api.ts barrel to re-export all.",
+          "done": false
+        },
+        {
+          "id": "cq-009-step-3",
+          "order": 3,
+          "title": "Run TypeScript build and fix any import path issues",
+          "description": "Run cd frontend && npm run build to verify all imports resolve. Since api.ts barrel re-exports everything, hook files should need no changes.",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cq-010",
+      "type": "code_quality",
+      "title": "ESLint config missing no-console and explicit-function-return-type rules",
+      "description": "The project's eslint.config.ts uses typescript-eslint recommended preset but does not add @typescript-eslint/explicit-function-return-type or no-console rules. The tsconfig.app.json is appropriately strict (strict: true, noUnusedLocals, noUnusedParameters) but the ESLint layer has no runtime-behavior rules beyond react-hooks.",
+      "rationale": "no-console prevents debug console.log statements leaking to production. explicit-function-return-type enforces type-safe function signatures in React components and hooks. Both are low-friction rules with high signal value for a codebase this size.",
+      "category": "linting",
+      "severity": "minor",
+      "affectedFiles": [
+        "frontend/eslint.config.ts"
+      ],
+      "currentState": "eslint.config.ts uses: js.configs.recommended + tseslint.configs.recommended + reactHooks.configs.flat.recommended + reactRefresh.configs.vite. No custom rules object. TypeScript strict mode is enabled in tsconfig but ESLint does not enforce function return types or ban console usage.",
+      "proposedChange": "Add a rules block to eslint.config.ts:\n  'no-console': ['warn', { allow: ['warn', 'error'] }]\n  '@typescript-eslint/explicit-function-return-type': ['warn', { allowExpressions: true, allowTypedFunctionExpressions: true }]\nThe allowExpressions option means inline arrow functions in JSX props are exempt — only module-level functions and React components require explicit returns.",
+      "codeExample": "// Before: no rules block\nexport default defineConfig([\n  globalIgnores([...]),\n  { files: ['**/*.{ts,tsx}'], extends: [...] }\n])\n\n// After:\nexport default defineConfig([\n  globalIgnores([...]),\n  {\n    files: ['**/*.{ts,tsx}'],\n    extends: [...],\n    rules: {\n      'no-console': ['warn', { allow: ['warn', 'error'] }],\n      '@typescript-eslint/explicit-function-return-type': ['warn', { allowExpressions: true }],\n    }\n  }\n])",
+      "bestPractice": "Linting as first defence against debug code leaks and missing types",
+      "metrics": {
+        "missingRules": 2
+      },
+      "estimatedEffort": "trivial",
+      "estimated_effort": "trivial",
+      "breakingChange": false,
+      "prerequisites": [],
+      "status": "draft",
+      "created_at": "2026-04-16T08:06:51Z",
+      "plan": [
+        {
+          "id": "cq-010-step-1",
+          "order": 1,
+          "title": "Add no-console and explicit-function-return-type rules to eslint.config.ts",
+          "description": "Add rules block with the two rules. Run `cd frontend && npx eslint src/ --max-warnings 0` to see the current violation count before deciding whether to enable as 'error' or 'warn'.",
+          "done": false
+        },
+        {
+          "id": "cq-010-step-2",
+          "order": 2,
+          "title": "Fix or suppress pre-existing violations",
+          "description": "For any genuine console.log statements that should remain (e.g., error boundaries), replace with console.warn/error or add eslint-disable comments with justification. For explicit-function-return-type violations, add return types to the flagged components.",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "filesAnalyzed": 28,
+    "largeFilesFound": 7,
+    "largeFilesDetail": [
+      {"file": "immi_case_downloader/web/routes/api.py", "lines": 5012},
+      {"file": "frontend/src/pages/DesignTokensPage.tsx", "lines": 2663},
+      {"file": "frontend/src/pages/LlmCouncilPage.tsx", "lines": 1305},
+      {"file": "frontend/src/lib/api.ts", "lines": 1291},
+      {"file": "frontend/src/pages/DashboardPage.tsx", "lines": 1274},
+      {"file": "frontend/src/pages/CasesPage.tsx", "lines": 1061},
+      {"file": "frontend/src/components/legislation/LegislationTextViewer.tsx", "lines": 926}
+    ],
+    "dimensionsCovered": [
+      "large_files",
+      "code_smells",
+      "complexity",
+      "duplication",
+      "file_structure",
+      "linting",
+      "type_safety",
+      "test_coverage"
+    ],
+    "keyFindings": {
+      "api_py_routes": 51,
+      "api_py_functions": 119,
+      "python_functions_missing_return_hints": 125,
+      "python_total_functions": 487,
+      "broad_except_exception_catches_in_api_py": 39,
+      "rpc_fallback_pattern_duplications": 4,
+      "filter_cases_copies": 4,
+      "typescript_any_usage": 0,
+      "frontend_strict_mode": true,
+      "eslint_no_console_rule": false,
+      "eslint_explicit_function_return_type": false
+    },
+    "generatedAt": "2026-04-16T08:06:51Z"
+  }
+}

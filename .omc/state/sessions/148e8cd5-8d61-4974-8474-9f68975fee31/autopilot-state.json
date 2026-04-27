@@ -1,0 +1,14 @@
+{
+  "active": false,
+  "current_phase": "phase-2-execution-checkpoint-75pct",
+  "plan_path": "/Users/d/Developer/IMMI-Case-/.omc/plans/hyperdrive-full-migration.md",
+  "completed_at": "2026-04-26T12:08:00Z",
+  "reason": "Phase 1 ~75% complete after 10 commits in this session. Remaining work (judge-photo R2 bucket creation, Workers Static Assets SPA cutover, R2/rate-limit wrangler bindings) requires external infrastructure prep + smoke verification. Resume via /autopilot continue when CSRF_SECRET set + R2 bucket created.",
+  "commits_shipped": "8c58126 fix(judges), bcabdf7 docs(plan), 7fae25c fix(api credentials), a9b275a feat(CSRF helpers), c7ba4fc feat(cases CRUD), 799f984 feat(streaming export), 3b8c8ef feat(lexical search + cache invalidate), 3e99944 feat(guided-search), a370793 chore(wrangler cpu_ms), f4d8f21 feat(collections export)",
+  "_meta": {
+    "mode": "autopilot",
+    "sessionId": "148e8cd5-8d61-4974-8474-9f68975fee31",
+    "updatedAt": "2026-04-26T12:05:45.227Z",
+    "updatedBy": "state_write_tool"
+  }
+}

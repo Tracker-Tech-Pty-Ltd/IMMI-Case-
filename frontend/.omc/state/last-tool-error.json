@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"ls -la && ls workers/ 2>/dev/null\",\"description\":\"Check project root and workers directory\"}",
-  "error": "Exit code 1\ntotal 552\ndrwxr-xr-x   33 d  staff    1056 Apr 12 22:10 .\ndrwxr-xr-x@  95 d  staff    3040 Apr 14 02:54 ..\n-rw-r--r--@   1 d  staff     296 Feb 25 13:44 .dev.vars.example\n-rw-r--r--@   1 d  staff     357 Feb 25 13:11 .env.example\n-rw-r--r--@   1 d  staff     310 Feb 25 13:44 .gitignore\ndrwxr-xr-x@   4 d  staff     128 Apr 14 06:00 .omc\ndrwxr-xr-x@   5 d  staff     160 Apr 11 23:58 .ruff_cache\ndrwxr-xr-x@   3 d  staff      96 Feb 25 13:47 .wrangler\n-rw-r--r--@   1 d  staff    9043 Feb...",
-  "timestamp": "2026-04-13T20:00:39.741Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"git add frontend/src/lib/api-llm-council.ts frontend/__tests__/api-llm-council.test.ts .omc/prd.json .omc/progress.txt && git status --short | head -20\",\"description\":\"Stage US-008 files o...",
+  "error": "Exit code 128\nfatal: pathspec 'frontend/src/lib/api-llm-council.ts' did not match any files",
+  "timestamp": "2026-04-27T19:44:17.131Z",
+  "retry_count": 1
 }

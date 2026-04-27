@@ -1,0 +1,135 @@
+{
+  "enabled": true,
+  "session_date": "2026-04-16",
+  "hints_by_type": {
+    "performance_optimizations": [
+      {
+        "key": "monthly_trends_skip_analytics_cache",
+        "note": "monthly-trends endpoint skips _analytics_cache — 2-line fix, highest perf ROI"
+      },
+      {
+        "key": "cases_table_row_memo",
+        "note": "CasesPage table rows not memoised — extract CaseTableRow = memo(...)"
+      },
+      {
+        "key": "tanstack_gctime_missing",
+        "note": "gcTime not set on QueryClient — analytics results evicted after 5min"
+      },
+      {
+        "key": "lucide_react_manual_chunk",
+        "note": "lucide-react across 63 files, add manualChunks in vite.config.ts"
+      }
+    ],
+    "ui_ux_improvements": [
+      {
+        "key": "confirm_modal_focus_trap",
+        "note": "ConfirmModal missing role=dialog, aria-modal, focus trap — WCAG AA failure"
+      },
+      {
+        "key": "global_search_combobox_aria",
+        "note": "GlobalSearch missing combobox/listbox ARIA pattern"
+      },
+      {
+        "key": "cases_table_skeleton",
+        "note": "CasesPage has no skeleton loading state — full-page spinner causes layout collapse"
+      },
+      {
+        "key": "court_badge_full_name_sr",
+        "note": "CourtBadge full name in title only — not announced by screen readers"
+      }
+    ],
+    "code_quality": [
+      {
+        "key": "api_py_monolith_5012",
+        "note": "api.py is now 5012 lines (was 1937) — 51 routes, 119 functions, dominant structural problem"
+      },
+      {
+        "key": "rpc_fallback_4x_duplicate",
+        "note": "RPC fast-path/fallback pattern copy-pasted 4x in analytics endpoints"
+      },
+      {
+        "key": "filter_cases_4_repo_copies",
+        "note": "filter_cases() duplicated across csv/sqlite/supabase/hyperdrive repos"
+      },
+      {
+        "key": "judge_profile_235_line_god_fn",
+        "note": "_judge_profile_payload() 235-line god function in api.py"
+      },
+      {
+        "key": "39_broad_except_exception",
+        "note": "39 broad except Exception catches in api.py swallow errors silently"
+      },
+      {
+        "key": "llm_council_page_1305_lines",
+        "note": "LlmCouncilPage.tsx 1305 lines — newly discovered large file"
+      },
+      {
+        "key": "api_ts_1291_lines",
+        "note": "frontend/src/lib/api.ts is 1291 lines — split by domain"
+      }
+    ],
+    "code_improvements": [
+      {
+        "key": "use_keyboard_5_missing_shortcuts",
+        "note": "use-keyboard.ts missing 5 shortcuts: a(nalytics), j(udges), l(egislations), s(earch), b(ookmarks)"
+      },
+      {
+        "key": "analytics_export_csv_pattern",
+        "note": "AnalyticsPage/JudgeProfilesPage missing export CSV — pattern exists in CasesPage.tsx:180-209"
+      },
+      {
+        "key": "cursor_pagination_not_wired",
+        "note": "nextCursor exposed in use-cases.ts:41 but not connected to CasesPage nav"
+      },
+      {
+        "key": "filter_state_to_searchparams",
+        "note": "Analytics/Judge filter state should use useSearchParams (follow CasesPage.tsx:50-118)"
+      }
+    ],
+    "documentation_gaps": [
+      {
+        "key": "no_openapi_spec",
+        "note": "50+ API routes with no OpenAPI spec — only CLAUDE.md documents them"
+      },
+      {
+        "key": "immigration_case_fields_undocumented",
+        "note": "ImmigrationCase 31 fields have no inline documentation"
+      },
+      {
+        "key": "court_lineage_user_vocab",
+        "note": "Court lineage + outcome vocabulary (Affirmed/Remitted/Set Aside) needs user-facing glossary"
+      }
+    ],
+    "security_hardening": [
+      {
+        "key": "debug_endpoint_live_in_prod",
+        "note": "CRITICAL: /api/v1/debug leaks SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY, infra info — delete immediately"
+      },
+      {
+        "key": "hyperdrive_header_unverified",
+        "note": "HIGH: X-Hyperdrive-Url trusted from any client — add HMAC verification"
+      },
+      {
+        "key": "llm_council_unauthenticated",
+        "note": "HIGH: /api/v1/llm-council/run — unauthenticated billable LLM calls, rate limit trivially bypassed"
+      },
+      {
+        "key": "export_unauthenticated_pii",
+        "note": "HIGH: Export endpoints load 149k PII records with no auth or rate limit"
+      },
+      {
+        "key": "pii_in_localstorage_bookmarks",
+        "note": "MEDIUM: Applicant names in localStorage bookmarks — no TTL, no encryption"
+      },
+      {
+        "key": "rate_limiter_single_ip_bypass",
+        "note": "MEDIUM: Rate limiter broken under TRUST_PROXY_HEADERS=false (all requests same IP)"
+      }
+    ]
+  },
+  "all_ideas_count": 50,
+  "session_output_dir": ".aperant/20260416_080651",
+  "total_hints": 24,
+  "created_at": "2026-04-16T08:06:51Z",
+  "updated_at": "2026-04-16T08:06:51Z"
+}

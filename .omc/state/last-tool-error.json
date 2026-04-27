@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"python3 /tmp/profile_analytics.py 2>&1\",\"timeout\":300000,\"description\":\"Run analytics profiling script synchronously\"}",
-  "error": "Exit code 1\n============================================================\nTarget: https://urntbuqczarkuoaosjxd.supabase.co\n============================================================\n\n[1] Network RTT (TCP connect to supabase.co:443)\n    Sample 1: 73.7 ms\n    Sample 2: 8.5 ms\n    Sample 3: 9.9 ms\n    Average RTT: 30.7 ms\n\n[2] Single-row SELECT (minimal latency)\n    Time: 976.7 ms  (rows: 1)\n\n[3] COUNT(*) — how many rows?\n    Time: 72.4 ms  (total rows: 149016)\n\n[4] Full analytics load (7 cols, pa...",
-  "timestamp": "2026-04-14T10:17:23.368Z",
+  "tool_name": "mcp__plugin_everything-claude-code_playwright__browser_navigate",
+  "tool_input_preview": "{\"url\":\"https://immi.trackit.today/app/llm-council/sessions\"}",
+  "error": "### Error\nError: Extension connection timeout. Make sure the \"Playwright MCP Bridge\" extension is installed. See https://github.com/microsoft/playwright-mcp/blob/main/packages/extension/README.md for installation instructions.",
+  "timestamp": "2026-04-27T21:24:00.132Z",
   "retry_count": 1
 }
