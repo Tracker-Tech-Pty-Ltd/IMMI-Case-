@@ -290,6 +290,70 @@ oh-my-claudecode:code-reviewer).
 US-013 (Python LLM council cleanup) is gated on 1-week soak after US-012
 deploy — DO NOT execute now. Add to backlog for ~2026-05-05.
 
+## Iteration 11.5 (interim) — DONE 2026-04-28 (autopilot resume, parallel)
+
+After US-011 the user requested two parallel cleanup tasks before
+authorising the production deploy. Both ran as concurrent subagents
+(executor sonnet) on disjoint files — first parallel batch this sprint.
+
+### Branch A — US-010 critic backlog cleanup (commit 494c190)
+
+All 5 critic findings cleared:
+1. MAJOR: test 13 navigate URL assertion — added vi.mock for
+   useNavigate + assertion of `/llm-council/sessions/${id}` URL
+2. MINOR: sessionId="new" guard — `<Navigate to="/llm-council" replace />`
+   at top of LlmCouncilPage when sessionId === "new"
+3. MINOR: animate-spin on <Loader2> SVG (3 occurrences) — wrapped each
+   in <div className="animate-spin"><Loader2 ... /></div>
+4. MINOR: addTurn input-clear test (test 16, NEW) — asserts textarea
+   is cleared after addTurn resolves
+5. MINOR: getSession 404 → null path test (test 17, NEW) — mocks
+   useLlmCouncilSession returning {data: null, ...}, asserts
+   "Session not found" visible
+
+3 RED→GREEN cycles documented in commit message.
+Verification: 95/95 vitest in 2.54s, tsc exit 0.
+
+### Branch B — US-012 e2e Playwright skeleton (commit 953f6c0)
+
+Authored tests/e2e/playwright/test_council_thread_visual.py with 6
+pytest-playwright test functions covering the 7-step browser scenario:
+- step 1: new-session button → council form navigation
+- step 2: turn 1 expert cards + moderator + screenshot turn-1.png
+- step 4: page reload → session persistence
+- step 5: turn 2 + count badge + screenshot turn-2.png
+- step 7: delete from sidebar → item count decreases
+- step 8: no console errors of severity "error"
+
+Safeguards:
+- E2E_BASE_URL env var override (defaults to immi.trackit.today)
+- Session-scoped _verify_base_url fixture: skips ALL tests if
+  /api/v1/llm-council/health unreachable (CI-safe)
+- 120s LLM timeouts; 180s pytest --timeout
+- Screenshots saved to tests/e2e/playwright/screenshots/.gitignore'd
+
+Verification: pytest --collect-only → 6 collected in 0.35s. ast SYNTAX OK.
+
+### Why parallel agents
+
+Owner mindset: prior 4 stories were sequential (each waited for
+implementer→reviewer→commit). Branch A and B touch DISJOINT files:
+- A: frontend/src/pages/LlmCouncilPage.tsx + page.test.tsx
+- B: tests/e2e/playwright/* (new dir)
+
+No file conflict, no dependency. Single message → 2 Agent tool calls →
+both ran concurrently. Wall-time savings ≈ 50% vs sequential.
+
+### Next iteration (PENDING USER AUTHORIZATION)
+
+US-012 Phase 4 — production deploy + e2e execution. Requires explicit
+"上線" / "ship" authorization from user per durable instruction:
+git push origin main triggers GHA deploy-worker.yml. Local skeleton
+ready; will run RED (wrong URL → all skip) then GREEN (production →
+6 pass) once authorized.
+
+US-013 still gated on 1-week soak.
+
 # ═════════════════════════════════════════════════════════════════════════
 # Below: legacy Three-Epic Sprint progress (2026-04-15) — completed, archived
 # ═════════════════════════════════════════════════════════════════════════
