@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1776445974508,
+  "lastScanned": 1777328880196,
   "projectRoot": "/Users/d/Developer/IMMI-Case-/frontend",
   "techStack": {
     "languages": [
@@ -52,8 +52,8 @@
     "runtime": null
   },
   "build": {
-    "buildCommand": "cd /Users/d/Developer/IMMI-Case-/frontend && npx tsc --noEmit 2>&1 | tail -20",
-    "testCommand": "npx vitest run __tests__/api-llm-council.test.ts 2>&1 | tail -10",
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
     "lintCommand": "npm run lint",
     "devCommand": "npm run dev",
     "scripts": {
@@ -98,8 +98,8 @@
     "__tests__": {
       "path": "__tests__",
       "purpose": "Test files",
-      "fileCount": 46,
-      "lastAccessed": 1776445974436,
+      "fileCount": 50,
+      "lastAccessed": 1777328880035,
       "keyFiles": [
         "advanced-filter-panel.test.tsx",
         "analytics-charts-tokens.test.tsx",
@@ -112,7 +112,7 @@
       "path": "dist",
       "purpose": "Distribution/build output",
       "fileCount": 3,
-      "lastAccessed": 1776445974437,
+      "lastAccessed": 1777328880121,
       "keyFiles": [
         "_redirects",
         "index.html",
@@ -123,7 +123,7 @@
       "path": "downloaded_cases",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776445974456,
+      "lastAccessed": 1777328880121,
       "keyFiles": [
         "cases.db"
       ]
@@ -132,7 +132,7 @@
       "path": "e2e",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1776445974461,
+      "lastAccessed": 1777328880122,
       "keyFiles": [
         "README.md",
         "case-crud.spec.ts",
@@ -145,14 +145,14 @@
       "path": "functions",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1776445974462,
+      "lastAccessed": 1777328880123,
       "keyFiles": []
     },
     "playwright-report": {
       "path": "playwright-report",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776445974463,
+      "lastAccessed": 1777328880123,
       "keyFiles": [
         "index.html"
       ]
@@ -161,7 +161,7 @@
       "path": "public",
       "purpose": "Public files",
       "fileCount": 2,
-      "lastAccessed": 1776445974463,
+      "lastAccessed": 1777328880124,
       "keyFiles": [
         "_redirects",
         "vite.svg"
@@ -171,7 +171,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 2,
-      "lastAccessed": 1776445974464,
+      "lastAccessed": 1777328880125,
       "keyFiles": [
         "build-tokens.ts",
         "translate-locales.ts"
@@ -181,7 +181,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 3,
-      "lastAccessed": 1776445974464,
+      "lastAccessed": 1777328880125,
       "keyFiles": [
         "App.tsx",
         "index.css",
@@ -192,14 +192,14 @@
       "path": "test-results",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1776445974464,
+      "lastAccessed": 1777328880125,
       "keyFiles": []
     },
     "dist/assets": {
       "path": "dist/assets",
       "purpose": "Static assets",
       "fileCount": 83,
-      "lastAccessed": 1776445974465,
+      "lastAccessed": 1777328880174,
       "keyFiles": [
         "AnalyticsFilters-BefJ2kd7.js",
         "AnalyticsPage-B2KI8joT.js",
@@ -210,7 +210,7 @@
       "path": "functions/api",
       "purpose": "API routes",
       "fileCount": 1,
-      "lastAccessed": 1776445974465,
+      "lastAccessed": 1777328880187,
       "keyFiles": [
         "[[path]].js"
       ]
@@ -219,25 +219,25 @@
       "path": "src/components",
       "purpose": "UI components",
       "fileCount": 0,
-      "lastAccessed": 1776445974465,
+      "lastAccessed": 1777328880193,
       "keyFiles": []
     },
     "src/lib": {
       "path": "src/lib",
       "purpose": "Library code",
-      "fileCount": 13,
-      "lastAccessed": 1776445974466,
+      "fileCount": 14,
+      "lastAccessed": 1777328880195,
       "keyFiles": [
         "api-analytics.ts",
         "api-cases.ts",
-        "api.ts"
+        "api-llm-council.ts"
       ]
     },
     "src/pages": {
       "path": "src/pages",
       "purpose": "Page components",
-      "fileCount": 26,
-      "lastAccessed": 1776445974466,
+      "fileCount": 27,
+      "lastAccessed": 1777328880196,
       "keyFiles": [
         "AnalyticsPage.tsx",
         "CaseAddPage.tsx",

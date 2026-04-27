@@ -453,6 +453,74 @@
         "cd frontend && npx vitest run && npx tsc --noEmit",
         "python3 -m pytest tests/e2e/playwright/test_council_thread_visual.py -v"
       ]
+    },
+    {
+      "id": "US-014",
+      "title": "Step 7 stale-closure: DELETE session targets wrong session_id",
+      "priority": 14,
+      "passes": false,
+      "agent_tier": "sonnet",
+      "phase": "Phase 6 — Post-launch defects",
+      "estimated_hours": 3,
+      "promoted_from": "iteration 12 follow-up backlog item #1 (progress.txt:424-425); skip-evidence at tests/e2e/playwright/test_council_thread_visual.py:306-314",
+      "files_to_create": [],
+      "files_to_modify": [
+        "frontend/src/pages/SessionsListPage.tsx",
+        "frontend/src/hooks/use-llm-council-sessions.ts",
+        "tests/e2e/playwright/test_council_thread_visual.py"
+      ],
+      "depends_on": [
+        "US-012"
+      ],
+      "context": "US-012 e2e step 7 (delete session from sidebar) is currently @pytest.mark.skip'd at tests/e2e/playwright/test_council_thread_visual.py:306-314. Diagnostic capture preserved in the test body shows DELETE network requests target a session_id that is NOT in the rendered sidebar (e.g. URL targets N83Vk... while only L291... renders). Manual delete via real browser works — production user flow is fine, but Playwright triggers a path where a stale React closure or duplicate hidden DOM element references the wrong id. NOT a silent failure: skip is explicit with full reason + diagnostic logging in test body.",
+      "subagent_prompt": "Investigate stale-closure / duplicate DOM bug in sessions delete flow. (1) Reproduce locally with VITE dev server + React DevTools Profiler. Look for: stale closure capturing previous sessions array, duplicate session-list-item DOM nodes (one hidden), or onClick handler bound to outer-scope session reference by index. (2) Likely culprits: SessionsListPage.tsx delete button onClick capturing pre-mutation sessions[i].id, or TanStack Query optimistic update racing with re-render. (3) Fix with stable handler binding (useCallback with id passed as arg, not array-index closure) OR move onClick into each list-item's own component scope. (4) Un-skip step 7 in test_council_thread_visual.py and confirm green against production. (5) Add a vitest unit test pinning the regression — mount SessionsListPage with 2 sessions, click delete on first, assert mutation called with first.id (not second.id).",
+      "acceptanceCriteria": [
+        "Root cause documented in progress.txt with file:line evidence",
+        "step 7 @pytest.mark.skip removed from test_council_thread_visual.py",
+        "step 7 e2e passes against https://immi.trackit.today",
+        "New vitest unit test pins delete-handler-id contract (frontend/__tests__/)",
+        "No regression in step 1, 2, 4, 8 (still 4 e2e green)"
+      ],
+      "verification_commands": [
+        "cd frontend && npx vitest run --reporter=verbose 2>&1 | grep -i 'delete\\|session'",
+        "E2E_BASE_URL=https://immi.trackit.today python3 -m pytest tests/e2e/playwright/test_council_thread_visual.py::TestCouncilThreadVisual::test_step7_delete_session_removes_it_from_sidebar -v",
+        "E2E_BASE_URL=https://immi.trackit.today python3 -m pytest tests/e2e/playwright/test_council_thread_visual.py -v"
+      ]
+    },
+    {
+      "id": "US-015",
+      "title": "CSRF_SECRET pre-deploy gate — fail CI before wrangler deploy if required secrets missing",
+      "priority": 15,
+      "passes": false,
+      "agent_tier": "haiku",
+      "phase": "Phase 6 — Deploy hardening",
+      "estimated_hours": 1,
+      "promoted_from": "iteration 12 follow-up backlog item #4 (progress.txt:427-428); root-cause evidence at .github/workflows/deploy-worker.yml:36-42 and runtime fallback at workers/proxy.js:117-180",
+      "files_to_create": [
+        "scripts/preflight_secrets.sh"
+      ],
+      "files_to_modify": [
+        ".github/workflows/deploy-worker.yml",
+        "wrangler.toml"
+      ],
+      "depends_on": [
+        "US-012"
+      ],
+      "context": "iteration 12 1st deploy (commit ec7d898) shipped with CSRF_SECRET wrangler secret missing on the new Worker, causing /api/v1/csrf-token + write endpoints to 500 with 'csrf_secret_not_configured'. Hotfix 45aa2cb added a runtime guard so the Worker degrades gracefully instead of crashing, but the secret was still discovered by post-deploy probe rather than CI. Root cause: .github/workflows/deploy-worker.yml lines 36–42 run `npm ci` then `npx wrangler deploy` with no precondition check. workers/proxy.js:117-180 has runtime fallback (graceful 500), but secret presence should fail fast in CI — not at runtime against real users.",
+      "subagent_prompt": "Add a fail-fast secret presence check to the deploy pipeline. (1) Create scripts/preflight_secrets.sh that calls `npx wrangler secret list --json` and asserts each required secret name (CSRF_SECRET, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, CF_AIG_TOKEN, HYPERDRIVE_DATABASE_URL) is present. Exit non-zero with a readable diff (missing list) if any absent. (2) Wire into .github/workflows/deploy-worker.yml as a step BEFORE `npx wrangler deploy`, using the same CLOUDFLARE_API_TOKEN env. (3) Document the required-secrets list inline in wrangler.toml as a comment block (so the contract lives next to the deploy config). (4) Test by manually `npx wrangler secret delete CSRF_SECRET` on a staging Worker and confirming CI fails red BEFORE deploy step runs. (5) Restore secret + re-run → green.",
+      "acceptanceCriteria": [
+        "scripts/preflight_secrets.sh executable, exits 0 when all secrets present, non-zero with named-missing list when any absent",
+        "deploy-worker.yml runs preflight before `wrangler deploy` (failure short-circuits the deploy)",
+        "Required-secrets list documented in wrangler.toml comment block",
+        "Manual red-green demonstrated: delete CSRF_SECRET → CI fails at preflight step (NOT at deploy); restore → CI green",
+        "No regression: production deploy chain still works for happy path"
+      ],
+      "verification_commands": [
+        "test -x scripts/preflight_secrets.sh && echo OK",
+        "bash scripts/preflight_secrets.sh && echo PREFLIGHT_OK",
+        "grep -q preflight_secrets .github/workflows/deploy-worker.yml && echo WIRED",
+        "gh run list --workflow=deploy-worker.yml --limit 1 --json status,conclusion"
+      ]
     }
   ]
 }

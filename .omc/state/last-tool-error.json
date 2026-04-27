@@ -1,7 +1,7 @@
 {
-  "tool_name": "mcp__plugin_everything-claude-code_playwright__browser_navigate",
-  "tool_input_preview": "{\"url\":\"https://immi.trackit.today/app/llm-council/sessions\"}",
-  "error": "### Error\nError: Extension connection timeout. Make sure the \"Playwright MCP Bridge\" extension is installed. See https://github.com/microsoft/playwright-mcp/blob/main/packages/extension/README.md for installation instructions.",
-  "timestamp": "2026-04-27T21:24:00.132Z",
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"git add .gitignore *.png 2>&1 && git status --short | head -10 && echo \\\"---STAGED COUNT---\\\" && git status --short | grep -E \\\"^[A-Z]\\\" | wc -l\",\"description\":\"Stage gitignore + screensho...",
+  "error": "Exit code 1\nThe following paths are ignored by one of your .gitignore files:\ndashboard.png\nhint: Use -f if you really want to add them.\nhint: Disable this message with \"git config set advice.addIgnoredFile false\"",
+  "timestamp": "2026-04-27T22:29:12.790Z",
   "retry_count": 1
 }
