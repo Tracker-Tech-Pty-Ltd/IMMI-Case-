@@ -2335,7 +2335,7 @@ async function handleTaxonomyCountries(url, env) {
 // ── Flask proxy helper ────────────────────────────────────────────────────────
 
 async function proxyToFlask(request, env) {
-  const id        = env.FlaskBackend.idFromName("flask-v13");
+  const id        = env.FlaskBackend.idFromName("flask-v14");
   const container = env.FlaskBackend.get(id);
 
   // Inject Hyperdrive connection string so Flask can optionally use direct psycopg2.
