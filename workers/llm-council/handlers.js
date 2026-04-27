@@ -394,9 +394,23 @@ export async function handleGetSession(request, env, pathname) {
     return errorResponse("Session not found", 404);
   }
 
+  // Normalize turn shape to match handleCreateSession / handleAddTurn responses
+  // (frontend LlmCouncilTurn type expects opinions/moderator/etc at the top level,
+  // not nested under turn.payload). Without this, reload-after-create crashes
+  // TurnCard with "Cannot read properties of undefined (reading 'length')".
+  const normalizedTurns = sessionData.turns.map((t) => ({
+    turn_id: t.turn_id,
+    turn_index: t.turn_index,
+    user_message: t.user_message,
+    case_context: t.user_case_context ?? "",
+    retrieved_cases: t.retrieved_cases ?? null,
+    created_at: t.created_at,
+    ...(t.payload ?? {}),
+  }));
+
   return jsonResponse({
     session: sessionData.session,
-    turns: sessionData.turns,
+    turns: normalizedTurns,
   });
 }
 

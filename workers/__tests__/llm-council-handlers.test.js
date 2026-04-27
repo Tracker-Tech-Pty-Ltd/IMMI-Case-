@@ -228,7 +228,7 @@ describe("handleCreateSession", () => {
     });
 
     const res = await handleCreateSession(req, env);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(400);
 
     const json = await parseJson(res);
     expect(json.error).toContain("message");
@@ -241,7 +241,7 @@ describe("handleCreateSession", () => {
     });
 
     const res = await handleCreateSession(req, env);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(400);
 
     const json = await parseJson(res);
     expect(json.error).toContain("5000");
@@ -303,7 +303,7 @@ describe("handleCreateSession", () => {
     });
 
     const res = await handleCreateSession(req, env);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(429);
 
     const json = await parseJson(res);
     expect(json.error).toContain("Rate limit");
@@ -430,7 +430,7 @@ describe("handleAddTurn", () => {
     );
 
     const res = await handleAddTurn(req, env, `/sessions/${SESSION_ID}/turns`);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(403);
 
     const json = await parseJson(res);
     expect(json.error).toContain("Session-Token");
@@ -509,7 +509,7 @@ describe("handleAddTurn", () => {
     );
 
     const res = await handleAddTurn(req, env, `/sessions/${SESSION_ID}/turns`);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(409);
 
     const json = await parseJson(res);
     expect(json.error).toContain("15");
@@ -553,7 +553,7 @@ describe("handleAddTurn", () => {
     );
 
     const res = await handleAddTurn(req, env, `/sessions/${SESSION_ID}/turns`);
-    expect(res.status).toBe(200); // INTENTIONALLY WRONG for RED cycle
+    expect(res.status).toBe(409);
 
     const json = await parseJson(res);
     expect(json.error).toContain("conflict");
@@ -656,6 +656,69 @@ describe("handleGetSession", () => {
 
     const json = await parseJson(res);
     expect(json.error).toContain("not found");
+  });
+
+  // ── shape normalization (regression: production reload-after-create crash) ─
+
+  it("normalizes turn shape: spreads payload onto turn (parity with create/add)", async () => {
+    // Production bug discovered via e2e (US-012): handleCreateSession spread
+    // councilResult onto turn, but handleGetSession returned raw DB rows where
+    // opinions/moderator are nested under turn.payload. Frontend TurnCard read
+    // turn.opinions.length → "Cannot read properties of undefined" after reload.
+    // This test pins the contract that GET response normalizes to the same flat
+    // shape as POST.
+    const env = makeEnv();
+    const token = await mintFakeToken();
+    const council = makeFakeCouncil("What grounds for review?");
+
+    // Simulate raw DB row shape from storage.getSession (payload nested)
+    mockGetSession.mockResolvedValue({
+      session: { session_id: SESSION_ID, total_turns: 1, status: "active" },
+      turns: [
+        {
+          turn_id: "turn-001",
+          session_id: SESSION_ID,
+          turn_index: 0,
+          user_message: "What grounds for review?",
+          user_case_context: null,
+          payload: council,
+          retrieved_cases: null,
+          total_tokens: null,
+          total_latency_ms: null,
+          created_at: "2026-04-28T07:30:00Z",
+        },
+      ],
+    });
+
+    const req = makeRequest(
+      "GET",
+      `https://example.com/sessions/${SESSION_ID}`,
+      null,
+      { "X-Session-Token": token },
+    );
+
+    const res = await handleGetSession(req, env, `/sessions/${SESSION_ID}`);
+    expect(res.status).toBe(200);
+    const json = await parseJson(res);
+
+    expect(json.turns).toHaveLength(1);
+    const t = json.turns[0];
+
+    // Top-level metadata preserved
+    expect(t.turn_id).toBe("turn-001");
+    expect(t.turn_index).toBe(0);
+    expect(t.user_message).toBe("What grounds for review?");
+
+    // CRITICAL: opinions and moderator are flat at top level, NOT nested
+    expect(Array.isArray(t.opinions)).toBe(true);
+    expect(t.opinions).toHaveLength(3);
+    expect(t.moderator).toBeDefined();
+    expect(t.moderator.composed_answer).toBe("Moderated synthesis of all opinions.");
+    expect(t.models).toBeDefined();
+    expect(t.models.openai).toBeDefined();
+
+    // The payload key itself MUST NOT be present (would defeat the spread purpose)
+    expect(t.payload).toBeUndefined();
   });
 });
 

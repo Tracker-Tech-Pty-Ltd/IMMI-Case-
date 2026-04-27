@@ -128,13 +128,16 @@ def _create_turn_1(page) -> None:
 
     page.get_by_role("button", name="Send").click()
 
-    # Wait for navigation to /llm-council/sessions/:id
+    # Wait for navigation to /llm-council/sessions/:id — production createSession
+    # waits for the council LLM call (~70s typical, up to ~120s) before navigate
+    # fires in onSuccess. So the wait_for_url MUST be longer than the LLM latency.
     page.wait_for_url(
         re.compile(r".*/llm-council/sessions/[^/]+$"),
-        timeout=30_000,
+        timeout=150_000,
     )
-    # Wait for turn card to render (LLM calls take 12-90s in production)
-    expect(page.get_by_test_id("turn-card").first).to_be_visible(timeout=120_000)
+    # Once URL has changed, the turn data is already in the React Query cache
+    # (createSession seeded it). Render is essentially instant; small buffer.
+    expect(page.get_by_test_id("turn-card").first).to_be_visible(timeout=20_000)
 
 
 # ---------------------------------------------------------------------------
@@ -224,10 +227,24 @@ class TestCouncilThreadFlow:
             f"After reload URL changed: {session_url!r} → {council_page.url!r}"
         )
 
-        # Turn 1 card restored
-        expect(
-            council_page.get_by_test_id("turn-card").first
-        ).to_be_visible(timeout=30_000)
+        # Diagnostic: dump localStorage + page state for debugging post-reload render
+        ls_dump = council_page.evaluate("() => Object.fromEntries(Object.entries(localStorage))")
+        print(f"\n[DIAG step4] localStorage after reload: {list(ls_dump.keys())}", flush=True)
+        print(f"[DIAG step4] URL: {council_page.url}", flush=True)
+
+        # Turn 1 card restored — give it generous time as TanStack refetch + render
+        # may take a moment after reload (network + rerender)
+        try:
+            expect(
+                council_page.get_by_test_id("turn-card").first
+            ).to_be_visible(timeout=30_000)
+        except Exception as e:
+            # On failure, dump page snapshot + screenshot for diagnosis
+            ss = _screenshot(council_page, "step4-failure")
+            html_snippet = council_page.content()[:2000]
+            print(f"\n[DIAG step4 FAIL] screenshot: {ss}", flush=True)
+            print(f"[DIAG step4 FAIL] HTML snippet:\n{html_snippet}", flush=True)
+            raise
 
         # User message text visible in page
         expect(
@@ -296,7 +313,9 @@ class TestCouncilThreadFlow:
         delete_btn.click()
 
         # ConfirmModal appears — click the "Delete" confirm button (confirmLabel="Delete")
-        confirm_btn = council_page.get_by_role("button", name="Delete")
+        # Use exact=True to disambiguate from the per-row "Delete session" icon buttons
+        # (4 sidebar icons + 1 modal action all match name=Delete).
+        confirm_btn = council_page.get_by_role("button", name="Delete", exact=True)
         expect(confirm_btn).to_be_visible(timeout=5_000)
         confirm_btn.click()
 
