@@ -39,7 +39,23 @@ REQUIRED_SECRETS=(
   CF_AIG_TOKEN
 )
 
-WORKER_NAME="${WORKER_NAME:-immi-case}"
+# Resolve worker name. Priority:
+#   1. WORKER_NAME env (CI override / test injection)
+#   2. `name = "..."` from wrangler.toml at repo root (source of truth)
+#   3. Hardcoded "immi-case" fallback (warns)
+# Without (2) the script silently checked the wrong worker after a rename
+# (LOW #2 reviewer concern from US-015 sprint).
+if [[ -z "${WORKER_NAME:-}" ]]; then
+  REPO_ROOT_FOR_TOML="$(git rev-parse --show-toplevel 2>/dev/null || echo "$(dirname "$0")/..")"
+  WRANGLER_TOML="$REPO_ROOT_FOR_TOML/wrangler.toml"
+  if [[ -f "$WRANGLER_TOML" ]]; then
+    WORKER_NAME="$(awk -F'"' '/^[[:space:]]*name[[:space:]]*=[[:space:]]*"/ {print $2; exit}' "$WRANGLER_TOML")"
+  fi
+fi
+if [[ -z "${WORKER_NAME:-}" ]]; then
+  echo "[preflight] WARN: could not parse worker name from wrangler.toml; falling back to 'immi-case'" >&2
+  WORKER_NAME="immi-case"
+fi
 
 echo "[preflight] checking secrets bound on Worker '$WORKER_NAME'..."
 
