@@ -1731,6 +1731,41 @@ async function handleAnalyticsFlowMatrix(url, env) {
   return jsonOk({ nodes, links }, "public, max-age=600, stale-while-revalidate=120");
 }
 
+// ── Judge photo R2 serving (Phase 1 #11) ─────────────────────────────────────
+// GET /api/v1/judge-photo/<filename> → R2 bucket immi-case-judge-photos.
+// Replaces Flask api.py:2560 route which 404'd in production because
+// downloaded_cases/judge_photos is .dockerignored. Bucket binding declared
+// in wrangler.toml [[r2_buckets]] block; populated via:
+//   wrangler r2 object put immi-case-judge-photos/<file> --file <local>
+
+const JUDGE_PHOTO_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+// Defense-in-depth path-traversal guard. Flask uses Path.resolve().relative_to().
+// Our regex refuses /, \, .., null bytes, and limits to filename-safe chars.
+const JUDGE_PHOTO_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+
+async function handleJudgePhoto(filename, env) {
+  if (!env.JUDGE_PHOTOS) return null;          // binding absent → fall through to Flask
+  if (!JUDGE_PHOTO_NAME_RE.test(filename)) return jsonErr("Not found", 404);
+  const dot = filename.lastIndexOf(".");
+  const ext = dot >= 0 ? filename.slice(dot).toLowerCase() : "";
+  if (!JUDGE_PHOTO_EXTS.has(ext)) return jsonErr("Not found", 404);
+
+  const obj = await env.JUDGE_PHOTOS.get(filename);
+  if (!obj) return jsonErr("Not found", 404);
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  if (!headers.get("Content-Type")) {
+    const mime = ext === ".png"  ? "image/png"
+              : ext === ".webp" ? "image/webp"
+              :                    "image/jpeg";
+    headers.set("Content-Type", mime);
+  }
+  // 1 day at the edge — judge photos rarely change
+  headers.set("Cache-Control", "public, max-age=86400");
+  return new Response(obj.body, { headers });
+}
+
 /** GET /api/v1/analytics/judge-bio — biographical data for a judge by name */
 async function handleAnalyticsJudgeBio(url, env) {
   const sql  = getSql(env);
@@ -2470,6 +2505,15 @@ export default {
     // so legacy flask-wtf token mint stays live (zero-downtime invariant).
     if (env.CSRF_SECRET && path === "/api/v1/csrf-token" && method === "GET") {
       return getCsrfToken(env);
+    }
+
+    // ── Judge photo R2 serve ──────────────────────────────────────────────────
+    // GET /api/v1/judge-photo/<filename>. Returns null when JUDGE_PHOTOS
+    // binding is absent (local dev) so Flask can serve the local copy.
+    if (path.startsWith("/api/v1/judge-photo/") && method === "GET") {
+      const filename = path.slice("/api/v1/judge-photo/".length);
+      const r2Resp = await handleJudgePhoto(filename, env);
+      if (r2Resp) return r2Resp;
     }
 
     // ── Cases write path (POST/PUT/DELETE/batch) ──────────────────────────────

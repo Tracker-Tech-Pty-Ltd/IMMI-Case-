@@ -71,6 +71,14 @@ max_instances = 3
 [limits]
 cpu_ms = 60000
 
+# Per .omc/plans/hyperdrive-full-migration.md §Phase 1 #11 judge photo R2.
+# Replaces Flask /api/v1/judge-photo/<file> route which 404'd in production
+# because downloaded_cases/judge_photos is .dockerignored. Upload via:
+#   npx wrangler r2 object put immi-case-judge-photos/<file> --file <path>
+[[r2_buckets]]
+binding = "JUDGE_PHOTOS"
+bucket_name = "immi-case-judge-photos"
+
 # Per plan REVISION 1 §M6: when Phase 4 retires Flask, the Python
 # @rate_limit decorators (web/security.py) are gone — Worker writes need
 # their own throttle. Bindings register here; handler code wires them in
