@@ -8,6 +8,13 @@
 PORT   ?= 8080
 BACKEND ?= auto
 
+# Resolve repo root from the Makefile's own absolute path so targets that `cd`
+# into subdirectories work no matter where the user invoked `make` from.
+# Without this, running `make build` from frontend/ silently failed with
+# "No rule to make target 'build'". With this + frontend/Makefile delegating
+# back to here, both `make build` and (cd $(REPO_ROOT)/frontend && make build) work.
+REPO_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
 # ── Meta ──────────────────────────────────────────────────────────────────────
 
 help:
@@ -39,7 +46,7 @@ api:
 	python web.py --port $(PORT) --backend $(BACKEND)
 
 ui:
-	cd frontend && npm run dev
+	cd $(REPO_ROOT)/frontend && npm run dev
 
 dev:
 	@echo "Run 'make api' in one terminal and 'make ui' in another."
@@ -48,7 +55,7 @@ dev:
 # ── Building ──────────────────────────────────────────────────────────────────
 
 build:
-	cd frontend && npm run build
+	cd $(REPO_ROOT)/frontend && npm run build
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
@@ -58,7 +65,7 @@ test-py:
 	python3 -m pytest tests/ --ignore=tests/e2e -q
 
 test-fe:
-	cd frontend && npx vitest run
+	cd $(REPO_ROOT)/frontend && npx vitest run
 
 test-e2e:
 	python3 -m pytest tests/e2e/ -v --timeout=60
@@ -73,14 +80,14 @@ lint:
 	python3 -m ruff check immi_case_downloader/ scripts/ *.py
 
 typecheck:
-	cd frontend && npx tsc --noEmit
+	cd $(REPO_ROOT)/frontend && npx tsc --noEmit
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 install:
 	pip install -r requirements.txt
 	pip install -r requirements-test.txt
-	cd frontend && npm install
+	cd $(REPO_ROOT)/frontend && npm install
 
 migrate:
 	supabase db push
