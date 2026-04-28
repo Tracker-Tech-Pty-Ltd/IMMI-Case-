@@ -79,7 +79,17 @@ def _verify_base_url() -> None:
 
 @pytest.fixture
 def council_page(browser: Browser):
-    """1280x800 Chromium page with console-error collection."""
+    """1280x800 Chromium page with console-error collection.
+
+    Teardown deletes every session created during this test (long-term
+    item B): every test that calls _create_turn_1 leaves a session row
+    in production DB plus an owner token in localStorage. Without
+    cleanup the sidebar grows monotonically and the next run pulls a
+    huge list. Teardown reads every llm-council-token-* key and DELETEs
+    the corresponding session via API. Cleanup failures are logged but
+    do NOT fail the test (we already have the assertion result we care
+    about).
+    """
     context = browser.new_context(
         viewport={"width": 1280, "height": 800},
     )
@@ -92,8 +102,57 @@ def council_page(browser: Browser):
         if msg.type == "error"
         else None,
     )
-    yield pg
-    context.close()
+    try:
+        yield pg
+    finally:
+        _cleanup_sessions(pg)
+        context.close()
+
+
+def _cleanup_sessions(pg) -> None:
+    """Best-effort: DELETE every session whose owner token is in localStorage."""
+    try:
+        tokens = pg.evaluate(
+            """() => {
+                const out = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.startsWith('llm-council-token-')) {
+                        out.push({
+                            sid: k.replace('llm-council-token-', ''),
+                            token: localStorage.getItem(k),
+                        });
+                    }
+                }
+                return out;
+            }"""
+        )
+    except Exception as exc:
+        print(f"[cleanup] localStorage read failed: {exc}", flush=True)
+        return
+
+    if not tokens:
+        return
+
+    import requests as _rq
+
+    for entry in tokens:
+        sid = entry.get("sid", "")
+        token = entry.get("token", "")
+        if not sid or not token:
+            continue
+        try:
+            r = _rq.delete(
+                f"{BASE_URL}/api/v1/llm-council/sessions/{sid}",
+                headers={"X-Session-Token": token},
+                timeout=10,
+            )
+            print(
+                f"[cleanup] DELETE {sid[:8]}... → HTTP {r.status_code}",
+                flush=True,
+            )
+        except Exception as exc:
+            print(f"[cleanup] DELETE {sid[:8]}... failed: {exc}", flush=True)
 
 
 # ---------------------------------------------------------------------------
