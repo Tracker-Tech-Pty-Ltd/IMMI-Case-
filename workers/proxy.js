@@ -1736,7 +1736,14 @@ async function handleAnalyticsJudgeBio(url, env) {
   const sql  = getSql(env);
   const name = (url.searchParams.get("name") || "").trim();
   if (!name) return jsonErr("name is required");
-  const rows = await sql`SELECT * FROM judge_bios WHERE full_name ILIKE ${"%" + name + "%"} ORDER BY length(full_name) ASC LIMIT 1`;
+  // Tokenise on whitespace; require each token to appear (AND of ILIKEs).
+  // Handles middle names + title prefixes — query "Karen McNamara" matches
+  // DB "The Hon Karen Jane McNamara"; "Arthur Glass" matches "Dr Arthur Stanley Glass".
+  const tokens = name.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return jsonErr("name is required");
+  const conds = tokens.map(t => sql`full_name ILIKE ${"%" + t + "%"}`);
+  const where = conds.reduce((acc, c, i) => i === 0 ? c : sql`${acc} AND ${c}`);
+  const rows = await sql`SELECT * FROM judge_bios WHERE ${where} ORDER BY length(full_name) ASC LIMIT 1`;
   if (!rows.length) return jsonOk({ found: false });
   return jsonOk({ found: true, ...rows[0] });
 }
