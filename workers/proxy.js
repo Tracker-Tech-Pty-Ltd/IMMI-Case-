@@ -1745,7 +1745,11 @@ async function handleAnalyticsJudgeBio(url, env) {
   const where = conds.reduce((acc, c, i) => i === 0 ? c : sql`${acc} AND ${c}`);
   const rows = await sql`SELECT * FROM judge_bios WHERE ${where} ORDER BY length(full_name) ASC LIMIT 1`;
   if (!rows.length) return jsonOk({ found: false });
-  return jsonOk({ found: true, ...rows[0] });
+  // `found: true` MUST come after spread — DB has its own `found` column
+  // (sync script bookkeeping, often null/false), and frontend JudgeHero.tsx
+  // gates photo display on `bio.found && bio.photo_url`. Spread-first lets
+  // the row's null/false override our row-exists signal.
+  return jsonOk({ ...rows[0], found: true });
 }
 
 /** GET /api/v1/analytics/visa-families — win rates by visa family */
