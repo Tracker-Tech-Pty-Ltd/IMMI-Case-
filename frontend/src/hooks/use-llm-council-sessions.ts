@@ -91,8 +91,25 @@ export function useCreateSession() {
         updated_at: nowIso,
       } satisfies LlmCouncilSession;
 
+      // setQueriesData updates EXISTING entries that match the prefix.
+      // setQueryData explicitly seeds/replaces the no-params entry so the
+      // sessions sidebar shows the new session even when its first mount
+      // is AFTER createSession (user is on /llm-council during create,
+      // then navigates to /llm-council/sessions). Without this seed, the
+      // first mount of useLlmCouncilSessions hits the network and gets a
+      // Hyperdrive-cached pre-create snapshot.
       qc.setQueriesData<{ sessions: LlmCouncilSession[] }>(
         { queryKey: ["council-sessions"] },
+        (old) => {
+          if (!old?.sessions) return old;
+          const without = old.sessions.filter(
+            (s) => s.session_id !== newSession.session_id,
+          );
+          return { ...old, sessions: [newSession, ...without] };
+        },
+      );
+      qc.setQueryData<{ sessions: LlmCouncilSession[] }>(
+        ["council-sessions", undefined],
         (old) => {
           if (!old?.sessions) return { sessions: [newSession] };
           const without = old.sessions.filter(
