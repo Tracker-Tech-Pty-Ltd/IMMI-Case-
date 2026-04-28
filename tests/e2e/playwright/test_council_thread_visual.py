@@ -319,8 +319,20 @@ class TestCouncilThreadFlow:
 
         # Create a session so there is something to delete
         _create_turn_1(council_page)
-        ls_before = council_page.evaluate("() => Object.keys(localStorage).filter(k => k.startsWith('llm-council-token'))")
+
+        # The sidebar lists ALL sessions in the DB (no per-user filter), but
+        # DELETE requires the owner token in localStorage. So we MUST target
+        # the item whose href contains OUR session_id, not just `.first` —
+        # otherwise we delete a session left behind by a previous run and
+        # the API returns 403. The session_id is encoded in the localStorage
+        # key shape: llm-council-token-<session_id>.
+        ls_before = council_page.evaluate(
+            "() => Object.keys(localStorage).filter(k => k.startsWith('llm-council-token-'))"
+        )
         print(f"\n[DIAG step7] localStorage tokens before delete: {ls_before}", flush=True)
+        assert ls_before, "Expected an owner token from _create_turn_1"
+        my_session_id = ls_before[0].replace("llm-council-token-", "")
+        print(f"[DIAG step7] my_session_id: {my_session_id}", flush=True)
 
         # Navigate back to sessions list
         council_page.goto(
@@ -334,12 +346,29 @@ class TestCouncilThreadFlow:
         items_before = council_page.get_by_test_id("session-list-item").count()
         assert items_before >= 1, "Need ≥1 session to test deletion"
 
-        # Hover over first session to reveal the delete button (opacity-0 → visible)
-        first_item = council_page.get_by_test_id("session-list-item").first
-        first_item.hover()
+        # Wait briefly for any in-flight list refetch to settle (TanStack
+        # Query's useEffect-driven fetch fires after mount).
+        council_page.wait_for_timeout(1500)
 
-        # Click the delete icon (data-testid="session-delete-btn")
-        delete_btn = council_page.get_by_test_id("session-delete-btn").first
+        # Diagnostic: dump every visible session-list-item href so we can see
+        # exactly what the React Router rendered.
+        all_hrefs = council_page.evaluate(
+            "() => Array.from(document.querySelectorAll('a[data-testid=\"session-list-item\"]')).map(a => a.getAttribute('href'))"
+        )
+        print(f"[DIAG step7] sidebar hrefs visible: {all_hrefs}", flush=True)
+
+        # Locate the item whose Link href contains our owned session_id —
+        # SessionListItem renders <Link to={`/llm-council/sessions/${session.session_id}`}>.
+        # The basename may prepend `/app/` so we substring-match on the id.
+        my_item = council_page.locator(
+            f'a[data-testid="session-list-item"][href*="{my_session_id}"]'
+        )
+        expect(my_item).to_be_visible(timeout=20_000)
+        my_item.hover()
+
+        # Click the delete icon scoped to OUR item — the per-row hover button
+        # has data-testid="session-delete-btn".
+        delete_btn = my_item.get_by_test_id("session-delete-btn")
         expect(delete_btn).to_be_visible(timeout=5_000)
         delete_btn.click()
 
@@ -350,19 +379,22 @@ class TestCouncilThreadFlow:
         expect(confirm_btn).to_be_visible(timeout=5_000)
         confirm_btn.click()
 
-        # Wait for sidebar to reflect the deletion. Use to_have_count which
-        # auto-retries until the assertion holds (or times out) — better than
-        # a fixed wait_for_timeout because the TanStack invalidate+refetch
-        # latency is variable depending on Hyperdrive RTT.
+        # Assert MY session_id is no longer in the sidebar. Asserting on the
+        # raw count is fragile because production has other sessions whose
+        # creation/deletion is concurrent with this test run; the meaningful
+        # invariant is "the session I just deleted is gone from MY view of the
+        # list". The count check below is a secondary sanity guard.
         try:
             expect(
-                council_page.get_by_test_id("session-list-item")
-            ).to_have_count(items_before - 1, timeout=15_000)
+                council_page.locator(
+                    f'a[data-testid="session-list-item"][href*="{my_session_id}"]'
+                )
+            ).to_have_count(0, timeout=20_000)
         except Exception:
-            # Diagnostic: dump network DELETE calls + localStorage state
             ls_after = council_page.evaluate("() => Object.keys(localStorage).filter(k => k.startsWith('llm-council-token'))")
             print(f"\n[DIAG step7 FAIL] DELETE responses captured: {delete_responses}", flush=True)
             print(f"[DIAG step7 FAIL] localStorage after delete: {ls_after}", flush=True)
+            print(f"[DIAG step7 FAIL] my_session_id={my_session_id}", flush=True)
             print(f"[DIAG step7 FAIL] items_before={items_before}", flush=True)
             ss = _screenshot(council_page, "step7-failure")
             print(f"[DIAG step7 FAIL] screenshot: {ss}", flush=True)

@@ -114,16 +114,37 @@ export function useAddTurn(sessionId: string) {
  * Delete a session by ID.
  *
  * onSuccess:
- *   - invalidates ['council-sessions'] so the list refreshes
+ *   - optimistically removes the deleted row from EVERY cached
+ *     ['council-sessions', …] query — without an immediate invalidate.
+ *     Hyperdrive caches list SELECTs for ~5-10s, so an immediate
+ *     invalidate refetches and overwrites the optimistic remove with
+ *     stale data that still contains the deleted row.
  *   - removes ['council-session', deletedId] from the cache
+ *   - schedules a delayed invalidate (~10s) so the list eventually
+ *     reconciles with server state after Hyperdrive TTL expires
+ *     (catches the case where another tab created/deleted concurrently).
  */
 export function useDeleteSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) => deleteSession(sessionId),
     onSuccess: (_data, sessionId) => {
-      qc.invalidateQueries({ queryKey: ["council-sessions"] });
+      qc.setQueriesData<{ sessions: { session_id: string }[] }>(
+        { queryKey: ["council-sessions"] },
+        (old) => {
+          if (!old?.sessions) return old;
+          return {
+            ...old,
+            sessions: old.sessions.filter(
+              (s) => s.session_id !== sessionId,
+            ),
+          };
+        },
+      );
       qc.removeQueries({ queryKey: ["council-session", sessionId] });
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["council-sessions"] });
+      }, 10_000);
     },
   });
 }

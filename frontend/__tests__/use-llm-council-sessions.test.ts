@@ -522,7 +522,42 @@ describe("use-llm-council-sessions hooks", () => {
       );
     });
 
-    it("invalidates ['council-sessions'] on success", async () => {
+    it("optimistically removes the deleted session from ['council-sessions'] cache on success", async () => {
+      mockDeleteSession.mockResolvedValue({ deleted: true });
+
+      const { qc, Wrapper } = makeWrapper();
+      // Seed cache with two sessions so we can observe filtering.
+      qc.setQueryData(["council-sessions", undefined], {
+        sessions: [
+          { session_id: SESSION_ID, title: "to delete" },
+          { session_id: "OTHER_ID", title: "keep" },
+        ],
+      });
+
+      const { result } = renderHook(() => useDeleteSession(), {
+        wrapper: Wrapper,
+      });
+
+      await act(async () => {
+        result.current.mutate(SESSION_ID);
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      // Hyperdrive caches list SELECTs for ~5-10s, so an immediate
+      // invalidate would refetch and overwrite our optimistic remove
+      // with stale data still containing the deleted row. Use
+      // setQueriesData to filter the deleted row out of every cached
+      // ['council-sessions', ...] query.
+      const cached = qc.getQueryData<{ sessions: { session_id: string }[] }>([
+        "council-sessions",
+        undefined,
+      ]);
+      expect(cached?.sessions.map((s) => s.session_id)).toEqual(["OTHER_ID"]);
+    });
+
+    it("schedules a delayed invalidate (~10s) for eventual reconciliation", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
       mockDeleteSession.mockResolvedValue({ deleted: true });
 
       const { qc, Wrapper } = makeWrapper();
@@ -538,9 +573,19 @@ describe("use-llm-council-sessions hooks", () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
+      expect(invalidateSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ["council-sessions"] }),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+
       expect(invalidateSpy).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: ["council-sessions"] }),
       );
+
+      vi.useRealTimers();
     });
 
     it("transitions to error state when deleteSession rejects", async () => {
