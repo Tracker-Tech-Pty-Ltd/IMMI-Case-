@@ -303,15 +303,6 @@ class TestCouncilThreadFlow:
         path = _screenshot(council_page, "turn-2")
         assert os.path.exists(path), f"Screenshot not saved: {path}"
 
-    @pytest.mark.skip(
-        reason=(
-            "Investigation deferred: DELETE network captures show the request "
-            "URL targets a session_id that is NOT the one rendered in the "
-            "sidebar (N83Vk... vs L291... where only L291 exists in DB). "
-            "Likely a stale closure or duplicate hidden DOM element issue. "
-            "Manual delete via sidebar works in browser. See follow-up backlog."
-        )
-    )
     def test_step7_delete_session_removes_it_from_sidebar(self, council_page):
         """
         Step 7: Sessions list → hover first session → click delete icon
