@@ -148,13 +148,51 @@ def generate_text_snippets(rows: list[dict]) -> int:
     return count
 
 
+_JUDGE_PROSE_STOPWORDS = (
+    " the ", " that ", " which ", " of the ", " was ", " were ",
+    " when ", " where ", " applicant ", " tribunal ", " department ",
+    " decision ", " hearing ", " evidence ", " visa ", " review ",
+)
+_JUDGE_BAD_TOKENS = {"date", "judge", "judges", "member", "members", "justice", "tribunal"}
+
+
+def _looks_like_judge_name(s: str) -> bool:
+    """Sanity-check an extracted judge name before storing.
+
+    Rejects sentence-fragment garbage from greedy regex captures (the bug that
+    let ~10% of `judges` rows fill with judgment prose). See
+    docs/JUDGE_DATA_QUALITY.md for context.
+    """
+    if not s:
+        return False
+    s = s.strip()
+    if not s or len(s) > 60:
+        return False
+    if not s[0].isupper():
+        return False
+    low = s.lower().strip(" .,;:")
+    if low in _JUDGE_BAD_TOKENS:
+        return False
+    padded = " " + s.lower() + " "
+    if any(stop in padded for stop in _JUDGE_PROSE_STOPWORDS):
+        return False
+    if any(ch in s for ch in "([–—"):  # en/em-dash, parens, brackets
+        return False
+    return True
+
+
 def extract_metadata(rows: list[dict]) -> dict[str, int]:
     """Extract date, judges, outcome, visa_type, legislation from full text."""
     counts = {"date": 0, "judges": 0, "outcome": 0, "visa_type": 0, "legislation": 0}
 
+    # Constrained patterns: capture only proper-noun-shaped candidates with
+    # word boundaries. Old greedy `[^\n]+` form was rejected — see
+    # docs/JUDGE_DATA_QUALITY.md.
     judge_patterns = [
-        r"(?:Judge\(s\)|JUDGE|MEMBER|JUSTICE|TRIBUNAL MEMBER)[:\s]+([^\n]+)",
-        r"(?:Before|Coram)[:\s]+([^\n]+)",
+        r"(?:Judge\(s\)|JUDGES?|JUSTICE|TRIBUNAL\s+MEMBERS?)\b\s*[:\-]\s*"
+        r"([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,4}(?:\s+J)?)\b",
+        r"(?:Before|Coram)\b\s*[:\-]\s*"
+        r"([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,4}(?:\s+J)?)\b",
     ]
     date_patterns = [
         r"(?:Date of (?:decision|hearing|judgment|order))[:\s]+(\d{1,2}\s+\w+\s+\d{4})",
@@ -225,12 +263,18 @@ def extract_metadata(rows: list[dict]) -> dict[str, int]:
         if not text:
             continue
 
-        # Extract judges
+        # Extract judges (with sanity check — rejects sentence-fragment garbage)
         if not row.get("judges", "").strip():
             for pattern in judge_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    row["judges"] = match.group(1).strip()[:200]
+                # Find all matches in text, accept first one passing validation
+                accepted = None
+                for m in re.finditer(pattern, text, re.IGNORECASE):
+                    candidate = m.group(1).strip()
+                    if _looks_like_judge_name(candidate):
+                        accepted = candidate
+                        break
+                if accepted:
+                    row["judges"] = accepted
                     counts["judges"] += 1
                     break
 
