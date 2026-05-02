@@ -300,7 +300,7 @@ Request → Cloudflare Worker (proxy.js)
 - **Worker custom domain syntax**: `[[routes]]` + `pattern = "host"` + `custom_domain = true`. **NOT** `[[custom_domains]]` (invalid). `pattern = "host/*"` only works if DNS already exists.
 - **CI must `npm ci` before `wrangler deploy`** — `postgres` package imported by `workers/proxy.js` not auto-installed
 - **SPA basename** — `resolveRouterBasename()` in `frontend/src/lib/router.ts` auto-detects `/` vs `/app/`
-- **Durable Object name**: `idFromName("flask-v13")` — bumping suffix creates fresh container state; keep stable unless intentionally resetting
+- **Durable Object name**: `idFromName("flask-v15")` (current; was v13/v14 in earlier revisions). Bumping suffix creates fresh container state; keep stable unless intentionally resetting. Authoritative reference: `workers/proxy.js:2475` and `docs/ARCHITECTURE.md`
 - **Testing fresh domains**: macOS DNS cache lies — use `curl --resolve host:443:<CF_IP>` to bypass; flush with `sudo dscacheutil -flushcache`
 - **austlii-scraper Worker**: separate deploy in `workers/austlii-scraper/`; set `AUTH_TOKEN` via `wrangler secret put AUTH_TOKEN`
 
