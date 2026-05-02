@@ -1,0 +1,51 @@
+IMMI-Case — Australian Immigration Case Database
+Copyright 2024-2026 Tracker Tech Pty Ltd
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================
+THIRD-PARTY DATA AND ATTRIBUTION
+================================================================
+
+This product incorporates and processes data from external sources.
+The source code license (Apache 2.0) does NOT apply to this data.
+See DATA_LICENSE.md for full data licensing terms.
+
+1. Court judgment texts and metadata
+   ----------------------------------
+   Source:    AustLII — Australasian Legal Information Institute
+   URL:       https://www.austlii.edu.au
+   Coverage:  149,016 cases from 9 Australian courts/tribunals (2000–2026)
+   Terms:     Subject to AustLII's copyright policy
+              <http://www.austlii.edu.au/austlii/copyright.html>
+   Use:       Permitted for research, study, and education.
+              Bulk commercial redistribution is restricted.
+
+2. LLM-extracted structured fields
+   --------------------------------
+   Fields:    applicant_name, visa_subclass, hearing_date,
+              country_of_origin, is_represented, representative,
+              and related normalised attributes.
+   Generated via:
+              Claude Sonnet (Anthropic) and other LLMs routed through
+              the Cloudflare AI Gateway compat endpoint.
+   Terms:     Licensed under CC BY 4.0 — see DATA_LICENSE.md §2.
+
+3. Vector embeddings
+   ------------------
+   Generated via OpenAI text-embedding-3-small and
+   Google Gemini embedding-001, accessed through Cloudflare AI Gateway.
+   Stored in Supabase PostgreSQL with pgvector HNSW indexing.
+
+================================================================
+THIRD-PARTY SOFTWARE
+================================================================
+
+This product includes software developed by third parties under their
+respective open-source licenses, including but not limited to:
+  - Flask, pandas, BeautifulSoup, lxml, requests (Python)
+  - React, Vite, TanStack Query, Recharts, Tailwind CSS (JavaScript)
+  - PostgreSQL, pgvector, Supabase
+  - Cloudflare Workers, Hyperdrive, AI Gateway
+
+Refer to each project's own license for details.
