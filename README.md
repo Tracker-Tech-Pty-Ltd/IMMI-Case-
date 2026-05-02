@@ -306,6 +306,8 @@ python migrate_csv_to_supabase.py
 
 ## 6. Architecture（The Web of Truth）
 
+> 完整、可驗證的 production 架構文件：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — **若本節描述與該檔衝突，以該檔為準**。本節為簡化概覽，可能落後於實際 worker handler 數量與 Flask DO instance suffix。
+
 ### 6.1 系統資料流
 
 ```mermaid
@@ -317,8 +319,9 @@ flowchart LR
     D --> D1[CSV / JSON]
     D --> D2[SQLite FTS5]
     D --> D3["Supabase\n(PostgreSQL + pgvector)"]
-    D3 -->|REST| E["Flask API\n(judgment)"]
-    D2 -->|REST| E
+    D3 -->|Hyperdrive| E["Cloudflare Worker\nproxy.js (judgment)"]
+    D2 -->|dev only| FALLBACK["Flask DO\nflask-v15"]
+    FALLBACK -.->|writes / LLM / CSRF| E
     E -->|JSON /api/v1/*| F["React SPA\n(revelation)"]
     LLM["Claude Sonnet\n10× parallel agents"] -->|batch JSON| C
     EMBED["OpenAI / Gemini\nembeddings"] -->|1536-dim vectors| D3
@@ -331,7 +334,7 @@ flowchart LR
 | **Harvest** (BaseScraper) | AustLII URL 列表 | ImmigrationCase 物件串流 | rate-limit → exponential backoff，UA 偽裝繞過 HTTP 410 |
 | **Alchemy** (SmartPipeline) | 原始 ImmigrationCase | 去重、補齊欄位的 Case 物件 | 缺欄位 → LLM sub-agent 補救 |
 | **Archive** (Repository) | Case 物件 | CSV / SQLite / Supabase 持久化 | CSV fallback 若 SQLite 未初始化 |
-| **Judgment** (Flask API) | HTTP request | JSON response | CSRF 驗證、rate limit，統一 `{"success": bool, "data": ...}` 包裝 |
+| **Judgment** (Cloudflare Worker `proxy.js`, 44 handlers) | HTTP request | JSON response | Hyperdrive 直查 Supabase；未命中或 throw 才 fall-through 到 Flask DO `flask-v15` (POST/PUT/DELETE writes、LLM Council、CSRF、SPA fallback)。詳見 `docs/ARCHITECTURE.md` |
 | **Revelation** (React SPA) | JSON API | 可互動 UI | TanStack Query retry、keepPreviousData 防閃爍 |
 
 ### 6.2 搜尋請求流程
@@ -340,18 +343,19 @@ flowchart LR
 sequenceDiagram
     actor User
     participant SPA as React SPA
-    participant API as Flask API
-    participant Repo as SupabaseRepository
-    participant PG as PostgreSQL + pgvector
+    participant W as Cloudflare Worker (proxy.js)
+    participant F as Flask DO (flask-v15)
+    participant PG as Hyperdrive → Supabase + pgvector
 
     User->>SPA: 輸入關鍵字 + 選擇 mode=hybrid
-    SPA->>API: GET /api/v1/search?q=...&mode=hybrid
-    API->>Repo: search(q, mode="hybrid")
-    Repo->>PG: 1. FTS lexical candidates (N=100)
-    Repo->>PG: 2. Embed query → semantic candidates (N=100)
-    Repo->>Repo: 3. RRF fusion & rerank
-    Repo-->>API: top-K results
-    API-->>SPA: JSON {success: true, data: [...]}
+    SPA->>W: GET /api/v1/search?q=...&mode=hybrid
+    Note over W: handleSearch — LLM Council mode 仍走 Flask
+    W->>F: forward (LLM Council 路徑)
+    F->>PG: 1. FTS lexical candidates (N=100)
+    F->>PG: 2. Embed query → semantic candidates (N=100)
+    F->>F: 3. RRF fusion & rerank
+    F-->>W: top-K results
+    W-->>SPA: JSON {success: true, data: [...]}
     SPA-->>User: 顯示結果列表 + 語意相似度分數
 ```
 
@@ -362,7 +366,7 @@ sequenceDiagram
 ```
 IMMI-Case-/
 ├── run.py                          # CLI entry point (harvest/search/download)
-├── web.py                          # Web server entry point (Flask factory)
+├── web.py                          # Flask Durable Object entry (writes / LLM Council / CSRF / SPA fallback). Production reads bypass this — see workers/proxy.js
 ├── Makefile                        # 快捷指令：make dev / test-py / test-fe
 │
 ├── immi_case_downloader/           # [Core Weave] 主套件
@@ -378,14 +382,14 @@ IMMI-Case-/
 │   │   ├── base.py                 #   BaseScraper: session, UA, retry, rate-limit
 │   │   ├── austlii.py              #   AustLIIScraper: year listing + keyword fallback
 │   │   └── federal_court.py        #   FederalCourtScraper (DNS broken, legacy)
-│   ├── web/
-│   │   ├── __init__.py             #   Flask app factory + blueprint registration
-│   │   ├── routes/api.py           #   [22 endpoints] /api/v1/*
-│   │   ├── routes/legislations.py  #   /api/v1/legislations/*
+│   ├── web/                        # Flask blueprint — residual surface only
+│   │   ├── __init__.py             #   Flask app factory (writes / LLM / CSRF / SPA fallback)
+│   │   ├── routes/api.py           #   POST/PUT/DELETE 寫入 + LLM Council search；GET 讀取已遷至 workers/proxy.js
+│   │   ├── routes/legislations.py  #   Flask fallback；Worker (handleLegislationsList/Search) 是主路徑
 │   │   ├── helpers.py              #   get_repo(), safe_int(), EDITABLE_FIELDS
 │   │   └── jobs.py                 #   4 background job runners
 │   ├── data/legislations.json      #   6 澳洲移民法律靜態資料
-│   └── static/react/               #   Vite 生產版本輸出（由 Flask 服務）
+│   └── static/react/               #   Vite 生產版本（Worker 主要 serve；Flask 僅為 fallback）
 │
 ├── frontend/                       # [The Vision] React SPA
 │   ├── src/
@@ -579,7 +583,7 @@ gh pr create --title "feat: judge name normalization" --body "..."
 
 | 層級 | 技術 |
 |------|------|
-| **Backend** | Python 3, Flask, pandas, BeautifulSoup/lxml |
+| **Backend** | **Cloudflare Worker** (`workers/proxy.js`, JS, 44 native handlers, Hyperdrive → Supabase) — 99% reads. Flask Container DurableObject (`flask-v15`, Python + flask-wtf) — writes / LLM Council / CSRF / SPA fallback。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
 | **Frontend** | React 18, TypeScript, Vite 7, Tailwind CSS v4, TanStack Query v5, Recharts, Sonner |
 | **i18n** | react-i18next — English + 繁體中文（全站雙語） |
 | **Storage** | CSV/JSON（預設）, SQLite FTS5+WAL, Supabase PostgreSQL + pgvector |
@@ -587,7 +591,7 @@ gh pr create --title "feat: judge name normalization" --body "..."
 | **LLM** | Claude Sonnet 4.6（欄位萃取，10 平行 sub-agent） |
 | **Embeddings** | OpenAI text-embedding-3-small (1536-dim), Gemini embedding-001 |
 | **Scraper** | Cloudflare Workers + R2（批量），AustLII 直接爬取（增量） |
-| **Deployment** | Flask standalone / Cloudflare Pages（前端）+ Supabase（資料庫） |
+| **Deployment** | Cloudflare Worker（custom domain `immi.trackit.today`；wrangler deploy）+ Flask Container DurableObject `flask-v15`（容器映像隨 Worker 一起部署）+ Supabase（資料層）+ Hyperdrive pooler |
 
 ---
 

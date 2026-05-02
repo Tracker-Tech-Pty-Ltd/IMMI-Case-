@@ -190,7 +190,7 @@ Request → Cloudflare Worker (proxy.js)
 │       ↳ handler returns null → falls through to Flask (e.g. tag filter active)
 │       ↳ handler throws → falls through to Flask (Hyperdrive error recovery)
 │
-└── Everything else → Flask Container (Durable Object "flask-v13")
+└── Everything else → Flask Container (Durable Object "flask-v15" — bumped from v13. See `workers/proxy.js:2475` for current)
     ├── POST/PUT/DELETE /api/v1/*   (writes — need Python validation)
     ├── GET /api/v1/search          (semantic/LLM — needs OpenAI/Gemini SDK)
     ├── GET /api/v1/csrf-token      (session-based)
