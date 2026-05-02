@@ -178,6 +178,8 @@ def _looks_like_judge_name(s: str) -> bool:
         return False
     if any(ch in s for ch in "([–—"):  # en/em-dash, parens, brackets
         return False
+    if any(ch in s for ch in "\n\r\t"):  # multi-line capture (column collision)
+        return False
     return True
 
 
@@ -188,11 +190,14 @@ def extract_metadata(rows: list[dict]) -> dict[str, int]:
     # Constrained patterns: capture only proper-noun-shaped candidates with
     # word boundaries. Old greedy `[^\n]+` form was rejected — see
     # docs/JUDGE_DATA_QUALITY.md.
+    # `[ \t]` (NOT \s) on the separator and inside the capture keeps the
+    # match on a single line — prevents JUDGE\nDATE\nOF ORDER bleeding
+    # across rows in the case-text column-collision pattern.
     judge_patterns = [
-        r"(?:Judge\(s\)|JUDGES?|JUSTICE|TRIBUNAL\s+MEMBERS?)\b\s*[:\-]\s*"
-        r"([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,4}(?:\s+J)?)\b",
-        r"(?:Before|Coram)\b\s*[:\-]\s*"
-        r"([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,4}(?:\s+J)?)\b",
+        r"(?:Judge\(s\)|JUDGES?|JUSTICE|TRIBUNAL\s+MEMBERS?)\b[ \t]*[:\-][ \t]*"
+        r"([A-Z][A-Za-z'\-]+(?:[ \t]+[A-Z][A-Za-z'\-]+){0,4}(?:[ \t]+J)?)\b",
+        r"(?:Before|Coram)\b[ \t]*[:\-][ \t]*"
+        r"([A-Z][A-Za-z'\-]+(?:[ \t]+[A-Z][A-Za-z'\-]+){0,4}(?:[ \t]+J)?)\b",
     ]
     date_patterns = [
         r"(?:Date of (?:decision|hearing|judgment|order))[:\s]+(\d{1,2}\s+\w+\s+\d{4})",

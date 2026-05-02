@@ -52,6 +52,9 @@ def test_accepts_real_judge_names(name: str) -> None:
     "JUDGE",                                   # bad token
     "MEMBER",                                  # bad token
     "x" * 100,                                 # too long
+    "DATE\nOF ORDER",                          # multi-line column collision (real bug from prod dry-run)
+    "Smith J\nDATE",                           # newline anywhere
+    "Smith\tJ",                                # tab anywhere
 ])
 def test_rejects_garbage(garbage: str) -> None:
     assert _looks_like_judge_name(garbage) is False, (
