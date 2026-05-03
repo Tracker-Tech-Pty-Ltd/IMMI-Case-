@@ -957,6 +957,13 @@ async function handleGetStats(url, env) {
     (yearTo > 0 && yearTo < new Date().getFullYear());
   if (isFiltered) return null;
 
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  const _cacheKey = new Request("https://cache.local/api/v1/stats");
+  if (_cache) {
+    const cached = await _cache.match(_cacheKey);
+    if (cached) return cached;
+  }
+
   const sql = getSql(env);
 
   // Run all aggregate queries in parallel for maximum throughput
@@ -1013,7 +1020,7 @@ async function handleGetStats(url, env) {
     `,
   ]);
 
-  return jsonOk(
+  const _statsRes = jsonOk(
     {
       total_cases:    totals[0].total,
       with_full_text: totals[0].with_full_text,
@@ -1027,10 +1034,19 @@ async function handleGetStats(url, env) {
     },
     "public, max-age=300, stale-while-revalidate=60",
   );
+  if (_cache) await _cache.put(_cacheKey, _statsRes.clone());
+  return _statsRes;
 }
 
 /** GET /api/v1/filter-options — distinct filter values for UI dropdowns */
 async function handleGetFilterOptions(env) {
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  const _cacheKey = new Request("https://cache.local/api/v1/filter-options");
+  if (_cache) {
+    const cached = await _cache.match(_cacheKey);
+    if (cached) return cached;
+  }
+
   const sql = getSql(env);
 
   const [courts, years, natures, visaTypes, sources, outcomes] = await Promise.all([
@@ -1042,7 +1058,7 @@ async function handleGetFilterOptions(env) {
     sql`SELECT DISTINCT outcome AS v     FROM ${sql(TABLE)} WHERE outcome IS NOT NULL AND outcome <> '' ORDER BY v`,
   ]);
 
-  return jsonOk(
+  const _filterRes = jsonOk(
     {
       courts:     courts.map(r => r.v),
       years:      years.map(r  => r.v),
@@ -1054,6 +1070,8 @@ async function handleGetFilterOptions(env) {
     },
     "public, max-age=300, stale-while-revalidate=60",
   );
+  if (_cache) await _cache.put(_cacheKey, _filterRes.clone());
+  return _filterRes;
 }
 
 // ── Analytics helpers ─────────────────────────────────────────────────────────
@@ -1260,6 +1278,13 @@ function isRealJudgeName(name) {
 
 /** GET /api/v1/analytics/outcomes — outcome rates by court, year, visa subclass */
 async function handleAnalyticsOutcomes(env) {
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  const _cacheKey = new Request("https://cache.local/api/v1/analytics/outcomes");
+  if (_cache) {
+    const cached = await _cache.match(_cacheKey);
+    if (cached) return cached;
+  }
+
   const sql = getSql(env);
 
   const [byCourt, byYear, byVisa] = await Promise.all([
@@ -1287,7 +1312,7 @@ async function handleAnalyticsOutcomes(env) {
     (subclassMap[r.visa_subclass] ??= {})[norm] = ((subclassMap[r.visa_subclass][norm]) ?? 0) + r.cnt;
   }
 
-  return jsonOk({
+  const _outcomesRes = jsonOk({
     by_court:    Object.fromEntries(Object.entries(courtMap).sort()),
     by_year:     Object.fromEntries(Object.entries(yearMap).sort()),
     by_subclass: Object.fromEntries(
@@ -1298,6 +1323,8 @@ async function handleAnalyticsOutcomes(env) {
     ),
     by_family: {},  // visa family grouping requires Python visa_registry; frontend tolerates {}
   }, "public, max-age=600, stale-while-revalidate=120");
+  if (_cache) await _cache.put(_cacheKey, _outcomesRes.clone());
+  return _outcomesRes;
 }
 
 /** GET /api/v1/analytics/judges — top judges/members by case count */
@@ -1670,6 +1697,13 @@ async function handleAnalyticsFilterOptions(url, env) {
 
 /** GET /api/v1/analytics/monthly-trends — monthly win-rate time series */
 async function handleAnalyticsMonthlyTrends(env) {
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  const _cacheKey = new Request("https://cache.local/api/v1/analytics/monthly-trends");
+  if (_cache) {
+    const cached = await _cache.match(_cacheKey);
+    if (cached) return cached;
+  }
+
   const sql  = getSql(env);
   // Try monthly RPC first; fall back to year-based query if function not yet deployed
   let rows;
@@ -1693,11 +1727,19 @@ async function handleAnalyticsMonthlyTrends(env) {
   const series = Object.entries(monthly).sort(([a],[b])=>a.localeCompare(b)).map(([month,{total,wins}]) => ({
     month, total, wins, win_rate: total>0?Math.round((wins/total)*1000)/10:0,
   }));
-  return jsonOk({ series, events: _POLICY_EVENTS }, "public, max-age=600, stale-while-revalidate=120");
+  const _trendsRes = jsonOk({ series, events: _POLICY_EVENTS }, "public, max-age=600, stale-while-revalidate=120");
+  if (_cache) await _cache.put(_cacheKey, _trendsRes.clone());
+  return _trendsRes;
 }
 
 /** GET /api/v1/analytics/flow-matrix — Sankey court → nature → outcome */
 async function handleAnalyticsFlowMatrix(url, env) {
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  if (_cache) {
+    const cached = await _cache.match(new Request(url.toString()));
+    if (cached) return cached;
+  }
+
   const sql  = getSql(env);
   const topN = safeInt(url.searchParams.get("top_n"), 8, 1, 20);
   const rows = await sql`SELECT court_code, case_nature, outcome, COUNT(*)::int AS cnt FROM immigration_cases GROUP BY 1,2,3`;
@@ -1728,7 +1770,9 @@ async function handleAnalyticsFlowMatrix(url, env) {
   const links=[];
   for (const [k,v] of Object.entries(courtNature))  { const [c,n]=k.split("||"); const src=nodeIndex[`court:${c}`],tgt=nodeIndex[`nature:${n}`]; if(src!==undefined&&tgt!==undefined) links.push({source:src,target:tgt,value:v}); }
   for (const [k,v] of Object.entries(natureOutcome)) { const [n,o]=k.split("||"); const src=nodeIndex[`nature:${n}`],tgt=nodeIndex[`outcome:${o}`]; if(src!==undefined&&tgt!==undefined) links.push({source:src,target:tgt,value:v}); }
-  return jsonOk({ nodes, links }, "public, max-age=600, stale-while-revalidate=120");
+  const _flowRes = jsonOk({ nodes, links }, "public, max-age=600, stale-while-revalidate=120");
+  if (_cache) await _cache.put(new Request(url.toString()), _flowRes.clone());
+  return _flowRes;
 }
 
 // ── Judge photo R2 serving (Phase 1 #11) ─────────────────────────────────────
@@ -2716,10 +2760,23 @@ export default {
   async scheduled(_event, env, ctx) {
     ctx.waitUntil((async () => {
       try {
+        // Keep Hyperdrive connection pool warm
         const sql = getSql(env);
         await sql`SELECT 1`;
         await sql.end();
       } catch (_) { /* warm ping — ignore errors */ }
+
+      // Pre-warm Cache API for high-cold-start endpoints (TTL=300s matches cron interval).
+      // Calling the handlers directly populates caches.default, so the next user request
+      // is served from edge cache without any SQL cost.
+      try {
+        const statsUrl = new URL("https://immi.trackit.today/api/v1/stats");
+        await handleGetStats(statsUrl, env);
+      } catch (_) { /* non-fatal */ }
+
+      try {
+        await handleGetFilterOptions(env);
+      } catch (_) { /* non-fatal */ }
     })());
   },
 };
