@@ -35,16 +35,12 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ["react", "react-dom", "react-router-dom"],
-            query: ["@tanstack/react-query"],
-            charts: ["recharts"],
-            dnd: [
-              "@dnd-kit/core",
-              "@dnd-kit/modifiers",
-              "@dnd-kit/sortable",
-              "@dnd-kit/utilities",
-            ],
+          manualChunks: (id) => {
+            if (id.includes("node_modules/recharts") || id.includes("node_modules/victory-vendor") || id.includes("node_modules/d3-")) return "charts";
+            if (id.includes("node_modules/i18next") || id.includes("node_modules/react-i18next")) return "i18n";
+            if (id.includes("node_modules/@dnd-kit")) return "dnd";
+            if (id.includes("node_modules/@tanstack/react-query")) return "query";
+            if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/") || id.includes("node_modules/react-router")) return "vendor";
           },
         },
       },
