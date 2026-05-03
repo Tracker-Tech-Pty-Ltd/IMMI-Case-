@@ -261,23 +261,24 @@ export async function handleAuthRefresh(request, env, getSql) {
     try {
       const rows = await sql`
         SELECT
-          u.id, u.telegram_id, u.role,
+          u.id, u.telegram_id,
+          tm.role         AS user_role,
           tm.tenant_id,
-          t.kind  AS tenant_kind,
-          t.name  AS tenant_name,
-          ARRAY_AGG(tm2.tenant_id ORDER BY tm2.created_at) AS all_tenants
+          t.kind          AS tenant_kind,
+          t.name          AS tenant_name,
+          ARRAY_AGG(tm2.tenant_id ORDER BY tm2.joined_at) AS all_tenants
         FROM users u
         JOIN tenant_members tm  ON tm.user_id  = u.id
         JOIN tenants t          ON t.id         = tm.tenant_id
         JOIN tenant_members tm2 ON tm2.user_id  = u.id
         WHERE u.id = ${userId}::uuid
-        GROUP BY u.id, u.telegram_id, u.role, tm.tenant_id, t.kind, t.name
-        ORDER BY tm.created_at
+        GROUP BY u.id, u.telegram_id, tm.role, tm.tenant_id, t.kind, t.name
+        ORDER BY tm.joined_at
         LIMIT 1
       `;
       if (rows.length === 0) return jsonErr("User not found", 401, "user_not_found");
       const row = rows[0];
-      user    = { id: row.id, telegram_id: row.telegram_id, role: row.role };
+      user    = { id: row.id, telegram_id: row.telegram_id, role: row.user_role ?? "member" };
       tenant  = { id: row.tenant_id, kind: row.tenant_kind, name: row.tenant_name };
       tenants = row.all_tenants;
     } finally {
