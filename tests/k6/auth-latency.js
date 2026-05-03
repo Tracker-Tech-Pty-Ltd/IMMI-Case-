@@ -10,10 +10,27 @@
 //   authed GET /api/v1/collections → p95 < 40ms
 
 import http from "k6/http";
-import { check } from "k6";
+import { check, fail, sleep } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "https://immi.trackit.today";
 const AUTH_TOKEN = __ENV.AUTH_TOKEN || "";
+
+// Pre-flight: verify token is valid and warm the Worker before load scenarios start.
+// A 401 here aborts the run immediately rather than silently passing with wrong latency.
+export function setup() {
+  const res = http.get(`${BASE_URL}/api/v1/collections`, {
+    headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
+  });
+  if (res.status !== 200) {
+    fail(
+      `setup: authed pre-flight returned ${res.status} — check AUTH_TOKEN is valid. ` +
+        `Body: ${res.body.slice(0, 200)}`
+    );
+  }
+  // Warm anon path too
+  http.get(`${BASE_URL}/api/v1/cases?limit=1`);
+  sleep(2);
+}
 
 export const options = {
   scenarios: {
@@ -59,7 +76,5 @@ export function authedCollections() {
     headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
     tags: { scenario: "authed_collections" },
   });
-  check(res, {
-    "authed collections 200 or 401": (r) => r.status === 200 || r.status === 401,
-  });
+  check(res, { "authed collections 200": (r) => r.status === 200 });
 }

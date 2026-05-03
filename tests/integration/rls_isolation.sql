@@ -20,6 +20,7 @@ DECLARE
   v_tenant_b uuid;
   v_col_id   uuid;
   v_count    int;
+  v_rowcount int;
   v_claims_a text;
   v_claims_b text;
 BEGIN
@@ -80,13 +81,11 @@ BEGIN
   -- ── AC9: Cross-tenant UPDATE isolation ─────────────────────────────────────
 
   UPDATE collections SET name = '_autotest_HACKED' WHERE id = v_col_id;
+  GET DIAGNOSTICS v_rowcount = ROW_COUNT;
 
-  SELECT COUNT(*) INTO v_count
-    FROM collections
-    WHERE id = v_col_id AND name = '_autotest_HACKED';
-
-  ASSERT v_count = 0,
-    FORMAT('AC9 FAIL: Tenant B could UPDATE tenant A collection (id=%s)', v_col_id);
+  -- v_rowcount = 0 proves RLS blocked the UPDATE (not just that name didn't change)
+  ASSERT v_rowcount = 0,
+    FORMAT('AC9 FAIL: Tenant B could UPDATE tenant A collection — %s row(s) affected (id=%s)', v_rowcount, v_col_id);
 
   RAISE NOTICE 'AC9 PASS: Cross-tenant UPDATE isolation verified';
 

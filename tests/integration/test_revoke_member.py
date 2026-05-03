@@ -29,17 +29,29 @@ JWT_SECRET = os.environ["JWT_SECRET_CURRENT"]
 JWT_KID = os.environ.get("JWT_KID_CURRENT", "k1")
 BASE_URL = os.environ.get("FLASK_BASE_URL", "https://immi.trackit.today").rstrip("/")
 
-TELEGRAM_ID = 9900000099
+# Unique per process to avoid collision on concurrent CI runs
+TELEGRAM_ID = 9_900_000_000 + (os.getpid() % 100_000)
 FIRST_NAME = "_autotest_revoke"
 TENANT_NAME = "_autotest_revoke_tenant"
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def db_conn():
     conn = psycopg2.connect(DB_URL)
     conn.autocommit = True
+    # Pre-clean: remove any orphan rows from crashed prior runs with same TELEGRAM_ID
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM collections WHERE tenant_id IN "
+        "(SELECT id FROM tenants WHERE name = %s)",
+        (TENANT_NAME,),
+    )
+    cur.execute("DELETE FROM tenant_members WHERE tenant_id IN "
+        "(SELECT id FROM tenants WHERE name = %s)", (TENANT_NAME,))
+    cur.execute("DELETE FROM tenants WHERE name = %s", (TENANT_NAME,))
+    cur.execute("DELETE FROM users WHERE telegram_id = %s", (TELEGRAM_ID,))
     yield conn
     conn.close()
 
