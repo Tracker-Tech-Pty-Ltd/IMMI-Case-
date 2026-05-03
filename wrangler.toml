@@ -126,3 +126,8 @@ name = "RL_COUNCIL_TURN"
 type = "ratelimit"
 namespace_id = "1104"
 simple = { limit = 30, period = 60 }
+
+# Cron warm-up: fires every 5 min to keep Worker isolate + Hyperdrive connection
+# pool alive. Reduces cold-start from ~4.2s to sub-second for real user requests.
+[triggers]
+crons = ["*/5 * * * *"]

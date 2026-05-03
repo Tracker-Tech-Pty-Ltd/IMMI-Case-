@@ -2712,4 +2712,14 @@ export default {
     // auto-detects which mount it is running under).
     return proxyToFlask(request, env);
   },
+
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const sql = getSql(env);
+        await sql`SELECT 1`;
+        await sql.end();
+      } catch (_) { /* warm ping — ignore errors */ }
+    })());
+  },
 };
