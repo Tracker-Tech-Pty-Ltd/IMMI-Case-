@@ -50,6 +50,8 @@ import {
   handleDeleteSession,
   handleLegacyRun,
 } from "./llm-council/handlers.js";
+import { handleTelegramLogin, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
+export { AuthNonce } from "./auth/nonce_do.js";
 
 // ── Table / column constants ──────────────────────────────────────────────────
 
@@ -2530,13 +2532,13 @@ async function proxyToFlask(request, env) {
 
   // Inject Hyperdrive connection string so Flask can optionally use direct psycopg2.
   // The socket.getaddrinfo patch in the container resolves *.hyperdrive.local DNS.
+  const headers = new Headers(request.headers);
+  // Mark as internally routed so Flask can reject direct external access.
+  headers.set("X-Internal-Route", "worker");
   if (env.HYPERDRIVE) {
-    const headers = new Headers(request.headers);
     headers.set("X-Hyperdrive-Url", env.HYPERDRIVE.connectionString);
-    return container.fetch(new Request(request, { headers }));
   }
-
-  return container.fetch(request);
+  return container.fetch(new Request(request, { headers }));
 }
 
 // ── Main router ───────────────────────────────────────────────────────────────
@@ -2720,6 +2722,28 @@ export default {
         // If the native handler throws (DB error, Hyperdrive hiccup), fall
         // through to Flask so the user never sees a raw 500.
         console.error("[native] handler error — falling back to Flask:", nativeErr?.message);
+      }
+    }
+
+    // ── Auth routes ───────────────────────────────────────────────────────────
+    if (path.startsWith("/api/v1/auth/") && env.AUTH_ENABLED !== "false") {
+      try {
+        if (path === "/api/v1/auth/telegram" && method === "POST")
+          return handleTelegramLogin(request, env, getSql);
+        if (path === "/api/v1/auth/me" && method === "GET")
+          return handleAuthMe(request, env);
+        if (path === "/api/v1/auth/logout" && method === "POST")
+          return handleAuthLogout(request, env);
+        if (path === "/api/v1/auth/refresh" && method === "POST")
+          return handleAuthRefresh(request, env, getSql);
+        if (path === "/api/v1/auth/switch-tenant" && method === "POST")
+          return handleAuthSwitchTenant(request, env, getSql);
+      } catch (authErr) {
+        console.error("[auth] handler error:", authErr?.message);
+        return new Response(
+          JSON.stringify({ error: "Auth unavailable", detail: authErr?.message || "unknown" }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        );
       }
     }
 

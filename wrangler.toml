@@ -57,12 +57,17 @@ localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case
 
 [durable_objects]
 bindings = [
-  { name = "FlaskBackend", class_name = "FlaskBackend" }
+  { name = "FlaskBackend", class_name = "FlaskBackend" },
+  { name = "AUTH_NONCE_DO", class_name = "AuthNonce" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["FlaskBackend"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["AuthNonce"]
 
 [[routes]]
 pattern = "immi.trackit.today"
@@ -74,6 +79,17 @@ image = "./Dockerfile"
 # Bumped 2→3 to allow rolling DO instance bumps (flask-v13/v14/v15) without
 # quota lockout when forcing cold-start to pick up new container images.
 max_instances = 3
+
+[vars]
+AUTH_ENABLED = "true"
+
+# Secrets (set via `wrangler secret put`):
+# JWT_SECRET_CURRENT  — HS256 signing key (>=32 bytes random)
+# JWT_SECRET_PREVIOUS — Previous key for rotation window
+# JWT_KID_CURRENT     — Key ID for current secret (e.g. "v1")
+# JWT_KID_PREVIOUS    — Key ID for previous secret
+# TELEGRAM_BOT_TOKEN  — Bot token for Telegram Login HMAC verification
+# AUTH_ENABLED        — "true" | "false" kill switch
 
 # Per .omc/plans/hyperdrive-full-migration.md §Phase 1 #9 streaming export.
 # 30s CPU cap is too tight for 50K-row cursor batches; bump to 60s. Network

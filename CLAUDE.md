@@ -150,6 +150,34 @@ workers/
 - **Smart Pipeline**: 3-phase workflow (crawl → clean → download) with auto-fallback strategies.
 - **Case identification**: `case_id` = first 12 chars of SHA-256 hash of citation/URL/title.
 
+## Auth Architecture (Telegram Login + Multi-Tenant)
+
+**Added**: 2026-05-03
+
+### Flow
+1. User clicks TelegramLoginButton → Telegram Widget callback
+2. `POST /api/v1/auth/telegram` → Worker verifies HMAC hash → AuthNonce DO checks replay → DB upserts user → issues HS256 JWT (5min) + httpOnly refresh cookie (7d)
+3. Subsequent reads: `Authorization: Bearer <access_token>` header → Worker verifies JWT → `getSqlAsUser()` wraps query in `sql.begin() + SET LOCAL request.jwt.claims` → RLS enforces tenant isolation
+4. Writes proxied to Flask with `Authorization` + `X-Internal-Route: worker` headers → Flask re-verifies JWT with same `JWT_SECRET_CURRENT`
+
+### Key Files
+- `workers/auth/jwt.js` — HS256 sign/verify with kid rotation
+- `workers/auth/telegram.js` — HMAC-SHA256 Telegram hash verification
+- `workers/auth/nonce_do.js` — AuthNonce Durable Object (replay protection, Oceania-pinned)
+- `workers/auth/handlers.js` — Auth route handlers
+- `workers/db/getSqlAsUser.js` — Transaction-wrapped DB client with SET LOCAL
+- `immi_case_downloader/web/auth.py` — Flask JWT middleware
+- `supabase/migrations/20260503_001_tenancy.sql` — Schema: users, tenants, tenant_members
+- `frontend/src/contexts/AuthContext.tsx` — React auth state
+- `frontend/src/components/auth/TelegramLoginButton.tsx` — Telegram widget wrapper
+
+### Critical Gotchas
+- **`set_config(..., true)`** — third arg MUST be `true` (transaction-local). `false` = session-local → cross-tenant leak via Hyperdrive pool
+- **AuthNonce DO** — pinned to Oceania with `{ locationHint: "oc" }` for au-east p95
+- **Flask ingress guard** — Flask rejects requests without `X-Internal-Route: worker` header
+- **JWT TTL** — access token 5min, refresh cookie 7d. Max revocation lag: 5min for reads, instant for writes (DB re-check)
+- **Wrangler secrets** — `JWT_SECRET_CURRENT`, `JWT_SECRET_PREVIOUS`, `JWT_KID_CURRENT`, `JWT_KID_PREVIOUS`, `TELEGRAM_BOT_TOKEN`
+
 ### Worker Architecture (Production)
 
 All GET requests to `/api/v1/*` are intercepted by `proxy.js` first. If a native Hyperdrive handler exists, Flask is **never called**. Only unmatched paths fall through.

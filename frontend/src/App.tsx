@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { StatePanel } from "@/components/shared/StatePanel";
 import { resolveRouterBasename } from "@/lib/router";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -156,6 +157,9 @@ const LlmCouncilSessionsPage = lazy(() =>
     default: m.LlmCouncilSessionsPage,
   })),
 );
+const LoginPage = lazy(() =>
+  import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -173,10 +177,19 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter basename={basename}>
-          <Routes>
-            <Route element={<AppLayout />}>
+      <AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter basename={basename}>
+            <Routes>
+              <Route
+                path="login"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <LoginPage />
+                  </Suspense>
+                }
+              />
+              <Route element={<AppLayout />}>
               <Route
                 index
                 element={
@@ -401,11 +414,12 @@ export default function App() {
                   </Suspense>
                 }
               />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-        <Toaster position="bottom-right" richColors />
-      </QueryClientProvider>
+              </Route>
+            </Routes>
+          </BrowserRouter>
+          <Toaster position="bottom-right" richColors />
+        </QueryClientProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

@@ -27,6 +27,13 @@ import type {
 import type { LineageData } from "@/lib/lineage-data";
 
 let csrfToken: string | null = null;
+let accessToken: string | null = null;
+
+/** Inject the JWT access token so apiFetch adds Authorization headers automatically. */
+export function setApiAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
 const API_TIMEOUT_MS = 20_000;
 const ANALYTICS_TIMEOUT_MS = 15_000;
 const ANALYTICS_HEAVY_TIMEOUT_MS = 20_000;
@@ -63,6 +70,10 @@ export async function apiFetch<T>(
     "Content-Type": "application/json",
     ...(requestOptions.headers as Record<string, string>),
   };
+
+  if (accessToken && !headers["Authorization"]) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
 
   if (requestOptions.method && requestOptions.method !== "GET") {
     headers["X-CSRFToken"] = await fetchCsrfToken();
