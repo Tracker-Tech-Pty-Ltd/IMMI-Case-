@@ -78,10 +78,21 @@ Evidence:
 Commit: 55be717
 Next step: All high-ROI tasks COMPLETED. Loop stop.
 
+## Iteration 7 — 2026-05-03T13:30:00Z
+Task: P1-4 (close out)
+Status: COMPLETED (ACCEPTED)
+What I did: Recognised user's statement "I don't think 200 KB is gonna be a lot to speed up the web app" as an explicit decision to accept option (c) — keep Recharts at 413 KB. Updated plan status from BLOCKED → ACCEPTED. charts-*.js is lazy-loaded and does not affect initial page load. The DoD P1-4 acceptance criterion (≤300 KB) is waived by owner decision; analytics cold-start was addressed via P1-4b Cache API instead (better ROI). All DoD items now closed.
+Evidence:
+  User decision quoted verbatim in plan file update.
+  All other DoD items confirmed complete (commits 88b2d2b, 3ceb05e, 71b302b, 0c87b53, 55be717).
+  perf-final-baseline.txt updated with post-P1-4b measurements.
+Commit: (this iteration — plan + progress file update)
+Next step: LOOP COMPLETE — all DoD items closed.
+
 ## Summary of Improvements
-- P0-1 COMPLETED: judge-leaderboard warm 0.41s → 0.031s (13x faster, Cache API)
+- P0-1 COMPLETED: judge-leaderboard warm 0.41s → 0.034s (12x faster, Cache API)
 - P0-2 COMPLETED: index bundle 460.92 KB → 225.01 KB (51% reduction, i18n chunk split)
 - P1-3 COMPLETED: cron warm-up deployed (*/5 * * * *), eliminates cold starts for real users
-- P1-4 BLOCKED: Recharts tree-shaking already optimal; 413 KB is practical minimum (design decision)
-- P1-4b COMPLETED: Cache API for stats/filter-options/outcomes/trends/flow-matrix → all warm <50ms
+- P1-4 ACCEPTED: Recharts 413 KB accepted as practical minimum; lazy-loaded, gzips to 120 KB; owner decision
+- P1-4b COMPLETED: Cache API for stats/filter-options/outcomes/trends/flow-matrix → all warm <55ms
 - P2-5 COMPLETED: CLAUDE.md facts refreshed (pages, proxy.js line, test count)

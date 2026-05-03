@@ -137,8 +137,8 @@ judge-leaderboard SQL is slow (warm 0.41s vs other endpoints 0.06s).
 ---
 
 ### P1-4: Trim `charts-*.js` Recharts chunk
-**Status**: BLOCKED — tree-shaking already optimal; 300 KB target requires design decision
-**Evidence**: 413.84 KB raw / 120.34 KB gzip. Loaded on Analytics, JudgeDetail, CourtLineage, JudgeProfiles pages.
+**Status**: ACCEPTED — user confirmed 200 KB lazy-loaded savings has negligible user impact; 413 KB accepted as practical minimum
+**Evidence**: 413.84 KB raw / 120.34 KB gzip. Loaded on Analytics, JudgeDetail, CourtLineage, JudgeProfiles pages. All 24 import files use named imports, sideEffects:false set — tree-shaking already at Rollup minimum. User stated (2026-05-03): "I don't think 200 KB is gonna be a lot to speed up the web app." charts-*.js is lazy-loaded and only affects users navigating to chart pages, not initial load. Analytics cold-start addressed via P1-4b Cache API instead.
 
 **Investigation steps:**
 1. List all Recharts imports: `grep -rE "from 'recharts'" frontend/src --include='*.tsx' --include='*.ts'`.
