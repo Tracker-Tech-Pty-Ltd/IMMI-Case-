@@ -1,7 +1,10 @@
 import { Menu, Search } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { CelestialToggle } from "./CelestialToggle";
+import { TenantSwitcher } from "./TenantSwitcher";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -11,6 +14,7 @@ interface TopbarProps {
 export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
   const { t, i18n } = useTranslation();
   const isZhTW = i18n.language === "zh-TW";
+  const { isAuthenticated } = useAuth();
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-sm">
@@ -60,6 +64,19 @@ export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
         >
           {isZhTW ? "EN" : "中文"}
         </button>
+
+        {/* Tenant switcher — only renders when user has multiple tenants */}
+        <TenantSwitcher />
+
+        {/* Login link — only on mobile (sidebar handles desktop) */}
+        {!isAuthenticated && (
+          <Link
+            to="/login"
+            className="lg:hidden rounded-full border border-border px-4 py-1.5 text-sm font-medium text-muted-text transition-colors hover:bg-surface hover:text-foreground"
+          >
+            {t("auth.sign_in", "Sign in")}
+          </Link>
+        )}
 
         {/* Celestial theme toggle */}
         <CelestialToggle />

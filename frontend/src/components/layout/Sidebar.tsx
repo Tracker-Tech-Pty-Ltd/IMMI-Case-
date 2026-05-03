@@ -1,11 +1,12 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { FileText, Bookmark, BookmarkCheck } from "lucide-react";
+import { FileText, Bookmark, BookmarkCheck, LogOut, LogIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { prefetchRoute } from "@/lib/prefetch";
 import { useBookmarks } from "@/hooks/use-bookmarks";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
 import { APP_NAV_GROUPS } from "@/components/layout/nav-config";
+import { useAuth } from "@/contexts/AuthContext";
 
 function RecentBookmarksPanel() {
   const { t } = useTranslation();
@@ -48,6 +49,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false }: SidebarProps) {
   const { t } = useTranslation();
   const { savedSearches } = useSavedSearches();
+  const { user, isAuthenticated, logout } = useAuth();
 
   return (
     <aside
@@ -116,8 +118,51 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         {!collapsed && <RecentBookmarksPanel />}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t border-border p-3" />
+      {/* Footer — auth state */}
+      <div className="border-t border-border p-3">
+        {isAuthenticated && user ? (
+          <div className="flex items-center gap-2">
+            {user.photo_url ? (
+              <img
+                src={user.photo_url}
+                alt={user.first_name ?? "User"}
+                className="h-7 w-7 rounded-full object-cover shrink-0"
+              />
+            ) : (
+              <div className="h-7 w-7 rounded-full bg-accent-muted flex items-center justify-center shrink-0">
+                <span className="text-xs font-semibold text-accent">
+                  {(user.first_name?.[0] ?? "U").toUpperCase()}
+                </span>
+              </div>
+            )}
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                  {user.first_name ?? user.username ?? "User"}
+                </span>
+                <button
+                  onClick={logout}
+                  title={t("auth.logout", "Sign out")}
+                  className="rounded p-1 text-muted-text hover:bg-surface hover:text-foreground transition-colors"
+                  aria-label={t("auth.logout", "Sign out")}
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          !collapsed && (
+            <Link
+              to="/login"
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-text hover:bg-surface hover:text-foreground transition-colors"
+            >
+              <LogIn className="h-4 w-4 shrink-0" />
+              <span>{t("auth.sign_in", "Sign in")}</span>
+            </Link>
+          )
+        )}
+      </div>
     </aside>
   );
 }
