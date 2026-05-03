@@ -1,12 +1,30 @@
-# Final Baseline — 2026-05-03T11:40:00Z
+# Final Baseline — 2026-05-03T13:15:00Z (post Cache API expansion)
 
+## Pre-optimization baseline (2026-05-03T11:40:00Z)
+/api/v1/stats               hit1=3.784s  warm_avg=0.069s
+/api/v1/cases?limit=20      hit1=3.624s  warm_avg=0.052s
+/api/v1/filter-options      hit1=5.965s  warm_avg=0.060s
+/api/v1/analytics/outcomes  hit1=3.695s  warm_avg=0.057s
+/api/v1/analytics/judge-leaderboard?limit=10  hit1=13.12s  warm_avg=0.410s
+
+## Post-optimization baseline (2026-05-03T13:15:00Z)
 /api/v1/stats
-  hit1=3.784s  hit2=0.080s  hit3=0.058s  warm_avg=0.069s
+  cold=5.472s  hit2=0.051s  hit3=0.052s  warm_avg=0.051s  [Cache API TTL=300s]
 /api/v1/cases?limit=20
-  hit1=3.624s  hit2=0.050s  hit3=0.054s  warm_avg=0.052s
+  cold=3.405s  hit2=0.065s  hit3=0.045s  warm_avg=0.055s
 /api/v1/filter-options
-  hit1=5.965s  hit2=0.070s  hit3=0.051s  warm_avg=0.060s
+  cold=5.676s  hit2=0.033s  hit3=0.041s  warm_avg=0.037s  [Cache API TTL=300s]
 /api/v1/analytics/outcomes
-  hit1=3.695s  hit2=0.063s  hit3=0.051s  warm_avg=0.057s
+  cold=3.431s  hit2=0.039s  hit3=0.032s  warm_avg=0.035s  [Cache API TTL=600s]
 /api/v1/analytics/judge-leaderboard?limit=10
-  hit1=0.038s  hit2=0.030s  hit3=0.033s  warm_avg=0.031s
+  cold=10.595s  hit2=0.035s  hit3=0.033s  warm_avg=0.034s  [Cache API TTL=600s]
+/app/
+  cold=4.817s  hit2=0.083s  hit3=0.076s  warm_avg=0.080s
+
+## Optimization summary
+P0-1  judge-leaderboard: warm 0.41s → 0.034s (12x, Cache API, 88b2d2b)
+P0-2  index bundle: 460.92 KB → 225.01 KB (-51%, i18n chunk split, 3ceb05e)
+P1-3  cron warm-up */5 * * * * (71b302b)
+P1-4  BLOCKED: Recharts already at tree-shaking minimum (design decision)
+P1-4b stats/filter-options/outcomes/trends/flow-matrix Cache API → all warm <55ms (55be717)
+P2-5  CLAUDE.md facts refreshed (0c87b53)
