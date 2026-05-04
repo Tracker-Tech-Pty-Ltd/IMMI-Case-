@@ -2498,6 +2498,9 @@ async function handleSimilarCases(caseId, url, env) {
 
 /** GET /api/v1/taxonomy/countries?limit=N — country counts via SQL GROUP BY */
 async function handleTaxonomyCountries(url, env) {
+  const _cache = typeof caches !== 'undefined' ? caches.default : null;
+  const _cacheKey = new Request(url.toString());
+  if (_cache) { const cached = await _cache.match(_cacheKey); if (cached) return cached; }
   const limit = safeInt(url.searchParams.get("limit"), 30, 1, 200);
   const sql   = getSql(env);
 
@@ -2512,11 +2515,13 @@ async function handleTaxonomyCountries(url, env) {
   await sql.end();
 
   const countries = rows.map(r => ({ country: r.country, name: r.country, case_count: r.case_count }));
-  return jsonOk({
+  const _res = jsonOk({
     success: true,
     countries,
     meta: { total_countries: countries.length, returned_results: countries.length, limit },
-  });
+  }, "public, max-age=600, stale-while-revalidate=120");
+  if (_cache) await _cache.put(_cacheKey, _res.clone());
+  return _res;
 }
 
 // ── LLM Council router ────────────────────────────────────────────────────────
