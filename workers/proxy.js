@@ -2865,6 +2865,25 @@ export default {
         const srUrl = new URL("https://immi.trackit.today/api/v1/analytics/success-rate");
         await handleAnalyticsSuccessRate(srUrl, env);
       } catch (_) { /* non-fatal */ }
+
+      try {
+        await handleAnalyticsOutcomes(env);
+      } catch (_) { /* non-fatal */ }
+
+      try {
+        const jlUrl = new URL("https://immi.trackit.today/api/v1/analytics/judge-leaderboard?limit=10");
+        await handleAnalyticsJudgeLeaderboard(jlUrl, env);
+      } catch (_) { /* non-fatal */ }
+
+      try {
+        const ccUrl = new URL("https://immi.trackit.today/api/v1/analytics/concept-cooccurrence?limit=15&min_count=50");
+        await handleAnalyticsConceptCooccurrence(ccUrl, env);
+      } catch (_) { /* non-fatal */ }
+
+      try {
+        const tcUrl = new URL("https://immi.trackit.today/api/v1/taxonomy/countries?limit=30");
+        await handleTaxonomyCountries(tcUrl, env);
+      } catch (_) { /* non-fatal */ }
     })());
   },
 };
