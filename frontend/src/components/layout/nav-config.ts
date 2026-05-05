@@ -2,8 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   FileText,
-  CloudDownload,
-  Workflow,
   Activity,
   BookOpen,
   BookMarked,
@@ -67,18 +65,11 @@ export const APP_NAV_GROUPS: readonly AppNavGroup[] = [
     titleKey: "nav.data_tools",
     items: [
       {
-        to: "/download",
-        icon: CloudDownload,
-        labelKey: "nav.download",
-        descriptionKey: "nav_descriptions.download",
+        to: "/data-tools",
+        icon: Activity,
+        labelKey: "nav.data_tools",
+        descriptionKey: "nav_descriptions.data_tools",
       },
-      {
-        to: "/pipeline",
-        icon: Workflow,
-        labelKey: "nav.pipeline",
-        descriptionKey: "nav_descriptions.pipeline",
-      },
-      { to: "/jobs", icon: Activity, labelKey: "nav.jobs" },
     ],
   },
   {

@@ -36,7 +36,6 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { downloadExportFile } from "@/lib/api";
 import { buildDashboardInsights, normalizeVisaSubclassKeys } from "@/lib/dashboard-insights";
 import { normalizeTrendEntries, hasRenderableTrendSeries } from "@/lib/trends";
 import type { AnalyticsFilterParams, DashboardStats } from "@/types/case";
@@ -419,10 +418,10 @@ export function DashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate("/download")}
+                  onClick={() => navigate("/data-tools")}
                   className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-muted-text hover:bg-surface hover:text-foreground"
                 >
-                  {t("nav.download")}
+                  {t("nav.data_tools")}
                 </button>
               </div>
             </div>
@@ -1072,21 +1071,8 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Quick actions + Export */}
-      <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <button
-          type="button"
-          onClick={() => navigate("/download")}
-          className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
-        >
-          <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <Download className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-medium text-foreground">
-            {t("nav.download")}
-          </span>
-        </button>
-
+      {/* Quick actions */}
+      <div className="grid auto-rows-fr gap-3 sm:grid-cols-3">
         <button
           type="button"
           onClick={() => navigate("/guided-search")}
@@ -1115,40 +1101,14 @@ export function DashboardPage() {
 
         <button
           type="button"
-          onClick={() => navigate("/pipeline")}
+          onClick={() => navigate("/data-tools")}
           className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
         >
           <div className="rounded-md bg-accent-muted p-2 text-accent">
             <GitBranch className="h-4 w-4" />
           </div>
           <span className="text-sm font-medium text-foreground">
-            {t("nav.pipeline")}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => downloadExportFile("csv")}
-          className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
-        >
-          <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <Download className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-medium text-foreground">
-            {t("buttons.export_csv")}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => downloadExportFile("json")}
-          className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
-        >
-          <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <Download className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-medium text-foreground">
-            {t("buttons.export_json")}
+            {t("nav.data_tools")}
           </span>
         </button>
       </div>

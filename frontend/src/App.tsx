@@ -1,5 +1,5 @@
 import { lazy, Suspense, Component, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AlertTriangle } from "lucide-react";
@@ -65,14 +65,8 @@ const CaseComparePage = lazy(() =>
     default: m.CaseComparePage,
   })),
 );
-const DownloadPage = lazy(() =>
-  import("@/pages/DownloadPage").then((m) => ({ default: m.DownloadPage })),
-);
-const JobStatusPage = lazy(() =>
-  import("@/pages/JobStatusPage").then((m) => ({ default: m.JobStatusPage })),
-);
-const PipelinePage = lazy(() =>
-  import("@/pages/PipelinePage").then((m) => ({ default: m.PipelinePage })),
+const DataToolsPage = lazy(() =>
+  import("@/pages/DataToolsPage").then((m) => ({ default: m.DataToolsPage })),
 );
 const DataDictionaryPage = lazy(() =>
   import("@/pages/DataDictionaryPage").then((m) => ({
@@ -335,28 +329,24 @@ export default function App() {
                 }
               />
               <Route
-                path="download"
+                path="data-tools"
                 element={
                   <Suspense fallback={<PageLoader />}>
-                    <DownloadPage />
+                    <DataToolsPage />
                   </Suspense>
                 }
+              />
+              <Route
+                path="download"
+                element={<Navigate to="/data-tools" replace />}
               />
               <Route
                 path="jobs"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <JobStatusPage />
-                  </Suspense>
-                }
+                element={<Navigate to="/data-tools" replace />}
               />
               <Route
                 path="pipeline"
-                element={
-                  <Suspense fallback={<PageLoader />}>
-                    <PipelinePage />
-                  </Suspense>
-                }
+                element={<Navigate to="/data-tools" replace />}
               />
               <Route
                 path="analytics"

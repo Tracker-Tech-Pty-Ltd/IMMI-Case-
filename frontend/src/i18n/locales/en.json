@@ -39,6 +39,7 @@
     "search_taxonomy": "Browse by concept tags",
     "guided_search": "Step-by-step filter wizard",
     "llm_council": "Multi-model legal reasoning council",
+    "data_tools": "Pipeline status & data freshness",
     "download": "Fetch case texts from AustLII",
     "pipeline": "Automated crawl & download",
     "jobs": "Monitor background tasks",
@@ -742,8 +743,6 @@
     "court_filter_label": "Court Filter",
     "all_courts_label": "All Courts",
     "batch_size_label": "Batch Size",
-    "export_data_title": "Export Data",
-    "export_data_subtitle": "Download all case data as CSV or JSON.",
     "rate_limit_info": "Downloads respect AustLII rate limiting (1 request/second).",
     "extraction_info": "Full text extraction includes judges, catchwords, outcome, and legislation.",
     "running_status": "Running..."
@@ -758,6 +757,26 @@
     "started": "Started",
     "duration": "Duration",
     "cases_processed": "Cases Processed"
+  },
+  "data_tools": {
+    "title": "Data Tools",
+    "subtitle": "Live status of our data pipeline and how fresh the case database is.",
+    "snapshot_title": "Database snapshot",
+    "coverage_pct": "{{pct}}% with full text",
+    "freshness_label": "Last updated",
+    "freshness_running": "Updating now",
+    "freshness_just_now": "Just now",
+    "freshness_minutes_ago": "{{minutes}} min ago",
+    "freshness_hours_ago": "{{hours}} hr ago",
+    "freshness_days_ago": "{{days}} days ago",
+    "freshness_unknown": "Unknown",
+    "pipeline_section_title": "Pipeline activity",
+    "pipeline_idle_title": "Pipeline is idle",
+    "pipeline_idle_with_last": "Last activity {{when}}.",
+    "pipeline_idle_no_history": "No recent pipeline activity recorded.",
+    "recent_job_title": "Most recent job",
+    "no_recent_job": "No recent jobs",
+    "logs_section_title": "Pipeline logs"
   },
   "data_dictionary": {
     "title": "Data Dictionary",

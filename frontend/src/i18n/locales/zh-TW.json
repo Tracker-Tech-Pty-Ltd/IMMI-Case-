@@ -39,6 +39,7 @@
     "search_taxonomy": "按法律概念標籤瀏覽案例",
     "guided_search": "逐步式篩選導引",
     "llm_council": "多模型法律推理與綜合評議",
+    "data_tools": "資料管線狀態與資料新鮮度",
     "download": "從AustLII下載判決全文",
     "pipeline": "自動爬取、清理及下載數據",
     "jobs": "監控後台任務執行進度",
@@ -742,8 +743,6 @@
     "court_filter_label": "法院篩選",
     "all_courts_label": "所有法院",
     "batch_size_label": "批次大小",
-    "export_data_title": "匯出資料",
-    "export_data_subtitle": "將所有案件資料匯出為 CSV 或 JSON 格式。",
     "rate_limit_info": "下載遵守 AustLII 速率限制（每秒 1 次請求）。",
     "extraction_info": "全文擷取包含法官、關鍵詞、裁決結果及援引法規。",
     "running_status": "執行中⋯"
@@ -758,6 +757,26 @@
     "started": "啟動時間",
     "duration": "執行時長",
     "cases_processed": "已處理案件數"
+  },
+  "data_tools": {
+    "title": "資料工具",
+    "subtitle": "我們的資料管線即時狀態，以及案例資料庫的最新更新時間。",
+    "snapshot_title": "資料庫快照",
+    "coverage_pct": "{{pct}}% 已附全文",
+    "freshness_label": "上次更新",
+    "freshness_running": "更新中",
+    "freshness_just_now": "剛剛",
+    "freshness_minutes_ago": "{{minutes}} 分鐘前",
+    "freshness_hours_ago": "{{hours}} 小時前",
+    "freshness_days_ago": "{{days}} 天前",
+    "freshness_unknown": "未知",
+    "pipeline_section_title": "管線活動",
+    "pipeline_idle_title": "管線目前閒置中",
+    "pipeline_idle_with_last": "上次活動於 {{when}}。",
+    "pipeline_idle_no_history": "尚無管線活動記錄。",
+    "recent_job_title": "最近一次任務",
+    "no_recent_job": "尚無近期任務",
+    "logs_section_title": "管線日誌"
   },
   "data_dictionary": {
     "title": "資料字典",

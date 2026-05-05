@@ -1255,6 +1255,13 @@ export async function exportCollection(
 }
 
 // ─── Export (file downloads) ───────────────────────────────────
+/**
+ * @deprecated UI entry points removed 2026-05-05 — bulk DB export was scoped
+ * out of the user-facing app. The backend endpoint `/api/v1/export/{format}`
+ * is preserved for admin/CLI use, but no React component should call this
+ * function. If you re-introduce export, also re-introduce the corresponding
+ * nav UI and i18n keys (`download.export_data_*`).
+ */
 export function downloadExportFile(format: "csv" | "json"): void {
   window.location.href = `/api/v1/export/${format}`;
 }
