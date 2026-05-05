@@ -335,6 +335,22 @@ Request → Cloudflare Worker (proxy.js)
 - **Durable Object name**: `idFromName("flask-v15")` (current; was v13/v14 in earlier revisions). Bumping suffix creates fresh container state; keep stable unless intentionally resetting. Authoritative reference: `workers/proxy.js:2475` and `docs/ARCHITECTURE.md`
 - **Testing fresh domains**: macOS DNS cache lies — use `curl --resolve host:443:<CF_IP>` to bypass; flush with `sudo dscacheutil -flushcache`
 - **austlii-scraper Worker**: separate deploy in `workers/austlii-scraper/`; set `AUTH_TOKEN` via `wrangler secret put AUTH_TOKEN`
+- **Architecture diagrams (Cloudflare Pages)**: `https://immi-diagrams.pages.dev` — static HTML diagrams; deploy with `npx wrangler pages deploy /tmp/immi-diagrams --project-name immi-diagrams`. Diagrams live at `~/.agent/diagrams/` (not in repo).
+
+## Performance Baseline (2026-05-05)
+
+Post–Wave 6 state (19 handlers with Cache API, 8 cron pre-warmed every 5 min):
+
+| Metric | Before | After |
+|---|---|---|
+| `judge-leaderboard` cold | ~12s | 0.034s (12×) |
+| `analytics/*` cold | 3–13s | <55ms warm |
+| Index bundle | 461 KB | 225 KB (−51%) |
+| Recharts chunk | inline | 413 KB lazy (120 KB gzip) |
+
+**Cache API pattern**: `caches.default.match(cacheKey)` → hit returns early; miss runs DB query → `caches.default.put(cacheKey, response.clone())` before returning. TTL via `Cache-Control: s-maxage=N`. Create `getSql(env)` **per request** — never module-level singleton.
+
+**Cron pre-warm** (`wrangler.toml` `*/5 * * * *`): `scheduled()` fires 8 `ctx.waitUntil(fetch(...))` calls targeting the 8 highest-cold-latency endpoints. Reduces cold-start from ~4s to sub-second for real user traffic after any deploy.
 
 ## Structured Field Extraction
 
