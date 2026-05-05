@@ -8,7 +8,6 @@ import {
   Layers,
   BarChart3,
   Table,
-  Download,
   Search,
   Bookmark,
   Info,

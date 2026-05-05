@@ -407,7 +407,13 @@ export default function App() {
               </Route>
             </Routes>
           </BrowserRouter>
-          <Toaster position="bottom-right" richColors />
+          <Toaster
+            position="bottom-right"
+            richColors
+            closeButton
+            duration={5000}
+            visibleToasts={3}
+          />
         </QueryClientProvider>
       </AuthProvider>
     </ErrorBoundary>

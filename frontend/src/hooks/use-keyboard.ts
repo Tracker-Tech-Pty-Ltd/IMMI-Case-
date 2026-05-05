@@ -1,47 +1,81 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 
 interface KeyboardShortcuts {
   onSearch?: () => void
 }
 
+const CHORD_TIMEOUT_MS = 1000
+
+const GO_TO_MAP: Record<string, string> = {
+  d: "/",
+  c: "/cases",
+  s: "/guided-search",
+  t: "/data-tools",
+  a: "/analytics",
+  j: "/judge-profiles",
+  l: "/legislations",
+}
+
 export function useKeyboard({ onSearch }: KeyboardShortcuts = {}) {
   const navigate = useNavigate()
+  const chordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inGoToModeRef = useRef(false)
 
   useEffect(() => {
+    function clearChord() {
+      inGoToModeRef.current = false
+      if (chordTimerRef.current) {
+        clearTimeout(chordTimerRef.current)
+        chordTimerRef.current = null
+      }
+    }
+
     function handler(e: KeyboardEvent) {
       if (e.defaultPrevented) return
-      // Skip if user is typing in an input/textarea
       const tag = (e.target as HTMLElement).tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
       if ((e.target as HTMLElement).isContentEditable) return
       if (e.ctrlKey || e.metaKey || e.altKey) return
 
-      switch (e.key) {
-        case "/":
+      if (e.key === "/") {
+        e.preventDefault()
+        clearChord()
+        onSearch?.()
+        return
+      }
+      if (e.key === "?") {
+        e.preventDefault()
+        clearChord()
+        navigate("/design-tokens")
+        return
+      }
+      if (e.key === "Escape") {
+        clearChord()
+        return
+      }
+
+      if (inGoToModeRef.current) {
+        const dest = GO_TO_MAP[e.key.toLowerCase()]
+        clearChord()
+        if (dest) {
           e.preventDefault()
-          onSearch?.()
-          break
-        case "?":
-          e.preventDefault()
-          navigate("/design-tokens")
-          break
-        case "d":
-          navigate("/")
-          break
-        case "c":
-          navigate("/cases")
-          break
-        case "g":
-          navigate("/guided-search")
-          break
-        case "p":
-          navigate("/data-tools")
-          break
+          navigate(dest)
+        }
+        return
+      }
+
+      if (e.key === "g") {
+        e.preventDefault()
+        inGoToModeRef.current = true
+        chordTimerRef.current = setTimeout(clearChord, CHORD_TIMEOUT_MS)
       }
     }
 
     window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
+    return () => {
+      window.removeEventListener("keydown", handler)
+      clearChord()
+    }
   }, [navigate, onSearch])
 }
