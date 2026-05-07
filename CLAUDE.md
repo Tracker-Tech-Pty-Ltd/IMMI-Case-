@@ -295,6 +295,8 @@ Request → Cloudflare Worker (proxy.js)
 - **響應式 flex-wrap 防孤立** — filter row 相關元素（separator + 下拉選單）需包在同一 `<div>` 一起換行；裝飾性分隔符用 `hidden sm:inline`；輸入框用 `flex-1 min-w-[X]` 防止寬度歸零。
 - **JudgeLeaderboard 雙視圖** — `md:hidden` 手機卡片視圖 + `hidden md:block overflow-x-auto` 桌面表格，是整個 app 響應式表格的標準模式。
 - **API timeouts** — `lib/api.ts` defines per-category timeouts: analytics heavy=20s, analytics=15s, filter-options=8s, dashboard stats=12s, general=20s. Analytics RPCs have a 25s server-side timeout (`ANALYTICS_RPC_TIMEOUT_SECONDS`); dashboard stats cache TTL=5min.
+- **tsconfig layering** — root `frontend/tsconfig.json` is project-references only; do NOT add `baseUrl`/`paths`/`compilerOptions` there. All path aliases live in `tsconfig.app.json` only. Duplicating `baseUrl` in root causes TS5101 deprecation error with no clean fix on TS 5.x.
+- **Vitest i18n test assertions** — `__tests__/` are NOT in `tsconfig.app.json`'s `include: ["src"]`, so `@/*` path aliases show as TS errors in the editor but resolve correctly at Vitest runtime via vite alias config. The global `legislations-setup.ts` mock makes `t(key)` return the key string; assertions should use i18n key strings (e.g. `"data_tools.pipeline_idle_title"`), not `defaultValue` text.
 
 ## Legislations Feature
 
@@ -377,7 +379,7 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 
 - `downloaded_cases/` is gitignored — all scraped data is local only
 - **149,016 case records** (2000-2026): 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
-- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,747 tests — 1,039 Python unit (52 files) + 259 Playwright E2E (24 files) + 449 frontend unit (50 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
+- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,764 tests — 1,039 Python unit (52 files) + 259 Playwright E2E (24 files) + 466 frontend unit (51 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Default host is `127.0.0.1`; use `--host 0.0.0.0` to expose externally
 
