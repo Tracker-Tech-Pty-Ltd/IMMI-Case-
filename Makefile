@@ -46,7 +46,7 @@ api:
 	python web.py --port $(PORT) --backend $(BACKEND)
 
 ui:
-	cd $(REPO_ROOT)/frontend && npm run dev
+	cd "$(REPO_ROOT)/frontend" && npm run dev
 
 dev:
 	@echo "Run 'make api' in one terminal and 'make ui' in another."
@@ -55,7 +55,7 @@ dev:
 # ── Building ──────────────────────────────────────────────────────────────────
 
 build:
-	cd $(REPO_ROOT)/frontend && npm run build
+	cd "$(REPO_ROOT)/frontend" && npm run build
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
@@ -65,10 +65,10 @@ test-py:
 	python3 -m pytest tests/ --ignore=tests/e2e -q
 
 test-fe:
-	cd $(REPO_ROOT)/frontend && npx vitest run
+	cd "$(REPO_ROOT)/frontend" && npx vitest run
 
 test-workers:
-	cd $(REPO_ROOT)/workers && npx vitest run
+	cd "$(REPO_ROOT)/workers" && npx vitest run
 
 # AC4 safety guard: reject any set_config call without transaction-local flag (true).
 # A literal `false` or missing third argument leaks JWT claims across pooled connections.
@@ -93,14 +93,14 @@ lint:
 	python3 -m ruff check immi_case_downloader/ scripts/ *.py
 
 typecheck:
-	cd $(REPO_ROOT)/frontend && npx tsc --noEmit
+	cd "$(REPO_ROOT)/frontend" && npx tsc --noEmit
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 install:
 	pip install -r requirements.txt
 	pip install -r requirements-test.txt
-	cd $(REPO_ROOT)/frontend && npm install
+	cd "$(REPO_ROOT)/frontend" && npm install
 
 migrate:
 	supabase db push
