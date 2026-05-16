@@ -33,7 +33,15 @@ import {
   loadHistory,
   generateRetrieveCode,
 } from "./storage.js";
-import { runCouncil, streamCouncil } from "./runner.js";
+import {
+  DEFAULT_ANTHROPIC_SYSTEM_PROMPT,
+  DEFAULT_GEMINI_PRO_SYSTEM_PROMPT,
+  DEFAULT_MODERATOR_SYSTEM_PROMPT,
+  DEFAULT_OPENAI_SYSTEM_PROMPT,
+  runCouncil,
+  runExpert,
+  streamCouncil,
+} from "./runner.js";
 import { verifyJwt } from "../auth/jwt.js";
 import { requireAuth } from "../db/getSqlAsUser.js";
 
@@ -88,6 +96,125 @@ function validateMessageBody(body, messageKey = "message") {
 
 async function requireSessionAuth(request, env) {
   return requireAuth(request, env, verifyJwt);
+}
+
+function envModel(env, key, fallback) {
+  return String(env[key] || fallback).trim() || fallback;
+}
+
+function councilProviderConfig(env) {
+  return {
+    openai: {
+      model: envModel(env, "LLM_COUNCIL_OPENAI_MODEL", "openai/gpt-5-mini-2025-08-07"),
+      cf_aig_token_present: Boolean(env.CF_AIG_TOKEN),
+      system_prompt_preview: DEFAULT_OPENAI_SYSTEM_PROMPT.slice(0, 140),
+    },
+    gemini_pro: {
+      model: envModel(env, "LLM_COUNCIL_GEMINI_PRO_MODEL", "google-ai-studio/gemini-2.5-pro"),
+      cf_aig_token_present: Boolean(env.CF_AIG_TOKEN),
+      system_prompt_preview: DEFAULT_GEMINI_PRO_SYSTEM_PROMPT.slice(0, 140),
+    },
+    anthropic: {
+      model: envModel(env, "LLM_COUNCIL_ANTHROPIC_MODEL", "anthropic/claude-sonnet-4-6"),
+      cf_aig_token_present: Boolean(env.CF_AIG_TOKEN),
+      system_prompt_preview: DEFAULT_ANTHROPIC_SYSTEM_PROMPT.slice(0, 140),
+    },
+    gemini_flash: {
+      model: envModel(env, "LLM_COUNCIL_GEMINI_FLASH_MODEL", "google-ai-studio/gemini-2.5-flash"),
+      cf_aig_token_present: Boolean(env.CF_AIG_TOKEN),
+      system_prompt_preview: DEFAULT_MODERATOR_SYSTEM_PROMPT.slice(0, 140),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// handleHealth (Worker-native, no auth)
+// ---------------------------------------------------------------------------
+
+export async function handleHealth(request, env) {
+  const url = new URL(request.url);
+  const live = ["1", "true", "yes", "on"].includes(
+    String(url.searchParams.get("live") || "").toLowerCase(),
+  );
+  const providers = councilProviderConfig(env);
+  const errors = [];
+  if (!env.CF_AIG_TOKEN) errors.push("Missing CF_AIG_TOKEN (Unified Billing token required)");
+  const payload = {
+    live_probe: live,
+    gateway: {
+      url: env.CF_GATEWAY_URL || "https://gateway.ai.cloudflare.com/v1/30ffcfbf8c4103048bc38a5398b7ec99/immi-council/compat/chat/completions",
+      cf_aig_token_present: Boolean(env.CF_AIG_TOKEN),
+    },
+    providers,
+    errors,
+  };
+
+  if (!live || errors.length > 0) {
+    return jsonResponse({ ...payload, ok: errors.length === 0 });
+  }
+
+  const probeSystem = "You are a connectivity probe. Reply with the single word: OK";
+  const probeQuestion = "OK";
+  const probeResults = await Promise.all([
+    runExpert({
+      env,
+      providerKey: "openai",
+      providerLabel: "OpenAI",
+      modelRaw: providers.openai.model,
+      defaultPrefix: "openai",
+      systemPrompt: probeSystem,
+      question: probeQuestion,
+      caseContext: "",
+      maxTokens: 256,
+      rawPrompt: true,
+    }),
+    runExpert({
+      env,
+      providerKey: "gemini_pro",
+      providerLabel: "Google Gemini Pro",
+      modelRaw: providers.gemini_pro.model,
+      defaultPrefix: "google-ai-studio",
+      systemPrompt: probeSystem,
+      question: probeQuestion,
+      caseContext: "",
+      maxTokens: 256,
+      rawPrompt: true,
+    }),
+    runExpert({
+      env,
+      providerKey: "anthropic",
+      providerLabel: "Anthropic",
+      modelRaw: providers.anthropic.model,
+      defaultPrefix: "anthropic",
+      systemPrompt: probeSystem,
+      question: probeQuestion,
+      caseContext: "",
+      maxTokens: 256,
+      rawPrompt: true,
+    }),
+    runExpert({
+      env,
+      providerKey: "gemini_flash",
+      providerLabel: "Council Chairman",
+      modelRaw: providers.gemini_flash.model,
+      defaultPrefix: "google-ai-studio",
+      systemPrompt: probeSystem,
+      question: probeQuestion,
+      caseContext: "",
+      maxTokens: 256,
+      rawPrompt: true,
+      isModerator: true,
+    }),
+  ]);
+
+  const probe_results = Object.fromEntries(
+    probeResults.map((result) => [result.provider_key, result]),
+  );
+  return jsonResponse({
+    ...payload,
+    probe_results,
+    ok: probeResults.every((result) => result.success),
+  });
 }
 
 // ---------------------------------------------------------------------------

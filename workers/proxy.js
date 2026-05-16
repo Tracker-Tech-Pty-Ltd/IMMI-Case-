@@ -51,6 +51,7 @@ import {
   handleLegacyRun,
   handleStreamCouncil,
   handleRestoreByCode,
+  handleHealth,
 } from "./llm-council/handlers.js";
 import { handleTelegramLogin, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
 import { verifyJwt } from "./auth/jwt.js";
@@ -2547,8 +2548,10 @@ const LLM_COUNCIL_SESSION_RE =
 export async function dispatchLlmCouncil(request, env, url, path, method, ctx) {
   if (!path.startsWith(LLM_COUNCIL_PREFIX)) return null;
 
-  // Health stays on Flask (existing legacy behaviour).
-  if (path === "/api/v1/llm-council/health") return null;
+  // Health uses the same Worker-native AI Gateway path as sessions/runs.
+  if (path === "/api/v1/llm-council/health" && method === "GET") {
+    return handleHealth(request, env);
+  }
 
   // POST /api/v1/llm-council/sessions
   if (path === "/api/v1/llm-council/sessions" && method === "POST") {

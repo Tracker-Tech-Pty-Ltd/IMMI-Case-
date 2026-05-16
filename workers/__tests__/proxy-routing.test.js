@@ -47,6 +47,7 @@ const mockGetSession = vi.fn();
 const mockListSessions = vi.fn();
 const mockDeleteSession = vi.fn();
 const mockLegacyRun = vi.fn();
+const mockHealth = vi.fn();
 
 vi.mock("../llm-council/handlers.js", () => ({
   handleCreateSession: (...a) => mockCreateSession(...a),
@@ -55,6 +56,7 @@ vi.mock("../llm-council/handlers.js", () => ({
   handleListSessions: (...a) => mockListSessions(...a),
   handleDeleteSession: (...a) => mockDeleteSession(...a),
   handleLegacyRun: (...a) => mockLegacyRun(...a),
+  handleHealth: (...a) => mockHealth(...a),
 }));
 
 // Import AFTER mocks are wired up.
@@ -88,6 +90,7 @@ beforeEach(() => {
   mockListSessions.mockResolvedValue(new Response("list"));
   mockDeleteSession.mockResolvedValue(new Response("delete"));
   mockLegacyRun.mockResolvedValue(new Response("legacy-run"));
+  mockHealth.mockResolvedValue(new Response("health"));
 });
 
 // ===========================================================================
@@ -181,19 +184,19 @@ describe("dispatchLlmCouncil routing", () => {
 
   // ── Flask fall-through paths ─────────────────────────────────────────────
 
-  it("GET /api/v1/llm-council/health returns null (Flask handles it)", async () => {
+  it("GET /api/v1/llm-council/health → handleHealth", async () => {
     const res = await dispatch("GET", "/api/v1/llm-council/health");
 
-    // Health must NOT touch any session handler.
     expect(mockCreateSession).not.toHaveBeenCalled();
     expect(mockAddTurn).not.toHaveBeenCalled();
     expect(mockGetSession).not.toHaveBeenCalled();
     expect(mockListSessions).not.toHaveBeenCalled();
     expect(mockDeleteSession).not.toHaveBeenCalled();
     expect(mockLegacyRun).not.toHaveBeenCalled();
+    expect(mockHealth).toHaveBeenCalledOnce();
 
-    // And dispatch must signal "fall through" with a literal null.
-    expect(res).toBeNull();
+    expect(res).not.toBeNull();
+    expect(await res.text()).toBe("health");
   });
 
   it("unknown llm-council sub-path returns null (Flask fall-through)", async () => {

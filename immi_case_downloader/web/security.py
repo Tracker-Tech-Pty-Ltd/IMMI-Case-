@@ -156,11 +156,12 @@ def add_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com https://telegram.org; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
-        "img-src 'self' data:; "
+        "img-src 'self' data: https://telegram.org https://t.me; "
         "connect-src 'self' https://cloudflareinsights.com; "
+        "frame-src 'self' https://oauth.telegram.org https://telegram.org; "
         "worker-src 'self' blob:"
     )
     return response
