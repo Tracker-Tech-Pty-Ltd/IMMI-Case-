@@ -125,7 +125,7 @@ in production.
 
 ---
 
-## Layer 2 — Flask Durable Object (`flask-v15`)
+## Layer 2 — Flask Durable Object (`flask-v24`)
 
 ### What it still owns
 
@@ -146,13 +146,13 @@ in production.
 
 [[containers]]
 class_name = "FlaskBackend"
-# Bumped suffix v13 → v14 → v15 to force fresh DO instance during rolling
+# Bumped suffix v13 → v14 → v15 → v23 → v24 to force fresh DO instance during rolling
 # image rebuilds without quota lockout. Bumping the suffix again (v16+)
 # is intentional — keep stable unless you mean to reset state.
 ```
 
-The instance ID `"flask-v15"` is referenced as a string in
-`workers/proxy.js:2475` — `env.FlaskBackend.idFromName("flask-v15")`.
+The instance ID `"flask-v24"` is referenced as a string in
+`workers/proxy.js` — `env.FlaskBackend.idFromName("flask-v24")`.
 
 ### What Flask is NOT
 
@@ -242,7 +242,7 @@ PUT /api/v1/cases/abc123  Body: {...edited fields...}
   ↓
 Worker → handlePutCase("abc123", request, env)
   ↓
-env.FlaskBackend.idFromName("flask-v15") → forward request to DO
+env.FlaskBackend.idFromName("flask-v24") → forward request to DO
   ↓
 Flask container: validate via ImmigrationCase, write to Supabase
   ↓
