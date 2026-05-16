@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$'; then ruff check --fix --silent \"$CLAUDE_FILE_PATH\" 2>/dev/null; ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi"
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$'; then if command -v ruff >/dev/null 2>&1; then ruff check --fix --silent \"$CLAUDE_FILE_PATH\" 2>/dev/null || true; ruff format --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null || true; else echo '跳過 Python format hook: ruff 不在 PATH'; fi; fi"
           }
         ]
       },
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'i18n/locales/(en|zh-TW)\\.json$'; then python3 -c \"\nimport json, sys\ntry:\n    en = json.load(open('/Users/d/Developer/IMMI-Case-/frontend/src/i18n/locales/en.json'))\n    tw = json.load(open('/Users/d/Developer/IMMI-Case-/frontend/src/i18n/locales/zh-TW.json'))\n    en_k, tw_k = set(en.keys()), set(tw.keys())\n    missing_tw = en_k - tw_k\n    missing_en = tw_k - en_k\n    if missing_tw:\n        print(f'⚠️  zh-TW 缺少 {len(missing_tw)} 個頂層 key: {\\\", \\\".join(sorted(missing_tw)[:5])}')\n    elif missing_en:\n        print(f'⚠️  en 缺少 {len(missing_en)} 個頂層 key: {\\\", \\\".join(sorted(missing_en)[:5])}')\n    else:\n        print(f'✓ i18n 同步: en={len(en_k)} zh-TW={len(tw_k)} 頂層 key 一致')\nexcept Exception as e:\n    print(f'i18n 檢查失敗: {e}')\n\" 2>&1; fi"
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE 'i18n/locales/(en|zh-TW)\\.json$'; then python3 -c \"\nimport json, sys\ntry:\n    en = json.load(open('/Users/d/Developer/Active Projects/IMMI-Case-/frontend/src/i18n/locales/en.json'))\n    tw = json.load(open('/Users/d/Developer/Active Projects/IMMI-Case-/frontend/src/i18n/locales/zh-TW.json'))\n    en_k, tw_k = set(en.keys()), set(tw.keys())\n    missing_tw = en_k - tw_k\n    missing_en = tw_k - en_k\n    if missing_tw:\n        print(f'⚠️  zh-TW 缺少 {len(missing_tw)} 個頂層 key: {\\\", \\\".join(sorted(missing_tw)[:5])}')\n    elif missing_en:\n        print(f'⚠️  en 缺少 {len(missing_en)} 個頂層 key: {\\\", \\\".join(sorted(missing_en)[:5])}')\n    else:\n        print(f'✓ i18n 同步: en={len(en_k)} zh-TW={len(tw_k)} 頂層 key 一致')\nexcept Exception as e:\n    print(f'i18n 檢查失敗: {e}')\n\" 2>&1 || true; fi"
           }
         ]
       },
@@ -100,7 +100,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/d/Developer/IMMI-Case- && if git diff --stat HEAD 2>/dev/null | grep -q '.'; then echo '有未提交的程式碼變更'; git diff --stat HEAD; fi"
+            "command": "cd '/Users/d/Developer/Active Projects/IMMI-Case-' && if git diff --stat HEAD 2>/dev/null | grep -q '.'; then echo '有未提交的程式碼變更'; git diff --stat HEAD; fi"
           }
         ]
       }

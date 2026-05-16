@@ -11,7 +11,7 @@ One-command workflow to build the React frontend and run the full E2E test suite
 
 1. **Build frontend**:
    ```bash
-   cd /Users/d/Developer/IMMI-Case-/frontend && npm run build
+   cd '/Users/d/Developer/Active Projects/IMMI-Case-/frontend' && npm run build
    ```
    This runs: tokens generation → TypeScript compilation → Vite production build.
    Output goes to `immi_case_downloader/static/react/`.
