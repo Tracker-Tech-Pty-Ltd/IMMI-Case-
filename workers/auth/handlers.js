@@ -2,6 +2,7 @@
  * auth/handlers.js — Route handlers for /api/v1/auth/* endpoints.
  *
  * POST /api/v1/auth/telegram      — Telegram Login Widget verification → JWT pair
+ * GET  /api/v1/auth/telegram/callback — Telegram Login Widget redirect flow
  * GET  /api/v1/auth/me            — Decode access token → current user info
  * POST /api/v1/auth/logout        — Clear auth cookies
  * POST /api/v1/auth/refresh       — Refresh access token using refresh token
@@ -62,6 +63,26 @@ function clearCookiesResponse(body, status = 200) {
   headers.append("Set-Cookie", `immi_access=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
   headers.append("Set-Cookie", `immi_refresh=; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
   return new Response(JSON.stringify(body), { status, headers });
+}
+
+function buildAuthRedirect(next, accessToken, refreshToken) {
+  const headers = new Headers({ Location: next });
+  headers.append(
+    "Set-Cookie",
+    `immi_access=${accessToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_MAX_AGE}`,
+  );
+  headers.append(
+    "Set-Cookie",
+    `immi_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=${REFRESH_MAX_AGE}`,
+  );
+  return new Response(null, { status: 302, headers });
+}
+
+function safeRedirectTarget(rawNext) {
+  if (!rawNext || typeof rawNext !== "string") return "/app/";
+  if (!rawNext.startsWith("/")) return "/app/";
+  if (rawNext.startsWith("//")) return "/app/";
+  return rawNext;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +213,58 @@ export async function handleTelegramLogin(request, env, getSql) {
     accessToken,
     refreshToken,
   );
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/auth/telegram/callback
+// ---------------------------------------------------------------------------
+
+export async function handleTelegramCallback(request, env, getSql) {
+  const url = new URL(request.url);
+  const next = safeRedirectTarget(url.searchParams.get("next"));
+  const data = Object.fromEntries(url.searchParams.entries());
+  delete data.next;
+
+  if (!data || !data.hash) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=missing_telegram_payload`, 302);
+  }
+
+  const tgResult = await verifyTelegramAuth(data, env);
+  if (!tgResult.valid) {
+    console.log(JSON.stringify({ event: "auth.telegram.callback_fail", reason: tgResult.reason }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=${encodeURIComponent(tgResult.reason ?? "invalid_hash")}`, 302);
+  }
+
+  const fresh = await checkNonce(env, data.hash);
+  if (!fresh) {
+    console.log(JSON.stringify({ event: "auth.telegram.callback_replay", hash: String(data.hash).slice(0, 8) }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=replay`, 302);
+  }
+
+  if (!env.HYPERDRIVE) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=db_unavailable`, 302);
+  }
+
+  let user, tenant, tenants;
+  try {
+    ({ user, tenant, tenants } = await upsertTelegramUser(data, getSql, env));
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.telegram.callback_db_error", error: err?.message }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=db_error`, 302);
+  }
+
+  let accessToken, refreshToken;
+  try {
+    [accessToken, refreshToken] = await Promise.all([
+      makeAccessToken(user, tenant, tenants, env),
+      makeRefreshToken(user.id, env),
+    ]);
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.telegram.callback_jwt_error", error: err?.message }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=jwt_error`, 302);
+  }
+
+  return buildAuthRedirect(next, accessToken, refreshToken);
 }
 
 // ---------------------------------------------------------------------------

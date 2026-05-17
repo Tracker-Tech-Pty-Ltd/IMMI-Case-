@@ -53,7 +53,7 @@ import {
   handleRestoreByCode,
   handleHealth,
 } from "./llm-council/handlers.js";
-import { handleTelegramLogin, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
+import { handleTelegramLogin, handleTelegramCallback, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
 import { verifyJwt } from "./auth/jwt.js";
 import { requireAuth } from "./db/getSqlAsUser.js";
 export { AuthNonce } from "./auth/nonce_do.js";
@@ -2859,6 +2859,8 @@ export default {
       try {
         if (path === "/api/v1/auth/telegram" && method === "POST")
           return handleTelegramLogin(request, env, getSql);
+        if (path === "/api/v1/auth/telegram/callback" && method === "GET")
+          return handleTelegramCallback(request, env, getSql);
         if (path === "/api/v1/auth/me" && method === "GET")
           return handleAuthMe(request, env);
         if (path === "/api/v1/auth/logout" && method === "POST")
