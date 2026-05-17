@@ -2646,7 +2646,7 @@ async function requireCaseWriter(request, env) {
 // ── Flask proxy helper ────────────────────────────────────────────────────────
 
 async function proxyToFlask(request, env) {
-  const id        = env.FlaskBackend.idFromName("flask-v24");
+  const id        = env.FlaskBackend.idFromName("flask-v25");
   const container = env.FlaskBackend.get(id);
 
   // Inject Hyperdrive connection string so Flask can optionally use direct psycopg2.
