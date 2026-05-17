@@ -4,7 +4,19 @@ downloaded_cases/
 *.jpg
 node_modules/
 frontend/node_modules/
+frontend/
 .git/
+.gitnexus/
+.venv/
+.agents/
+.aperant/
+.auto-claude/
+.claude/
+.codex/
+.code-review-graph/
+.omc/
+.serena/
+.wrangler/
 .env
 __pycache__/
 *.pyc
@@ -15,3 +27,11 @@ audit/
 data_quality_reports/
 docs/
 scripts/
+tests/
+workers/
+design/
+supabase/
+immi android app/
+*.log
+*.pid
+=*
