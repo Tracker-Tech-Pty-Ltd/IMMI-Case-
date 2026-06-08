@@ -1,8 +1,19 @@
 # RFC — Hyperdrive query-cache treatment for LLM Council write-affected reads
 
-**Status**: Spike complete + **Path 4 (quick-win) shipped** (long-term item A
-from US-014/015 follow-up backlog). Path 3 (two-binding pattern) deferred —
-see §8.
+**Status**: Spike complete. **Path 4 (quick-win) shipped 2026-04-28** and
+the **Path 3 code-side fresh-binding path shipped 2026-06-08**.
+
+Current repo state:
+- Worker storage exposes `getSqlFresh` / `withSqlFreshAsUser`.
+- `listSessions` uses the fresh authenticated path and falls back to cached
+  `HYPERDRIVE` only when `HYPERDRIVE_NO_CACHE` is not bound.
+- The frontend 10-second delayed invalidate workaround has been removed;
+  create/delete now invalidate `['council-sessions']` immediately.
+- Production still needs the second Cloudflare Hyperdrive config id inserted
+  into `wrangler.toml`. The attempted `immi-case-db-fresh` create on
+  2026-06-08 failed with Cloudflare API code `2013` (`Invalid database
+  credentials`), so the repo keeps the binding block commented until a valid
+  Supabase origin password is supplied.
 
 **Quick-win shipped 2026-04-28** (no code change, infra only):
 
@@ -17,14 +28,12 @@ reduced the cached `max_age` from default 60 s to 10 s AND set
 Why both: max_age alone leaves Cloudflare serving stale cached responses
 for an additional `stale_while_revalidate` window (default 15 s) while it
 revalidates in the background. With `swr=0`, the strict total stale
-window is 10 s — perfectly aligning with the frontend
-`setTimeout(invalidate, 10s)` so refetch fires when the cache is
-guaranteed empty.
+window was 10 s — which aligned with the former frontend
+`setTimeout(invalidate, 10s)` workaround while that workaround existed.
 
-This shrinks the worst-case stale window 7.5× (60+15 = 75 s → 10 s)
-without disabling caching globally. The existing `setTimeout(invalidate,
-10s)` workaround in `useDeleteSession` / `useCreateSession` now aligns
-with the actual cache TTL.
+This shrank the worst-case stale window 7.5× (60+15 = 75 s → 10 s)
+without disabling caching globally. It is now a fallback only; the intended
+LLM Council list path is `HYPERDRIVE_NO_CACHE`.
 
 Verification (`wrangler hyperdrive get c961b377…`):
 ```
@@ -43,10 +52,10 @@ Verification (`wrangler hyperdrive get c961b377…`):
 
 ## 1. Problem statement
 
-The LLM Council DELETE / CREATE flows currently use an optimistic-update +
-delayed-invalidate workaround in TanStack Query because Hyperdrive caches
-SELECT queries against `council_sessions` for ~5–10 seconds. Without the
-workaround, the sequence is:
+Before the 2026-06-08 code cleanup, the LLM Council DELETE / CREATE flows
+used an optimistic-update + delayed-invalidate workaround in TanStack Query
+because Hyperdrive cached SELECT queries against `council_sessions` for
+~5–10 seconds. Without that workaround, the sequence was:
 
 1. `useDeleteSession.mutate(id)` →
 2. Worker `handleDeleteSession` runs the DELETE statement (writes bypass cache),
@@ -62,14 +71,14 @@ The same race exists in reverse for CREATE: `useCreateSession` finishes
 server-side but the next list refetch returns a pre-create snapshot, so the
 new session is missing from the sidebar.
 
-The current workaround (commits `eabc9c0`, `3ebd8d2`, `8b2a7ef`) papers over
+The former workaround (commits `eabc9c0`, `3ebd8d2`, `8b2a7ef`) papered over
 the problem at the client by:
 - `setQueriesData` + `setQueryData` to optimistically mutate the cache,
 - `setTimeout(invalidate, 10s)` to reconcile after Hyperdrive TTL expires.
 
-This works in production (US-014 production e2e step 7 closes loop), but it
-adds complexity and a 10-second window during which other tabs see stale
-data even after a manual page reload.
+That worked in production (US-014 production e2e step 7 closed the loop),
+but it added complexity and a 10-second window during which other tabs saw
+stale data even after a manual page reload.
 
 ## 2. Findings from Cloudflare Hyperdrive docs
 
@@ -152,12 +161,14 @@ function getSqlFresh(env) {
 }
 ```
 
-Then `listSessions` (the one that drives the sidebar) switches to `getSqlFresh`:
+Then `listSessions` (the one that drives the sidebar) uses the fresh
+authenticated path:
 
 ```js
-export async function listSessions({ env, limit = 20, before = null }) {
-  const sql = getSqlFresh(env);
-  // …unchanged…
+export async function listSessions({ env, claims, limit = 20, before = null }) {
+  return withSqlFreshAsUser(env, claims, async (tx) => {
+    // …unchanged SELECT…
+  });
 }
 ```
 
@@ -165,28 +176,22 @@ export async function listSessions({ env, limit = 20, before = null }) {
 where Hyperdrive bypasses caching for mutations and for queries containing
 parameters that vary per request — they can stay on `getSql`.
 
-### 3.4 Frontend — remove the workaround
+### 3.4 Frontend — workaround removed
 
-After 3.3 deploys and is verified, the optimistic-update + delayed-invalidate
-workaround in `frontend/src/hooks/use-llm-council-sessions.ts` becomes
-load-bearing for nothing. Remove:
+The optimistic-update + delayed-invalidate workaround in
+`frontend/src/hooks/use-llm-council-sessions.ts` has been removed:
 
-- `useDeleteSession.onSuccess`: drop `setQueriesData` + the 10s setTimeout.
-  Restore the original `qc.invalidateQueries({ queryKey: ['council-sessions'] })`.
-- `useCreateSession.onSuccess`: drop `setQueriesData` (list seed) + 10s
-  setTimeout. Keep the per-session detail seed
-  (`setQueryData(['council-session', data.session_id], …)`) — that one is
-  unrelated to Hyperdrive caching.
+- `useDeleteSession.onSuccess`: removes the detail query and immediately
+  invalidates `['council-sessions']`.
+- `useCreateSession.onSuccess`: keeps the per-session detail seed
+  (`setQueryData(['council-session', data.session_id], …)`) and immediately
+  invalidates `['council-sessions']`.
 
 ### 3.5 Tests to revert
 
-`frontend/__tests__/use-llm-council-sessions.test.ts`:
-- `useDeleteSession` block: replace
-  `optimistically removes the deleted session from cache on success` +
-  `schedules a delayed invalidate (~10s) for eventual reconciliation` with
-  the original `invalidates ['council-sessions'] on success`.
-- `useCreateSession` block: same pattern (replace optimistic prepend +
-  delayed invalidate with synchronous invalidate).
+`frontend/__tests__/use-llm-council-sessions.test.ts` now asserts synchronous
+`['council-sessions']` invalidation for both create and delete. Worker storage
+tests assert that `listSessions` routes through the fresh binding when present.
 
 ## 4. Verification plan
 
@@ -212,17 +217,25 @@ After 3.1–3.5 ship:
   and retain their full Hyperdrive cache benefit against the 149K-row
   corpus.
 
-## 6. Why not now
+## 6. Production binding status
 
-Section 3.1 requires a CF API token / dashboard session that the current
-agent run does not have. The exact wrangler command is captured here so a
-future session (or the user directly) can execute it without re-spiking.
+The code and frontend cleanup are in repo. The Cloudflare-side fresh binding
+still needs a valid Supabase origin password. On 2026-06-08, `wrangler
+hyperdrive list` showed only `immi-case-db` (cached) for this project, and
+`wrangler hyperdrive create immi-case-db-fresh ... --caching-disabled`
+failed with Cloudflare API code `2013` (`Invalid database credentials`).
+
+Until a valid fresh Hyperdrive id is added to `wrangler.toml`, production will
+fall back to the cached `HYPERDRIVE` binding. The cached binding is still set
+to `max_age=10` and `swr=0`, but strict post-write freshness requires
+`HYPERDRIVE_NO_CACHE`.
 
 ## 7. Cross-reference
 
 - Original incident notes — `.omc/progress.txt` Iteration 13 §"US-014 — what
   was done", commits `eabc9c0` + `3ebd8d2` + `8b2a7ef`.
-- Workaround code — `frontend/src/hooks/use-llm-council-sessions.ts`
-  (search for "Hyperdrive caches list SELECTs").
-- Production runtime — `workers/llm-council/storage.js` `getSql` helper
-  is the single chokepoint for the swap.
+- Former workaround code — `frontend/src/hooks/use-llm-council-sessions.ts`
+  (create/delete now immediately invalidate `['council-sessions']`).
+- Production runtime — `workers/llm-council/storage.js` `getSqlFresh` /
+  `withSqlFreshAsUser` helpers route strict reads to `HYPERDRIVE_NO_CACHE`
+  when the binding is present.

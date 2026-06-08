@@ -7,9 +7,13 @@
  *
  *   withSql(env, fn)           — for unauthenticated reads (legacy/admin paths
  *                                only; should be a last resort).
- *   withSqlAsUser(env, c, fn)  — for tenant-scoped queries. Wraps the work in
- *                                a `sql.begin` + `SET LOCAL request.jwt.claims`
- *                                transaction so RLS sees the JWT tenant_id.
+ *   withSqlAsUser(env, c, fn)       — for tenant-scoped queries. Wraps the
+ *                                     work in a `sql.begin` + `SET LOCAL
+ *                                     request.jwt.claims` transaction so RLS
+ *                                     sees the JWT tenant_id.
+ *   withSqlFreshAsUser(env, c, fn)  — same authenticated transaction, but
+ *                                     routed through HYPERDRIVE_NO_CACHE when
+ *                                     bound. Use for write-affected reads.
  *
  * Both helpers guarantee `await sql.end()` in a `finally`, preventing
  * Hyperdrive pool-slot leaks under load. Direct `getSql(env)` calls are
@@ -61,6 +65,13 @@ export function getSql(env) {
   });
 }
 
+export function getSqlFresh(env) {
+  return postgres((env.HYPERDRIVE_NO_CACHE ?? env.HYPERDRIVE).connectionString, {
+    max: 1,
+    idle_timeout: 5,
+  });
+}
+
 export async function withSql(env, fn) {
   const sql = getSql(env);
   try {
@@ -72,6 +83,13 @@ export async function withSql(env, fn) {
 
 export async function withSqlAsUser(env, claims, fn) {
   const client = getSqlAsUser(env, claims);
+  return client.tx(fn);
+}
+
+export async function withSqlFreshAsUser(env, claims, fn) {
+  const client = getSqlAsUser(env, claims, {
+    hyperdrive: env.HYPERDRIVE_NO_CACHE ?? env.HYPERDRIVE,
+  });
   return client.tx(fn);
 }
 
@@ -196,7 +214,7 @@ export async function listSessions({ env, claims, limit = 20, before = null }) {
   if (!claims) throw new Error("listSessions requires authenticated claims");
   const clampedLimit = Math.min(Math.max(1, limit), 100);
 
-  return withSqlAsUser(env, claims, async (tx) => {
+  return withSqlFreshAsUser(env, claims, async (tx) => {
     if (before) {
       return await tx`
         SELECT session_id, case_id, title, status, total_turns, created_at, updated_at

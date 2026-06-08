@@ -10,6 +10,9 @@
  */
 
 import { extractFullText, extractMetadata } from "./parser";
+import { runDiscoveryAndEnqueue } from "./discover";
+import { COURT_MATRIX, isBiweeklyTick } from "./pipeline-config";
+import { assertSchemaConsistent, startPipelineRun, updatePipelineRun } from "./pipeline-db";
 import type {
   Env,
   ScrapeJob,
@@ -78,6 +81,16 @@ export default {
       const job = message.body;
 
       try {
+        if (job.run_id && env.PIPELINE_ENABLED !== "true") {
+          console.log(JSON.stringify({
+            event: "queue.skipped.pipeline_disabled",
+            run_id: job.run_id,
+            case_id: job.case_id,
+          }));
+          message.ack();
+          continue;
+        }
+
         // Resume support: skip if result already exists in R2
         const existing = await env.CASE_RESULTS.head(`results/${job.case_id}.json`);
         if (existing) {
@@ -114,6 +127,71 @@ export default {
         message.retry();
       }
     }
+  },
+
+  // ─── Cron Discovery Producer ─────────────────────────────────────────────
+
+  async scheduled(
+    event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    if (env.PIPELINE_ENABLED !== "true") {
+      console.log(JSON.stringify({ event: "cron.skipped.disabled", cron: event.cron }));
+      return;
+    }
+
+    if (env.PIPELINE_BIWEEKLY_GATE === "true" && !isBiweeklyTick(event.scheduledTime)) {
+      console.log(JSON.stringify({
+        event: "cron.skipped.off_week",
+        cron: event.cron,
+        scheduled_time: event.scheduledTime,
+      }));
+      return;
+    }
+
+    await assertSchemaConsistent(env).catch((err) => {
+      console.log(JSON.stringify({
+        event: "schema.drift.detected",
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    });
+
+    const hour = new Date(event.scheduledTime).getUTCHours();
+    const courts = COURT_MATRIX.groupForHour(hour);
+    if (!courts) {
+      console.log(JSON.stringify({ event: "cron.skipped.no_court_group", hour }));
+      return;
+    }
+
+    let runId: string | null = null;
+    try {
+      runId = await startPipelineRun(env, {
+        trigger: "cron",
+        courts,
+        phase: "discovery",
+      });
+    } catch (err) {
+      console.error(JSON.stringify({
+        event: "cron.discover.start_failed",
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      return;
+    }
+
+    ctx.waitUntil(
+      runDiscoveryAndEnqueue(env, runId, courts, event.scheduledTime).catch(async (err) => {
+        const error = err instanceof Error ? err.message : String(err);
+        console.error(JSON.stringify({ event: "cron.discover.failed", run_id: runId, error }));
+        if (runId) {
+          await updatePipelineRun(env, runId, {
+            errors: 1,
+            errorsJson: [error],
+            status: "failed",
+          }).catch(() => undefined);
+        }
+      }),
+    );
   },
 };
 

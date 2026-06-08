@@ -17,12 +17,14 @@ import postgres from "postgres";
 /**
  * Create a transaction-scoped authenticated SQL client.
  *
- * @param {object} env - Worker env with DATABASE_URL (Hyperdrive)
+ * @param {object} env - Worker env with HYPERDRIVE binding
  * @param {object} claims - JWT claims object {sub, tenant_id, tenants, role, kid}
+ * @param {{hyperdrive?: {connectionString: string}}} [options] - Optional Hyperdrive binding override.
  * @returns {{ tx: (fn: (tx: postgres.TransactionSql) => Promise<T>) => Promise<T> }}
  */
-export function getSqlAsUser(env, claims) {
-  const sql = postgres(env.HYPERDRIVE.connectionString, {
+export function getSqlAsUser(env, claims, options = {}) {
+  const hyperdrive = options.hyperdrive ?? env.HYPERDRIVE;
+  const sql = postgres(hyperdrive.connectionString, {
     max: 1, // Single connection per request — Hyperdrive handles pooling
   });
 

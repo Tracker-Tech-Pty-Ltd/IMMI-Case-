@@ -9,6 +9,9 @@ export interface ScrapeJob {
   citation: string;
   court_code: string;
   title: string;
+  run_id?: string;
+  phase?: "scrape";
+  discovered_at?: string;
 }
 
 /** Successful scrape result stored in R2 */
@@ -47,6 +50,14 @@ export interface Env {
   SCRAPE_QUEUE: Queue<ScrapeJob>;
   CASE_RESULTS: R2Bucket;
   AUTH_TOKEN: string;
+  HYPERDRIVE_SERVICE?: Hyperdrive;
+  HYPERDRIVE_SERVICE_URL?: string;
+  PIPELINE_KV?: KVNamespace;
+  PIPELINE_ENABLED?: string;
+  PIPELINE_BIWEEKLY_GATE?: string;
+  PIPELINE_TARGET_TABLE?: string;
+  PIPELINE_DISCOVERY_LOOKBACK_YEARS?: string;
+  PIPELINE_PER_COURT_RATE_LIMIT_MS?: string;
 }
 
 /** Batch enqueue request body */

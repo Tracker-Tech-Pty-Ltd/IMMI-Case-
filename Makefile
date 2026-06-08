@@ -8,12 +8,10 @@
 PORT   ?= 8080
 BACKEND ?= auto
 
-# Resolve repo root from the Makefile's own absolute path so targets that `cd`
-# into subdirectories work no matter where the user invoked `make` from.
-# Without this, running `make build` from frontend/ silently failed with
-# "No rule to make target 'build'". With this + frontend/Makefile delegating
-# back to here, both `make build` and (cd $(REPO_ROOT)/frontend && make build) work.
-REPO_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+# Resolve repo root from make's working directory. GNU Make 3.81 treats spaces
+# in MAKEFILE_LIST as word separators, so deriving this from abspath/lastword
+# breaks under "Active Projects" paths.
+REPO_ROOT := $(CURDIR)
 
 # ── Meta ──────────────────────────────────────────────────────────────────────
 

@@ -32,8 +32,10 @@ vi.mock("postgres", () => {
 
 import {
   getSql,
+  getSqlFresh,
   withSql,
   withSqlAsUser,
+  withSqlFreshAsUser,
   createSession,
   addTurn,
   getSession,
@@ -45,7 +47,10 @@ import {
   generateRetrieveCode,
 } from "../llm-council/storage.js";
 
-const ENV = { HYPERDRIVE: { connectionString: "postgres://test/test" } };
+const ENV = {
+  HYPERDRIVE: { connectionString: "postgres://test/test" },
+  HYPERDRIVE_NO_CACHE: { connectionString: "postgres://fresh/test" },
+};
 
 const CLAIMS = {
   sub: "11111111-2222-3333-4444-555555555555",
@@ -111,6 +116,24 @@ describe("getSql / withSql / withSqlAsUser lifecycle", () => {
     expect(postgres).toHaveBeenCalledTimes(2);
   });
 
+  it("getSqlFresh uses HYPERDRIVE_NO_CACHE when bound", async () => {
+    const { default: postgres } = await import("postgres");
+    getSqlFresh(ENV);
+    expect(postgres).toHaveBeenCalledWith(
+      "postgres://fresh/test",
+      expect.objectContaining({ max: 1, idle_timeout: 5 }),
+    );
+  });
+
+  it("getSqlFresh falls back to HYPERDRIVE when no fresh binding exists", async () => {
+    const { default: postgres } = await import("postgres");
+    getSqlFresh({ HYPERDRIVE: ENV.HYPERDRIVE });
+    expect(postgres).toHaveBeenCalledWith(
+      "postgres://test/test",
+      expect.objectContaining({ max: 1, idle_timeout: 5 }),
+    );
+  });
+
   it("withSql guarantees sql.end() runs even when fn throws", async () => {
     const { default: postgres } = await import("postgres");
     const sql = postgres(ENV.HYPERDRIVE.connectionString, {});
@@ -130,6 +153,22 @@ describe("getSql / withSql / withSqlAsUser lifecycle", () => {
     }));
     await withSqlAsUser(ENV, CLAIMS, async () => "ok");
     expect(txArg).toEqual({ env: ENV, claims: CLAIMS });
+  });
+
+  it("withSqlFreshAsUser delegates to getSqlAsUser with the fresh binding", async () => {
+    let txArg = null;
+    mockGetSqlAsUser.mockImplementation((env, claims, options) => ({
+      tx: async (fn) => {
+        txArg = { env, claims, options };
+        return fn(makeTx());
+      },
+    }));
+    await withSqlFreshAsUser(ENV, CLAIMS, async () => "ok");
+    expect(txArg).toEqual({
+      env: ENV,
+      claims: CLAIMS,
+      options: { hyperdrive: ENV.HYPERDRIVE_NO_CACHE },
+    });
   });
 });
 
@@ -196,6 +235,16 @@ describe("listSessions", () => {
     expect(sql).not.toContain("session_token");
     expect(sql).not.toContain("retrieve_code");
     expect(sql).not.toMatch(/SELECT \*/);
+  });
+
+  it("uses the fresh Hyperdrive binding for write-affected list reads", async () => {
+    txYields([]);
+    await listSessions({ env: ENV, claims: CLAIMS, limit: 20 });
+    expect(mockGetSqlAsUser).toHaveBeenCalledWith(
+      ENV,
+      CLAIMS,
+      { hyperdrive: ENV.HYPERDRIVE_NO_CACHE },
+    );
   });
 
   it("clamps limit to 100", async () => {

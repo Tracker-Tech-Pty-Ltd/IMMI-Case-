@@ -36,11 +36,11 @@ id = "c961b377ef0c4ec2a01d9d7220db7c93"
 #     caching.max_age = 10s                  (was default 60s)
 #     caching.stale_while_revalidate = 0s    (was default 15s)
 #     caching.disabled = false               (cache still enabled; just strict ≤10s window)
-# Combined effect: any SELECT served by Hyperdrive is guaranteed ≤10s old.
-# This aligns with the frontend setTimeout(invalidate, 10s) workaround in
-# useDeleteSession + useCreateSession so refetch picks up post-write data.
+# Combined effect: any SELECT served by this cached Hyperdrive is guaranteed ≤10s old.
+# LLM Council session-list reads now prefer HYPERDRIVE_NO_CACHE in Worker code
+# and fall back to this cached binding only when the fresh binding is absent.
 # Reversible: `wrangler hyperdrive update c961b377... --max-age 60 --swr 15`.
-# Background: docs/HYPERDRIVE_CACHE_RFC.md §"Quick-win shipped 2026-04-28"
+# Background: docs/HYPERDRIVE_CACHE_RFC.md
 #
 # To create Hyperdrive, use the DIRECT connection (not Supabase pooler):
 #   npx wrangler hyperdrive create immi-case-db \
@@ -54,6 +54,26 @@ id = "c961b377ef0c4ec2a01d9d7220db7c93"
 # The Worker (proxy.js) injects env.HYPERDRIVE.connectionString as X-Hyperdrive-Url header
 # so the Flask container can use it for direct psycopg2 connections (analytics fast path).
 localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
+
+# LLM Council fresh session-list reads.
+# Create this Cloudflare Hyperdrive config with caching disabled, then uncomment
+# the binding block and replace <FRESH_HYPERDRIVE_ID> with the returned id:
+#
+#   npx wrangler hyperdrive create immi-case-db-fresh \
+#     --origin-host db.urntbuqczarkuoaosjxd.supabase.co \
+#     --origin-port 5432 \
+#     --origin-scheme postgresql \
+#     --database postgres \
+#     --origin-user postgres \
+#     --origin-password "$SUPABASE_DB_PASSWORD" \
+#     --caching-disabled \
+#     --origin-connection-limit 60 \
+#     --sslmode require
+#
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_NO_CACHE"
+# id = "<FRESH_HYPERDRIVE_ID>"
+# localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
 
 [durable_objects]
 bindings = [

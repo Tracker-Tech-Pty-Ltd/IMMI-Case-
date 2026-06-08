@@ -63,13 +63,9 @@ export function useLlmCouncilSessions(
  * Create a new session (fires the first council turn).
  *
  * onSuccess:
- *   - optimistically PREPENDS the new session to every cached
- *     ['council-sessions', …] list. Hyperdrive caches list SELECTs
- *     for ~5-10s so an immediate invalidate refetches and gets a
- *     pre-create snapshot that does not contain the just-created row.
  *   - seeds ['council-session', new_session_id] cache with the response
- *   - schedules a delayed invalidate (~10s) for cross-tab reconciliation
- *     once Hyperdrive cache TTL has expired.
+ *   - invalidates ['council-sessions']; the Worker list endpoint uses the
+ *     fresh Hyperdrive binding when available, so immediate refetch is safe.
  */
 export function useCreateSession() {
   const qc = useQueryClient();
@@ -92,42 +88,12 @@ export function useCreateSession() {
         updated_at: nowIso,
       } satisfies LlmCouncilSession;
 
-      // setQueriesData updates EXISTING entries that match the prefix.
-      // setQueryData explicitly seeds/replaces the no-params entry so the
-      // sessions sidebar shows the new session even when its first mount
-      // is AFTER createSession (user is on /llm-council during create,
-      // then navigates to /llm-council/sessions). Without this seed, the
-      // first mount of useLlmCouncilSessions hits the network and gets a
-      // Hyperdrive-cached pre-create snapshot.
-      qc.setQueriesData<{ sessions: LlmCouncilSession[] }>(
-        { queryKey: ["council-sessions"] },
-        (old) => {
-          if (!old?.sessions) return old;
-          const without = old.sessions.filter(
-            (s) => s.session_id !== newSession.session_id,
-          );
-          return { ...old, sessions: [newSession, ...without] };
-        },
-      );
-      qc.setQueryData<{ sessions: LlmCouncilSession[] }>(
-        ["council-sessions", undefined],
-        (old) => {
-          if (!old?.sessions) return { sessions: [newSession] };
-          const without = old.sessions.filter(
-            (s) => s.session_id !== newSession.session_id,
-          );
-          return { ...old, sessions: [newSession, ...without] };
-        },
-      );
-
       qc.setQueryData(["council-session", data.session_id], {
         session: newSession,
         turns: [data.turn] satisfies LlmCouncilTurn[],
       });
 
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["council-sessions"] });
-      }, 10_000);
+      qc.invalidateQueries({ queryKey: ["council-sessions"] });
     },
   });
 }
@@ -154,37 +120,17 @@ export function useAddTurn(sessionId: string) {
  * Delete a session by ID.
  *
  * onSuccess:
- *   - optimistically removes the deleted row from EVERY cached
- *     ['council-sessions', …] query — without an immediate invalidate.
- *     Hyperdrive caches list SELECTs for ~5-10s, so an immediate
- *     invalidate refetches and overwrites the optimistic remove with
- *     stale data that still contains the deleted row.
  *   - removes ['council-session', deletedId] from the cache
- *   - schedules a delayed invalidate (~10s) so the list eventually
- *     reconciles with server state after Hyperdrive TTL expires
- *     (catches the case where another tab created/deleted concurrently).
+ *   - invalidates ['council-sessions']; the Worker list endpoint uses the
+ *     fresh Hyperdrive binding when available, so immediate refetch is safe.
  */
 export function useDeleteSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) => deleteSession(sessionId),
     onSuccess: (_data, sessionId) => {
-      qc.setQueriesData<{ sessions: { session_id: string }[] }>(
-        { queryKey: ["council-sessions"] },
-        (old) => {
-          if (!old?.sessions) return old;
-          return {
-            ...old,
-            sessions: old.sessions.filter(
-              (s) => s.session_id !== sessionId,
-            ),
-          };
-        },
-      );
       qc.removeQueries({ queryKey: ["council-session", sessionId] });
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["council-sessions"] });
-      }, 10_000);
+      qc.invalidateQueries({ queryKey: ["council-sessions"] });
     },
   });
 }

@@ -50,6 +50,34 @@ vi.mock("@/hooks/use-llm-council-sessions", () => ({
   }),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+    user: { id: "test-user", display_name: "Test User" },
+    tenant: { id: "test-tenant", name: "Test Tenant" },
+    tenants: [],
+    accessToken: "test-token",
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+    switchTenant: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/council-celebrations", () => ({
+  fireSubmitGavelBurst: vi.fn(),
+  fireCouncilDoneCelebration: vi.fn(),
+  isSoundOn: vi.fn(() => false),
+  toggleSound: vi.fn(() => false),
+  playCue: vi.fn(),
+  recordCouncilRun: vi.fn(() => []),
+  unlockRobeTheme: vi.fn(),
+  isRobeThemeUnlocked: vi.fn(() => false),
+  timeOfDaySalutation: vi.fn(() => "Court is now in session."),
+  getCouncilStats: vi.fn(() => ({ totalRuns: 0, streak: 0 })),
+}));
+
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { ...actual, useNavigate: () => navigateMock };

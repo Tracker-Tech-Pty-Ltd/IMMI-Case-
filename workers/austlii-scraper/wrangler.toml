@@ -2,6 +2,7 @@
 name = "austlii-scraper"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 # Workers Paid plan recommended for 30s CPU time (free plan = 10ms)
 
@@ -24,7 +25,41 @@ max_retries = 3
 dead_letter_queue = "austlii-scrape-dlq"
 max_concurrency = 20
 
+# ─── Cron Triggers: discovery only ───────────────────────────────────────────
+# Cloudflare cron has no native biweekly schedule. These weekly Monday ticks are
+# gated in code by PIPELINE_BIWEEKLY_GATE + isBiweeklyTick().
+[triggers]
+crons = ["0 2 * * 1", "0 3 * * 1", "0 4 * * 1", "0 5 * * 1"]
+
+# ─── Pipeline resource bindings ──────────────────────────────────────────────
+# Keep the pipeline disabled until these resources exist in Cloudflare:
+#
+#   npx wrangler hyperdrive create immi-case-pipeline-service \
+#     --connection-string="postgresql://postgres:[DB_PASSWORD]@db.urntbuqczarkuoaosjxd.supabase.co:5432/postgres"
+#   npx wrangler kv namespace create PIPELINE_KV
+#
+# After creation, uncomment and fill the real IDs. Leaving placeholder IDs active
+# would make deploy fail, so the binding blocks stay commented in this safe slice.
+#
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_SERVICE"
+# id = "<new service-role Hyperdrive id>"
+# localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
+#
+# [[kv_namespaces]]
+# binding = "PIPELINE_KV"
+# id = "<new PIPELINE_KV namespace id>"
+
 # ─── Environment Variables ────────────────────────────────────────────────────
 # Set AUTH_TOKEN via: wrangler secret put AUTH_TOKEN
-# [vars]
-# AUTH_TOKEN is stored as a secret, not in plaintext
+[vars]
+PIPELINE_ENABLED = "false"
+PIPELINE_BIWEEKLY_GATE = "true"
+PIPELINE_TARGET_TABLE = "immigration_cases_staging"
+PIPELINE_DISCOVERY_LOOKBACK_YEARS = "2"
+PIPELINE_PER_COURT_RATE_LIMIT_MS = "1500"
+
+# AUTH_TOKEN is stored as a secret, not in plaintext.
+# Optional local/staging fallback for discovery DB access:
+#   wrangler secret put HYPERDRIVE_SERVICE_URL
+# Production should prefer the HYPERDRIVE_SERVICE binding above.

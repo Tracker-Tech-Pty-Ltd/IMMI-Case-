@@ -6,11 +6,9 @@
 # not auto-traverse to a parent directory.
 #
 # Implementation note: the catch-all `%:` rule forwards every unknown
-# target to the parent Makefile via `$(MAKE) -C ../`. The repo-root
-# Makefile resolves REPO_ROOT from its own MAKEFILE_LIST so its `cd`
-# targets still land in the correct frontend/ regardless of invocation cwd.
+# target to the parent Makefile via `$(MAKE) -C ..`.
 
 .DEFAULT_GOAL := help
 
 %:
-	@$(MAKE) -C $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/.. $@
+	@$(MAKE) -C .. $@
