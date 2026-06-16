@@ -47,7 +47,7 @@ def _verify_hs256(header_b64: str, payload_b64: str, signature_b64: str, secret:
     return hmac.compare_digest(expected, actual)
 
 
-def verify_jwt(token: str) -> dict | None:
+def verify_jwt(token: str, *, allow_refresh: bool = False) -> dict | None:
     """
     Verify a Worker-issued HS256 JWT.
     Returns decoded payload dict on success, None on failure.
@@ -65,6 +65,12 @@ def verify_jwt(token: str) -> dict | None:
         # Check expiry
         if payload.get('exp', 0) < time.time():
             current_app.logger.warning('jwt.expired', extra={'kid': payload.get('kid')})
+            return None
+
+        # Flask routes expect access tokens. Refresh tokens are validated and
+        # rotated only by the Worker auth handlers against immi_refresh_sessions.
+        if payload.get('type') == 'refresh' and not allow_refresh:
+            current_app.logger.warning('jwt.refresh_token_rejected', extra={'kid': payload.get('kid')})
             return None
 
         # Try current secret first, then previous (rotation window)

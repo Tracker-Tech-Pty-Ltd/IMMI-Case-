@@ -218,20 +218,25 @@ export async function makeAccessToken(user, tenant, tenants, env) {
 }
 
 /**
- * Issue a 7-day refresh token with minimal claims.
+ * Issue a 7-day refresh token with minimal claims plus a session id (jti).
  *
- * JWT claims: { sub, kid, type:'refresh', exp, iat }
+ * JWT claims: { sub, kid, type:'refresh', jti, exp, iat }
  *
  * @param {string} userId
+ * @param {string} jti
  * @param {object} env
  * @returns {Promise<string>}
  */
-export async function makeRefreshToken(userId, env) {
+export async function makeRefreshToken(userId, jti, env) {
+  if (!jti || typeof jti !== "string") {
+    throw new Error("refresh token jti is required");
+  }
   const now = Math.floor(Date.now() / 1000);
   return signJwt(
     {
       sub: userId,
       type: "refresh",
+      jti,
       exp: now + 604800, // 7 days
     },
     env,

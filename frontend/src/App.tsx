@@ -68,6 +68,11 @@ const CaseComparePage = lazy(() =>
 const DataToolsPage = lazy(() =>
   import("@/pages/DataToolsPage").then((m) => ({ default: m.DataToolsPage })),
 );
+const AdminPipelineRunsPage = lazy(() =>
+  import("@/pages/AdminPipelineRunsPage").then((m) => ({
+    default: m.AdminPipelineRunsPage,
+  })),
+);
 const DataDictionaryPage = lazy(() =>
   import("@/pages/DataDictionaryPage").then((m) => ({
     default: m.DataDictionaryPage,
@@ -347,6 +352,14 @@ export default function App() {
               <Route
                 path="pipeline"
                 element={<Navigate to="/data-tools" replace />}
+              />
+              <Route
+                path="admin/pipeline-runs"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AdminPipelineRunsPage />
+                  </Suspense>
+                }
               />
               <Route
                 path="analytics"

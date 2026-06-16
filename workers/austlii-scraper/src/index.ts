@@ -10,17 +10,29 @@
  */
 
 import { extractFullText, extractMetadata } from "./parser";
-import { runDiscoveryAndEnqueue } from "./discover";
-import { COURT_MATRIX, isBiweeklyTick } from "./pipeline-config";
-import { assertSchemaConsistent, startPipelineRun, updatePipelineRun } from "./pipeline-db";
+import { discoverCourt, runDiscoveryAndEnqueue } from "./discover";
+import { handleExtractBatch } from "./extract";
+import { sendPipelineAlert } from "./alerts";
+import { COURT_CODES, COURT_MATRIX, isBiweeklyTick } from "./pipeline-config";
+import type { CourtCode } from "./pipeline-config";
+import {
+  addPipelineRunMetrics,
+  assertSchemaConsistent,
+  startPipelineRun,
+  updatePipelineRun,
+} from "./pipeline-db";
+export { CostCapDO } from "./cost-cap-do";
 import type {
   Env,
+  ExtractJob,
   ScrapeJob,
   ScrapeResult,
   ScrapeError,
   EnqueueRequest,
   EnqueueResponse,
 } from "./types";
+
+type QueueJob = ScrapeJob | ExtractJob;
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
@@ -58,6 +70,11 @@ export default {
       return handleDirectScrape(request, env);
     }
 
+    // Discovery diff dry-run: protected acceptance endpoint, no queue writes.
+    if (url.pathname === "/admin/discovery-diff" && request.method === "GET") {
+      return handleDiscoveryDiff(request, env);
+    }
+
     // List R2 keys for sync
     if (url.pathname === "/list") {
       return handleList(request, env);
@@ -74,11 +91,15 @@ export default {
   // ─── Queue Consumer ──────────────────────────────────────────────────────
 
   async queue(
-    batch: MessageBatch<ScrapeJob>,
+    batch: MessageBatch<QueueJob>,
     env: Env,
   ): Promise<void> {
+    if (batch.messages.every((message) => isExtractJob(message.body))) {
+      return handleExtractBatch(batch as MessageBatch<ExtractJob>, env);
+    }
+
     for (const message of batch.messages) {
-      const job = message.body;
+      const job = message.body as ScrapeJob;
 
       try {
         if (job.run_id && env.PIPELINE_ENABLED !== "true") {
@@ -92,36 +113,29 @@ export default {
         }
 
         // Resume support: skip if result already exists in R2
-        const existing = await env.CASE_RESULTS.head(`results/${job.case_id}.json`);
+        const resultKey = resultJsonKey(job);
+        const existing = await env.CASE_RESULTS.head(resultKey);
         if (existing) {
+          await forwardToExtract(job, env, resultKey);
           message.ack();
           continue;
         }
 
-        await processJob(job, env);
+        await rateLimitPipelineScrape(job, env);
+        const result = await processJob(job, env);
+        if (result.success && job.run_id) {
+          await addPipelineRunMetrics(env, job.run_id, { scraped: 1 }).catch(() => undefined);
+          await forwardToExtract(job, env, result.r2Key);
+        }
         message.ack();
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         console.error(`Failed to process ${job.case_id}: ${error}`);
 
-        // Store error to R2 so we can track failures
-        const errorResult: ScrapeError = {
-          case_id: job.case_id,
-          url: job.url,
-          citation: job.citation,
-          court_code: job.court_code,
-          title: job.title,
-          success: false,
-          error,
-          error_code: 0,
-          scraped_at: new Date().toISOString(),
-        };
-
-        await env.CASE_RESULTS.put(
-          `errors/${job.case_id}.json`,
-          JSON.stringify(errorResult),
-          { httpMetadata: { contentType: "application/json" } },
-        );
+        await putScrapeError(job, env, error, 0);
+        if (job.run_id) {
+          await addPipelineRunMetrics(env, job.run_id, { errors: 1 }).catch(() => undefined);
+        }
 
         // Retry: don't ack so Queue retries (up to max_retries)
         message.retry();
@@ -190,6 +204,7 @@ export default {
             status: "failed",
           }).catch(() => undefined);
         }
+        await sendPipelineAlert(env, "discovery failed", { run_id: runId, error });
       }),
     );
   },
@@ -334,7 +349,10 @@ async function handleProgress(env: Env): Promise<Response> {
 
 // ─── Job Processor ────────────────────────────────────────────────────────────
 
-async function processJob(job: ScrapeJob, env: Env): Promise<void> {
+async function processJob(
+  job: ScrapeJob,
+  env: Env,
+): Promise<{ success: true; r2Key: string } | { success: false; r2Key?: string }> {
   // Fetch the AustLII page
   const response = await fetch(job.url, {
     headers: {
@@ -353,43 +371,13 @@ async function processJob(job: ScrapeJob, env: Env): Promise<void> {
 
   if (response.status === 404) {
     // Page not found — record as error, don't retry
-    const errorResult: ScrapeError = {
-      case_id: job.case_id,
-      url: job.url,
-      citation: job.citation,
-      court_code: job.court_code,
-      title: job.title,
-      success: false,
-      error: "Page not found",
-      error_code: 404,
-      scraped_at: new Date().toISOString(),
-    };
-    await env.CASE_RESULTS.put(
-      `errors/${job.case_id}.json`,
-      JSON.stringify(errorResult),
-      { httpMetadata: { contentType: "application/json" } },
-    );
-    return;
+    await putScrapeError(job, env, "Page not found", 404);
+    return { success: false };
   }
 
   if (!response.ok) {
-    const errorResult: ScrapeError = {
-      case_id: job.case_id,
-      url: job.url,
-      citation: job.citation,
-      court_code: job.court_code,
-      title: job.title,
-      success: false,
-      error: `HTTP ${response.status}: ${response.statusText}`,
-      error_code: response.status,
-      scraped_at: new Date().toISOString(),
-    };
-    await env.CASE_RESULTS.put(
-      `errors/${job.case_id}.json`,
-      JSON.stringify(errorResult),
-      { httpMetadata: { contentType: "application/json" } },
-    );
-    return;
+    await putScrapeError(job, env, `HTTP ${response.status}: ${response.statusText}`, response.status);
+    return { success: false };
   }
 
   const html = await response.text();
@@ -397,23 +385,8 @@ async function processJob(job: ScrapeJob, env: Env): Promise<void> {
   // Extract full text
   const fullText = extractFullText(html);
   if (!fullText || fullText.length < 50) {
-    const errorResult: ScrapeError = {
-      case_id: job.case_id,
-      url: job.url,
-      citation: job.citation,
-      court_code: job.court_code,
-      title: job.title,
-      success: false,
-      error: "No content extracted from page",
-      error_code: 0,
-      scraped_at: new Date().toISOString(),
-    };
-    await env.CASE_RESULTS.put(
-      `errors/${job.case_id}.json`,
-      JSON.stringify(errorResult),
-      { httpMetadata: { contentType: "application/json" } },
-    );
-    return;
+    await putScrapeError(job, env, "No content extracted from page", 0);
+    return { success: false };
   }
 
   // Extract metadata from the full page text (not just the content div)
@@ -439,11 +412,20 @@ async function processJob(job: ScrapeJob, env: Env): Promise<void> {
   };
 
   // Store in R2
+  const jsonKey = resultJsonKey(job);
   await env.CASE_RESULTS.put(
-    `results/${job.case_id}.json`,
+    jsonKey,
     JSON.stringify(result),
     { httpMetadata: { contentType: "application/json" } },
   );
+  if (job.run_id) {
+    await env.CASE_RESULTS.put(
+      resultHtmlKey(job),
+      html,
+      { httpMetadata: { contentType: "text/html; charset=utf-8" } },
+    );
+  }
+  return { success: true, r2Key: jsonKey };
 }
 
 // ─── List Handler (for sync) ──────────────────────────────────────────────────
@@ -524,4 +506,148 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
     chunks.push(arr.slice(i, i + size));
   }
   return chunks;
+}
+
+function isExtractJob(job: QueueJob): job is ExtractJob {
+  return job.phase === "extract" || "r2_key" in job;
+}
+
+function resultJsonKey(job: ScrapeJob): string {
+  const base = pipelineRunBaseKey(job);
+  return base ? `${base}.json` : `results/${job.case_id}.json`;
+}
+
+function resultHtmlKey(job: ScrapeJob): string {
+  const base = pipelineRunBaseKey(job);
+  return base ? `${base}.html` : `results/${job.case_id}.html`;
+}
+
+function errorJsonKey(job: ScrapeJob): string {
+  const base = pipelineRunBaseKey(job);
+  return base ? `${base}.error.json` : `errors/${job.case_id}.json`;
+}
+
+function pipelineRunBaseKey(job: ScrapeJob): string | null {
+  if (!job.run_id) return null;
+  const court = job.court_code.replace(/[^A-Za-z0-9]/g, "");
+  const caseId = job.case_id.replace(/[^a-f0-9]/gi, "");
+  return `runs/${job.run_id}/${court}/${caseId}`;
+}
+
+async function putScrapeError(
+  job: ScrapeJob,
+  env: Env,
+  error: string,
+  errorCode: number,
+): Promise<void> {
+  const errorResult: ScrapeError = {
+    case_id: job.case_id,
+    url: job.url,
+    citation: job.citation,
+    court_code: job.court_code,
+    title: job.title,
+    success: false,
+    error,
+    error_code: errorCode,
+    scraped_at: new Date().toISOString(),
+  };
+
+  await env.CASE_RESULTS.put(
+    errorJsonKey(job),
+    JSON.stringify(errorResult),
+    { httpMetadata: { contentType: "application/json" } },
+  );
+}
+
+async function handleDiscoveryDiff(request: Request, env: Env): Promise<Response> {
+  const token = request.headers.get("X-Auth-Token");
+  if (!token || token !== env.AUTH_TOKEN) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const courts = parseCourtList(url.searchParams.get("courts"));
+  const scheduledTime = parseScheduledTime(url.searchParams.get("scheduled_time"));
+  const runId = `dry-run-${crypto.randomUUID()}`;
+  const results = [];
+
+  for (const court of courts) {
+    const result = await discoverCourt(env, court, runId, scheduledTime);
+    results.push({
+      court,
+      candidates: result.candidate_urls.length,
+      new_cases: result.new_case_urls.length,
+      skipped_reason: result.skipped_reason ?? null,
+      errors: result.errors,
+      sample_new_cases: result.new_cases.slice(0, 10).map((item) => ({
+        case_id: item.case_id,
+        citation: item.citation,
+        title: item.title,
+        url: item.url,
+        year: item.year,
+      })),
+    });
+  }
+
+  return Response.json({
+    run_id: runId,
+    dry_run: true,
+    target_table: env.PIPELINE_TARGET_TABLE || "immigration_cases_staging",
+    scheduled_time: new Date(scheduledTime).toISOString(),
+    courts,
+    totals: {
+      candidates: results.reduce((sum, item) => sum + item.candidates, 0),
+      new_cases: results.reduce((sum, item) => sum + item.new_cases, 0),
+      errors: results.reduce((sum, item) => sum + item.errors.length, 0),
+    },
+    results,
+  });
+}
+
+function parseCourtList(raw: string | null): CourtCode[] {
+  if (!raw || raw.trim() === "" || raw.trim().toLowerCase() === "all") {
+    return [...COURT_CODES];
+  }
+
+  const allowed = new Set<string>(COURT_CODES);
+  const courts = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item): item is CourtCode => allowed.has(item));
+  return courts.length > 0 ? courts : [...COURT_CODES];
+}
+
+function parseScheduledTime(raw: string | null): number {
+  if (!raw) return Date.now();
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+async function forwardToExtract(job: ScrapeJob, env: Env, r2Key: string): Promise<void> {
+  if (!job.run_id || !env.EXTRACT_QUEUE) return;
+  await env.EXTRACT_QUEUE.send({
+    phase: "extract",
+    run_id: job.run_id,
+    case_id: job.case_id,
+    court_code: job.court_code,
+    r2_key: r2Key,
+    scraped_at: new Date().toISOString(),
+  });
+}
+
+async function rateLimitPipelineScrape(job: ScrapeJob, env: Env): Promise<void> {
+  if (!job.run_id || job.phase !== "scrape" || !env.PIPELINE_KV) return;
+  const delayMs = Number(env.PIPELINE_PER_COURT_RATE_LIMIT_MS ?? "1500");
+  if (!Number.isFinite(delayMs) || delayMs <= 0) return;
+
+  const key = `ratelimit:${job.court_code}`;
+  const now = Date.now();
+  const previous = Number(await env.PIPELINE_KV.get(key));
+  if (Number.isFinite(previous)) {
+    const waitMs = previous + delayMs - now;
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+  await env.PIPELINE_KV.put(key, String(Date.now()), { expirationTtl: 60 });
 }

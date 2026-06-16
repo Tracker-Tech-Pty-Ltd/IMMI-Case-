@@ -19,6 +19,16 @@ import { verifyTelegramAuth } from "./telegram.js";
 import { makeAccessToken, makeRefreshToken, verifyJwt } from "./jwt.js";
 import { requireAuth, extractToken } from "../db/getSqlAsUser.js";
 import { checkNonce } from "./nonce_do.js";
+import {
+  extractRefreshToken,
+  generateRefreshSessionDraft,
+  insertRefreshSessionTx,
+  isRefreshSessionError,
+  loadActiveRefreshSessionForUpdateTx,
+  RefreshSessionError,
+  revokeRefreshSessionTx,
+  validateRefreshPayload,
+} from "./refresh_sessions.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -83,6 +93,80 @@ function safeRedirectTarget(rawNext) {
   if (!rawNext.startsWith("/")) return "/app/";
   if (rawNext.startsWith("//")) return "/app/";
   return rawNext;
+}
+
+function refreshSessionErr(err) {
+  return jsonErr(
+    err.message || "Invalid refresh token",
+    err.status || 401,
+    err.code || "invalid_refresh_token",
+  );
+}
+
+async function readOptionalRefreshClaims(request, env) {
+  const token = extractRefreshToken(request);
+  if (!token) return null;
+  const result = await verifyJwt(token, env);
+  if (!result.valid) return null;
+  try {
+    return validateRefreshPayload(result.payload);
+  } catch {
+    return null;
+  }
+}
+
+async function persistIssuedRefreshSession({
+  env,
+  getSql,
+  draft,
+  previousRefreshClaims = null,
+  previousRefreshReason = "login_replaced",
+}) {
+  const sql = getSql(env);
+  try {
+    await sql.begin(async (tx) => {
+      await insertRefreshSessionTx(tx, draft);
+      if (previousRefreshClaims) {
+        await revokeRefreshSessionTx(tx, {
+          jti: previousRefreshClaims.jti,
+          userId: previousRefreshClaims.userId,
+          reason: previousRefreshReason,
+          replacedByJti: draft.jti,
+        });
+      }
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+async function issueLoginTokenPair({ request, env, getSql, user, tenant, tenants }) {
+  const previousRefreshClaims = await readOptionalRefreshClaims(request, env);
+  const refreshDraft = generateRefreshSessionDraft(user.id);
+  let accessToken, refreshToken;
+  try {
+    [accessToken, refreshToken] = await Promise.all([
+      makeAccessToken(user, tenant, tenants, env),
+      makeRefreshToken(user.id, refreshDraft.jti, env),
+    ]);
+  } catch (err) {
+    err.phase = "jwt";
+    throw err;
+  }
+
+  try {
+    await persistIssuedRefreshSession({
+      env,
+      getSql,
+      draft: refreshDraft,
+      previousRefreshClaims,
+    });
+  } catch (err) {
+    err.phase = "db";
+    throw err;
+  }
+
+  return { accessToken, refreshToken };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,13 +269,20 @@ export async function handleTelegramLogin(request, env, getSql) {
 
   let accessToken, refreshToken;
   try {
-    [accessToken, refreshToken] = await Promise.all([
-      makeAccessToken(user, tenant, tenants, env),
-      makeRefreshToken(user.id, env),
-    ]);
+    ({ accessToken, refreshToken } = await issueLoginTokenPair({
+      request,
+      env,
+      getSql,
+      user,
+      tenant,
+      tenants,
+    }));
   } catch (err) {
-    console.error(JSON.stringify({ event: "auth.telegram.jwt_error", error: err?.message }));
-    return jsonErr("Token issuance failed", 503, "jwt_error");
+    const event = err?.phase === "db" ? "auth.telegram.refresh_session_error" : "auth.telegram.jwt_error";
+    const code = err?.phase === "db" ? "db_error" : "jwt_error";
+    const message = err?.phase === "db" ? "Authentication service error" : "Token issuance failed";
+    console.error(JSON.stringify({ event, error: err?.message }));
+    return jsonErr(message, 503, code);
   }
 
   return buildAuthResponse(
@@ -255,13 +346,21 @@ export async function handleTelegramCallback(request, env, getSql) {
 
   let accessToken, refreshToken;
   try {
-    [accessToken, refreshToken] = await Promise.all([
-      makeAccessToken(user, tenant, tenants, env),
-      makeRefreshToken(user.id, env),
-    ]);
+    ({ accessToken, refreshToken } = await issueLoginTokenPair({
+      request,
+      env,
+      getSql,
+      user,
+      tenant,
+      tenants,
+    }));
   } catch (err) {
-    console.error(JSON.stringify({ event: "auth.telegram.callback_jwt_error", error: err?.message }));
-    return Response.redirect(`${url.origin}/app/login?auth_error=jwt_error`, 302);
+    const event = err?.phase === "db"
+      ? "auth.telegram.callback_refresh_session_error"
+      : "auth.telegram.callback_jwt_error";
+    const authError = err?.phase === "db" ? "db_error" : "jwt_error";
+    console.error(JSON.stringify({ event, error: err?.message }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=${authError}`, 302);
   }
 
   return buildAuthRedirect(next, accessToken, refreshToken);
@@ -297,7 +396,45 @@ export async function handleAuthMe(request, env) {
 // POST /api/v1/auth/logout
 // ---------------------------------------------------------------------------
 
-export async function handleAuthLogout(_request, _env) {
+export async function handleAuthLogout(request, env, getSql) {
+  const refreshToken = extractRefreshToken(request);
+  if (!refreshToken || !env.HYPERDRIVE) {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  const result = await verifyJwt(refreshToken, env);
+  if (!result.valid) {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  let refreshClaims;
+  try {
+    refreshClaims = validateRefreshPayload(result.payload);
+  } catch {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  try {
+    const sql = getSql(env);
+    try {
+      await sql.begin(async (tx) => {
+        await revokeRefreshSessionTx(tx, {
+          jti: refreshClaims.jti,
+          userId: refreshClaims.userId,
+          reason: "logout",
+        });
+      });
+    } finally {
+      await sql.end();
+    }
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.logout.revoke_error", error: err?.message }));
+    return clearCookiesResponse(
+      { ok: false, error: "Logout revoke failed", code: "db_error" },
+      503,
+    );
+  }
+
   return clearCookiesResponse({ ok: true });
 }
 
@@ -306,9 +443,7 @@ export async function handleAuthLogout(_request, _env) {
 // ---------------------------------------------------------------------------
 
 export async function handleAuthRefresh(request, env, getSql) {
-  const cookieHeader = request.headers.get("Cookie") || "";
-  const match = cookieHeader.match(/immi_refresh=([^;]+)/);
-  const refreshToken = match ? match[1] : null;
+  const refreshToken = extractRefreshToken(request);
 
   if (!refreshToken) {
     return jsonErr("No refresh token", 401, "missing_refresh_token");
@@ -319,58 +454,85 @@ export async function handleAuthRefresh(request, env, getSql) {
     return jsonErr("Invalid or expired refresh token", 401, result.reason || "invalid_refresh_token");
   }
 
-  const userId = result.payload.sub;
-  if (!userId) {
-    return jsonErr("Malformed refresh token", 401, "invalid_refresh_token");
+  let refreshClaims;
+  try {
+    refreshClaims = validateRefreshPayload(result.payload);
+  } catch (err) {
+    return refreshSessionErr(err);
   }
 
   if (!env.HYPERDRIVE) {
     return jsonErr("Database unavailable", 503, "db_unavailable");
   }
 
-  let user, tenant, tenants;
+  let user, tenant, tenants, newAccessToken, newRefreshToken;
   try {
     const sql = getSql(env);
     try {
-      const rows = await sql`
-        SELECT
-          u.id, u.telegram_id,
-          tm.role         AS user_role,
-          tm.tenant_id,
-          t.kind          AS tenant_kind,
-          t.name          AS tenant_name,
-          ARRAY_AGG(tm2.tenant_id ORDER BY tm2.joined_at) AS all_tenants
-        FROM immi_users u
-        JOIN immi_tenant_members tm  ON tm.user_id  = u.id
-        JOIN immi_tenants t          ON t.id         = tm.tenant_id
-        JOIN immi_tenant_members tm2 ON tm2.user_id  = u.id
-        WHERE u.id = ${userId}::uuid
-        GROUP BY u.id, u.telegram_id, tm.role, tm.tenant_id, t.kind, t.name
-        ORDER BY tm.joined_at
-        LIMIT 1
-      `;
-      if (rows.length === 0) return jsonErr("User not found", 401, "user_not_found");
-      const row = rows[0];
-      user    = { id: row.id, telegram_id: row.telegram_id, role: row.user_role ?? "member" };
-      tenant  = { id: row.tenant_id, kind: row.tenant_kind, name: row.tenant_name };
-      tenants = row.all_tenants;
+      await sql.begin(async (tx) => {
+        const activeSession = await loadActiveRefreshSessionForUpdateTx(tx, refreshClaims);
+        const newRefreshDraft = generateRefreshSessionDraft(
+          refreshClaims.userId,
+          activeSession.family_id,
+        );
+
+        const rows = await tx`
+          SELECT
+            u.id, u.telegram_id,
+            tm.role         AS user_role,
+            tm.tenant_id,
+            t.kind          AS tenant_kind,
+            t.name          AS tenant_name,
+            ARRAY_AGG(tm2.tenant_id ORDER BY tm2.joined_at) AS all_tenants
+          FROM immi_users u
+          JOIN immi_tenant_members tm  ON tm.user_id  = u.id
+          JOIN immi_tenants t          ON t.id         = tm.tenant_id
+          JOIN immi_tenant_members tm2 ON tm2.user_id  = u.id
+          WHERE u.id = ${refreshClaims.userId}::uuid
+          GROUP BY u.id, u.telegram_id, tm.role, tm.tenant_id, t.kind, t.name
+          ORDER BY tm.joined_at
+          LIMIT 1
+        `;
+        if (rows.length === 0) {
+          throw new RefreshSessionError("User not found", 401, "user_not_found");
+        }
+
+        const row = rows[0];
+        user    = { id: row.id, telegram_id: row.telegram_id, role: row.user_role ?? "member" };
+        tenant  = { id: row.tenant_id, kind: row.tenant_kind, name: row.tenant_name };
+        tenants = row.all_tenants;
+
+        try {
+          [newAccessToken, newRefreshToken] = await Promise.all([
+            makeAccessToken(user, tenant, tenants, env),
+            makeRefreshToken(user.id, newRefreshDraft.jti, env),
+          ]);
+        } catch (err) {
+          err.phase = "jwt";
+          throw err;
+        }
+
+        await insertRefreshSessionTx(tx, newRefreshDraft);
+        await revokeRefreshSessionTx(tx, {
+          jti: refreshClaims.jti,
+          userId: refreshClaims.userId,
+          reason: "rotated",
+          replacedByJti: newRefreshDraft.jti,
+        });
+      });
     } finally {
       await sql.end();
     }
   } catch (err) {
+    if (isRefreshSessionError(err)) {
+      return refreshSessionErr(err);
+    }
+    if (err?.phase === "jwt") {
+      console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
     console.error(JSON.stringify({ event: "auth.refresh.db_error", error: err?.message }));
     return jsonErr("Authentication service error", 503, "db_error");
-  }
-
-  let newAccessToken, newRefreshToken;
-  try {
-    [newAccessToken, newRefreshToken] = await Promise.all([
-      makeAccessToken(user, tenant, tenants, env),
-      makeRefreshToken(user.id, env),
-    ]);
-  } catch (err) {
-    console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
-    return jsonErr("Token issuance failed", 503, "jwt_error");
   }
 
   return buildAuthResponse(

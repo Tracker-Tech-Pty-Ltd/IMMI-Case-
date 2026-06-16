@@ -176,7 +176,7 @@ workers/
 - **AuthNonce DO** — pinned to Oceania with `{ locationHint: "oc" }` for au-east p95
 - **Flask ingress guard** — Flask rejects requests without `X-Internal-Route: worker` header
 - **JWT TTL** — access token 5min, refresh cookie 7d. Max revocation lag: 5min for reads, instant for writes (DB re-check)
-- **Refresh-token revocation gap (known limitation)** — refresh tokens have no `jti` and no server-side session table. A stolen refresh token can mint new access tokens for up to 7 days. Mitigation: 5-min access TTL limits read-path damage; every write re-validates the JWT against the DB so writes are instantly blocked on compromise. Full fix requires a `refresh_sessions(jti, user_id, expires_at, revoked_at)` table + `jti` claim in the refresh JWT — deferred until refresh-token rotation is implemented.
+- **Refresh-token rotation + revocation** — refresh JWTs include `jti` and must have a live row in `immi_refresh_sessions`. `POST /api/v1/auth/refresh` locks the old `jti`, verifies it is not revoked/expired, inserts the replacement session, then revokes the old row in one transaction. `POST /api/v1/auth/logout` revokes the presented `jti` before clearing cookies. Flask treats `type: "refresh"` JWTs as invalid access tokens.
 - **Wrangler secrets** — `JWT_SECRET_CURRENT`, `JWT_SECRET_PREVIOUS`, `JWT_KID_CURRENT`, `JWT_KID_PREVIOUS`, `TELEGRAM_BOT_TOKEN`
 - **`AUTH_ENABLED=false`** — set this Worker env var to disable JWT injection entirely; auth routes fall through to Flask (404), all reads stay anonymous. Use for emergency rollback or staging without Telegram config.
 - **Structured auth logs** — every authenticated DB query emits `{"event":"db.authed_query","kid","tenant_id","user_id","query_ms","ok"}` via `console.log` in `getSqlAsUser.js`. Pipe to Cloudflare Logpush → Grafana or Datadog to monitor per-tenant query latency and failure rates.
@@ -398,24 +398,24 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **IMMI-Case-** (20700 symbols, 42725 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **IMMI-Case-** (16975 symbols, 37176 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+- When exploring unfamiliar code, use `query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER edit a function, class, or method without first running `impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected scope.
 
 ## Resources
 

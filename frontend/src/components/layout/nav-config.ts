@@ -14,6 +14,7 @@ import {
   Tags,
   Search,
   Scale,
+  ShieldCheck,
   Zap,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ export interface AppNavItem {
   readonly labelKey: string;
   readonly descriptionKey?: string;
   readonly showSavedSearchBadge?: boolean;
+  readonly adminOnly?: boolean;
 }
 
 export interface AppNavGroup {
@@ -69,6 +71,13 @@ export const APP_NAV_GROUPS: readonly AppNavGroup[] = [
         icon: Activity,
         labelKey: "nav.data_tools",
         descriptionKey: "nav_descriptions.data_tools",
+      },
+      {
+        to: "/admin/pipeline-runs",
+        icon: ShieldCheck,
+        labelKey: "nav.pipeline_runs",
+        descriptionKey: "nav_descriptions.pipeline_runs",
+        adminOnly: true,
       },
     ],
   },

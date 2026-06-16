@@ -649,6 +649,51 @@ export function fetchPipelineStatus(): Promise<Record<string, unknown>> {
   return apiFetch("/api/v1/pipeline-status");
 }
 
+export interface PipelineRunRecord {
+  run_id: string;
+  started_at: string;
+  finished_at: string | null;
+  trigger: "cron" | "manual" | "webhook" | string;
+  court: string | null;
+  phase: string;
+  discovered: number;
+  scraped: number;
+  extracted: number;
+  upserted: number;
+  llm_calls: number;
+  cost_usd: number;
+  errors: number;
+  errors_json: unknown;
+  status: "running" | "ok" | "aborted" | "failed" | string;
+  abort_reason: string | null;
+  duration_seconds: number;
+}
+
+export interface PipelineRunsSummary {
+  total_runs: number;
+  running_runs: number;
+  failed_runs: number;
+  aborted_runs: number;
+  discovered: number;
+  scraped: number;
+  extracted: number;
+  upserted: number;
+  llm_calls: number;
+  cost_usd: number;
+}
+
+export interface PipelineRunsResponse {
+  runs: PipelineRunRecord[];
+  summary: PipelineRunsSummary;
+}
+
+export function fetchPipelineRuns(limit = 30): Promise<PipelineRunsResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiFetch(`/api/v1/admin/pipeline-runs?${params}`, {
+    timeoutMs: 12_000,
+  });
+}
+
 export function pipelineAction(
   action: string,
   params?: Record<string, unknown>,

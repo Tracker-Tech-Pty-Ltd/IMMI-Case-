@@ -50,6 +50,8 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const { t } = useTranslation();
   const { savedSearches } = useSavedSearches();
   const { user, isAuthenticated, logout } = useAuth();
+  const canViewAdmin =
+    isAuthenticated && (user?.role === "owner" || user?.role === "admin");
 
   return (
     <aside
@@ -80,39 +82,40 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             {collapsed && gi > 0 && (
               <div className="mx-3 mb-2 border-t border-border-light" />
             )}
-            {group.items.map(({ to, icon: Icon, labelKey, showSavedSearchBadge }) => {
-              const label = t(labelKey);
-              return (
-                <NavLink
-                  key={`${to}-${labelKey}`}
-                  to={to}
-                  end={to === "/"}
-                  title={label}
-                  onMouseEnter={() => prefetchRoute(to)}
-                  onFocus={() => prefetchRoute(to)}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-accent-muted text-accent"
-                        : "text-muted-text hover:bg-surface hover:text-foreground",
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && (
-                    <>
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      {showSavedSearchBadge && savedSearches.length > 0 && (
-                        <span className="rounded-full bg-accent-muted px-2 py-0.5 text-[10px] font-semibold text-accent shrink-0">
-                          {savedSearches.length}
-                        </span>
+            {group.items
+              .filter((item) => !item.adminOnly || canViewAdmin)
+              .map(({ to, icon: Icon, labelKey, showSavedSearchBadge }) => {
+                const label = t(labelKey);
+                return (
+                  <NavLink
+                    key={`${to}-${labelKey}`}
+                    to={to}
+                    end={to === "/"}
+                    title={label}
+                    onMouseEnter={() => prefetchRoute(to)}
+                    onFocus={() => prefetchRoute(to)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-accent-muted text-accent"
+                          : "text-muted-text hover:bg-surface hover:text-foreground",
                       )}
-                    </>
-                  )}
-                </NavLink>
-              );
-            })}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="min-w-0 flex-1 truncate">{label}</span>
+                        {showSavedSearchBadge && savedSearches.length > 0 && (
+                          <span className="rounded-full bg-accent-muted px-2 py-0.5 text-[10px] font-semibold text-accent shrink-0">
+                            {savedSearches.length}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
           </div>
         ))}
         {!collapsed && <RecentBookmarksPanel />}

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import base64
+import json
 import os
 import time
 import uuid
@@ -146,6 +148,27 @@ def _cookie_header(session: requests.Session, *names: str) -> str:
     )
 
 
+def _cookie_value(session: requests.Session, name: str) -> str | None:
+    for cookie in session.cookies:
+        if cookie.name == name:
+            return cookie.value
+    return None
+
+
+def _jwt_payload(token: str) -> dict[str, Any]:
+    payload_segment = token.split(".")[1]
+    padded = payload_segment + "=" * (-len(payload_segment) % 4)
+    return json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+
+
+def _append_refresh_jti(refresh_jtis: list[str], refresh_token: str | None) -> None:
+    if not refresh_token:
+        return
+    jti = _jwt_payload(refresh_token).get("jti")
+    if jti and jti not in refresh_jtis:
+        refresh_jtis.append(jti)
+
+
 def _auth_headers(token: str, extra: dict[str, str] | None = None) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}"}
     if extra:
@@ -187,8 +210,12 @@ def _cleanup_smoke_rows(
     case_title: str,
     session_id: str | None,
     session_title: str,
+    refresh_jtis: list[str],
 ) -> None:
     with conn.cursor() as cur:
+        for refresh_jti in refresh_jtis:
+            cur.execute("DELETE FROM immi_refresh_sessions WHERE jti = %s", (refresh_jti,))
+
         if session_id:
             cur.execute("DELETE FROM council_sessions WHERE session_id = %s", (session_id,))
         cur.execute("DELETE FROM council_sessions WHERE title = %s", (session_title,))
@@ -228,6 +255,7 @@ def test_credentialed_auth_refresh_tenant_case_and_llm_council_smoke(
     created_case_id = None
     council_session_id = None
     deleted_council_session = False
+    refresh_jtis: list[str] = []
 
     tenant_name = f"_autotest_{smoke_config.run_id}_tenant"
     case_title = f"_autotest {smoke_config.run_id} case write"
@@ -242,6 +270,7 @@ def test_credentialed_auth_refresh_tenant_case_and_llm_council_smoke(
         login = _assert_status(login_resp, 200, "Telegram login")
         access_token = login.get("access_token")
         assert access_token, f"Telegram login response missing access_token: {login}"
+        _append_refresh_jti(refresh_jtis, _cookie_value(session, "immi_refresh"))
 
         user_id = login.get("user", {}).get("id")
         personal_tenant_id = login.get("tenant", {}).get("id")
@@ -250,14 +279,30 @@ def test_credentialed_auth_refresh_tenant_case_and_llm_council_smoke(
 
         test_tenant_id = _create_test_tenant(db_conn, user_id, tenant_name)
 
+        old_refresh_cookie = _cookie_header(session, "immi_refresh")
+        assert old_refresh_cookie, "Telegram login did not set immi_refresh cookie"
+
         refresh_resp = session.post(
             f"{smoke_config.base_url}/api/v1/auth/refresh",
-            headers={"Cookie": _cookie_header(session, "immi_refresh")},
+            headers={"Cookie": old_refresh_cookie},
             timeout=SHORT_TIMEOUT_SECONDS,
         )
         refreshed = _assert_status(refresh_resp, 200, "Auth refresh")
         refreshed_token = refreshed.get("access_token")
         assert refreshed_token, f"Refresh response missing access_token: {refreshed}"
+        _append_refresh_jti(refresh_jtis, _cookie_value(session, "immi_refresh"))
+
+        replay_resp = requests.post(
+            f"{smoke_config.base_url}/api/v1/auth/refresh",
+            headers={"Cookie": old_refresh_cookie},
+            timeout=SHORT_TIMEOUT_SECONDS,
+        )
+        replay = _assert_status(replay_resp, 401, "Old refresh token replay")
+        assert replay.get("code") in {
+            "revoked_refresh_token",
+            "refresh_session_not_found",
+            "invalid_refresh_token",
+        }, f"Unexpected replay rejection code: {replay}"
 
         switch_resp = session.post(
             f"{smoke_config.base_url}/api/v1/auth/switch-tenant",
@@ -371,6 +416,30 @@ def test_credentialed_auth_refresh_tenant_case_and_llm_council_smoke(
             for item in after_delete.get("sessions", [])
         ), f"Deleted session still appears in list: {after_delete}"
 
+        logout_refresh_cookie = _cookie_header(session, "immi_refresh")
+        logout_resp = session.post(
+            f"{smoke_config.base_url}/api/v1/auth/logout",
+            headers={"Cookie": logout_refresh_cookie},
+            timeout=SHORT_TIMEOUT_SECONDS,
+        )
+        _assert_status(logout_resp, 200, "Auth logout")
+
+        post_logout_refresh_resp = requests.post(
+            f"{smoke_config.base_url}/api/v1/auth/refresh",
+            headers={"Cookie": logout_refresh_cookie},
+            timeout=SHORT_TIMEOUT_SECONDS,
+        )
+        post_logout = _assert_status(
+            post_logout_refresh_resp,
+            401,
+            "Refresh after logout",
+        )
+        assert post_logout.get("code") in {
+            "revoked_refresh_token",
+            "refresh_session_not_found",
+            "invalid_refresh_token",
+        }, f"Unexpected post-logout refresh code: {post_logout}"
+
     finally:
         _cleanup_smoke_rows(
             db_conn,
@@ -383,4 +452,5 @@ def test_credentialed_auth_refresh_tenant_case_and_llm_council_smoke(
             case_title=case_title,
             session_id=None if deleted_council_session else council_session_id,
             session_title=session_title,
+            refresh_jtis=refresh_jtis,
         )

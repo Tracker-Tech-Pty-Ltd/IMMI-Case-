@@ -6,12 +6,14 @@
 
 - `POST /api/v1/auth/telegram`
 - `POST /api/v1/auth/refresh`
+- old refresh-token replay is rejected after rotation
 - `POST /api/v1/auth/switch-tenant`
 - credentialed `POST /api/v1/cases` with CSRF
 - `POST /api/v1/llm-council/sessions`
 - `GET /api/v1/llm-council/sessions`
 - `POST /api/v1/llm-council/sessions/restore`
 - `DELETE /api/v1/llm-council/sessions/:id`
+- `POST /api/v1/auth/logout` revokes the current refresh token
 
 The test is skipped unless explicitly enabled. It creates real rows and cleans up the generated user, test tenant, smoke case, and council session in `finally`.
 

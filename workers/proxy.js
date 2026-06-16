@@ -119,6 +119,29 @@ function jsonErr(msg, status = 400) {
   return Response.json({ error: msg }, { status });
 }
 
+function isPipelineAdminClaim(claims) {
+  return claims?.is_admin === true || claims?.role === "owner" || claims?.role === "admin";
+}
+
+async function requirePipelineAdmin(request, env) {
+  if (env.AUTH_ENABLED === "false") {
+    return new Response(
+      JSON.stringify({ error: "Admin auth is disabled", code: "admin_auth_disabled" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const authResult = await requireAuth(request, env, verifyJwt);
+  if (authResult instanceof Response) return authResult;
+  if (!isPipelineAdminClaim(authResult.claims)) {
+    return new Response(
+      JSON.stringify({ error: "Admin access required", code: "admin_required" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return authResult;
+}
+
 // ── CSRF (stateless double-submit HMAC) ──────────────────────────────────────
 // Per .omc/plans/hyperdrive-full-migration.md §Phase 1 CSRF Design.
 // Token = base64url(payload) + "." + base64url(HMAC_SHA256(env.CSRF_SECRET, payload))
@@ -947,6 +970,71 @@ async function handleGetCase(caseId, env) {
   // container filesystem (gitignored). Return null so the frontend degrades
   // gracefully; the Flask path also returns null in production containers.
   return jsonOk({ case: row, full_text: null });
+}
+
+/** GET /api/v1/admin/pipeline-runs — read-only pipeline run monitor */
+async function handleAdminPipelineRuns(request, url, env) {
+  const authResult = await requirePipelineAdmin(request, env);
+  if (authResult instanceof Response) return authResult;
+
+  const limit = safeInt(url.searchParams.get("limit"), 30, 1, 100);
+  const sql = getSql(env);
+  const [runs, summary] = await Promise.all([
+    sql`
+      SELECT
+        run_id::text,
+        started_at,
+        finished_at,
+        trigger,
+        court,
+        phase,
+        discovered,
+        scraped,
+        extracted,
+        upserted,
+        llm_calls,
+        cost_usd::float8 AS cost_usd,
+        errors,
+        errors_json,
+        status,
+        abort_reason,
+        EXTRACT(EPOCH FROM COALESCE(finished_at, now()) - started_at)::int AS duration_seconds
+      FROM pipeline_runs
+      ORDER BY started_at DESC
+      LIMIT ${limit}
+    `,
+    sql`
+      SELECT
+        COUNT(*)::int AS total_runs,
+        COUNT(*) FILTER (WHERE status = 'running')::int AS running_runs,
+        COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_runs,
+        COUNT(*) FILTER (WHERE status = 'aborted')::int AS aborted_runs,
+        COALESCE(SUM(discovered), 0)::int AS discovered,
+        COALESCE(SUM(scraped), 0)::int AS scraped,
+        COALESCE(SUM(extracted), 0)::int AS extracted,
+        COALESCE(SUM(upserted), 0)::int AS upserted,
+        COALESCE(SUM(llm_calls), 0)::int AS llm_calls,
+        COALESCE(SUM(cost_usd), 0)::float8 AS cost_usd
+      FROM pipeline_runs
+      WHERE started_at >= now() - interval '30 days'
+    `,
+  ]);
+
+  return jsonOk({
+    runs,
+    summary: summary[0] ?? {
+      total_runs: 0,
+      running_runs: 0,
+      failed_runs: 0,
+      aborted_runs: 0,
+      discovered: 0,
+      scraped: 0,
+      extracted: 0,
+      upserted: 0,
+      llm_calls: 0,
+      cost_usd: 0,
+    },
+  });
 }
 
 /** GET /api/v1/stats — dashboard aggregate statistics */
@@ -2181,6 +2269,11 @@ export class FlaskBackend extends DurableObject {
             LLM_COUNCIL_GEMINI_PRO_MODEL:    env.LLM_COUNCIL_GEMINI_PRO_MODEL,
             LLM_COUNCIL_ANTHROPIC_MODEL:     env.LLM_COUNCIL_ANTHROPIC_MODEL,
             LLM_COUNCIL_GEMINI_FLASH_MODEL:  env.LLM_COUNCIL_GEMINI_FLASH_MODEL,
+            LLM_EXTRACT_CF_GATEWAY_URL:       env.LLM_EXTRACT_CF_GATEWAY_URL,
+            LLM_GEMMA_MODEL:                  env.LLM_GEMMA_MODEL,
+            LLM_MAX_OUTPUT_TOKENS:            env.LLM_MAX_OUTPUT_TOKENS,
+            PIPELINE_RUN_COST_CAP_USD:        env.PIPELINE_RUN_COST_CAP_USD,
+            PIPELINE_LLM_CALL_TIMEOUT_MS:     env.PIPELINE_LLM_CALL_TIMEOUT_MS,
             // NOTE: HYPERDRIVE_DATABASE_URL not injected here —
             // Cloudflare Containers cannot resolve *.hyperdrive.local DNS.
             // Flask uses SupabaseRepository (REST API) instead, which works
@@ -2769,6 +2862,8 @@ export default {
 
         if (path === "/api/v1/cases") {
           res = await handleGetCases(url, env);
+        } else if (path === "/api/v1/admin/pipeline-runs") {
+          res = await handleAdminPipelineRuns(request, url, env);
         } else if (path === "/api/v1/cases/count") {
           res = await handleGetCasesCount(url, env);
         } else if (path === "/api/v1/export/csv") {
@@ -2864,7 +2959,7 @@ export default {
         if (path === "/api/v1/auth/me" && method === "GET")
           return handleAuthMe(request, env);
         if (path === "/api/v1/auth/logout" && method === "POST")
-          return handleAuthLogout(request, env);
+          return handleAuthLogout(request, env, getSql);
         if (path === "/api/v1/auth/refresh" && method === "POST")
           return handleAuthRefresh(request, env, getSql);
         if (path === "/api/v1/auth/switch-tenant" && method === "POST")

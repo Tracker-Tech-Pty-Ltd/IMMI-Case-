@@ -22,7 +22,7 @@ from ..config import OUTPUT_DIR
 from ..storage import ensure_output_dirs
 
 load_dotenv()
-from .security import (
+from .security import (  # noqa: E402
     csrf,
     add_security_headers,
     configure_session_security,
@@ -149,6 +149,11 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
     # Register Cases CRUD + Search + Filter-options blueprint (cq-001 Phase D1)
     from .routes.api_cases import api_cases_bp
     app.register_blueprint(api_cases_bp)
+
+    # Register internal Cloudflare pipeline endpoint. It has its own Worker
+    # service-binding guard and is CSRF-exempt because it is not browser-facing.
+    from .internal_extract import internal_extract_bp
+    app.register_blueprint(internal_extract_bp)
 
     # React SPA catch-all: serve all non-API requests from the React build.
     # /api/* is handled by the blueprints above; everything else gets index.html.

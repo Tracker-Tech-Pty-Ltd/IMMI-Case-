@@ -108,6 +108,11 @@ max_instances = 7
 
 [vars]
 AUTH_ENABLED = "true"
+LLM_EXTRACT_CF_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/30ffcfbf8c4103048bc38a5398b7ec99/immi-council/compat/chat/completions"
+LLM_GEMMA_MODEL = "workers-ai/@cf/google/gemma-4-26b-a4b-it"
+LLM_MAX_OUTPUT_TOKENS = "512"
+PIPELINE_RUN_COST_CAP_USD = "5"
+PIPELINE_LLM_CALL_TIMEOUT_MS = "28000"
 
 # Secrets (set via `wrangler secret put`):
 # JWT_SECRET_CURRENT  — HS256 signing key (>=32 bytes random)

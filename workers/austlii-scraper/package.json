@@ -7,13 +7,15 @@
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "rollback": "tsx scripts/rollback_run.ts"
   },
   "dependencies": {
     "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.8",
     "wrangler": "^4.98.0"
