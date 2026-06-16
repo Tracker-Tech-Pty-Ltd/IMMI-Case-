@@ -1,8 +1,7 @@
 """Data models for immigration cases."""
 
 import hashlib
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+from dataclasses import dataclass, asdict
 
 
 @dataclass

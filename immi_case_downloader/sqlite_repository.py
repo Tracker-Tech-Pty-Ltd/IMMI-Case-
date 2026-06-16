@@ -527,7 +527,7 @@ class SqliteRepository:
             rows = conn.execute(
                 "SELECT c.* FROM cases c "
                 "JOIN cases_fts f ON c.rowid = f.rowid "
-                f'WHERE cases_fts MATCH ? ORDER BY rank LIMIT ?',
+                'WHERE cases_fts MATCH ? ORDER BY rank LIMIT ?',
                 (f'"{safe_query}"', limit),
             ).fetchall()
         except _sqlite3.OperationalError:

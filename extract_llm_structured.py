@@ -19,7 +19,6 @@ import csv
 import json
 import os
 import random
-import sys
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -393,7 +392,7 @@ def main():
         print("=== Sample Prompt (first 3 cases) ===")
         print(prompt[:3000])
         print("...")
-        print(f"\nDry run — no API calls made.")
+        print("\nDry run — no API calls made.")
         return
 
     # Confirm cost

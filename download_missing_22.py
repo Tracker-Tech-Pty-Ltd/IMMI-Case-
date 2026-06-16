@@ -85,7 +85,7 @@ def main():
                 log(f"    OK → {filepath}")
             else:
                 failed += 1
-                log(f"    FAILED (no content)")
+                log("    FAILED (no content)")
         except Exception as e:
             failed += 1
             log(f"    FAILED: {e}")

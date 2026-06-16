@@ -6,7 +6,6 @@ All endpoints are prefixed with /api/v1/.
 import os
 import re
 import json
-import base64
 import logging
 import time
 import threading
@@ -16,25 +15,12 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from itertools import combinations
 from collections import Counter, defaultdict
 from datetime import datetime
-from typing import Any
 
-import numpy as np
 from flask import Blueprint, request, jsonify, send_file, current_app, Response
 from flask_wtf.csrf import generate_csrf
 
-from ...config import START_YEAR, END_YEAR
-from ...cases_pagination import (
-    CaseListQuery,
-    backend_kind_for_repo,
-    choose_pagination_plan,
-    remember_page_anchor,
-)
+from ...config import END_YEAR
 from ...models import ImmigrationCase
-from ...semantic_search_eval import (
-    GeminiEmbeddingClient,
-    OpenAIEmbeddingClient,
-    reciprocal_rank_fusion,
-)
 from ...visa_registry import (
     clean_subclass,
     get_family,
@@ -42,7 +28,7 @@ from ...visa_registry import (
     VISA_REGISTRY,
 )
 from ..cache import AnalyticsCache
-from ..helpers import get_repo, get_output_dir, safe_int, EDITABLE_FIELDS, error_response as _error
+from ..helpers import get_repo, get_output_dir, safe_int, error_response as _error
 from ..security import rate_limit
 logger = logging.getLogger(__name__)
 

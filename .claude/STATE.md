@@ -27,8 +27,19 @@ Updated: 2026-06-17 Australia/Melbourne
 - 2026-06-17: Validation completed:
   git diff --check; scoped ruff on changed Python files; make typecheck;
   make build; make test-fe; make test-py; root Worker Vitest; austlii-scraper typecheck/test.
+- 2026-06-17: Follow-up lint debt pass started after closeout commit. `make lint`
+  found 87 Ruff issues; `ruff --fix` fixed 58 automatically, leaving 29 manual
+  items across duplicate dict keys, unused locals, lambda assignments, and import order.
+- 2026-06-17: Follow-up lint debt validation completed:
+  `make lint` passed; `git diff --check` passed; `.venv/bin/python -m pytest
+  tests/ --ignore=tests/e2e -q` passed with 1082 passed, 5 skipped; GitNexus
+  CLI detect-changes reported low risk, 36 files, 28 symbols, 0 affected processes.
+- 2026-06-17: `make test-py` using global `python3` failed during collection due
+  macOS system-policy loading errors in global psycopg2/Pillow binary wheels; the
+  repo `.venv` test run succeeded.
 
 ## Status
 
-- Complete for local worktree closeout.
+- Local worktree closeout commit is complete.
+- Follow-up lint debt pass is complete pending commit.
 - Remaining external truth not checked here: remote CI, deploy, production smoke.

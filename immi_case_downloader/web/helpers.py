@@ -3,7 +3,6 @@
 from flask import current_app, jsonify
 
 from ..config import OUTPUT_DIR
-from ..repository import CaseRepository
 
 
 # ── Constants ────────────────────────────────────────────────────────────

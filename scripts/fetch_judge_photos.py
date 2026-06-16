@@ -9,7 +9,10 @@ For each judge in judge_bios.json:
 
 After review, human marks approved=true on rows, then `--download` will fetch them.
 """
-import json, os, subprocess, sys, time, urllib.parse
+import json
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 ROOT = Path('/Users/d/Developer/IMMI-Case-')
@@ -32,9 +35,11 @@ PREFER_DOMAINS = {  # higher = more trust
 def score_url(img_url: str, src_url: str) -> int:
     s = 10
     haystack = (img_url + ' ' + src_url).lower()
-    if any(b in haystack for b in BLOCK_DOMAINS): return -1
+    if any(b in haystack for b in BLOCK_DOMAINS):
+        return -1
     for k, v in PREFER_DOMAINS.items():
-        if k in haystack: s = max(s, v)
+        if k in haystack:
+            s = max(s, v)
     return s
 
 def search(query: str) -> list:
@@ -45,7 +50,8 @@ def search(query: str) -> list:
         ).stdout
         # strip "Tool call took:" prefix line
         json_start = out.find('{')
-        if json_start < 0: return []
+        if json_start < 0:
+            return []
         return json.loads(out[json_start:]).get('items', [])
     except Exception as e:
         print(f'    SEARCH ERROR: {e}', file=sys.stderr)
@@ -61,13 +67,16 @@ def candidates_for(name: str, role: str, court: str) -> list:
     for q in queries:
         for item in search(q):
             url = item.get('properties',{}).get('url','')
-            if not url or url in seen: continue
+            if not url or url in seen:
+                continue
             seen.add(url)
             w = item.get('properties',{}).get('width', 0) or 0
             h = item.get('properties',{}).get('height', 0) or 0
-            if w < 200 or h < 200: continue
+            if w < 200 or h < 200:
+                continue
             score = score_url(url, item.get('url',''))
-            if score < 0: continue
+            if score < 0:
+                continue
             out.append({
                 'img_url': url, 'src_page': item.get('url',''),
                 'title': (item.get('title','') or '')[:120],

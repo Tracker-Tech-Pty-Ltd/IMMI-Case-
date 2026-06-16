@@ -51,7 +51,6 @@ VISA_REGISTRY: dict[str, tuple[str, str]] = {
     "485": ("Temporary Graduate", "Skilled"),
     "489": ("Skilled Regional (Provisional)", "Skilled"),
     "407": ("Training", "Skilled"),
-    "408": ("Temporary Activity", "Skilled"),
 
     # Student visas
     "500": ("Student", "Student"),

@@ -8,7 +8,6 @@ Checkpoints every 500 cases to prevent data loss.
 import csv
 import json
 import os
-import sys
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed

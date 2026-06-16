@@ -61,7 +61,6 @@ from .api import (
     MAX_BATCH_SIZE,
     MAX_TAG_LENGTH,
     MAX_COMPARE_CASES,
-    SUPABASE_RPC_TIMEOUT_SECONDS,
     TRIBUNAL_CODES,
     COURT_CODES,
 )
@@ -423,13 +422,15 @@ def _sample_filter_options_fallback(repo) -> dict:
 
     try:
         if hasattr(repo, "list_cases_fast"):
-            sampler = lambda: repo.list_cases_fast(
-                sort_by="year",
-                sort_dir="desc",
-                page=1,
-                page_size=400,
-                columns=["court_code", "year", "source", "case_nature", "visa_type", "tags"],
-            )
+            def sampler():
+                return repo.list_cases_fast(
+                    sort_by="year",
+                    sort_dir="desc",
+                    page=1,
+                    page_size=400,
+                    columns=["court_code", "year", "source", "case_nature", "visa_type", "tags"],
+                )
+
             if hasattr(repo, "count_cases"):
                 sample_cases = _api._call_with_timeout(
                     sampler,
@@ -531,16 +532,18 @@ def _count_cases_with_fallback(
     last_exc: Exception | None = None
     for mode in ordered_modes:
         try:
-            counter = lambda: repo.count_cases(
-                court=court,
-                year=year,
-                visa_type=visa_type,
-                source=source,
-                tag=tag,
-                nature=nature,
-                keyword=keyword,
-                count_mode=mode,
-            )
+            def counter(selected_mode=mode):
+                return repo.count_cases(
+                    court=court,
+                    year=year,
+                    visa_type=visa_type,
+                    source=source,
+                    tag=tag,
+                    nature=nature,
+                    keyword=keyword,
+                    count_mode=selected_mode,
+                )
+
             total = int(counter())
             return max(total, 0), mode
         except Exception as exc:

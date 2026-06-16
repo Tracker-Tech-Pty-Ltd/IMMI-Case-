@@ -7,7 +7,6 @@ Usage: python merge_llm_extraction.py [--dry-run]
 """
 
 import json
-import os
 import sys
 import shutil
 import pandas as pd

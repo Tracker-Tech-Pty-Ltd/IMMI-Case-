@@ -78,15 +78,6 @@ def merge_dataframes(df_json: pd.DataFrame, df_csv: pd.DataFrame) -> pd.DataFram
     df_csv_indexed = df_csv.set_index("url", drop=False)
     df_json_indexed = df_json.set_index("url", drop=False)
 
-    # Fields that CSV might have populated that we want to preserve
-    preserve_fields = [
-        "full_text_path", "judges", "catchwords", "outcome", "visa_type",
-        "legislation", "text_snippet", "user_notes", "tags", "case_nature",
-        "legal_concepts", "visa_subclass", "visa_class_code", "date",
-        "applicant_name", "respondent", "country_of_origin",
-        "visa_subclass_number", "hearing_date", "is_represented", "representative",
-    ]
-
     # Update CSV records with JSON data for empty fields
     updated_count = 0
     for url in in_both:

@@ -338,10 +338,10 @@ def main():
     print(f"  Total cases: {len(valid):,}")
     print(f"  Est. total tokens: {total_tokens_est:,} (~{total_tokens_est/1_000_000:.1f}M)")
     print(f"  Avg tokens/batch: {total_tokens_est//batch_count:,}")
-    print(f"\nNext steps:")
-    print(f"  1. Feed each audit_batch_XXXX.txt to Gemini (1M context window)")
-    print(f"  2. Collect JSON responses into audit_results/")
-    print(f"  3. Run: python scripts/aggregate_audit_results.py")
+    print("\nNext steps:")
+    print("  1. Feed each audit_batch_XXXX.txt to Gemini (1M context window)")
+    print("  2. Collect JSON responses into audit_results/")
+    print("  3. Run: python scripts/aggregate_audit_results.py")
 
 
 if __name__ == "__main__":

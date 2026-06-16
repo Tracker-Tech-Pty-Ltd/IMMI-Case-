@@ -9,7 +9,6 @@ Progress saved every 200 cases. Safe to interrupt and resume.
 import sys
 import os
 import time
-import re
 import pandas as pd
 from datetime import datetime
 

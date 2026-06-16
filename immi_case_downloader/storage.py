@@ -1,6 +1,5 @@
 """Storage and export utilities for immigration cases."""
 
-import csv
 import json
 import os
 import logging
@@ -165,7 +164,7 @@ def generate_summary_report(cases: list[ImmigrationCase], base_dir: str = OUTPUT
         for court, court_cases in sorted(by_court.items()):
             f.write(f"  {court}: {len(court_cases)}\n")
 
-        f.write(f"\nCases by Year:\n")
+        f.write("\nCases by Year:\n")
         f.write("-" * 40 + "\n")
         for year, year_cases in sorted(by_year.items()):
             if year:
@@ -174,7 +173,7 @@ def generate_summary_report(cases: list[ImmigrationCase], base_dir: str = OUTPUT
         # Visa types mentioned
         visa_types = {c.visa_type for c in cases if c.visa_type}
         if visa_types:
-            f.write(f"\nVisa Types Found:\n")
+            f.write("\nVisa Types Found:\n")
             f.write("-" * 40 + "\n")
             for vt in sorted(visa_types):
                 f.write(f"  - {vt}\n")

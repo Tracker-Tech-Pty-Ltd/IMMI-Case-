@@ -11,7 +11,7 @@ primary free source for Australian legal cases including:
 
 import re
 import logging
-from urllib.parse import urljoin, urlencode, quote_plus
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from .metadata_extractor import MetadataExtractor
@@ -203,9 +203,6 @@ class AustLIIScraper(BaseScraper):
         ]
 
         for term in search_terms:
-            search_query = quote_plus(term)
-            db_path = f"au/cases/cth/{db_code}"
-
             params = {
                 "method": "auto",
                 "query": term,
