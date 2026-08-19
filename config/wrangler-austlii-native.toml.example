@@ -1,0 +1,104 @@
+# Non-deployable operator template for the D1/R2/Queue AustLII scraper.
+# The extraction Container is retained only as a CPU/LLM service; it receives
+# no database credential and returns an extraction payload to the native Queue.
+name = "austlii-scraper-native"
+main = "workers/austlii-scraper/src/index.ts"
+compatibility_date = "2026-08-10"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "CASE_RESULTS"
+bucket_name = "REPLACE_WITH_IMMI_CONTENT_BUCKET"
+
+[[d1_databases]]
+binding = "IMMI_CATALOG_DB"
+database_name = "REPLACE_WITH_IMMI_CATALOG_DB"
+database_id = "REPLACE_WITH_IMMI_CATALOG_D1_ID"
+
+[[d1_databases]]
+binding = "IMMI_OPS_DB"
+database_name = "REPLACE_WITH_IMMI_OPS_DB"
+database_id = "REPLACE_WITH_IMMI_OPS_D1_ID"
+
+[[kv_namespaces]]
+binding = "PIPELINE_KV"
+id = "REPLACE_WITH_IMMI_PIPELINE_KV_ID"
+
+[browser]
+binding = "MYBROWSER"
+
+[[queues.producers]]
+binding = "SCRAPE_QUEUE"
+queue = "immi-scrape-queue"
+
+[[queues.producers]]
+binding = "EXTRACT_QUEUE"
+queue = "immi-extract-queue"
+
+[[queues.producers]]
+binding = "NATIVE_CASE_QUEUE"
+queue = "immi-case-mutation-queue"
+
+[[queues.consumers]]
+queue = "immi-pipeline-control-queue"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "immi-pipeline-control-dlq"
+
+[[queues.consumers]]
+queue = "immi-pipeline-control-dlq"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-scrape-queue"
+max_batch_size = 5
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "immi-scrape-dlq"
+
+[[queues.consumers]]
+queue = "immi-scrape-dlq"
+max_batch_size = 20
+max_batch_timeout = 30
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-extract-queue"
+max_batch_size = 5
+max_batch_timeout = 60
+max_retries = 2
+dead_letter_queue = "immi-extract-dlq"
+
+[[queues.consumers]]
+queue = "immi-extract-dlq"
+max_batch_size = 20
+max_batch_timeout = 60
+max_retries = 3
+
+[[durable_objects.bindings]]
+name = "COST_CAP_DO"
+class_name = "CostCapDO"
+
+[[migrations]]
+tag = "pipeline-cost-cap-v1"
+new_classes = ["CostCapDO"]
+
+[[services]]
+binding = "EXTRACTION_BACKEND"
+service = "immi-extraction"
+entrypoint = "ExtractionBackend"
+remote = true
+
+[ai]
+binding = "AI"
+
+[vars]
+PIPELINE_ENABLED = "false"
+NATIVE_PIPELINE_ENABLED = "false"
+PIPELINE_BIWEEKLY_GATE = "true"
+PIPELINE_RUN_COST_CAP_USD = "5"
+
+# Operator-set only: AUTH_TOKEN, EXTRACTION_SHARED_SECRET and extraction provider secrets.

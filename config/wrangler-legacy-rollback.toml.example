@@ -1,0 +1,33 @@
+# Legacy rollback-only configuration. This file is never used by the native
+# deploy workflow and must remain outside the production Worker config path.
+# Populate IDs only during an approved rollback rehearsal; never point it at a
+# new production route without the rollback owner and change window.
+name = "immi-case-legacy-rollback"
+main = "workers/proxy.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_LEGACY_MAIN_HYPERDRIVE_ID"
+localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
+
+[durable_objects]
+bindings = [
+  { name = "FlaskBackend", class_name = "FlaskBackend" },
+  { name = "AUTH_NONCE", class_name = "AuthNonce" },
+]
+
+[[migrations]]
+tag = "legacy-rollback-v1"
+new_sqlite_classes = ["FlaskBackend", "AuthNonce"]
+
+[[containers]]
+class_name = "FlaskBackend"
+image = "./Dockerfile"
+max_instances = 7
+
+[vars]
+AUTH_ENABLED = "true"
+IMMI_STORAGE_MODE = "legacy"
+CUTOVER_WRITE_FREEZE = "false"

@@ -3014,46 +3014,6 @@ ALTER SEQUENCE "public"."compliance_alerts_id_seq" OWNED BY "public"."compliance
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."council_sessions" (
-    "session_id" "text" NOT NULL,
-    "case_id" "text",
-    "title" "text",
-    "status" "text" DEFAULT 'active'::"text" NOT NULL,
-    "total_turns" integer DEFAULT 0 NOT NULL,
-    "hmac_sig" "text" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "retrieve_code" "text",
-    CONSTRAINT "council_sessions_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'complete'::"text", 'abandoned'::"text"]))),
-    CONSTRAINT "council_sessions_total_turns_check" CHECK ((("total_turns" >= 0) AND ("total_turns" <= 15)))
-);
-
-
-ALTER TABLE "public"."council_sessions" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."council_sessions"."retrieve_code" IS '6-char base32 user-facing code (excludes 0/O/1/I/L). NULL for legacy rows. Used by POST /api/v1/llm-council/sessions/restore.';
-
-
-
-CREATE TABLE IF NOT EXISTS "public"."council_turns" (
-    "turn_id" "text" NOT NULL,
-    "session_id" "text" NOT NULL,
-    "turn_index" integer NOT NULL,
-    "user_message" "text" NOT NULL,
-    "user_case_context" "text",
-    "payload" "jsonb" NOT NULL,
-    "retrieved_cases" "jsonb",
-    "total_tokens" integer,
-    "total_latency_ms" integer,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "council_turns_turn_index_check" CHECK ((("turn_index" >= 0) AND ("turn_index" < 15)))
-);
-
-
-ALTER TABLE "public"."council_turns" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."courses" (
     "id" bigint NOT NULL,
     "institution_id" bigint NOT NULL,
@@ -7076,21 +7036,6 @@ ALTER TABLE ONLY "public"."compliance_alerts"
 
 
 
-ALTER TABLE ONLY "public"."council_sessions"
-    ADD CONSTRAINT "council_sessions_pkey" PRIMARY KEY ("session_id");
-
-
-
-ALTER TABLE ONLY "public"."council_turns"
-    ADD CONSTRAINT "council_turns_pkey" PRIMARY KEY ("turn_id");
-
-
-
-ALTER TABLE ONLY "public"."council_turns"
-    ADD CONSTRAINT "council_turns_session_id_turn_index_key" UNIQUE ("session_id", "turn_index");
-
-
-
 ALTER TABLE ONLY "public"."courses"
     ADD CONSTRAINT "courses_pkey" PRIMARY KEY ("id");
 
@@ -7950,10 +7895,6 @@ CREATE INDEX "saved_searches_tenant_shared_idx" ON "law"."saved_searches" USING 
 
 
 
-CREATE UNIQUE INDEX "council_sessions_retrieve_code_unique" ON "public"."council_sessions" USING "btree" ("retrieve_code") WHERE ("retrieve_code" IS NOT NULL);
-
-
-
 CREATE INDEX "idx_account_mappings_provider" ON "public"."account_mappings" USING "btree" ("provider");
 
 
@@ -8579,14 +8520,6 @@ CREATE INDEX "idx_compliance_app" ON "public"."application_compliance" USING "bt
 
 
 CREATE INDEX "idx_compliance_status" ON "public"."application_compliance" USING "btree" ("status");
-
-
-
-CREATE INDEX "idx_council_sessions_updated" ON "public"."council_sessions" USING "btree" ("updated_at" DESC);
-
-
-
-CREATE INDEX "idx_council_turns_session" ON "public"."council_turns" USING "btree" ("session_id", "turn_index");
 
 
 
@@ -10485,11 +10418,6 @@ ALTER TABLE ONLY "public"."compliance_alerts"
 
 
 
-ALTER TABLE ONLY "public"."council_turns"
-    ADD CONSTRAINT "council_turns_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "public"."council_sessions"("session_id") ON DELETE CASCADE;
-
-
-
 ALTER TABLE ONLY "public"."custom_pages"
     ADD CONSTRAINT "custom_pages_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."web_users"("id");
 
@@ -11247,12 +11175,6 @@ ALTER TABLE "public"."communication_logs" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."compliance_alerts" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."council_sessions" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."council_turns" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."courses" ENABLE ROW LEVEL SECURITY;
@@ -12237,18 +12159,6 @@ GRANT ALL ON TABLE "public"."compliance_alerts" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."compliance_alerts_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."compliance_alerts_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."compliance_alerts_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."council_sessions" TO "anon";
-GRANT ALL ON TABLE "public"."council_sessions" TO "authenticated";
-GRANT ALL ON TABLE "public"."council_sessions" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."council_turns" TO "anon";
-GRANT ALL ON TABLE "public"."council_turns" TO "authenticated";
-GRANT ALL ON TABLE "public"."council_turns" TO "service_role";
 
 
 
@@ -13518,8 +13428,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
 
 
 

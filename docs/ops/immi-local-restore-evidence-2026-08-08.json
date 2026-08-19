@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-08-08T20:22:55+10:00",
+  "purpose": "local-only IMMI snapshot restore; no shared Supabase mutation",
+  "source": {
+    "project_ref": "urntbuqczarkuoaosjxd",
+    "snapshot_created_at": "2026-08-03T09:05:00+10:00",
+    "dump_sha256": {
+      "immi_tables_data.dump": "d6357c80c5dc214b852d7489efb8f010bfc3f2a8a45c43603133765640c45e23",
+      "immi_extras.dump": "693364c258066ea3dab1b0d779d423b0e89856824e3385699010d8b8aad930de",
+      "immi_dependencies.sql": "a90c15a000237da71c6f3edeeab4621b10ca1aac2fcf06eede5aeba3dbd230d8",
+      "immi_ownership_acl.sql": "b18e5a0ddcf3a34604fb9beb0b6fff44b55bb059224c3ff67958e04376444207"
+    }
+  },
+  "target": {
+    "container": "immi-local-pg17",
+    "image": "pgvector/pgvector:pg17",
+    "image_digest": "sha256:7ae6051efd0e60444282c27c7e141af07f322ce033300e727a49c3dd11075e38",
+    "database": "immi_local",
+    "host_port": 55432,
+    "shared_project_ref_rejected": true
+  },
+  "supabase_local_stack": {
+    "workdir": "/tmp/immi-local-supabase",
+    "project_id": "immi-local",
+    "api_port": 55421,
+    "db_port": 55422,
+    "api_http_status": 200,
+    "auth_health_http_status": 200,
+    "bsmart_local_stack_stopped": false,
+    "cloud_mutation_performed": false
+  },
+  "local_app": {
+    "backend_port": 18080,
+    "root_http_status": 200,
+    "llm_council_health_http_status": 200,
+    "analytics_judge_leaderboard_http_status": 200,
+    "judge_bio_http_status": 200,
+    "search_http_status": 200,
+    "service_role_grants_applied_local_only": true
+  },
+  "restore": {
+    "main_dump": "success",
+    "extras_dump": "success",
+    "dependency_functions": "success",
+    "local_auth_role_stub": true,
+    "tables": 13,
+    "foreign_keys": 15,
+    "indexes": 91,
+    "policies": 17,
+    "triggers": 2,
+    "vector_extension": "0.8.6",
+    "row_counts": {
+      "council_sessions": 34,
+      "council_turns": 34,
+      "extraction_audit": 0,
+      "immi_collections": 0,
+      "immi_saved_searches": 0,
+      "immi_tenant_invites": 0,
+      "immi_tenant_members": 0,
+      "immi_tenants": 0,
+      "immi_users": 0,
+      "immigration_cases": 149016,
+      "immigration_cases_staging": 0,
+      "judge_bios": 104,
+      "pipeline_runs": 16
+    }
+  },
+  "validation": {
+    "source_exporter": "scripts/export_immi_source_snapshot.sh",
+    "source_exporter_guard_tests": "three refusal cases passed",
+    "local_restore_verifier": "scripts/verify_immi_local_restore.py",
+    "local_restore_verifier_run_1": {
+      "exit": 0,
+      "sha256": "cfa823010e20e7bdcca6727617156a573c1156dc4e800a30f25f9349b378bb37"
+    },
+    "local_restore_verifier_run_2": {
+      "exit": 0,
+      "sha256": "cfa823010e20e7bdcca6727617156a573c1156dc4e800a30f25f9349b378bb37"
+    },
+    "local_restore_verifier_identical": true,
+    "supabase_stack_restore_verifier_run_1_sha256": "3e36c0d4b51d69e5f8f5bc22401a5cb464a7abae58ae4af2003c1cc745fe79d1",
+    "supabase_stack_restore_verifier_run_2_sha256": "3e36c0d4b51d69e5f8f5bc22401a5cb464a7abae58ae4af2003c1cc745fe79d1",
+    "supabase_stack_restore_verifier_identical": true,
+    "separation_tests": "5 passed",
+    "worker_tests": "223 passed",
+    "pipeline_typecheck": "passed",
+    "pipeline_tests": "12 passed",
+    "secret_preflight_tests": "passed"
+  },
+  "shared_database_mutation_performed": false
+}
