@@ -231,6 +231,16 @@ export default {
       const response = await dispatchCloudflareCaseRead(url, path, env);
       if (response !== null) return response;
     }
+    if (path.startsWith("/api/")) {
+      return unavailable("This API route is not yet available in the Cloudflare-native runtime");
+    }
+    if (env.ASSETS) {
+      try {
+        return await env.ASSETS.fetch(request);
+      } catch (err) {
+        // fall through to unavailable when the ASSETS binding is misconfigured
+      }
+    }
     return unavailable("This API route is not yet available in the Cloudflare-native runtime");
   },
 };

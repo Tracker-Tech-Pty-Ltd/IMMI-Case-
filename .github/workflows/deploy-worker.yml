@@ -88,6 +88,12 @@ jobs:
           WORKER_KIND: pipeline
         run: bash scripts/preflight_secrets.sh
 
+      - name: Build React SPA (static assets)
+        run: |
+          cd frontend
+          npm ci
+          npm run build:cloudflare
+
       - name: Deploy native main Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
