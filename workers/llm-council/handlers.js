@@ -6,7 +6,7 @@
  * AUTH MODEL (plan §1.3 + §1.4):
  *   Every persistence-touching endpoint requires a verified JWT. Tenant
  *   isolation is enforced server-side via RLS using `auth_tenant_id()` —
- *   handlers MUST pass `claims` into every storage call so the postgres
+ *   handlers MUST pass `claims` into every storage call so the D1
  *   transaction wrapper sets `SET LOCAL request.jwt.claims` before any DML
  *   runs. The legacy X-Session-Token HMAC is no longer accepted as a
  *   standalone auth — JWT is the sole gate.
@@ -43,7 +43,7 @@ import {
   streamCouncil,
 } from "./runner.js";
 import { verifyJwt } from "../auth/jwt.js";
-import { requireAuth } from "../db/getSqlAsUser.js";
+import { requireAuth } from "../auth/request_auth.js";
 
 const MAX_MESSAGE_LENGTH = 8000;
 const VALID_CASE_ID_RE = /^[0-9a-f]{12}$/;
@@ -298,7 +298,7 @@ export async function handleCreateSession(request, env) {
     }
   }
 
-  await addTurn({
+  const initialTurn = await addTurn({
     env,
     claims,
     sessionId,
@@ -312,17 +312,18 @@ export async function handleCreateSession(request, env) {
     totalLatencyMs: null,
   });
 
+  const initialTurnIndex = Number.isInteger(initialTurn?.turn_index) ? initialTurn.turn_index : 0;
   return jsonResponse({
     session_id: sessionId,
     session_token: sessionToken,
     retrieve_code: createdSession?.retrieve_code ?? codeUsed,
     turn: {
       turn_id: turnId,
-      turn_index: 0,
+      turn_index: initialTurnIndex,
       user_message: message,
       ...councilResult,
     },
-    total_turns: 1,
+    total_turns: initialTurnIndex + 1,
   });
 }
 
@@ -412,14 +413,15 @@ export async function handleAddTurn(request, env, pathname) {
     );
   }
 
+  const persistedTurnIndex = Number.isInteger(turnRow?.turn_index) ? turnRow.turn_index : turnIndex;
   return jsonResponse({
     turn: {
       turn_id: turnId,
-      turn_index: turnIndex,
+      turn_index: persistedTurnIndex,
       user_message: message,
       ...councilResult,
     },
-    total_turns: turnIndex + 1,
+    total_turns: persistedTurnIndex + 1,
   });
 }
 
