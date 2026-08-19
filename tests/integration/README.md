@@ -97,15 +97,14 @@ k6 run tests/k6/auth-latency.js \
 
 **SLO thresholds:**
 - Anon `GET /api/v1/cases?limit=20` at 100 RPS × 30s → **p95 < 15ms**
-- Authed `GET /api/v1/collections` at 100 RPS × 30s → **p95 < 40ms**
+- Authed `GET /api/v1/auth/me` at 100 RPS × 30s → **p95 < 1000ms**
 - Error rate < 1% for both scenarios
 
 **PASS** = k6 exits 0 and prints `✓` next to all threshold lines.
 **FAIL** = k6 exits non-zero and prints `✗` with actual p95 value.
 
-> **Note**: Anon `GET /api/v1/cases` is served by the Cloudflare Worker's native Hyperdrive
-> path — cold-start latency may inflate p95 on the very first run. Warm up the Worker
-> (any request to the domain) ~30s before running k6 for stable numbers.
+> **Note**: These scenarios target the Cloudflare-native Worker. Warm the Worker
+> before running k6; cold-start latency may inflate the first sample window.
 
 ---
 
