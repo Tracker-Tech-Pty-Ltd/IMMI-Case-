@@ -48,6 +48,7 @@ const mockListSessions = vi.fn();
 const mockDeleteSession = vi.fn();
 const mockLegacyRun = vi.fn();
 const mockHealth = vi.fn();
+const mockCloudflareCaseRead = vi.fn();
 
 vi.mock("../llm-council/handlers.js", () => ({
   handleCreateSession: (...a) => mockCreateSession(...a),
@@ -59,8 +60,12 @@ vi.mock("../llm-council/handlers.js", () => ({
   handleHealth: (...a) => mockHealth(...a),
 }));
 
+vi.mock("../case-api/cloudflare.js", () => ({
+  dispatchCloudflareCaseRead: (...args) => mockCloudflareCaseRead(...args),
+}));
+
 // Import AFTER mocks are wired up.
-import { dispatchLlmCouncil } from "../proxy.js";
+import worker, { dispatchLlmCouncil, getCutoverWriteFreezeResponse } from "../proxy.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -91,6 +96,7 @@ beforeEach(() => {
   mockDeleteSession.mockResolvedValue(new Response("delete"));
   mockLegacyRun.mockResolvedValue(new Response("legacy-run"));
   mockHealth.mockResolvedValue(new Response("health"));
+  mockCloudflareCaseRead.mockResolvedValue(null);
 });
 
 // ===========================================================================
@@ -218,5 +224,65 @@ describe("dispatchLlmCouncil routing", () => {
     expect(mockCreateSession).not.toHaveBeenCalled();
     expect(mockListSessions).not.toHaveBeenCalled();
     expect(res).toBeNull();
+  });
+});
+
+describe("explicit Cloudflare-native route boundary", () => {
+  it("uses the D1/Vectorize read dispatcher before the legacy Hyperdrive path", async () => {
+    mockCloudflareCaseRead.mockResolvedValue(new Response("cloudflare-case"));
+    const response = await worker.fetch(
+      new Request("https://example.com/api/v1/cases"),
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("cloudflare-case");
+    expect(mockCloudflareCaseRead).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an unported API route instead of falling back to Supabase or Flask", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/api/v1/stats"),
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "cloudflare_route_unavailable" });
+  });
+});
+
+describe("worker-first cutover write freeze", () => {
+  it("blocks API mutations only when the explicit freeze flag is enabled", async () => {
+    const request = new Request("https://example.com/api/v1/llm-council/sessions", {
+      method: "POST",
+    });
+
+    const frozen = getCutoverWriteFreezeResponse(request, { CUTOVER_WRITE_FREEZE: "true" });
+    expect(frozen).not.toBeNull();
+    expect(frozen.status).toBe(503);
+    expect(frozen.headers.get("Cache-Control")).toBe("no-store");
+    expect(await frozen.json()).toEqual({
+      error: "IMMI worker write freeze is active during cutover",
+      code: "cutover_write_freeze",
+    });
+
+    expect(
+      getCutoverWriteFreezeResponse(
+        new Request("https://example.com/api/v1/llm-council/sessions"),
+        { CUTOVER_WRITE_FREEZE: "true" },
+      ),
+    ).toBeNull();
+    expect(getCutoverWriteFreezeResponse(request, {})).toBeNull();
+  });
+
+  it("applies the freeze before routing a mutation to any backend", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/api/v1/auth/telegram", { method: "POST" }),
+      { CUTOVER_WRITE_FREEZE: "true" },
+      {},
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "cutover_write_freeze" });
   });
 });

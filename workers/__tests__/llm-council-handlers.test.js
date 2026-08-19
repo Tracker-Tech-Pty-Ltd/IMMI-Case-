@@ -204,6 +204,13 @@ describe("handleCreateSession (authenticated)", () => {
     expect(mockAddTurn.mock.calls[0][0].claims).toEqual(VALID_CLAIMS);
   });
 
+  it("returns the Durable Object-assigned initial turn index", async () => {
+    mockAddTurn.mockResolvedValue({ turn_id: "fake-turn-id", turn_index: 0 });
+    const req = makeRequest("POST", "https://x/sessions", { message: "Q" }, BEARER_HEADERS);
+    const res = await handleCreateSession(req, makeEnv());
+    expect((await parseJson(res)).turn.turn_index).toBe(0);
+  });
+
   it("returns 400 when message is missing", async () => {
     const req = makeRequest("POST", "https://x/sessions", {}, BEARER_HEADERS);
     const res = await handleCreateSession(req, makeEnv());
@@ -319,6 +326,7 @@ describe("handleAddTurn (authenticated)", () => {
       session: { session_id: SID, total_turns: 1, status: "active" },
       turns: [],
     });
+    mockAddTurn.mockResolvedValue({ turn_id: "fake-turn-id", turn_index: 1 });
     const req = makeRequest("POST", `https://x${PATH}`,
       { message: "Follow up" }, BEARER_HEADERS);
     const res = await handleAddTurn(req, makeEnv(), PATH);
@@ -357,6 +365,18 @@ describe("handleAddTurn (authenticated)", () => {
       { message: "Q" }, BEARER_HEADERS);
     const res = await handleAddTurn(req, makeEnv(), PATH);
     expect(res.status).toBe(409);
+  });
+
+  it("uses the Durable Object-assigned index in its response", async () => {
+    mockGetSession.mockResolvedValue({
+      session: { session_id: SID, total_turns: 1, status: "active" },
+      turns: [],
+    });
+    mockAddTurn.mockResolvedValue({ turn_id: "fake-turn-id", turn_index: 2 });
+    const req = makeRequest("POST", `https://x${PATH}`, { message: "Follow up" }, BEARER_HEADERS);
+    const json = await parseJson(await handleAddTurn(req, makeEnv(), PATH));
+    expect(json.turn.turn_index).toBe(2);
+    expect(json.total_turns).toBe(3);
   });
 });
 

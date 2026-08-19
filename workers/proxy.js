@@ -56,6 +56,8 @@ import {
 import { handleTelegramLogin, handleTelegramCallback, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
 import { verifyJwt } from "./auth/jwt.js";
 import { requireAuth } from "./db/getSqlAsUser.js";
+import { dispatchCloudflareCaseRead } from "./case-api/cloudflare.js";
+import { getStorageMode } from "./storage/contracts.js";
 export { AuthNonce } from "./auth/nonce_do.js";
 
 // ── Table / column constants ──────────────────────────────────────────────────
@@ -87,6 +89,36 @@ const SORT_COL_MAP = {
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 const HEX_ID_RE = /^[0-9a-f]{12}$/;
+const CUTOVER_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Fail-closed write gate used during the worker-first cutover window.
+ *
+ * When enabled in the target Worker environment, every API mutation is
+ * rejected before it can reach Hyperdrive, the LLM Council handlers, auth
+ * handlers, or the Flask container. Reads and health checks remain available
+ * for verification while the old shared project is kept strictly read-only.
+ */
+export function getCutoverWriteFreezeResponse(request, env) {
+  if (env?.CUTOVER_WRITE_FREEZE !== "true") return null;
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/v1/") || !CUTOVER_WRITE_METHODS.has(request.method)) {
+    return null;
+  }
+  return Response.json(
+    {
+      error: "IMMI worker write freeze is active during cutover",
+      code: "cutover_write_freeze",
+    },
+    {
+      status: 503,
+      headers: {
+        "Cache-Control": "no-store",
+        "Retry-After": "0",
+      },
+    },
+  );
+}
 
 // ── Database client ───────────────────────────────────────────────────────────
 
@@ -2760,6 +2792,10 @@ export default {
     const url    = new URL(request.url);
     const path   = url.pathname;
     const method = request.method;
+    const storageMode = getStorageMode(env);
+
+    const cutoverFreeze = getCutoverWriteFreezeResponse(request, env);
+    if (cutoverFreeze) return cutoverFreeze;
 
     // Edge health check — no container needed
     if (path === "/health") {
@@ -2781,6 +2817,16 @@ export default {
       const filename = path.slice("/api/v1/judge-photo/".length);
       const r2Resp = await handleJudgePhoto(filename, env);
       if (r2Resp) return r2Resp;
+    }
+
+    // The Cloudflare-native read boundary is explicit: it never falls back to
+    // Hyperdrive when a D1/Vectorize request fails. A later route-manifest
+    // gate must prove every public GET is implemented before this mode can be
+    // traffic-serving; unsupported API routes are rejected below rather than
+    // silently reading the old Supabase source.
+    if (method === "GET" && storageMode === "cloudflare") {
+      const cloudflareRead = await dispatchCloudflareCaseRead(url, path, env);
+      if (cloudflareRead !== null) return cloudflareRead;
     }
 
     // ── Cases write path (POST/PUT/DELETE/batch) ──────────────────────────────
@@ -2995,6 +3041,16 @@ export default {
           { status: 503, headers: { "Content-Type": "application/json" } },
         );
       }
+    }
+
+    if (storageMode === "cloudflare" && path.startsWith("/api/v1/")) {
+      return Response.json(
+        {
+          error: "This API route is not yet available in the Cloudflare-native runtime",
+          code: "cloudflare_route_unavailable",
+        },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
     // ── Flask Container proxy path ────────────────────────────────────────────
