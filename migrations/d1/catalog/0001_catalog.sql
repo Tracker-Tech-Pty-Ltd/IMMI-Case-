@@ -62,6 +62,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS case_text_fts USING fts5(
   case_id UNINDEXED,
   chunk_index UNINDEXED,
   content,
+  content = 'case_text_chunks',
+  content_rowid = 'rowid',
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
@@ -70,12 +72,14 @@ CREATE TRIGGER IF NOT EXISTS case_text_chunks_ai AFTER INSERT ON case_text_chunk
   VALUES (new.rowid, new.case_id, new.chunk_index, new.content);
 END;
 CREATE TRIGGER IF NOT EXISTS case_text_chunks_au AFTER UPDATE ON case_text_chunks BEGIN
-  DELETE FROM case_text_fts WHERE rowid = old.rowid;
+  INSERT INTO case_text_fts(case_text_fts, rowid, case_id, chunk_index, content)
+  VALUES ('delete', old.rowid, old.case_id, old.chunk_index, old.content);
   INSERT INTO case_text_fts(rowid, case_id, chunk_index, content)
   VALUES (new.rowid, new.case_id, new.chunk_index, new.content);
 END;
 CREATE TRIGGER IF NOT EXISTS case_text_chunks_ad AFTER DELETE ON case_text_chunks BEGIN
-  DELETE FROM case_text_fts WHERE rowid = old.rowid;
+  INSERT INTO case_text_fts(case_text_fts, rowid, case_id, chunk_index, content)
+  VALUES ('delete', old.rowid, old.case_id, old.chunk_index, old.content);
 END;
 
 CREATE TABLE IF NOT EXISTS judges (

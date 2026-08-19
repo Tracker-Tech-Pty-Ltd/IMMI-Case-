@@ -11,8 +11,8 @@ Updated: 2026-08-10 Australia/Melbourne
 ### CRITICAL findings + fixes applied
 | # | Finding | Status |
 |---|---------|--------|
-| 1 | SPA serving missing (`/`,`/app/*` → 503 after cutover; no ASSETS binding) | DEFERRED (needs Static Assets config) |
-| 2 | Catalog D1 at 9.17 GB (exceeds 8 GiB gate, ~8-15% headroom vs 10 GB cap) | DEFERRED (capacity design) |
+| 1 | SPA serving missing (`/`,`/app/*` → 503 after cutover; no ASSETS binding) | FIXED: `[assets]` + ASSETS fallback + SPA build step |
+| 2 | Catalog D1 at 9.17 GB (exceeds 8 GiB gate, ~8-15% headroom vs 10 GB cap) | FIXED: external-content FTS5 dedupe (live D1 re-import required) |
 | 3 | No working login (Telegram deferred, bootstrap not UUID, no login route) | FIXED: bootstrap login + UUID admin |
 | 4 | Unprotected paid AI endpoints (run/health?live=true fail-open) | FIXED: auth-gated + rate-limit fail-closed |
 | 5 | Non-reproducible deploy + CI fails (placeholder test) | FIXED: placeholders restored + tests updated |
