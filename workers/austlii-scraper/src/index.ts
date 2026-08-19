@@ -12,13 +12,20 @@
 import { extractFullText, extractMetadata } from "./parser";
 import { discoverCourt, runDiscoveryAndEnqueue } from "./discover";
 import { handleExtractBatch } from "./extract";
+import { scrapeLegislation } from "./legislation";
 import { sendPipelineAlert } from "./alerts";
 import { COURT_CODES, COURT_MATRIX, isBiweeklyTick } from "./pipeline-config";
 import type { CourtCode } from "./pipeline-config";
 import {
   addPipelineRunMetrics,
   assertSchemaConsistent,
+  findCasesMissingContent,
+  isPipelineStopRequested,
+  latestRunningPipelineRun,
+  requestPipelineStop,
+  recordPipelineDeadLetter,
   startPipelineRun,
+  updateControlCommand,
   updatePipelineRun,
 } from "./pipeline-db";
 export { CostCapDO } from "./cost-cap-do";
@@ -30,15 +37,116 @@ import type {
   ScrapeError,
   EnqueueRequest,
   EnqueueResponse,
+  PipelineControlMessage,
 } from "./types";
 
 type QueueJob = ScrapeJob | ExtractJob;
+
+function isDeadLetterQueue(queue: string | undefined): boolean {
+  return typeof queue === "string" && queue.endsWith("-dlq");
+}
+
+async function handleDeadLetterBatch(
+  batch: MessageBatch<QueueJob>,
+  env: Env,
+): Promise<void> {
+  for (const message of batch.messages) {
+    try {
+      const messageId = "id" in message ? String((message as { id?: unknown }).id || "") : undefined;
+      await recordPipelineDeadLetter(env, batch.queue, messageId, message.body);
+      message.ack();
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "pipeline.dlq_record_error",
+        queue: batch.queue,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      message.retry();
+    }
+  }
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const MAX_BATCH_ENQUEUE = 500;
+
+function isPipelineControl(value: unknown): value is PipelineControlMessage {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<PipelineControlMessage>;
+  return item.kind === "pipeline.control"
+    && typeof item.command_id === "string"
+    && ["start", "stop", "download", "legislation_update"].includes(String(item.action));
+}
+
+function controlCourts(value: unknown): CourtCode[] {
+  const source = Array.isArray(value) ? value : [];
+  const allowed = new Set<string>(COURT_CODES);
+  const courts = source.map(String).map((item) => item.toUpperCase()).filter((item): item is CourtCode => allowed.has(item));
+  return courts.length ? [...new Set(courts)] : [...COURT_CODES];
+}
+
+async function handlePipelineControlBatch(
+  batch: MessageBatch<PipelineControlMessage>,
+  env: Env,
+): Promise<void> {
+  for (const message of batch.messages) {
+    const control = message.body;
+    try {
+      if (!nativePipelineReady(env)) throw new Error("native pipeline is disabled");
+      await updateControlCommand(env, control.command_id, { status: "running" });
+      if (control.action === "stop") {
+        const runId = await latestRunningPipelineRun(env);
+        if (runId) await requestPipelineStop(env, runId);
+        await updateControlCommand(env, control.command_id, { status: "completed", runId: runId ?? undefined });
+      } else if (control.action === "download") {
+        const runId = await startPipelineRun(env, {
+          trigger: "manual",
+          courts: controlCourts(control.courts),
+          phase: "download",
+        });
+        await updateControlCommand(env, control.command_id, { status: "running", runId });
+        const targets = await findCasesMissingContent(env, controlCourts(control.courts), control.limit ?? 50);
+        const jobs = targets.map((job) => ({ body: { ...job, run_id: runId } }));
+        for (let index = 0; index < jobs.length; index += 25) {
+          await env.SCRAPE_QUEUE.sendBatch(jobs.slice(index, index + 25));
+        }
+        await updatePipelineRun(env, runId, { discovered: targets.length });
+        await updateControlCommand(env, control.command_id, { status: "completed", runId });
+      } else if (control.action === "legislation_update") {
+        const lawIds = Array.isArray(control.law_ids) ? control.law_ids : [];
+        if (!lawIds.length) throw new Error("No legislation ids were supplied");
+        await updateControlCommand(env, control.command_id, { status: "running" });
+        const failures: string[] = [];
+        for (const lawId of lawIds) {
+          try {
+            await scrapeLegislation(env, lawId);
+          } catch (error) {
+            failures.push(`${lawId}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+        if (failures.length) throw new Error(failures.join("; "));
+        await updateControlCommand(env, control.command_id, { status: "completed" });
+      } else {
+        const runId = await startPipelineRun(env, {
+          trigger: "manual",
+          courts: controlCourts(control.courts),
+          phase: "discovery",
+        });
+        await updateControlCommand(env, control.command_id, { status: "running", runId });
+        await runDiscoveryAndEnqueue(env, runId, controlCourts(control.courts));
+        await updateControlCommand(env, control.command_id, { status: "completed", runId });
+      }
+      message.ack();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      await updateControlCommand(env, control.command_id, { status: "failed", error: reason }).catch(() => undefined);
+      console.error(JSON.stringify({ event: "pipeline.control.failed", command_id: control.command_id, error: reason }));
+      message.retry();
+    }
+  }
+}
 
 // ─── HTTP Handler (Producer) ─────────────────────────────────────────────────
 
@@ -53,6 +161,27 @@ export default {
         service: "austlii-scraper",
         timestamp: new Date().toISOString(),
       });
+    }
+
+    // During worker-first cutover, disabling the pipeline must also block
+    // direct producer writes. Queue consumers and cron already fail closed
+    // below; without this guard /enqueue and /scrape could still write to the
+    // old shared R2/Queue bindings while PIPELINE_ENABLED=false.
+    if (
+      !nativePipelineReady(env) &&
+      request.method === "POST" &&
+      (url.pathname === "/enqueue" || url.pathname === "/scrape")
+    ) {
+      return Response.json(
+        {
+          error: "AustLII native pipeline is disabled during cutover",
+          code: env.PIPELINE_ENABLED === "true" ? "native_pipeline_disabled" : "pipeline_disabled",
+        },
+        {
+          status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "0" },
+        },
+      );
     }
 
     // Enqueue endpoint
@@ -94,6 +223,13 @@ export default {
     batch: MessageBatch<QueueJob>,
     env: Env,
   ): Promise<void> {
+    if (isDeadLetterQueue(batch.queue)) {
+      await handleDeadLetterBatch(batch, env);
+      return;
+    }
+    if (batch.messages.length > 0 && batch.messages.every((message) => isPipelineControl(message.body))) {
+      return handlePipelineControlBatch(batch as unknown as MessageBatch<PipelineControlMessage>, env);
+    }
     if (batch.messages.every((message) => isExtractJob(message.body))) {
       return handleExtractBatch(batch as MessageBatch<ExtractJob>, env);
     }
@@ -102,12 +238,17 @@ export default {
       const job = message.body as ScrapeJob;
 
       try {
-        if (job.run_id && env.PIPELINE_ENABLED !== "true") {
+        if (job.run_id && !nativePipelineReady(env)) {
           console.log(JSON.stringify({
             event: "queue.skipped.pipeline_disabled",
             run_id: job.run_id,
             case_id: job.case_id,
           }));
+          message.ack();
+          continue;
+        }
+        if (job.run_id && await isPipelineStopRequested(env, job.run_id)) {
+          console.log(JSON.stringify({ event: "queue.skipped.operator_stop", run_id: job.run_id, case_id: job.case_id }));
           message.ack();
           continue;
         }
@@ -150,7 +291,7 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
-    if (env.PIPELINE_ENABLED !== "true") {
+    if (!nativePipelineReady(env)) {
       console.log(JSON.stringify({ event: "cron.skipped.disabled", cron: event.cron }));
       return;
     }
@@ -164,12 +305,15 @@ export default {
       return;
     }
 
-    await assertSchemaConsistent(env).catch((err) => {
+    try {
+      await assertSchemaConsistent(env);
+    } catch (err) {
       console.log(JSON.stringify({
         event: "schema.drift.detected",
         error: err instanceof Error ? err.message : String(err),
       }));
-    });
+      return;
+    }
 
     const hour = new Date(event.scheduledTime).getUTCHours();
     const courts = COURT_MATRIX.groupForHour(hour);
@@ -268,6 +412,10 @@ async function handleEnqueue(
 
   const response: EnqueueResponse = { queued, skipped, errors };
   return Response.json(response);
+}
+
+function nativePipelineReady(env: Env): boolean {
+  return env.PIPELINE_ENABLED === "true" && env.NATIVE_PIPELINE_ENABLED === "true";
 }
 
 // ─── Direct Scrape Handler ────────────────────────────────────────────────────

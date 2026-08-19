@@ -23,6 +23,7 @@ describe("pipeline scrape queue", () => {
 
     const env = {
       PIPELINE_ENABLED: "true",
+      NATIVE_PIPELINE_ENABLED: "true",
       CASE_RESULTS: {
         head: vi.fn(async () => null),
         put: vi.fn(async (key: string, value: string) => {
@@ -66,5 +67,28 @@ describe("pipeline scrape queue", () => {
       }),
     ]);
     expect(ack).toHaveBeenCalledOnce();
+  });
+
+  it.each(["/enqueue", "/scrape"]) (
+    "blocks %s producer writes while PIPELINE_ENABLED is false",
+    async (path) => {
+      const response = await worker.fetch(
+        new Request(`https://example.com${path}`, { method: "POST" }),
+        { PIPELINE_ENABLED: "false" } as unknown as Env,
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      await expect(response.json()).resolves.toMatchObject({ code: "pipeline_disabled" });
+    },
+  );
+
+  it("blocks legacy pipeline activation even if PIPELINE_ENABLED is accidentally true", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/enqueue", { method: "POST" }),
+      { PIPELINE_ENABLED: "true", NATIVE_PIPELINE_ENABLED: "false" } as unknown as Env,
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: "native_pipeline_disabled" });
   });
 });

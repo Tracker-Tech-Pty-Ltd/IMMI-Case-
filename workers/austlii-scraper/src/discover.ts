@@ -9,6 +9,7 @@ import {
 import {
   discoveryTargetTable,
   findExistingCases,
+  isPipelineStopRequested,
   updatePipelineRun,
 } from "./pipeline-db";
 import type { Env, ScrapeJob } from "./types";
@@ -180,6 +181,10 @@ export async function runDiscoveryAndEnqueue(
   const errors: string[] = [];
 
   for (const court of courts) {
+    if (await isPipelineStopRequested(env, runId)) {
+      await updatePipelineRun(env, runId, { status: "aborted", abortReason: "operator_stop" });
+      return;
+    }
     const result = await discoverCourt(env, court, runId, scheduledTime);
     discovered += result.new_cases.length;
     errors.push(...result.errors);

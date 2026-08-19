@@ -1,63 +1,85 @@
-#:schema node_modules/wrangler/config-schema.json
-name = "austlii-scraper"
+# Active IMMI production pipeline configuration: Cloudflare-native only.
+# IDs and service names are operator-supplied outside source control.
+name = "austlii-scraper-native"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2026-08-10"
 compatibility_flags = ["nodejs_compat"]
 
-# Workers Paid plan recommended for 30s CPU time (free plan = 10ms)
-
-# ─── R2 Bucket ────────────────────────────────────────────────────────────────
 [[r2_buckets]]
 binding = "CASE_RESULTS"
-bucket_name = "austlii-case-results"
+bucket_name = "immi-content"
 
-# ─── Queue Producer ───────────────────────────────────────────────────────────
-[[queues.producers]]
-binding = "SCRAPE_QUEUE"
-queue = "austlii-scrape-queue"
+[[d1_databases]]
+binding = "IMMI_CATALOG_DB"
+database_name = "immi-catalog"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "../../migrations/d1/catalog"
 
-[[queues.producers]]
-binding = "EXTRACT_QUEUE"
-queue = "austlii-extract-queue"
-
-# ─── Queue Consumer ───────────────────────────────────────────────────────────
-[[queues.consumers]]
-queue = "austlii-scrape-queue"
-max_batch_size = 5
-max_batch_timeout = 30
-max_retries = 3
-dead_letter_queue = "austlii-scrape-dlq"
-max_concurrency = 20
-
-[[queues.consumers]]
-queue = "austlii-extract-queue"
-max_batch_size = 5
-max_batch_timeout = 60
-max_retries = 2
-dead_letter_queue = "austlii-extract-dlq"
-# EXTRACT_QUEUE forwards to the Flask container. Keep this single-concurrency
-# during soak so extraction CPU cannot compound with user-facing Flask reads.
-max_concurrency = 1
-
-# ─── Cron Triggers: discovery only ───────────────────────────────────────────
-# Cloudflare cron has no native biweekly schedule. These weekly Monday ticks are
-# gated in code by PIPELINE_BIWEEKLY_GATE + isBiweeklyTick().
-[triggers]
-crons = ["0 2 * * 1", "0 3 * * 1", "0 4 * * 1", "0 5 * * 1"]
-
-# ─── Pipeline resource bindings ──────────────────────────────────────────────
-# Resources exist in Cloudflare. The live pipeline is enabled for staging-table
-# soak only; keep PIPELINE_TARGET_TABLE + PIPELINE_INSERT_ONLY conservative until
-# the post-soak production write gate is explicitly accepted.
-# Keep this binding separate from proxy.js's user-facing Hyperdrive pool.
-[[hyperdrive]]
-binding = "HYPERDRIVE_SERVICE"
-id = "4978b6a4b9714545a15c821530aff4e2"
-localConnectionString = "postgresql://postgres:postgres@localhost:5432/immi_case"
+[[d1_databases]]
+binding = "IMMI_OPS_DB"
+database_name = "immi-ops"
+database_id = "00000000-0000-0000-0000-000000000003"
+migrations_dir = "../../migrations/d1/ops"
 
 [[kv_namespaces]]
 binding = "PIPELINE_KV"
-id = "8f7eca05011946d7972cf21b6b5e0e1e"
+id = "00000000-0000-0000-0000-000000000004"
+
+[browser]
+binding = "MYBROWSER"
+
+[[queues.producers]]
+binding = "SCRAPE_QUEUE"
+queue = "immi-scrape-queue"
+
+[[queues.producers]]
+binding = "EXTRACT_QUEUE"
+queue = "immi-extract-queue"
+
+[[queues.producers]]
+binding = "NATIVE_CASE_QUEUE"
+queue = "immi-case-mutation-queue"
+
+[[queues.consumers]]
+queue = "immi-pipeline-control-queue"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "immi-pipeline-control-dlq"
+
+[[queues.consumers]]
+queue = "immi-pipeline-control-dlq"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-scrape-queue"
+max_batch_size = 5
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "immi-scrape-dlq"
+max_concurrency = 20
+
+[[queues.consumers]]
+queue = "immi-scrape-dlq"
+max_batch_size = 20
+max_batch_timeout = 30
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-extract-queue"
+max_batch_size = 5
+max_batch_timeout = 60
+max_retries = 2
+dead_letter_queue = "immi-extract-dlq"
+max_concurrency = 1
+
+[[queues.consumers]]
+queue = "immi-extract-dlq"
+max_batch_size = 20
+max_batch_timeout = 60
+max_retries = 3
 
 [[durable_objects.bindings]]
 name = "COST_CAP_DO"
@@ -67,56 +89,29 @@ class_name = "CostCapDO"
 tag = "pipeline-cost-cap-v1"
 new_classes = ["CostCapDO"]
 
+# The extraction Container is CPU/LLM-only. It receives no D1/R2/Vectorize
+# credentials and returns extraction JSON to this Worker for native storage.
 [[services]]
-binding = "FLASK_BACKEND"
-service = "immi-case"
-entrypoint = "FlaskBackend"
+binding = "EXTRACTION_BACKEND"
+service = "immi-extraction-replace"
+entrypoint = "ExtractionBackend"
 remote = true
-
-[browser]
-binding = "MYBROWSER"
 
 [ai]
 binding = "AI"
 
-# ─── Environment Variables ────────────────────────────────────────────────────
-# Set AUTH_TOKEN via: wrangler secret put AUTH_TOKEN
+[triggers]
+crons = ["0 2 * * 1", "0 3 * * 1", "0 4 * * 1", "0 5 * * 1"]
+
 [vars]
-PIPELINE_ENABLED = "true"
+PIPELINE_ENABLED = "false"
+NATIVE_PIPELINE_ENABLED = "false"
 PIPELINE_BIWEEKLY_GATE = "true"
-PIPELINE_TARGET_TABLE = "immigration_cases_staging"
-PIPELINE_DISCOVERY_LOOKBACK_YEARS = "2"
-PIPELINE_PER_COURT_RATE_LIMIT_MS = "1500"
-PIPELINE_INSERT_ONLY = "true"
 PIPELINE_RUN_COST_CAP_USD = "5"
 PIPELINE_MONTHLY_HARD_CAP_USD = "10"
-PIPELINE_EXTRACT_BATCH_SIZE = "50"
-PIPELINE_LLM_CALL_TIMEOUT_MS = "28000"
+PIPELINE_DISCOVERY_LOOKBACK_YEARS = "2"
+PIPELINE_PER_COURT_RATE_LIMIT_MS = "1500"
 PIPELINE_CONTAINER_EXTRACT_TIMEOUT_MS = "300000"
-LLM_MAX_OUTPUT_TOKENS = "512"
-BROWSER_RENDERING_MONTHLY_BUDGET_SECONDS = "32400"
-BROWSER_NAV_TIMEOUT_MS = "30000"
-TIER2_TRIGGER_CONSECUTIVE_FAILS = "5"
-DLQ_WARN_THRESHOLD = "20"
 FIRECRAWL_ENABLED = "false"
-FIRECRAWL_API_BASE_URL = "https://api.firecrawl.dev/v2"
-FIRECRAWL_PROXY = "auto"
-FIRECRAWL_STORE_IN_CACHE = "false"
-FIRECRAWL_ZERO_DATA_RETENTION = "false"
-FIRECRAWL_TIMEOUT_MS = "60000"
-FIRECRAWL_WAIT_FOR_MS = "0"
-FIRECRAWL_DISCOVERY_MAX_CREDITS_PER_RUN = "25"
-FIRECRAWL_DISCOVERY_MAX_CREDITS_PER_MONTH = "1000"
 
-# AUTH_TOKEN is stored as a secret, not in plaintext.
-# Optional local/staging fallback for discovery DB access:
-#   wrangler secret put HYPERDRIVE_SERVICE_URL
-# Production should prefer the HYPERDRIVE_SERVICE binding above.
-# Optional Firecrawl discovery fallback for AustLII listing pages:
-#   wrangler secret put FIRECRAWL_API_KEY
-# Enable only after a successful dry-run by setting FIRECRAWL_ENABLED=true.
-# Keep FIRECRAWL_STORE_IN_CACHE=false for legal/privacy-sensitive content.
-# Extraction secrets:
-#   wrangler secret put CF_AIG_TOKEN
-#   wrangler secret put LLM_EXTRACT_CF_GATEWAY_URL
-#   wrangler secret put ALERT_DISCORD_WEBHOOK_URL
+# Operator-set only: AUTH_TOKEN, EXTRACTION_SHARED_SECRET and extraction provider secrets.

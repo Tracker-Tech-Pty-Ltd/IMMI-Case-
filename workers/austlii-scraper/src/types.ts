@@ -79,13 +79,15 @@ export interface ScrapeError {
 export interface Env {
   SCRAPE_QUEUE: Queue<ScrapeJob>;
   EXTRACT_QUEUE?: Queue<ExtractJob>;
+  NATIVE_CASE_QUEUE?: Queue<NativeCaseEvent>;
+  PIPELINE_CONTROL_QUEUE?: Queue<PipelineControlMessage>;
   CASE_RESULTS: R2Bucket;
-  FLASK_BACKEND?: Fetcher;
+  EXTRACTION_BACKEND?: Fetcher;
+  IMMI_CATALOG_DB?: D1Database;
+  IMMI_OPS_DB?: D1Database;
   COST_CAP_DO?: DurableObjectNamespace;
   MYBROWSER?: BrowserRun;
   AUTH_TOKEN: string;
-  HYPERDRIVE_SERVICE?: Hyperdrive;
-  HYPERDRIVE_SERVICE_URL?: string;
   PIPELINE_KV?: KVNamespace;
   PIPELINE_ENABLED?: string;
   PIPELINE_BIWEEKLY_GATE?: string;
@@ -108,6 +110,29 @@ export interface Env {
   FIRECRAWL_DISCOVERY_MAX_CREDITS_PER_RUN?: string;
   FIRECRAWL_DISCOVERY_MAX_CREDITS_PER_MONTH?: string;
   ALERT_DISCORD_WEBHOOK_URL?: string;
+  NATIVE_PIPELINE_ENABLED?: string;
+  EXTRACTION_SHARED_SECRET?: string;
+}
+
+export interface NativeCaseEvent {
+  kind: "case.extracted";
+  event_id: string;
+  run_id: string;
+  payload_key: string;
+  payload_sha256: string;
+  payload_size: number;
+  payload_content_type: string;
+}
+
+export interface PipelineControlMessage {
+  kind: "pipeline.control";
+  command_id: string;
+  action: "start" | "stop" | "download" | "legislation_update";
+  courts?: string[];
+  limit?: number;
+  start_year?: number;
+  end_year?: number;
+  law_ids?: string[];
 }
 
 /** Batch enqueue request body */

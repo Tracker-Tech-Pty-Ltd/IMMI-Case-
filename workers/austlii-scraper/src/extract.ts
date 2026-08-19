@@ -1,7 +1,9 @@
 import {
   addPipelineRunMetrics,
+  markNativeOutboxAttempt,
+  markNativeOutboxPublished,
+  stageNativeOutboxEvent,
   updatePipelineRun,
-  upsertExtractedCase,
 } from "./pipeline-db";
 import { sendPipelineAlert } from "./alerts";
 import type {
@@ -9,6 +11,7 @@ import type {
   ExtractJob,
   ExtractedCase,
   InternalExtractResponse,
+  NativeCaseEvent,
   ScrapeResult,
 } from "./types";
 
@@ -35,8 +38,20 @@ async function handleRunExtractMessages(
     return;
   }
 
-  if (!env.FLASK_BACKEND) {
-    retryAll(messages, "missing_flask_backend");
+  if (!env.EXTRACTION_BACKEND) {
+    retryAll(messages, "missing_extraction_backend");
+    return;
+  }
+  if (!env.EXTRACTION_SHARED_SECRET) {
+    retryAll(messages, "missing_extraction_shared_secret");
+    return;
+  }
+  if (env.NATIVE_PIPELINE_ENABLED === "true" && !env.NATIVE_CASE_QUEUE) {
+    retryAll(messages, "missing_native_case_queue");
+    return;
+  }
+  if (env.NATIVE_PIPELINE_ENABLED !== "true") {
+    retryAll(messages, "native_pipeline_required");
     return;
   }
 
@@ -66,7 +81,7 @@ async function handleRunExtractMessages(
     return;
   }
 
-  const upserted = await upsertExtractedResults(env, runId, response.extracted);
+  const upserted = await enqueueNativeExtractedResults(env, runId, response.extracted);
   await chargeCostUsd(env, runId, response.cost_usd);
   await addPipelineRunMetrics(env, runId, {
     extracted: response.extracted.length,
@@ -118,12 +133,13 @@ async function callInternalExtract(
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
 
   try {
-    const response = await env.FLASK_BACKEND!.fetch("https://internal/internal/extract", {
+    const response = await env.EXTRACTION_BACKEND!.fetch("https://internal/internal/extract", {
       method: "POST",
       headers: {
         "X-Internal-Route": "worker",
         "X-Internal-Route-Subtype": "cron-extract",
         "Content-Type": "application/json",
+        ...(env.EXTRACTION_SHARED_SECRET ? { "X-Extraction-Token": env.EXTRACTION_SHARED_SECRET } : {}),
       },
       body: JSON.stringify({ run_id: runId, batch }),
       signal: ctl.signal,
@@ -162,15 +178,56 @@ async function callInternalExtract(
   }
 }
 
-async function upsertExtractedResults(
+async function enqueueNativeExtractedResults(
   env: Env,
   runId: string,
   extracted: ExtractedCase[],
 ): Promise<number> {
+  if (!env.NATIVE_CASE_QUEUE) throw new Error("NATIVE_CASE_QUEUE is required for native extraction");
   let count = 0;
   for (const item of extracted) {
-    const status = await upsertExtractedCase(env, runId, item);
-    if (status !== "skipped") count += 1;
+    const fields = Object.fromEntries(Object.entries(item.fields || {}).map(([name, envelope]) => [name, envelope.value]));
+    const record = { ...(item.base || {}), ...fields, case_id: item.case_id };
+    const canonicalText = String(item.base?.full_text || item.base?.text_snippet || `${record.title || ""} ${record.citation || ""}`).trim();
+    if (!canonicalText) throw new Error(`Missing canonical text for ${item.case_id}`);
+    const audit = Object.entries(item.fields || {}).map(([fieldName, envelope]) => ({
+      fieldName,
+      oldValue: null,
+      newValue: String(envelope.value ?? ""),
+      source: envelope.source,
+      confidence: envelope.confidence,
+    })).filter((entry) => entry.newValue !== "");
+    const payload = JSON.stringify({ record, canonicalText, audit });
+    const bytes = new TextEncoder().encode(payload);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const payloadKey = `pipeline/${runId}/${item.case_id}.json`;
+    await env.CASE_RESULTS.put(payloadKey, bytes, {
+      httpMetadata: { contentType: "application/json" },
+      customMetadata: { sha256, bytes: String(bytes.byteLength) },
+    });
+    const event: NativeCaseEvent = {
+      kind: "case.extracted",
+      event_id: `case.extracted:${runId}:${item.case_id}`,
+      run_id: runId,
+      payload_key: payloadKey,
+      payload_sha256: sha256,
+      payload_size: bytes.byteLength,
+      payload_content_type: "application/json",
+    };
+    const outboxState = await stageNativeOutboxEvent(env, {
+      eventId: event.event_id,
+      runId,
+      eventKind: event.kind,
+      payloadKey,
+      payloadSha256: sha256,
+    });
+    if (outboxState !== "published") {
+      await markNativeOutboxAttempt(env, event.event_id);
+      await env.NATIVE_CASE_QUEUE.send(event);
+      await markNativeOutboxPublished(env, event.event_id);
+    }
+    count += 1;
   }
   return count;
 }
