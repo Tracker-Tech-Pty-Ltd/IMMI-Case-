@@ -48,6 +48,7 @@ run_case() {
   local fixture_json="$2"
   local expected_exit="$3"
   local expected_stderr_contains="${4:-}"
+  local worker_kind="${5:-main}"
 
   printf '%s' "$fixture_json" >"$FIXTURE"
 
@@ -56,6 +57,7 @@ run_case() {
     PATH="$TMP_DIR:$PATH" \
     PREFLIGHT_TEST_FIXTURE="$FIXTURE" \
     WORKER_NAME=test-worker \
+    WORKER_KIND="$worker_kind" \
     bash "$SCRIPT" 2>&1
   )"
   actual_exit=$?
@@ -85,13 +87,13 @@ run_case() {
 }
 
 run_case "exit-0 happy path" \
-  '[{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"},{"name":"OTHER","type":"secret_text"}]' \
+  '[{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"},{"name":"JWT_SECRET_CURRENT","type":"secret_text"},{"name":"JWT_KID_CURRENT","type":"secret_text"},{"name":"TELEGRAM_BOT_TOKEN","type":"secret_text"},{"name":"OTHER","type":"secret_text"}]' \
   0
 
 run_case "exit-1 named-missing" \
-  '[{"name":"CSRF_SECRET","type":"secret_text"}]' \
+  '[{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"},{"name":"JWT_SECRET_CURRENT","type":"secret_text"},{"name":"JWT_KID_CURRENT","type":"secret_text"}]' \
   1 \
-  "CF_AIG_TOKEN"
+  "TELEGRAM_BOT_TOKEN"
 
 run_case "exit-1 all-missing" \
   '[]' \
@@ -100,8 +102,14 @@ run_case "exit-1 all-missing" \
 
 run_case "exit-0 wrangler banner tolerated" \
   '⚠ wrangler warning text
-[{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"}]' \
+[{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"},{"name":"JWT_SECRET_CURRENT","type":"secret_text"},{"name":"JWT_KID_CURRENT","type":"secret_text"},{"name":"TELEGRAM_BOT_TOKEN","type":"secret_text"}]' \
   0
+
+run_case "pipeline requires only AUTH_TOKEN" \
+  '[{"name":"AUTH_TOKEN","type":"secret_text"},{"name":"EXTRACTION_SHARED_SECRET","type":"secret_text"}]' \
+  0 \
+  "" \
+  pipeline
 
 if (( FAIL == 0 )); then
   echo
