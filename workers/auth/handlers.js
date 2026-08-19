@@ -17,7 +17,9 @@
 
 import { verifyTelegramAuth } from "./telegram.js";
 import { makeAccessToken, makeRefreshToken, verifyJwt } from "./jwt.js";
-import { requireAuth, extractToken } from "../db/getSqlAsUser.js";
+import { requireAuth, extractToken } from "./request_auth.js";
+import { createCloudflareIdentityStore } from "../storage/cloudflare.js";
+import { getStorageMode, StorageBoundaryError } from "../storage/contracts.js";
 import { checkNonce } from "./nonce_do.js";
 import {
   extractRefreshToken,
@@ -36,6 +38,22 @@ import {
 
 const ACCESS_MAX_AGE  = 300;    // 5 minutes
 const REFRESH_MAX_AGE = 604800; // 7 days
+
+function isCloudflareMode(env) {
+  return getStorageMode(env) === "cloudflare";
+}
+
+function isWriteFreezeMode(env) {
+  return getStorageMode(env) === "freeze";
+}
+
+function writeFreezeResponse() {
+  return jsonErr("Writes are temporarily frozen for cutover", 503, "cutover_write_freeze");
+}
+
+function isNativeAuthError(err) {
+  return err instanceof StorageBoundaryError && err.status >= 400 && err.status < 500;
+}
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -122,6 +140,13 @@ async function persistIssuedRefreshSession({
   previousRefreshClaims = null,
   previousRefreshReason = "login_replaced",
 }) {
+  if (isCloudflareMode(env)) {
+    return createCloudflareIdentityStore(env).createRefreshSession(
+      draft,
+      previousRefreshClaims,
+      previousRefreshReason,
+    );
+  }
   const sql = getSql(env);
   try {
     await sql.begin(async (tx) => {
@@ -174,6 +199,9 @@ async function issueLoginTokenPair({ request, env, getSql, user, tenant, tenants
 // ---------------------------------------------------------------------------
 
 async function upsertTelegramUser(tgData, getSql, env) {
+  if (isCloudflareMode(env)) {
+    return createCloudflareIdentityStore(env).upsertTelegramUser(tgData);
+  }
   const sql = getSql(env);
   try {
     return await sql.begin(async (tx) => {
@@ -235,6 +263,7 @@ async function upsertTelegramUser(tgData, getSql, env) {
 // ---------------------------------------------------------------------------
 
 export async function handleTelegramLogin(request, env, getSql) {
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
   let data;
   try { data = await request.json(); } catch {
     return jsonErr("Invalid JSON body", 400, "bad_request");
@@ -255,7 +284,7 @@ export async function handleTelegramLogin(request, env, getSql) {
     return jsonErr("Auth replay detected", 401, "replay");
   }
 
-  if (!env.HYPERDRIVE) {
+  if (!isCloudflareMode(env) && !env.HYPERDRIVE) {
     return jsonErr("Database unavailable", 503, "db_unavailable");
   }
 
@@ -320,6 +349,10 @@ export async function handleTelegramCallback(request, env, getSql) {
     return Response.redirect(`${url.origin}/app/login?auth_error=missing_telegram_payload`, 302);
   }
 
+  if (isWriteFreezeMode(env)) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=cutover_write_freeze`, 302);
+  }
+
   const tgResult = await verifyTelegramAuth(data, env);
   if (!tgResult.valid) {
     console.log(JSON.stringify({ event: "auth.telegram.callback_fail", reason: tgResult.reason }));
@@ -332,7 +365,7 @@ export async function handleTelegramCallback(request, env, getSql) {
     return Response.redirect(`${url.origin}/app/login?auth_error=replay`, 302);
   }
 
-  if (!env.HYPERDRIVE) {
+  if (!isCloudflareMode(env) && !env.HYPERDRIVE) {
     return Response.redirect(`${url.origin}/app/login?auth_error=db_unavailable`, 302);
   }
 
@@ -398,7 +431,7 @@ export async function handleAuthMe(request, env) {
 
 export async function handleAuthLogout(request, env, getSql) {
   const refreshToken = extractRefreshToken(request);
-  if (!refreshToken || !env.HYPERDRIVE) {
+  if (!refreshToken) {
     return clearCookiesResponse({ ok: true });
   }
 
@@ -413,6 +446,27 @@ export async function handleAuthLogout(request, env, getSql) {
   } catch {
     return clearCookiesResponse({ ok: true });
   }
+
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
+
+  if (isCloudflareMode(env)) {
+    try {
+      await createCloudflareIdentityStore(env).revokeRefreshSession({
+        jti: refreshClaims.jti,
+        userId: refreshClaims.userId,
+        reason: "logout",
+      });
+    } catch (err) {
+      console.error(JSON.stringify({ event: "auth.logout.revoke_error", error: err?.message }));
+      return clearCookiesResponse(
+        { ok: false, error: "Logout revoke failed", code: "db_error" },
+        503,
+      );
+    }
+    return clearCookiesResponse({ ok: true });
+  }
+
+  if (!env.HYPERDRIVE) return clearCookiesResponse({ ok: true });
 
   try {
     const sql = getSql(env);
@@ -459,6 +513,12 @@ export async function handleAuthRefresh(request, env, getSql) {
     refreshClaims = validateRefreshPayload(result.payload);
   } catch (err) {
     return refreshSessionErr(err);
+  }
+
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
+
+  if (isCloudflareMode(env)) {
+    return handleCloudflareAuthRefresh(env, refreshClaims);
   }
 
   if (!env.HYPERDRIVE) {
@@ -542,6 +602,41 @@ export async function handleAuthRefresh(request, env, getSql) {
   );
 }
 
+async function handleCloudflareAuthRefresh(env, refreshClaims) {
+  let user, tenant, tenants, newAccessToken, newRefreshToken, newRefreshDraft;
+  try {
+    const store = createCloudflareIdentityStore(env);
+    const snapshot = await store.loadRefreshAuthSnapshot(refreshClaims);
+    user = snapshot.user;
+    tenant = snapshot.tenant;
+    tenants = snapshot.tenants;
+    newRefreshDraft = generateRefreshSessionDraft(user.id, snapshot.session.family_id);
+    try {
+      [newAccessToken, newRefreshToken] = await Promise.all([
+        makeAccessToken(user, tenant, tenants, env),
+        makeRefreshToken(user.id, newRefreshDraft.jti, env),
+      ]);
+    } catch (err) {
+      err.phase = "jwt";
+      throw err;
+    }
+    await store.rotateRefreshSession(refreshClaims, newRefreshDraft);
+  } catch (err) {
+    if (isNativeAuthError(err)) return refreshSessionErr(err);
+    if (err?.phase === "jwt") {
+      console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
+    console.error(JSON.stringify({ event: "auth.refresh.db_error", error: err?.message }));
+    return jsonErr("Authentication service error", 503, "db_error");
+  }
+  return buildAuthResponse(
+    { access_token: newAccessToken, token_type: "Bearer", expires_in: ACCESS_MAX_AGE },
+    newAccessToken,
+    newRefreshToken,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/v1/auth/switch-tenant
 // ---------------------------------------------------------------------------
@@ -559,6 +654,37 @@ export async function handleAuthSwitchTenant(request, env, getSql) {
   const targetTenantId = body?.tenant_id;
   if (!targetTenantId || typeof targetTenantId !== "string") {
     return jsonErr("tenant_id required", 400, "missing_tenant_id");
+  }
+
+  if (isCloudflareMode(env)) {
+    let snapshot;
+    try {
+      // This is intentionally a live Account D1 membership lookup, not a
+      // JWT claim check: access-token membership can be five minutes stale.
+      snapshot = await createCloudflareIdentityStore(env).getAuthSnapshot(claims.sub, targetTenantId);
+    } catch (err) {
+      if (isNativeAuthError(err)) return jsonErr(err.message, err.status, err.code);
+      console.error(JSON.stringify({ event: "auth.switch_tenant.db_error", error: err?.message }));
+      return jsonErr("Authentication service error", 503, "db_error");
+    }
+    let newAccessToken;
+    try {
+      newAccessToken = await makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenants, env);
+    } catch (err) {
+      console.error(JSON.stringify({ event: "auth.switch_tenant.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
+    const headers = new Headers({ "Content-Type": "application/json" });
+    headers.append(
+      "Set-Cookie",
+      `immi_access=${newAccessToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_MAX_AGE}`,
+    );
+    return new Response(JSON.stringify({
+      access_token: newAccessToken,
+      token_type: "Bearer",
+      expires_in: ACCESS_MAX_AGE,
+      tenant: { id: snapshot.tenant.id, kind: snapshot.tenant.kind, name: snapshot.tenant.name },
+    }), { status: 200, headers });
   }
 
   const allTenants = claims.tenants ?? [];
