@@ -8,6 +8,7 @@
 
 import { mintToken, nanoid21 } from "./auth.js";
 import { runCouncil, runExpert, streamCouncil } from "./runner.js";
+import { buildCaseContextFromQuestion } from "./retrieval.js";
 import { verifyJwt } from "../auth/jwt.js";
 import { requireAuth } from "../auth/request_auth.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
@@ -311,12 +312,16 @@ async function handleLegacyRun(request, env) {
   const invalid = validateBodyMessage(body, "question");
   if (invalid) return errorResponse(invalid.error);
   try {
+    const question = body.question.trim();
+    const retrieval = await buildCaseContextFromQuestion(env, question);
     const result = await runCouncil({
-      env, question: body.question.trim(), caseContext: typeof body.context === "string" ? body.context : "", prevTurns: [],
+      env, question, caseContext: typeof body.context === "string" ? body.context : "",
+      retrievedContext: retrieval.contextString, retrievedCases: retrieval.retrievedCases, prevTurns: [],
     });
     return jsonResponse({
       question: result.question, case_context: result.case_context, models: result.models,
-      opinions: result.opinions, moderator: result.moderator, retrieved_cases: [],
+      opinions: result.opinions, moderator: result.moderator,
+      retrieved_cases: result.retrieved_cases, retrieval_status: retrieval.status,
     });
   } catch (err) {
     return errorResponse(`LLM Council error: ${err?.message || "unavailable"}`, 503);
@@ -334,6 +339,7 @@ async function handleStream(request, env, ctx) {
   if (invalid) return errorResponse(invalid.error);
   const message = body.message.trim();
   const caseContext = typeof body.case_context === "string" ? body.case_context : "";
+  const retrieval = await buildCaseContextFromQuestion(env, message);
   const sessionId = nanoid21();
   const turnId = nanoid21();
   const sessionToken = await mintToken(env, sessionId);
@@ -343,7 +349,7 @@ async function handleStream(request, env, ctx) {
   let stream;
   try {
     stream = streamCouncil({
-      env, question: message, caseContext, prevTurns: [],
+      env, question: message, caseContext, retrievedContext: retrieval.contextString, retrieval, prevTurns: [],
       sessionMeta: { session_id: sessionId, session_token: sessionToken, retrieve_code: retrieveCode },
     });
   } catch (err) {
