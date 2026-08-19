@@ -23,7 +23,7 @@ Updated: 2026-08-10 Australia/Melbourne
 | requireAuth accepts refresh tokens | FIXED (token-type check) |
 | Vectorize 149,017 (test vector) | FIXED (index recreated clean, re-embedding) |
 | No metadata indexes | FIXED (verified existing + added case_nature_idx) |
-| visa_type/case_nature not in semantic filter | PARTIAL (filters in code, metadata allowlist covers 4) |
+| visa_type/case_nature not in semantic filter | NOT-A-BLOCKER: structured filters via D1 WHERE (normal filter is better); Vectorize not needed |
 | Cutover workflow circular dependency | DEFERRED (activation workflow redesign) |
 
 ### Fixes implemented
@@ -46,7 +46,7 @@ Updated: 2026-08-10 Australia/Melbourne
 1. **SPA serving (CRITICAL #1)**: standalone worker only handles API; `/`, `/app/*` return 503 without Workers Static Assets / ASSETS binding. Deploy currently points whole custom domain at the worker. MUST add static assets + SPA fallback before cutover.
 2. **Catalog D1 capacity (CRITICAL #2)**: live immi-catalog is 9.17 GB — exceeds repo's 8 GiB gate; only ~8-15% headroom vs Cloudflare's 10 GB single-D1 cap. NEEDS capacity redesign (dedupe chunks or shard FTS by court/year) before production.
 3. **Cutover workflow circular dependency (HIGH)**: deploy workflow requires activation packet proving blue/green switch + shadow + rollback rehearsal + soak BEFORE deploy, but shadow needs a deployed version. NEEDS activation workflow redesign.
-4. **Vectorize metadata filters (HIGH search)**: semantic filter supports 4 keys (court_code/year/source/visa_subclass); visa_type/case_nature not in Vectorize metadata — would require re-embed with expanded metadata. Lexical path handles all filters via D1 WHERE; hybrid combines both.
+4. ~~Vectorize metadata filters (HIGH search)~~ **DOWNGRADED — not a blocker**: visa_type/case_nature are structured metadata columns, not semantic content. Filtering them is best done via D1 WHERE (normal filter), not Vectorize — lexical/hybrid paths already cover this. Re-embedding 149K vectors to add these keys is unnecessary.
 5. **Reproducible deploy**: checked-in wrangler.toml restored to placeholders (fail-closed safety). Deploy uses operator-provided temp configs (deploy-worker.yml generates into RUNNER_TEMP). The standalone deploy was from a dirty tree — future deploys must be from a clean Git SHA.
 
 ## 2026-08-12 IMMI Data Import — COMPLETE ✓
