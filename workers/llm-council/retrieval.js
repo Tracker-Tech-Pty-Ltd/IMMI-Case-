@@ -117,7 +117,7 @@ export function buildFtsQuery(question) {
     seen.add(lowerToken);
     contentTerms.push(token);
   }
-  const lower = question.toLowerCase();
+  const lower = question.toLowerCase().replace(/[\u2010-\u2015_-]/g, " ");
   const phraseTerms = [];
   const phraseWords = new Set();
   for (const phrase of FTS_PHRASES) {
@@ -155,11 +155,13 @@ export async function buildCaseContextFromQuestion(env, question, { recall = RET
       };
     }
     const store = createCloudflareCaseStore(env);
-    const rows = await withTimeout(store.searchLexical({ query, limit: recall }), RETRIEVAL_TIMEOUT_MS);
+    const rows = await withTimeout(store.searchLexical({ match: query, limit: recall }), RETRIEVAL_TIMEOUT_MS);
     const candidates = rows.length;
     const seenCitation = new Set();
     const retrievedCases = [];
     for (const row of rows) {
+      const rank = row.rank == null ? Number.NaN : Number(row.rank);
+      if (!Number.isFinite(rank)) continue;
       const citationKey = sanitizeText(row.citation).toLowerCase();
       if (citationKey && seenCitation.has(citationKey)) continue;
       if (citationKey) seenCitation.add(citationKey);
@@ -171,8 +173,8 @@ export async function buildCaseContextFromQuestion(env, question, { recall = RET
         title: sanitizeText(row.title),
         case_nature: sanitizeText(row.case_nature),
         visa_subclass: sanitizeText(row.visa_subclass),
-        relevance_score: -Number(row.rank) || 0,
-        bm25_rank: Number(row.rank),
+        relevance_score: -rank,
+        bm25_rank: rank,
         snippet: sanitizeText(row.text_snippet).slice(0, SNIPPET_MAX_CHARS),
         source_url: sanitizeText(row.url),
       });

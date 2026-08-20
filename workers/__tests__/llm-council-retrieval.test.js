@@ -80,21 +80,34 @@ describe("buildFtsQuery", () => {
 
 describe("buildCaseContextFromQuestion", () => {
   it("maps rank to relevance_score, dedupes by citation, keeps top-K", async () => {
-    createCloudflareCaseStore.mockReturnValue({
-      searchLexical: vi.fn().mockResolvedValue([
-        { case_id: "aaaaaaaaaaaa", citation: "Case A", court_code: "FCA", year: 2020, title: "T A", case_nature: "Appeal", visa_subclass: "", text_snippet: "sA", url: "http://a", rank: -5.5 },
-        { case_id: "bbbbbbbbbbbb", citation: "Case B", court_code: "FCA", year: 2021, title: "T B", case_nature: "Appeal", visa_subclass: "", text_snippet: "sB", url: "http://b", rank: -3.2 },
-        { case_id: "cccccccccccc", citation: "Case A", court_code: "FCA", year: 2020, title: "T A dup", case_nature: "Appeal", visa_subclass: "", text_snippet: "sD", url: "http://d", rank: -2.0 },
-      ]),
-    });
+    const searchLexical = vi.fn().mockResolvedValue([
+      { case_id: "aaaaaaaaaaaa", citation: "Case A", court_code: "FCA", year: 2020, title: "T A", case_nature: "Appeal", visa_subclass: "", text_snippet: "sA", url: "http://a", rank: -5.5 },
+      { case_id: "bbbbbbbbbbbb", citation: "Case B", court_code: "FCA", year: 2021, title: "T B", case_nature: "Appeal", visa_subclass: "", text_snippet: "sB", url: "http://b", rank: -3.2 },
+      { case_id: "cccccccccccc", citation: "Case A", court_code: "FCA", year: 2020, title: "T A dup", case_nature: "Appeal", visa_subclass: "", text_snippet: "sD", url: "http://d", rank: -2.0 },
+    ]);
+    createCloudflareCaseStore.mockReturnValue({ searchLexical });
 
     const result = await buildCaseContextFromQuestion({}, "persecution religion", { recall: 10, topK: 2 });
 
+    expect(searchLexical).toHaveBeenCalledWith({ match: '"persecution" OR "religion"', limit: 10 });
     expect(result.retrievedCases.map((x) => x.case_id)).toEqual(["aaaaaaaaaaaa", "bbbbbbbbbbbb"]);
     expect(result.retrievedCases[0].relevance_score).toBe(5.5);
     expect(result.retrievedCases[0].bm25_rank).toBe(-5.5);
     expect(result.status).toMatchObject({ state: "ok", candidates: 3, injected: 2 });
     expect(result.contextString).toContain("<retrieved_cases>");
+  });
+
+  it("skips rows with non-finite rank", async () => {
+    const searchLexical = vi.fn().mockResolvedValue([
+      { case_id: "aaaaaaaaaaaa", citation: "Case A", court_code: "FCA", year: 2020, title: "T A", case_nature: "Appeal", visa_subclass: "", text_snippet: "sA", url: "http://a", rank: null },
+      { case_id: "bbbbbbbbbbbb", citation: "Case B", court_code: "FCA", year: 2021, title: "T B", case_nature: "Appeal", visa_subclass: "", text_snippet: "sB", url: "http://b", rank: -3.0 },
+    ]);
+    createCloudflareCaseStore.mockReturnValue({ searchLexical });
+
+    const result = await buildCaseContextFromQuestion({}, "persecution", { recall: 10, topK: 5 });
+
+    expect(result.retrievedCases.map((x) => x.case_id)).toEqual(["bbbbbbbbbbbb"]);
+    expect(result.retrievedCases[0].bm25_rank).toBe(-3.0);
   });
 
   it("returns empty state without calling searchLexical when the query is empty", async () => {

@@ -1096,8 +1096,8 @@ export class CloudflareCaseStore {
     return rows(await statements.all());
   }
 
-  async searchLexical({ query, filters = {}, limit } = {}) {
-    const match = toFtsMatch(query);
+  async searchLexical({ query, match, filters = {}, limit } = {}) {
+    const matchString = match ?? toFtsMatch(query);
     const { clauses, params } = safeCaseFilters(filters);
     const size = clampLimit(limit, { fallback: 50, max: 100 });
     // bm25() is valid only in the direct FTS query context. First select no
@@ -1109,7 +1109,7 @@ export class CloudflareCaseStore {
       WHERE case_text_fts MATCH ?
       ORDER BY rank ASC
       LIMIT 100
-    `).bind(match).all());
+    `).bind(matchString).all());
     const ranks = new Map();
     for (const hit of hits) {
       const rank = Number(hit.rank);
@@ -1123,6 +1123,7 @@ export class CloudflareCaseStore {
       FROM cases c
       JOIN json_each(?) candidate_ids ON candidate_ids.value = c.case_id
       WHERE 1 = 1 ${where}
+      ORDER BY candidate_ids.key
       LIMIT ?
     `, [JSON.stringify(caseIds), ...params, size]);
     return rows(await statement.all())

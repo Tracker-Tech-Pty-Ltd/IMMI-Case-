@@ -183,7 +183,8 @@ async function handleCreateSession(request, env) {
   const { stores, auth } = await councilStoresForClaims(env, authResult.claims);
   let councilResult;
   try {
-    councilResult = await runCouncil({ env, question: message, caseContext, prevTurns: [] });
+    const retrieval = await buildCaseContextFromQuestion(env, message);
+    councilResult = await runCouncil({ env, question: message, caseContext, retrievedContext: retrieval.contextString, retrievedCases: retrieval.retrievedCases, prevTurns: [] });
   } catch (err) {
     return errorResponse(`LLM Council error: ${err?.message || "unavailable"}`, 503);
   }
@@ -220,10 +221,13 @@ async function handleAddTurn(request, env, sessionId) {
   const message = body.message.trim();
   let councilResult;
   try {
+    const retrieval = await buildCaseContextFromQuestion(env, message);
     councilResult = await runCouncil({
       env,
       question: message,
       caseContext: "",
+      retrievedContext: retrieval.contextString,
+      retrievedCases: retrieval.retrievedCases,
       prevTurns: current.turns.slice(0, MAX_TURNS).map((turn) => ({
         user_message: turn.user_message,
         payload: { moderator: { composed_answer: turn.payload?.moderator?.composed_answer || "" } },
