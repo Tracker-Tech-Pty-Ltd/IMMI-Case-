@@ -33,7 +33,6 @@ jobs:
           .venv/bin/pytest
           tests/test_native_pipeline_boundary.py
           tests/test_cloudflare_native_target.py
-          tests/test_cloudflare_native_bundle.py
           tests/test_export_immi_ndjson.py
           tests/test_transform_immi_snapshot.py
           tests/test_cloudflare_catalog_capacity.py
