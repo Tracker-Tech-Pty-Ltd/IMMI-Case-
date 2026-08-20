@@ -26,7 +26,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet pytest pytest-timeout pytest-cov pytest-asyncio responses pandas python-dotenv flask flask-wtf
+          .venv/bin/pip install --quiet -r requirements-test.txt -r requirements-legacy-rollback.txt
 
       - name: Run native migration and extraction tests
         run: >-
