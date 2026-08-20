@@ -119,7 +119,7 @@ describe("Cloudflare store factory", () => {
     const ftsStatement = value.IMMI_CATALOG_DB.calls.find((statement) => statement.sql.includes("case_text_fts MATCH ?"));
     const metadataStatement = value.IMMI_CATALOG_DB.calls.find((statement) => statement.sql.includes("json_each(?)"));
     expect(ftsStatement.sql).not.toContain("drop table");
-    expect(ftsStatement.params).toEqual(['"visa" AND "OR" AND "drop" AND "table"']);
+    expect(ftsStatement.params).toEqual(['"visa" AND "OR" AND "drop" AND "table"', 100, 0]);
     expect(metadataStatement.params).toContain("FCA");
     expect(metadataStatement.params).toContain(2025);
   });

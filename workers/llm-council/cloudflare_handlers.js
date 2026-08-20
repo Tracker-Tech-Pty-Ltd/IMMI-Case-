@@ -343,7 +343,6 @@ async function handleStream(request, env, ctx) {
   if (invalid) return errorResponse(invalid.error);
   const message = body.message.trim();
   const caseContext = typeof body.case_context === "string" ? body.case_context : "";
-  const retrieval = await buildCaseContextFromQuestion(env, message);
   const sessionId = nanoid21();
   const turnId = nanoid21();
   const sessionToken = await mintToken(env, sessionId);
@@ -353,7 +352,7 @@ async function handleStream(request, env, ctx) {
   let stream;
   try {
     stream = streamCouncil({
-      env, question: message, caseContext, retrievedContext: retrieval.contextString, retrieval, prevTurns: [],
+      env, question: message, caseContext, prevTurns: [],
       sessionMeta: { session_id: sessionId, session_token: sessionToken, retrieve_code: retrieveCode },
     });
   } catch (err) {

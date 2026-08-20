@@ -16,6 +16,7 @@ import {
   extractFirstJsonObject,
   isGpt5ReasoningModel,
 } from "./runner-helpers.js";
+import { buildCaseContextFromQuestion } from "./retrieval.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1718,7 +1719,7 @@ export async function* streamGeminiNative({
  * + final moderator synthesis. Suitable as Response body with
  * Content-Type: text/event-stream.
  */
-export function streamCouncil({ env, question, caseContext = "", retrievedContext = "", retrieval = null, prevTurns, models = {}, sessionMeta = null }) {
+export function streamCouncil({ env, question, caseContext = "", prevTurns, models = {}, sessionMeta = null }) {
   const q = (question || "").trim();
   if (!q) throw new Error("question is required");
 
@@ -1740,7 +1741,7 @@ export function streamCouncil({ env, question, caseContext = "", retrievedContex
   );
 
   const historyMessages = buildHistoryMessages(prevTurns || []);
-  const userPrompt = buildUserPrompt(q, caseContext, retrievedContext);
+  let userPrompt = "";
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -1883,12 +1884,14 @@ export function streamCouncil({ env, question, caseContext = "", retrievedContex
         },
       });
 
-      // Surface corpus retrieval early so the frontend can show grounded
-      // case context (or an explicit empty/timeout status) before the experts
-      // finish streaming. `retrieval` is null when the caller disabled RAG.
+      // Retrieve similar cases now that the stream is open, so council.start
+      // reaches the client before the D1 round-trip. Build the expert prompt
+      // from the retrieved context, then surface it as an SSE event.
+      const retrieval = await buildCaseContextFromQuestion(env, q);
+      userPrompt = buildUserPrompt(q, caseContext, retrieval.contextString);
       await send("council.retrieval", {
-        retrieved_cases: retrieval?.retrievedCases ?? [],
-        status: retrieval?.status ?? { state: "disabled", candidates: 0, injected: 0, latency_ms: 0 },
+        retrieved_cases: retrieval.retrievedCases,
+        status: retrieval.status,
       });
 
       // Surface session identity early so the frontend can show the
@@ -1966,7 +1969,7 @@ export function streamCouncil({ env, question, caseContext = "", retrievedContex
       // via `moderator.complete` so existing UI fall-through still works.
       await send("moderator.start", { model: geminiFlashModel });
       const moderator = await runModerator({
-        env, opinions, question: q, caseContext, retrievedContext,
+        env, opinions, question: q, caseContext, retrievedContext: retrieval.contextString,
         history: historyMessages, moderatorModel: geminiFlashModel,
         onDelta: (text) => { void send("moderator.delta", { text }); },
         externalSignal: orchestrationAbort.signal,

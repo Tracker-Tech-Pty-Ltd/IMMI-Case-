@@ -64,21 +64,21 @@ export function renderRetrievedContext(cases, { maxChars = CONTEXT_MAX_CHARS } =
     if (total > maxChars) break;
     blocks.push(block);
   }
+  if (blocks.length === 0) return "";
   return `<retrieved_cases>\n${blocks.join("\n\n")}\n</retrieved_cases>`;
 }
 
 /** Hard-deadline wrapper so a hung D1 call degrades, never blocks. */
 function withTimeout(promise, ms, label = "retrieval") {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        const err = new Error(`${label} timed out after ${ms}ms`);
-        err.name = "TimeoutError";
-        reject(err);
-      }, ms);
-    }),
-  ]);
+  let handle;
+  const timer = new Promise((_, reject) => {
+    handle = setTimeout(() => {
+      const err = new Error(`${label} timed out after ${ms}ms`);
+      err.name = "TimeoutError";
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(handle));
 }
 
 const FTS_STOPWORDS = new Set([
@@ -87,6 +87,7 @@ const FTS_STOPWORDS = new Set([
   "that", "this", "it", "on", "at", "be", "or", "but", "not", "if", "then",
   "so", "as", "by", "from", "was", "were", "has", "have", "had", "an", "you",
   "your", "we", "our", "they", "their", "he", "she", "his", "her", "etc",
+  "why", "when", "where", "which", "who", "please", "me",
 ]);
 
 const FTS_PHRASES = [

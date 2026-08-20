@@ -1100,20 +1100,26 @@ export class CloudflareCaseStore {
     const matchString = match ?? toFtsMatch(query);
     const { clauses, params } = safeCaseFilters(filters);
     const size = clampLimit(limit, { fallback: 50, max: 100 });
-    // bm25() is valid only in the direct FTS query context. First select no
-    // more than 100 chunk candidates, aggregate their case ranks in memory,
-    // then make a bound JSON1 join for structured filters and metadata.
-    const hits = rows(await this.db.prepare(`
-      SELECT case_id, bm25(case_text_fts) AS rank
-      FROM case_text_fts
-      WHERE case_text_fts MATCH ?
-      ORDER BY rank ASC
-      LIMIT 100
-    `).bind(matchString).all());
+    // bm25() is valid only in the direct FTS query context. Paginate over chunk
+    // candidates (a single long case can monopolise the first page) until enough
+    // distinct cases are found, then aggregate their best-chunk rank per case.
     const ranks = new Map();
-    for (const hit of hits) {
-      const rank = Number(hit.rank);
-      if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
+    const CHUNK_PAGE = 100;
+    const MAX_PAGES = 5;
+    for (let offset = 0; offset < CHUNK_PAGE * MAX_PAGES; offset += CHUNK_PAGE) {
+      const hits = rows(await this.db.prepare(`
+        SELECT case_id, bm25(case_text_fts) AS rank
+        FROM case_text_fts
+        WHERE case_text_fts MATCH ?
+        ORDER BY rank ASC
+        LIMIT ? OFFSET ?
+      `).bind(matchString, CHUNK_PAGE, offset).all());
+      if (hits.length === 0) break;
+      for (const hit of hits) {
+        const rank = Number(hit.rank);
+        if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
+      }
+      if (ranks.size >= size) break;
     }
     const caseIds = [...ranks.keys()];
     if (caseIds.length === 0) return [];
