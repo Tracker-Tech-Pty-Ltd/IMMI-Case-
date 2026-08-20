@@ -1,5 +1,7 @@
-# Rollback-only Python app dependencies. The active Worker/Container image and
-# native CI do not install this file.
+# Python app dependencies required to import the full immi_case_downloader
+# package. Installed by the native CI test-python job (conftest transitively
+# imports the Flask web stack + supabase client) and retained for the legacy
+# rollback path. The extraction Container (requirements.txt) stays minimal.
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
