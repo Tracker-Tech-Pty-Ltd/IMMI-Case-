@@ -1879,6 +1879,17 @@ export function createCloudflareStores(env) {
   });
 }
 
+/**
+ * D1-only store factory for the council retrieval path. Unlike
+ * createCloudflareStores it does not require Vectorize/AI/R2 bindings, so the
+ * lexical retrieval can run even when the semantic index is unavailable.
+ */
+export function createCloudflareCaseStore(env) {
+  assertCloudflareRuntimeMode(env);
+  requireD1(env?.IMMI_CATALOG_DB, "IMMI_CATALOG_DB");
+  return new CloudflareCaseStore(env);
+}
+
 /** The auth boundary needs only Account D1; no handler receives its binding. */
 export function createCloudflareIdentityStore(env) {
   assertCloudflareRuntimeMode(env);

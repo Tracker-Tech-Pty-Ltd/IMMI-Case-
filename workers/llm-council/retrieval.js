@@ -3,10 +3,10 @@
  *
  * The Council previously ran on web_search/LLM memory alone: `retrieved_cases`
  * was always `[]` and `caseContext` was only whatever the user pasted in the
- * request body. This module closes that gap: embed the user question, wide-recall
- * similar cases from Vectorize, fetch their D1 metadata in one query, dedupe by
- * citation, keep the top-K, and render a sanitized, delimited prompt string that
- * both the legacy and streaming council paths inject as grounded evidence.
+ * request body. This module closes that gap: build an FTS5 query from the
+ * question, lexically search the D1 corpus, dedupe by citation, keep the top-K,
+ * and render a sanitized, delimited prompt string that both the legacy and
+ * streaming council paths inject as grounded evidence.
  *
  * Prompt-injection discipline: retrieved case text is untrusted input. It is
  * sanitized (HTML + control chars stripped), wrapped in `<retrieved_case>`
@@ -14,7 +14,7 @@
  * treat case text as instructions.
  */
 
-import { createCloudflareStores } from "../storage/cloudflare.js";
+import { createCloudflareCaseStore } from "../storage/cloudflare.js";
 
 const RETRIEVAL_RECALL = 20;
 const RETRIEVAL_TOP_K = 5;
@@ -67,7 +67,7 @@ export function renderRetrievedContext(cases, { maxChars = CONTEXT_MAX_CHARS } =
   return `<retrieved_cases>\n${blocks.join("\n\n")}\n</retrieved_cases>`;
 }
 
-/** Hard-deadline wrapper so a hung Vectorize/D1 call degrades, never blocks. */
+/** Hard-deadline wrapper so a hung D1 call degrades, never blocks. */
 function withTimeout(promise, ms, label = "retrieval") {
   return Promise.race([
     promise,
@@ -81,13 +81,64 @@ function withTimeout(promise, ms, label = "retrieval") {
   ]);
 }
 
+const FTS_STOPWORDS = new Set([
+  "a", "the", "and", "of", "to", "in", "for", "is", "are", "my", "do", "i",
+  "does", "what", "how", "can", "will", "would", "should", "about", "with",
+  "that", "this", "it", "on", "at", "be", "or", "but", "not", "if", "then",
+  "so", "as", "by", "from", "was", "were", "has", "have", "had", "an", "you",
+  "your", "we", "our", "they", "their", "he", "she", "his", "her", "etc",
+]);
+
+const FTS_PHRASES = [
+  "complementary protection",
+  "well founded fear",
+  "jurisdictional error",
+  "procedural fairness",
+  "natural justice",
+  "visa cancellation",
+  "character test",
+  "protection visa",
+];
+
+/**
+ * Turn a natural-language question into an FTS5 MATCH query. Drops stopwords,
+ * duplicates and 1-2 char tokens, keeps known multi-word legal phrases as
+ * single quoted phrases, then OR-combines the top content terms. Returns ""
+ * when nothing searchable remains (the caller then skips the FTS call).
+ */
+export function buildFtsQuery(question) {
+  if (typeof question !== "string" || question.trim() === "") return "";
+  const tokens = question.match(/[\p{L}\p{N}_-]+/gu) || [];
+  const contentTerms = [];
+  const seen = new Set();
+  for (const token of tokens) {
+    const lowerToken = token.toLowerCase();
+    if (FTS_STOPWORDS.has(lowerToken) || token.length <= 2 || seen.has(lowerToken)) continue;
+    seen.add(lowerToken);
+    contentTerms.push(token);
+  }
+  const lower = question.toLowerCase();
+  const phraseTerms = [];
+  const phraseWords = new Set();
+  for (const phrase of FTS_PHRASES) {
+    if (lower.includes(phrase)) {
+      phraseTerms.push(phrase);
+      for (const word of phrase.split(" ")) phraseWords.add(word);
+    }
+  }
+  const filteredContent = contentTerms.filter((term) => !phraseWords.has(term.toLowerCase()));
+  const combined = [...phraseTerms, ...filteredContent].slice(0, 12);
+  if (combined.length === 0) return "";
+  return combined.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
+}
+
 /**
  * Retrieve similar cases for a question and build the council context.
  *
- * Pipeline: embed → Vectorize wide-recall (top `recall`) → D1 metadata fetch in
- * one query → dedupe by citation → sort by score → top-`topK` → render context.
+ * Pipeline: build an FTS5 query from the question → lexical search (top
+ * `recall`) → dedupe by citation → top-`topK` → render context.
  *
- * @param {object} env — worker env (CASE_VECTORS, AI, IMMI_CATALOG_DB)
+ * @param {object} env — worker env (IMMI_CATALOG_DB)
  * @param {string} question
  * @param {{recall?: number, topK?: number}} opts
  * @returns {Promise<{retrievedCases: Array, contextString: string, status: object}>}
@@ -95,19 +146,17 @@ function withTimeout(promise, ms, label = "retrieval") {
 export async function buildCaseContextFromQuestion(env, question, { recall = RETRIEVAL_RECALL, topK = RETRIEVAL_TOP_K } = {}) {
   const start = Date.now();
   try {
-    const stores = createCloudflareStores(env);
-    const queryResult = await withTimeout(
-      stores.semanticIndex.searchText(question, { limit: recall }),
-      RETRIEVAL_TIMEOUT_MS,
-    );
-    const matches = (Array.isArray(queryResult?.matches) ? queryResult.matches : [])
-      .filter((m) => m && typeof m.id === "string" && m.id.length > 0);
-    const candidates = matches.length;
-
-    const caseIds = matches.map((m) => m.id);
-    const rows = caseIds.length > 0 ? await withTimeout(stores.caseStore.findByIds(caseIds), RETRIEVAL_TIMEOUT_MS) : [];
-
-    const scoreByCaseId = new Map(matches.map((m) => [m.id, Number(m.score) || 0]));
+    const query = buildFtsQuery(question);
+    if (query === "") {
+      return {
+        retrievedCases: [],
+        contextString: "",
+        status: { state: "empty", candidates: 0, injected: 0, latency_ms: Date.now() - start },
+      };
+    }
+    const store = createCloudflareCaseStore(env);
+    const rows = await withTimeout(store.searchLexical({ query, limit: recall }), RETRIEVAL_TIMEOUT_MS);
+    const candidates = rows.length;
     const seenCitation = new Set();
     const retrievedCases = [];
     for (const row of rows) {
@@ -122,14 +171,13 @@ export async function buildCaseContextFromQuestion(env, question, { recall = RET
         title: sanitizeText(row.title),
         case_nature: sanitizeText(row.case_nature),
         visa_subclass: sanitizeText(row.visa_subclass),
-        relevance_score: scoreByCaseId.get(row.case_id) ?? 0,
+        relevance_score: -Number(row.rank) || 0,
+        bm25_rank: Number(row.rank),
         snippet: sanitizeText(row.text_snippet).slice(0, SNIPPET_MAX_CHARS),
         source_url: sanitizeText(row.url),
       });
     }
-    retrievedCases.sort((a, b) => b.relevance_score - a.relevance_score);
     const top = retrievedCases.slice(0, topK);
-
     return {
       retrievedCases: top,
       contextString: renderRetrievedContext(top),

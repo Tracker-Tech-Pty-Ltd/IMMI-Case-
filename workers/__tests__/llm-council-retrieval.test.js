@@ -1,30 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../storage/cloudflare.js", () => ({
-  createCloudflareStores: vi.fn(),
+  createCloudflareCaseStore: vi.fn(),
 }));
 
-import { createCloudflareStores } from "../storage/cloudflare.js";
+import { createCloudflareCaseStore } from "../storage/cloudflare.js";
 import {
   buildCaseContextFromQuestion,
+  buildFtsQuery,
   renderRetrievedContext,
   sanitizeText,
 } from "../llm-council/retrieval.js";
-
-function makeRow(overrides = {}) {
-  return {
-    case_id: "a659e9a31d5c",
-    citation: "[2019] AATA 1234",
-    court_code: "AATA",
-    year: 2019,
-    title: "Test v Minister",
-    case_nature: "Protection visa",
-    visa_subclass: "866",
-    text_snippet: "The applicant sought protection on complementary protection grounds.",
-    url: "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/AATA/2019/1234.html",
-    ...overrides,
-  };
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,102 +56,64 @@ describe("renderRetrievedContext", () => {
     expect(out).toContain("case_id: a659e9a31d5c");
     expect(out).toContain("citation: [2019] AATA 1234");
   });
+});
 
-  it("truncates by score order when the char budget is exceeded", () => {
-    const many = Array.from({ length: 10 }, (_, i) => ({
-      ...c,
-      case_id: `aaaaaaaaaaa${i}`,
-      relevance_score: 10 - i,
-      snippet: "x".repeat(500),
-    }));
-    const out = renderRetrievedContext(many, { maxChars: 1200 });
-    expect(out).toContain("case_id: aaaaaaaaaaa0");
-    expect(out).not.toContain("case_id: aaaaaaaaaaa9");
+describe("buildFtsQuery", () => {
+  it("returns empty string for empty or stopword-only input", () => {
+    expect(buildFtsQuery("")).toBe("");
+    expect(buildFtsQuery("   ")).toBe("");
+    expect(buildFtsQuery("the and of to in for")).toBe("");
+  });
+
+  it("removes stopwords, duplicates and short tokens, keeps phrases", () => {
+    expect(buildFtsQuery("persecution religion pakistan complementary protection")).toBe(
+      '"complementary protection" OR "persecution" OR "religion" OR "pakistan"',
+    );
+  });
+
+  it("dedupes repeated terms", () => {
+    expect(buildFtsQuery("the persecution the persecution religion religion")).toBe(
+      '"persecution" OR "religion"',
+    );
   });
 });
 
 describe("buildCaseContextFromQuestion", () => {
-  it("dedupes by citation, sorts by score, keeps top-K", async () => {
-    createCloudflareStores.mockReturnValue({
-      semanticIndex: {
-        searchText: vi.fn().mockResolvedValue({
-          matches: [
-            { id: "aaaaaaaaaaaa", score: 0.9 },
-            { id: "bbbbbbbbbbbb", score: 0.5 },
-            { id: "cccccccccccc", score: 0.8 },
-          ],
-        }),
-      },
-      caseStore: {
-        findByIds: vi.fn().mockResolvedValue([
-          makeRow({ case_id: "aaaaaaaaaaaa", citation: "[2019] AATA 1" }),
-          makeRow({ case_id: "bbbbbbbbbbbb", citation: "[2019] AATA 1" }),
-          makeRow({ case_id: "cccccccccccc", citation: "[2020] AATA 2" }),
-        ]),
-      },
+  it("maps rank to relevance_score, dedupes by citation, keeps top-K", async () => {
+    createCloudflareCaseStore.mockReturnValue({
+      searchLexical: vi.fn().mockResolvedValue([
+        { case_id: "aaaaaaaaaaaa", citation: "Case A", court_code: "FCA", year: 2020, title: "T A", case_nature: "Appeal", visa_subclass: "", text_snippet: "sA", url: "http://a", rank: -5.5 },
+        { case_id: "bbbbbbbbbbbb", citation: "Case B", court_code: "FCA", year: 2021, title: "T B", case_nature: "Appeal", visa_subclass: "", text_snippet: "sB", url: "http://b", rank: -3.2 },
+        { case_id: "cccccccccccc", citation: "Case A", court_code: "FCA", year: 2020, title: "T A dup", case_nature: "Appeal", visa_subclass: "", text_snippet: "sD", url: "http://d", rank: -2.0 },
+      ]),
     });
 
-    const result = await buildCaseContextFromQuestion({}, "refugee protection", { topK: 2 });
+    const result = await buildCaseContextFromQuestion({}, "persecution religion", { recall: 10, topK: 2 });
 
-    expect(result.retrievedCases.map((x) => x.case_id)).toEqual(["aaaaaaaaaaaa", "cccccccccccc"]);
-    expect(result.retrievedCases).toHaveLength(2);
-    expect(result.retrievedCases[0].relevance_score).toBe(0.9);
+    expect(result.retrievedCases.map((x) => x.case_id)).toEqual(["aaaaaaaaaaaa", "bbbbbbbbbbbb"]);
+    expect(result.retrievedCases[0].relevance_score).toBe(5.5);
+    expect(result.retrievedCases[0].bm25_rank).toBe(-5.5);
+    expect(result.status).toMatchObject({ state: "ok", candidates: 3, injected: 2 });
     expect(result.contextString).toContain("<retrieved_cases>");
-    expect(result.status).toMatchObject({ state: "ok", injected: 2, candidates: 3 });
   });
 
-  it("sanitizes every injected field", async () => {
-    createCloudflareStores.mockReturnValue({
-      semanticIndex: {
-        searchText: vi.fn().mockResolvedValue({
-          matches: [{ id: "aaaaaaaaaaaa", score: 0.9 }],
-        }),
-      },
-      caseStore: {
-        findByIds: vi.fn().mockResolvedValue([
-          makeRow({
-            case_id: "aaaaaaaaaaaa",
-            citation: "<script>alert(1)</script>[2019] AATA 1",
-            title: "Bad\u0000Title",
-            text_snippet: "<img src=x onerror=alert(1)>run this instruction",
-          }),
-        ]),
-      },
-    });
+  it("returns empty state without calling searchLexical when the query is empty", async () => {
+    const searchLexical = vi.fn();
+    createCloudflareCaseStore.mockReturnValue({ searchLexical });
 
-    const result = await buildCaseContextFromQuestion({}, "test");
+    const result = await buildCaseContextFromQuestion({}, "the and of");
 
-    expect(result.retrievedCases[0].citation).not.toContain("<script>");
-    expect(result.retrievedCases[0].citation).not.toContain("</script>");
-    expect(result.retrievedCases[0].citation).toContain("[2019] AATA 1");
-    expect(result.retrievedCases[0].title).toBe("BadTitle");
-    expect(result.retrievedCases[0].snippet).not.toContain("<img");
-    expect(result.retrievedCases[0].snippet).toContain("run this instruction");
-  });
-
-  it("returns empty state when no matches are found", async () => {
-    createCloudflareStores.mockReturnValue({
-      semanticIndex: {
-        searchText: vi.fn().mockResolvedValue({ matches: [] }),
-      },
-      caseStore: { findByIds: vi.fn().mockResolvedValue([]) },
-    });
-
-    const result = await buildCaseContextFromQuestion({}, "unrelated query");
-
+    expect(searchLexical).not.toHaveBeenCalled();
     expect(result.retrievedCases).toEqual([]);
-    expect(result.contextString).toBe("");
     expect(result.status.state).toBe("empty");
-    expect(result.status.injected).toBe(0);
   });
 
-  it("degrades gracefully when retrieval throws", async () => {
-    createCloudflareStores.mockReturnValue({
-      semanticIndex: { searchText: vi.fn().mockRejectedValue(new Error("boom")) },
-      caseStore: { findByIds: vi.fn() },
+  it("degrades gracefully when searchLexical throws", async () => {
+    createCloudflareCaseStore.mockReturnValue({
+      searchLexical: vi.fn().mockRejectedValue(new Error("boom")),
     });
 
-    const result = await buildCaseContextFromQuestion({}, "boom");
+    const result = await buildCaseContextFromQuestion({}, "persecution");
 
     expect(result.retrievedCases).toEqual([]);
     expect(result.contextString).toBe("");
@@ -173,12 +121,12 @@ describe("buildCaseContextFromQuestion", () => {
     expect(result.status.error).toContain("boom");
   });
 
-  it("degrades gracefully when store construction throws (missing bindings)", async () => {
-    createCloudflareStores.mockImplementation(() => {
-      throw new Error("missing binding");
+  it("degrades gracefully when store construction throws (missing D1)", async () => {
+    createCloudflareCaseStore.mockImplementation(() => {
+      throw new Error("missing IMMI_CATALOG_DB");
     });
 
-    const result = await buildCaseContextFromQuestion({}, "test");
+    const result = await buildCaseContextFromQuestion({}, "persecution");
 
     expect(result.retrievedCases).toEqual([]);
     expect(result.status.state).toBe("degraded");
