@@ -14,16 +14,8 @@ function makeTx() {
   return tx;
 }
 
-const mockGetSqlAsUser = vi.fn(() => ({
-  tx: async (fn) => fn(makeTx()),
-}));
-
 const mockCloudflareStores = vi.fn();
 const mockCouncilSessionStub = vi.fn();
-
-vi.mock("../db/getSqlAsUser.js", () => ({
-  getSqlAsUser: (...a) => mockGetSqlAsUser(...a),
-}));
 
 vi.mock("../storage/cloudflare.js", () => ({
   createCloudflareStores: (...a) => mockCloudflareStores(...a),
@@ -83,9 +75,6 @@ function txYields(...rowsPerCall) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockTxFn.mockReset();
-  mockGetSqlAsUser.mockImplementation(() => ({
-    tx: async (fn) => fn(makeTx()),
-  }));
   mockCloudflareStores.mockReset();
   mockCouncilSessionStub.mockReset();
 });

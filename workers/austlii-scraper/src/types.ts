@@ -87,7 +87,6 @@ export interface Env {
   IMMI_OPS_DB?: D1Database;
   COST_CAP_DO?: DurableObjectNamespace;
   MYBROWSER?: BrowserRun;
-  AUTH_TOKEN: string;
   PIPELINE_KV?: KVNamespace;
   PIPELINE_ENABLED?: string;
   PIPELINE_BIWEEKLY_GATE?: string;
