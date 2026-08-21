@@ -1,6 +1,24 @@
 # IMMI-Case Worktree Closeout State
 
-Updated: 2026-08-10 Australia/Melbourne
+Updated: 2026-08-21 Australia/Melbourne
+
+## 2026-08-21 D1 Capacity Migration + Supabase Status — COMPLETE ✓
+
+### Blocker #2 resolved (in-place external-content FTS5 migration)
+- `immi-catalog` D1: **9.18 GB → 5.53 GB** (−40%), under the 8 GiB gate.
+- Method: in-place migration (not full re-import). VACUUM and single-REBUILD are
+  both unsupported in D1 (VACUUM → "cannot VACUUM from within a transaction";
+  REBUILD of 150K chunks → "CPU time limit exceeded / reset"), so the migration
+  used batched INSERT (5K rows/batch) + FTS5 `ALTER TABLE ... RENAME`.
+- Search verified: `MATCH 'migration'` = 146,548 (identical to pre-migration).
+- Triggers rebuilt with the FTS5 `'delete'` command.
+
+### Supabase dependency status
+- Production route `immi.trackit.today` → `immi-case-standalone`
+  (`workers/cloudflare-native.js`, D1-native; deployed 2026-08-11 v6583ae10).
+- **NOT fully decommissioned yet**: legacy `immi-case` worker (Supabase/Hyperdrive,
+  deployed 2026-05-17) is still deployed; legacy code `workers/proxy.js` +
+  `workers/db/getSqlAsUser.js` still import `postgres` (~344 Supabase refs) in the repo.
 
 ## 2026-08-11 Codex Review + Fixes — COMPLETE ✓
 
@@ -12,7 +30,7 @@ Updated: 2026-08-10 Australia/Melbourne
 | # | Finding | Status |
 |---|---------|--------|
 | 1 | SPA serving missing (`/`,`/app/*` → 503 after cutover; no ASSETS binding) | FIXED: `[assets]` + ASSETS fallback + SPA build step |
-| 2 | Catalog D1 at 9.17 GB (exceeds 8 GiB gate, ~8-15% headroom vs 10 GB cap) | FIXED: external-content FTS5 dedupe (live D1 re-import required) |
+| 2 | Catalog D1 at 9.17 GB (exceeds 8 GiB gate, ~8-15% headroom vs 10 GB cap) | DONE: in-place external-content FTS5 migration (9.18 GB → 5.53 GB) |
 | 3 | No working login (Telegram deferred, bootstrap not UUID, no login route) | FIXED: bootstrap login + UUID admin |
 | 4 | Unprotected paid AI endpoints (run/health?live=true fail-open) | FIXED: auth-gated + rate-limit fail-closed |
 | 5 | Non-reproducible deploy + CI fails (placeholder test) | FIXED: placeholders restored + tests updated |
@@ -44,7 +62,7 @@ Updated: 2026-08-10 Australia/Melbourne
 
 ### DEFERRED with rationale (production cutover blockers)
 1. **SPA serving (CRITICAL #1)**: standalone worker only handles API; `/`, `/app/*` return 503 without Workers Static Assets / ASSETS binding. Deploy currently points whole custom domain at the worker. MUST add static assets + SPA fallback before cutover.
-2. **Catalog D1 capacity (CRITICAL #2)**: live immi-catalog is 9.17 GB — exceeds repo's 8 GiB gate; only ~8-15% headroom vs Cloudflare's 10 GB single-D1 cap. NEEDS capacity redesign (dedupe chunks or shard FTS by court/year) before production.
+2. ~~**Catalog D1 capacity (CRITICAL #2)**~~ **RESOLVED (2026-08-21)**: migrated in-place from contentful → external-content FTS5 (9.18 GB → 5.53 GB, −40%). VACUUM + single-REBUILD unsupported in D1; completed via batched INSERT + FTS5 RENAME.
 3. **Cutover workflow circular dependency (HIGH)**: deploy workflow requires activation packet proving blue/green switch + shadow + rollback rehearsal + soak BEFORE deploy, but shadow needs a deployed version. NEEDS activation workflow redesign.
 4. ~~Vectorize metadata filters (HIGH search)~~ **DOWNGRADED — not a blocker**: visa_type/case_nature are structured metadata columns, not semantic content. Filtering them is best done via D1 WHERE (normal filter), not Vectorize — lexical/hybrid paths already cover this. Re-embedding 149K vectors to add these keys is unnecessary.
 5. **Reproducible deploy**: checked-in wrangler.toml restored to placeholders (fail-closed safety). Deploy uses operator-provided temp configs (deploy-worker.yml generates into RUNNER_TEMP). The standalone deploy was from a dirty tree — future deploys must be from a clean Git SHA.
