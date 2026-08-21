@@ -42,6 +42,8 @@ const mockClaims = {
   tg_id: 123456789,
 };
 
+const mockRefreshJti = "770e8400-e29b-41d4-a716-446655440003";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -325,14 +327,14 @@ describe("makeAccessToken", () => {
 
 describe("makeRefreshToken", () => {
   it("returns a valid JWT string", async () => {
-    const token = await makeRefreshToken(mockClaims.sub, mockEnv);
+    const token = await makeRefreshToken(mockClaims.sub, mockRefreshJti, mockEnv);
     expect(typeof token).toBe("string");
     expect(token.split(".")).toHaveLength(3);
   });
 
   it("sets exp 7 days (604800s) from now", async () => {
     const before = Math.floor(Date.now() / 1000);
-    const token = await makeRefreshToken(mockClaims.sub, mockEnv);
+    const token = await makeRefreshToken(mockClaims.sub, mockRefreshJti, mockEnv);
     const result = await verifyJwt(token, mockEnv);
     expect(result.valid).toBe(true);
     const { exp } = result.payload;
@@ -341,19 +343,24 @@ describe("makeRefreshToken", () => {
     expect(exp).toBeLessThanOrEqual(before + 604802);
   });
 
-  it("includes sub and type='refresh' in payload", async () => {
-    const token = await makeRefreshToken(mockClaims.sub, mockEnv);
+  it("includes sub, jti, and type='refresh' in payload", async () => {
+    const token = await makeRefreshToken(mockClaims.sub, mockRefreshJti, mockEnv);
     const result = await verifyJwt(token, mockEnv);
     expect(result.valid).toBe(true);
     expect(result.payload.sub).toBe(mockClaims.sub);
+    expect(result.payload.jti).toBe(mockRefreshJti);
     expect(result.payload.type).toBe("refresh");
   });
 
   it("does not include tenant_id or role (minimal claims)", async () => {
-    const token = await makeRefreshToken(mockClaims.sub, mockEnv);
+    const token = await makeRefreshToken(mockClaims.sub, mockRefreshJti, mockEnv);
     const result = await verifyJwt(token, mockEnv);
     expect(result.valid).toBe(true);
     expect(result.payload.tenant_id).toBeUndefined();
     expect(result.payload.role).toBeUndefined();
+  });
+
+  it("throws when jti is missing", async () => {
+    await expect(makeRefreshToken(mockClaims.sub, null, mockEnv)).rejects.toThrow(/jti/);
   });
 });

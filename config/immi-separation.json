@@ -1,0 +1,76 @@
+{
+  "destination_mode": "cloudflare-native",
+  "source_project_ref": "urntbuqczarkuoaosjxd",
+  "target_project_ref": null,
+  "target_region": "ap-southeast-2",
+  "cutover_policy": {
+    "shared_database_mutation_allowed": false,
+    "shared_database_object_deletion_allowed": false,
+    "target_must_differ_from_source": true,
+    "worker_first": true,
+    "write_freeze_flag": "CUTOVER_WRITE_FREEZE",
+    "write_freeze_default": false,
+    "pipeline_reenabled_after_main_worker": true
+  },
+  "workers": {
+    "main": {
+      "current_name": "immi-case",
+      "standalone_name": "immi-case-standalone",
+      "current_hyperdrive_id": "c961b377ef0c4ec2a01d9d7220db7c93",
+      "standalone_hyperdrive_id": null
+    },
+    "pipeline": {
+      "name": "austlii-scraper",
+      "current_hyperdrive_id": "4978b6a4b9714545a15c821530aff4e2",
+      "standalone_hyperdrive_id": null,
+      "initial_enabled": false
+    }
+  },
+  "cloudflare_native": {
+    "main_worker_name": "immi-case-standalone",
+    "pipeline_worker_name": "austlii-scraper-native",
+    "catalog_binding": "IMMI_CATALOG_DB",
+    "account_binding": "IMMI_ACCOUNT_DB",
+    "ops_binding": "IMMI_OPS_DB",
+    "content_binding": "IMMI_CONTENT",
+    "vectorize_binding": "CASE_VECTORS",
+    "case_queue": "immi-case-mutation-queue",
+    "case_mutations_default": false,
+    "required_secrets": [
+      "CSRF_SECRET",
+      "JWT_SECRET_CURRENT",
+      "JWT_KID_CURRENT",
+      "TELEGRAM_BOT_TOKEN",
+      "CF_AIG_TOKEN"
+    ],
+    "external_gates": [
+      "Workers Paid approval",
+      "APP 8/privacy review",
+      "fresh snapshot/import/reconciliation",
+      "Vectorize re-embedding",
+      "staging shadow and rollback rehearsal"
+    ]
+  },
+  "rollback_only_required_secrets": [
+    "CSRF_SECRET",
+    "CF_AIG_TOKEN",
+    "SECRET_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "JWT_SECRET_CURRENT",
+    "JWT_KID_CURRENT",
+    "TELEGRAM_BOT_TOKEN"
+  ],
+  "pipeline_required_secrets": [
+    "AUTH_TOKEN",
+    "EXTRACTION_SHARED_SECRET"
+  ],
+  "baseline_paths": {
+    "immi": "supabase/migrations/00000000000000_baseline_snapshot_2026_05_12.sql",
+    "bsmart": "../Bsmart System/supabase/migrations/00000000000000_baseline_snapshot_2026_05_12.sql"
+  },
+  "canonical_council_migration": "supabase/migrations/20260428_council_sessions.sql",
+  "forbidden_shared_project_refs": [
+    "urntbuqczarkuoaosjxd"
+  ]
+}

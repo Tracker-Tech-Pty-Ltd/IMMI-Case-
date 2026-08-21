@@ -8,12 +8,12 @@
 PORT   ?= 8080
 BACKEND ?= auto
 
-# Resolve repo root from the Makefile's own absolute path so targets that `cd`
-# into subdirectories work no matter where the user invoked `make` from.
-# Without this, running `make build` from frontend/ silently failed with
-# "No rule to make target 'build'". With this + frontend/Makefile delegating
-# back to here, both `make build` and (cd $(REPO_ROOT)/frontend && make build) work.
-REPO_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+# Resolve repo root from make's working directory. GNU Make 3.81 treats spaces
+# in MAKEFILE_LIST as word separators, so deriving this from abspath/lastword
+# breaks under "Active Projects" paths.
+REPO_ROOT := $(CURDIR)
+VENV_PYTHON := $(REPO_ROOT)/.venv/bin/python
+PYTHON ?= $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),python3)
 
 # ── Meta ──────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ help:
 # ── Running ───────────────────────────────────────────────────────────────────
 
 api:
-	python web.py --port $(PORT) --backend $(BACKEND)
+	"$(PYTHON)" web.py --port $(PORT) --backend $(BACKEND)
 
 ui:
 	cd "$(REPO_ROOT)/frontend" && npm run dev
@@ -62,7 +62,7 @@ build:
 test: test-py test-fe test-workers
 
 test-py:
-	python3 -m pytest tests/ --ignore=tests/e2e -q
+	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e -q
 
 test-fe:
 	cd "$(REPO_ROOT)/frontend" && npx vitest run
@@ -81,16 +81,16 @@ audit-rls-guards:
 	else echo "OK: all set_config calls verified with transaction-local=true"; fi
 
 test-e2e:
-	python3 -m pytest tests/e2e/ -v --timeout=60
+	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60
 
 coverage:
-	python3 -m pytest tests/ --ignore=tests/e2e --cov=immi_case_downloader --cov-report=html -q
+	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --cov=immi_case_downloader --cov-report=html -q
 	@echo "Report: htmlcov/index.html"
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
 
 lint:
-	python3 -m ruff check immi_case_downloader/ scripts/ *.py
+	"$(PYTHON)" -m ruff check immi_case_downloader/ scripts/ *.py
 
 typecheck:
 	cd "$(REPO_ROOT)/frontend" && npx tsc --noEmit
@@ -98,8 +98,8 @@ typecheck:
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 install:
-	pip install -r requirements.txt
-	pip install -r requirements-test.txt
+	"$(PYTHON)" -m pip install -r requirements.txt
+	"$(PYTHON)" -m pip install -r requirements-test.txt
 	cd "$(REPO_ROOT)/frontend" && npm install
 
 migrate:

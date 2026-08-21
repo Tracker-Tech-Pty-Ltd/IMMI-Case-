@@ -61,19 +61,13 @@ VISA_TYPE_NORMALIZE = {
     # Protection / Refugee
     "protection visa": "Protection visa",
     "protection": "Protection visa",
-    "protection visa": "Protection visa",
-    "protection visa": "Protection visa",
     "refugee": "Protection visa",
     # Student
     "student visa": "Student visa",
-    "student visa": "Student visa",
-    "student visa": "Student visa",
     # Visitor / Tourist
-    "visitor visa": "Visitor visa",
     "visitor visa": "Visitor visa",
     "tourist visa": "Visitor visa",
     # Partner / Spouse
-    "partner visa": "Partner visa",
     "partner visa": "Partner visa",
     "spouse visa": "Partner visa",
     # Skilled
@@ -81,15 +75,12 @@ VISA_TYPE_NORMALIZE = {
     "skilled visa": "Skilled visa",
     # Bridging
     "bridging visa": "Bridging visa",
-    "bridging visa": "Bridging visa",
     "bridging visa e": "Bridging visa E",
     "bridging visa a": "Bridging visa A",
     "bridging e": "Bridging visa E",
     "bridging a": "Bridging visa A",
     # Permanent / Temporary
     "permanent visa": "Permanent visa",
-    "permanent visa": "Permanent visa",
-    "temporary visa": "Temporary visa",
     "temporary visa": "Temporary visa",
     # Others
     "character cancellation (s.501)": "Character cancellation (s.501)",
@@ -355,19 +346,19 @@ def main():
         print(f"  {key:30s}: +{count:>7,}")
 
     # Field coverage
-    print(f"\nField coverage:")
+    print("\nField coverage:")
     for f in ["hearing_date", "visa_subclass_number", "visa_type", "country_of_origin"]:
         non_empty = (df[f].notna() & (df[f].astype(str).str.strip() != "") & (df[f].astype(str) != "nan")).sum()
         print(f"  {f:25s}: {non_empty:>7,} ({non_empty/total*100:.1f}%)")
 
     # Top values
-    print(f"\nTop visa_type values:")
+    print("\nTop visa_type values:")
     vt = df["visa_type"].dropna().astype(str).str.strip()
     vt = vt[(vt != "") & (vt != "nan")]
     for v, c in vt.value_counts().head(10).items():
         print(f"  {c:>6,}  {v[:60]}")
 
-    print(f"\nTop country_of_origin values:")
+    print("\nTop country_of_origin values:")
     co = df["country_of_origin"].dropna().astype(str).str.strip()
     co = co[(co != "") & (co != "nan")]
     for v, c in co.value_counts().head(15).items():

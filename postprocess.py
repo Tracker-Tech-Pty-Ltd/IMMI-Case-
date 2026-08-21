@@ -13,8 +13,6 @@ import csv
 import hashlib
 import os
 import re
-import sys
-from pathlib import Path
 
 DATA_DIR = "downloaded_cases"
 CSV_PATH = os.path.join(DATA_DIR, "immigration_cases.csv")
@@ -452,7 +450,7 @@ def report_stats(rows: list[dict]):
         except (ValueError, TypeError):
             pass
 
-    print(f"\nYear Distribution:")
+    print("\nYear Distribution:")
     for y in sorted(by_year):
         bar = "#" * (by_year[y] // 50)
         print(f"  {y}: {by_year[y]:>5}  {bar}")

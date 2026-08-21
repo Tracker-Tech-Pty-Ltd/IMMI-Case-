@@ -231,6 +231,9 @@ class TestSecurityHeaders:
         assert csp is not None, "Content-Security-Policy header missing"
         # Should at least restrict default-src
         assert "default-src" in csp
+        # Telegram Login Widget is the only supported auth entry point.
+        assert "https://telegram.org" in csp
+        assert "https://oauth.telegram.org" in csp
 
     def test_security_headers_on_all_pages(self, client):
         """Security headers should appear on various page types."""

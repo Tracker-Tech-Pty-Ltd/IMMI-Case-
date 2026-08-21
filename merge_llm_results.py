@@ -90,7 +90,7 @@ def main():
     # Coverage report
     filled_cn = sum(1 for r in rows if r.get("case_nature", "").strip())
     filled_lc = sum(1 for r in rows if r.get("legal_concepts", "").strip())
-    print(f"\nCoverage:")
+    print("\nCoverage:")
     print(f"  case_nature: {filled_cn}/{len(rows)} ({filled_cn*100/len(rows):.1f}%)")
     print(f"  legal_concepts: {filled_lc}/{len(rows)} ({filled_lc*100/len(rows):.1f}%)")
 

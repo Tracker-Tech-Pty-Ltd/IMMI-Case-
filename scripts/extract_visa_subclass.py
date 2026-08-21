@@ -30,7 +30,7 @@ RE_VISA_NUM = re.compile(r"(?:visa|subclass)\s*(\d{3})", re.IGNORECASE)
 # Subclass → Class code mapping (common Australian visa subclasses)
 SUBCLASS_TO_CLASS = {
     # Protection visas
-    "866": "XA", "785": "XA", "790": "XA", "200": "XB", "201": "XB",
+    "866": "XA", "790": "XA", "200": "XB", "201": "XB",
     "202": "XB", "203": "XB", "204": "XB",
     # Skilled visas
     "189": "SK", "190": "SN", "191": "PR", "457": "UC", "482": "TS",
@@ -237,7 +237,7 @@ def main():
     # Final stats
     has_subclass = sum(1 for r in rows if (r.get("visa_subclass") or "").strip())
     has_class_code = sum(1 for r in rows if (r.get("visa_class_code") or "").strip())
-    print(f"\n--- Final Results ---")
+    print("\n--- Final Results ---")
     print(f"  visa_subclass: {has_subclass:,} / {total:,} ({has_subclass/total*100:.1f}%)")
     print(f"  visa_class_code: {has_class_code:,} / {total:,} ({has_class_code/total*100:.1f}%)")
 

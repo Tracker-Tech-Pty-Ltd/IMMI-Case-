@@ -26,13 +26,23 @@ jobs:
       - name: Install Python dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements.txt
-          .venv/bin/pip install --quiet pytest pytest-timeout pytest-cov pytest-asyncio responses
+          .venv/bin/pip install --quiet -r requirements-test.txt -r requirements-legacy-rollback.txt
 
-      - name: Run Python unit tests
-        env:
-          PYTHONPATH: .
-        run: .venv/bin/pytest tests/ -x --timeout=60 -q --ignore=tests/e2e --ignore=tests/integration
+      - name: Run native migration and extraction tests
+        run: >-
+          .venv/bin/pytest
+          tests/test_native_pipeline_boundary.py
+          tests/test_cloudflare_native_target.py
+          tests/test_export_immi_ndjson.py
+          tests/test_transform_immi_snapshot.py
+          tests/test_cloudflare_catalog_capacity.py
+          tests/test_cloudflare_search_benchmark.py
+          tests/test_cloudflare_performance.py
+          tests/test_immi_activation_evidence.py
+          tests/test_effective_native_ci.py
+          tests/test_cloudflare_route_manifest.py
+          tests/test_native_dependency_closure.py
+          -x --timeout=60 -q
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -56,3 +66,40 @@ jobs:
       - name: Run Vitest tests
         run: npx vitest run
         working-directory: frontend
+
+  test-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Test secret preflight parser
+        run: bash scripts/test_preflight_secrets.sh
+
+      - name: Verify effective native references
+        run: python3 scripts/check_native_effective_references.py --json
+
+      - name: Verify Cloudflare-native bundle closure
+        run: node scripts/check_cloudflare_native_bundle.mjs
+
+      - name: Run Cloudflare Worker tests
+        run: npm run test:workers
+
+      - name: Install native pipeline dependencies
+        run: npm ci --ignore-scripts
+        working-directory: workers/austlii-scraper
+
+      - name: Typecheck native pipeline
+        run: npm run typecheck
+        working-directory: workers/austlii-scraper
+
+      - name: Run native pipeline tests
+        run: npm test
+        working-directory: workers/austlii-scraper

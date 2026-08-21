@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-08-08T16:47:51+10:00",
+  "status": "blocked",
+  "policy": {
+    "shared_supabase_mutation_performed": false,
+    "shared_supabase_object_deletion_performed": false,
+    "external_cloudflare_mutation_performed": false,
+    "external_secret_write_performed": false
+  },
+  "handoff": {
+    "path": "/Users/d/Developer/Active Projects/Bsmart System/docs/ops/immi-worker-first-handoff-prompt.md",
+    "authorization_statement_recorded": true,
+    "auth_values_written_to_repo": false
+  },
+  "repos": {
+    "immi": {
+      "root": "/Users/d/Developer/Active Projects/IMMI-Case-",
+      "head": "b8baf45c843092cb6db7647aa203435aa23964c5",
+      "target_project_ref": null
+    },
+    "bsmart": {
+      "root": "/Users/d/Developer/Active Projects/Bsmart System",
+      "head": "3860300fbca441e0d0239c9a8d98a5706a5f89a7"
+    }
+  },
+  "rerunnable_preflight": {
+    "command": "bash scripts/run_immi_separation_preflight.sh /tmp/immi-separation-preflight",
+    "verifier_command": "python3 scripts/verify_immi_separation.py --json",
+    "run_1_exit": 1,
+    "run_2_exit": 1,
+    "run_1_sha256": "35ca832175a2a02103c76c084022a67f7dfd237035696db9b2fb1f362b7ec428",
+    "run_2_sha256": "35ca832175a2a02103c76c084022a67f7dfd237035696db9b2fb1f362b7ec428",
+    "identical": true,
+    "wrapper_test": "tests/test_separation_preflight.py::test_shell_wrapper_repeats_and_compares_reports",
+    "passing_checks": [
+      "BSMART_COUNCIL_DDL_ABSENT",
+      "CANONICAL_COUNCIL_MIGRATION_PRESENT",
+      "CUTOVER_WRITE_FREEZE_DEFAULT_SAFE",
+      "DESTRUCTIVE_IMMI_MIGRATION_ABSENT",
+      "IMMI_CONFIG_MANIFEST_VALID",
+      "IMMI_COUNCIL_DDL_ABSENT",
+      "IMMI_DEPLOY_TARGET_GATE_PRESENT",
+      "PIPELINE_DEFAULT_DISABLED",
+      "SEPARATION_MANIFEST_PRESENT"
+    ],
+    "blockers": [
+      "SOURCE_PROJECT_IN_RUNTIME_CONFIG",
+      "TARGET_PROJECT_UNDECLARED"
+    ],
+    "dockerfile_runtime_host_is_target_driven": true,
+    "remaining_source_runtime_paths": [
+      "/Users/d/Developer/Active Projects/IMMI-Case-/.codex/config.toml",
+      "/Users/d/Developer/Active Projects/IMMI-Case-/.mcp.json"
+    ]
+  },
+  "live_read_only_evidence": {
+    "command": "python3 scripts/verify_immi_separation.py --live --json",
+    "exit": 1,
+    "sha256": "01a5d4f7fe3046b77ac6a69db09369436e605d82902eed529a484e85154525b6",
+    "current_main_hyperdrive_origin": "db.urntbuqczarkuoaosjxd.supabase.co",
+    "current_pipeline_hyperdrive_origin": "db.urntbuqczarkuoaosjxd.supabase.co",
+    "endpoint_status": {
+      "/api/v1/llm-council/health": 200,
+      "/api/v1/auth/me": 401,
+      "/api/v1/llm-council/sessions": 401
+    }
+  },
+  "cloudflare_identity_read_only": {
+    "authenticated": true,
+    "account_id": "30ffcfbf8c4103048bc38a5398b7ec99",
+    "workers_write_scope_present": true,
+    "mutation_performed": false
+  },
+  "local_validation": {
+    "separation_tests": "5 passed",
+    "main_worker_tests": "223 passed",
+    "pipeline_typecheck": "passed",
+    "pipeline_tests": "12 passed",
+    "bsmart_frontend_build": "passed",
+    "bsmart_i18n_key_check": "8177 EN / 8177 ZH-TW; match",
+    "wrangler_main_dry_run": "passed; no deploy",
+    "wrangler_pipeline_dry_run": "passed; no deploy",
+    "git_diff_check": "passed"
+  },
+  "change_impact": {
+    "gitnexus_status": "up-to-date",
+    "detect_changes": {
+      "files": 14,
+      "symbols": 6,
+      "affected_processes": 4,
+      "risk": "medium"
+    }
+  },
+  "secret_preflight": {
+    "command": "bash scripts/preflight_secrets.sh",
+    "exit": 1,
+    "missing_on_current_main_worker": [
+      "JWT_SECRET_CURRENT",
+      "JWT_KID_CURRENT",
+      "TELEGRAM_BOT_TOKEN"
+    ],
+    "secret_write_performed": false,
+    "pipeline_worker_read_only_check": {
+      "worker": "austlii-scraper",
+      "required_secret": "AUTH_TOKEN",
+      "observed_bound": true
+    }
+  },
+  "shared_project_read_only_snapshot": {
+    "project_ref": "urntbuqczarkuoaosjxd",
+    "council_sessions_rows": 34,
+    "council_turns_rows": 34,
+    "immigration_cases_rows": 149016,
+    "pipeline_runs_rows": 16,
+    "latest_pipeline_run": "2026-08-02 05:00:04.920683+00",
+    "schema_ledger_contains_immi_migrations": false
+  }
+}

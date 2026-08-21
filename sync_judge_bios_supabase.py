@@ -117,7 +117,7 @@ def sync_to_supabase(rows: list[dict], dry_run: bool) -> None:
 
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
-        result = client.table("judge_bios").upsert(batch, on_conflict="id").execute()
+        client.table("judge_bios").upsert(batch, on_conflict="id").execute()
         synced += len(batch)
         print(f"  ✓ Upserted {synced}/{total} members")
 

@@ -2,6 +2,7 @@
  * auth/handlers.js — Route handlers for /api/v1/auth/* endpoints.
  *
  * POST /api/v1/auth/telegram      — Telegram Login Widget verification → JWT pair
+ * GET  /api/v1/auth/telegram/callback — Telegram Login Widget redirect flow
  * GET  /api/v1/auth/me            — Decode access token → current user info
  * POST /api/v1/auth/logout        — Clear auth cookies
  * POST /api/v1/auth/refresh       — Refresh access token using refresh token
@@ -16,8 +17,20 @@
 
 import { verifyTelegramAuth } from "./telegram.js";
 import { makeAccessToken, makeRefreshToken, verifyJwt } from "./jwt.js";
-import { requireAuth, extractToken } from "../db/getSqlAsUser.js";
+import { requireAuth, extractToken } from "./request_auth.js";
+import { createCloudflareIdentityStore } from "../storage/cloudflare.js";
+import { getStorageMode, StorageBoundaryError } from "../storage/contracts.js";
 import { checkNonce } from "./nonce_do.js";
+import {
+  extractRefreshToken,
+  generateRefreshSessionDraft,
+  insertRefreshSessionTx,
+  isRefreshSessionError,
+  loadActiveRefreshSessionForUpdateTx,
+  RefreshSessionError,
+  revokeRefreshSessionTx,
+  validateRefreshPayload,
+} from "./refresh_sessions.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,6 +38,22 @@ import { checkNonce } from "./nonce_do.js";
 
 const ACCESS_MAX_AGE  = 300;    // 5 minutes
 const REFRESH_MAX_AGE = 604800; // 7 days
+
+function isCloudflareMode(env) {
+  return getStorageMode(env) === "cloudflare";
+}
+
+function isWriteFreezeMode(env) {
+  return getStorageMode(env) === "freeze";
+}
+
+function writeFreezeResponse() {
+  return jsonErr("Writes are temporarily frozen for cutover", 503, "cutover_write_freeze");
+}
+
+function isNativeAuthError(err) {
+  return err instanceof StorageBoundaryError && err.status >= 400 && err.status < 500;
+}
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -64,11 +93,115 @@ function clearCookiesResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+function buildAuthRedirect(next, accessToken, refreshToken) {
+  const headers = new Headers({ Location: next });
+  headers.append(
+    "Set-Cookie",
+    `immi_access=${accessToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_MAX_AGE}`,
+  );
+  headers.append(
+    "Set-Cookie",
+    `immi_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=${REFRESH_MAX_AGE}`,
+  );
+  return new Response(null, { status: 302, headers });
+}
+
+function safeRedirectTarget(rawNext) {
+  if (!rawNext || typeof rawNext !== "string") return "/app/";
+  if (!rawNext.startsWith("/")) return "/app/";
+  if (rawNext.startsWith("//")) return "/app/";
+  return rawNext;
+}
+
+function refreshSessionErr(err) {
+  return jsonErr(
+    err.message || "Invalid refresh token",
+    err.status || 401,
+    err.code || "invalid_refresh_token",
+  );
+}
+
+async function readOptionalRefreshClaims(request, env) {
+  const token = extractRefreshToken(request);
+  if (!token) return null;
+  const result = await verifyJwt(token, env);
+  if (!result.valid) return null;
+  try {
+    return validateRefreshPayload(result.payload);
+  } catch {
+    return null;
+  }
+}
+
+async function persistIssuedRefreshSession({
+  env,
+  getSql,
+  draft,
+  previousRefreshClaims = null,
+  previousRefreshReason = "login_replaced",
+}) {
+  if (isCloudflareMode(env)) {
+    return createCloudflareIdentityStore(env).createRefreshSession(
+      draft,
+      previousRefreshClaims,
+      previousRefreshReason,
+    );
+  }
+  const sql = getSql(env);
+  try {
+    await sql.begin(async (tx) => {
+      await insertRefreshSessionTx(tx, draft);
+      if (previousRefreshClaims) {
+        await revokeRefreshSessionTx(tx, {
+          jti: previousRefreshClaims.jti,
+          userId: previousRefreshClaims.userId,
+          reason: previousRefreshReason,
+          replacedByJti: draft.jti,
+        });
+      }
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+async function issueLoginTokenPair({ request, env, getSql, user, tenant, tenants }) {
+  const previousRefreshClaims = await readOptionalRefreshClaims(request, env);
+  const refreshDraft = generateRefreshSessionDraft(user.id);
+  let accessToken, refreshToken;
+  try {
+    [accessToken, refreshToken] = await Promise.all([
+      makeAccessToken(user, tenant, tenants, env),
+      makeRefreshToken(user.id, refreshDraft.jti, env),
+    ]);
+  } catch (err) {
+    err.phase = "jwt";
+    throw err;
+  }
+
+  try {
+    await persistIssuedRefreshSession({
+      env,
+      getSql,
+      draft: refreshDraft,
+      previousRefreshClaims,
+    });
+  } catch (err) {
+    err.phase = "db";
+    throw err;
+  }
+
+  return { accessToken, refreshToken };
+}
+
 // ---------------------------------------------------------------------------
 // DB helper — upsert Telegram user + tenant
 // ---------------------------------------------------------------------------
 
 async function upsertTelegramUser(tgData, getSql, env) {
+  if (isCloudflareMode(env)) {
+    return createCloudflareIdentityStore(env).upsertTelegramUser(tgData);
+  }
   const sql = getSql(env);
   try {
     return await sql.begin(async (tx) => {
@@ -130,6 +263,7 @@ async function upsertTelegramUser(tgData, getSql, env) {
 // ---------------------------------------------------------------------------
 
 export async function handleTelegramLogin(request, env, getSql) {
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
   let data;
   try { data = await request.json(); } catch {
     return jsonErr("Invalid JSON body", 400, "bad_request");
@@ -150,7 +284,7 @@ export async function handleTelegramLogin(request, env, getSql) {
     return jsonErr("Auth replay detected", 401, "replay");
   }
 
-  if (!env.HYPERDRIVE) {
+  if (!isCloudflareMode(env) && !env.HYPERDRIVE) {
     return jsonErr("Database unavailable", 503, "db_unavailable");
   }
 
@@ -164,13 +298,20 @@ export async function handleTelegramLogin(request, env, getSql) {
 
   let accessToken, refreshToken;
   try {
-    [accessToken, refreshToken] = await Promise.all([
-      makeAccessToken(user, tenant, tenants, env),
-      makeRefreshToken(user.id, env),
-    ]);
+    ({ accessToken, refreshToken } = await issueLoginTokenPair({
+      request,
+      env,
+      getSql,
+      user,
+      tenant,
+      tenants,
+    }));
   } catch (err) {
-    console.error(JSON.stringify({ event: "auth.telegram.jwt_error", error: err?.message }));
-    return jsonErr("Token issuance failed", 503, "jwt_error");
+    const event = err?.phase === "db" ? "auth.telegram.refresh_session_error" : "auth.telegram.jwt_error";
+    const code = err?.phase === "db" ? "db_error" : "jwt_error";
+    const message = err?.phase === "db" ? "Authentication service error" : "Token issuance failed";
+    console.error(JSON.stringify({ event, error: err?.message }));
+    return jsonErr(message, 503, code);
   }
 
   return buildAuthResponse(
@@ -192,6 +333,70 @@ export async function handleTelegramLogin(request, env, getSql) {
     accessToken,
     refreshToken,
   );
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/auth/telegram/callback
+// ---------------------------------------------------------------------------
+
+export async function handleTelegramCallback(request, env, getSql) {
+  const url = new URL(request.url);
+  const next = safeRedirectTarget(url.searchParams.get("next"));
+  const data = Object.fromEntries(url.searchParams.entries());
+  delete data.next;
+
+  if (!data || !data.hash) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=missing_telegram_payload`, 302);
+  }
+
+  if (isWriteFreezeMode(env)) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=cutover_write_freeze`, 302);
+  }
+
+  const tgResult = await verifyTelegramAuth(data, env);
+  if (!tgResult.valid) {
+    console.log(JSON.stringify({ event: "auth.telegram.callback_fail", reason: tgResult.reason }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=${encodeURIComponent(tgResult.reason ?? "invalid_hash")}`, 302);
+  }
+
+  const fresh = await checkNonce(env, data.hash);
+  if (!fresh) {
+    console.log(JSON.stringify({ event: "auth.telegram.callback_replay", hash: String(data.hash).slice(0, 8) }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=replay`, 302);
+  }
+
+  if (!isCloudflareMode(env) && !env.HYPERDRIVE) {
+    return Response.redirect(`${url.origin}/app/login?auth_error=db_unavailable`, 302);
+  }
+
+  let user, tenant, tenants;
+  try {
+    ({ user, tenant, tenants } = await upsertTelegramUser(data, getSql, env));
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.telegram.callback_db_error", error: err?.message }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=db_error`, 302);
+  }
+
+  let accessToken, refreshToken;
+  try {
+    ({ accessToken, refreshToken } = await issueLoginTokenPair({
+      request,
+      env,
+      getSql,
+      user,
+      tenant,
+      tenants,
+    }));
+  } catch (err) {
+    const event = err?.phase === "db"
+      ? "auth.telegram.callback_refresh_session_error"
+      : "auth.telegram.callback_jwt_error";
+    const authError = err?.phase === "db" ? "db_error" : "jwt_error";
+    console.error(JSON.stringify({ event, error: err?.message }));
+    return Response.redirect(`${url.origin}/app/login?auth_error=${authError}`, 302);
+  }
+
+  return buildAuthRedirect(next, accessToken, refreshToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +429,66 @@ export async function handleAuthMe(request, env) {
 // POST /api/v1/auth/logout
 // ---------------------------------------------------------------------------
 
-export async function handleAuthLogout(_request, _env) {
+export async function handleAuthLogout(request, env, getSql) {
+  const refreshToken = extractRefreshToken(request);
+  if (!refreshToken) {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  const result = await verifyJwt(refreshToken, env);
+  if (!result.valid) {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  let refreshClaims;
+  try {
+    refreshClaims = validateRefreshPayload(result.payload);
+  } catch {
+    return clearCookiesResponse({ ok: true });
+  }
+
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
+
+  if (isCloudflareMode(env)) {
+    try {
+      await createCloudflareIdentityStore(env).revokeRefreshSession({
+        jti: refreshClaims.jti,
+        userId: refreshClaims.userId,
+        reason: "logout",
+      });
+    } catch (err) {
+      console.error(JSON.stringify({ event: "auth.logout.revoke_error", error: err?.message }));
+      return clearCookiesResponse(
+        { ok: false, error: "Logout revoke failed", code: "db_error" },
+        503,
+      );
+    }
+    return clearCookiesResponse({ ok: true });
+  }
+
+  if (!env.HYPERDRIVE) return clearCookiesResponse({ ok: true });
+
+  try {
+    const sql = getSql(env);
+    try {
+      await sql.begin(async (tx) => {
+        await revokeRefreshSessionTx(tx, {
+          jti: refreshClaims.jti,
+          userId: refreshClaims.userId,
+          reason: "logout",
+        });
+      });
+    } finally {
+      await sql.end();
+    }
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.logout.revoke_error", error: err?.message }));
+    return clearCookiesResponse(
+      { ok: false, error: "Logout revoke failed", code: "db_error" },
+      503,
+    );
+  }
+
   return clearCookiesResponse({ ok: true });
 }
 
@@ -233,9 +497,7 @@ export async function handleAuthLogout(_request, _env) {
 // ---------------------------------------------------------------------------
 
 export async function handleAuthRefresh(request, env, getSql) {
-  const cookieHeader = request.headers.get("Cookie") || "";
-  const match = cookieHeader.match(/immi_refresh=([^;]+)/);
-  const refreshToken = match ? match[1] : null;
+  const refreshToken = extractRefreshToken(request);
 
   if (!refreshToken) {
     return jsonErr("No refresh token", 401, "missing_refresh_token");
@@ -246,60 +508,128 @@ export async function handleAuthRefresh(request, env, getSql) {
     return jsonErr("Invalid or expired refresh token", 401, result.reason || "invalid_refresh_token");
   }
 
-  const userId = result.payload.sub;
-  if (!userId) {
-    return jsonErr("Malformed refresh token", 401, "invalid_refresh_token");
+  let refreshClaims;
+  try {
+    refreshClaims = validateRefreshPayload(result.payload);
+  } catch (err) {
+    return refreshSessionErr(err);
+  }
+
+  if (isWriteFreezeMode(env)) return writeFreezeResponse();
+
+  if (isCloudflareMode(env)) {
+    return handleCloudflareAuthRefresh(env, refreshClaims);
   }
 
   if (!env.HYPERDRIVE) {
     return jsonErr("Database unavailable", 503, "db_unavailable");
   }
 
-  let user, tenant, tenants;
+  let user, tenant, tenants, newAccessToken, newRefreshToken;
   try {
     const sql = getSql(env);
     try {
-      const rows = await sql`
-        SELECT
-          u.id, u.telegram_id,
-          tm.role         AS user_role,
-          tm.tenant_id,
-          t.kind          AS tenant_kind,
-          t.name          AS tenant_name,
-          ARRAY_AGG(tm2.tenant_id ORDER BY tm2.joined_at) AS all_tenants
-        FROM immi_users u
-        JOIN immi_tenant_members tm  ON tm.user_id  = u.id
-        JOIN immi_tenants t          ON t.id         = tm.tenant_id
-        JOIN immi_tenant_members tm2 ON tm2.user_id  = u.id
-        WHERE u.id = ${userId}::uuid
-        GROUP BY u.id, u.telegram_id, tm.role, tm.tenant_id, t.kind, t.name
-        ORDER BY tm.joined_at
-        LIMIT 1
-      `;
-      if (rows.length === 0) return jsonErr("User not found", 401, "user_not_found");
-      const row = rows[0];
-      user    = { id: row.id, telegram_id: row.telegram_id, role: row.user_role ?? "member" };
-      tenant  = { id: row.tenant_id, kind: row.tenant_kind, name: row.tenant_name };
-      tenants = row.all_tenants;
+      await sql.begin(async (tx) => {
+        const activeSession = await loadActiveRefreshSessionForUpdateTx(tx, refreshClaims);
+        const newRefreshDraft = generateRefreshSessionDraft(
+          refreshClaims.userId,
+          activeSession.family_id,
+        );
+
+        const rows = await tx`
+          SELECT
+            u.id, u.telegram_id,
+            tm.role         AS user_role,
+            tm.tenant_id,
+            t.kind          AS tenant_kind,
+            t.name          AS tenant_name,
+            ARRAY_AGG(tm2.tenant_id ORDER BY tm2.joined_at) AS all_tenants
+          FROM immi_users u
+          JOIN immi_tenant_members tm  ON tm.user_id  = u.id
+          JOIN immi_tenants t          ON t.id         = tm.tenant_id
+          JOIN immi_tenant_members tm2 ON tm2.user_id  = u.id
+          WHERE u.id = ${refreshClaims.userId}::uuid
+          GROUP BY u.id, u.telegram_id, tm.role, tm.tenant_id, t.kind, t.name
+          ORDER BY tm.joined_at
+          LIMIT 1
+        `;
+        if (rows.length === 0) {
+          throw new RefreshSessionError("User not found", 401, "user_not_found");
+        }
+
+        const row = rows[0];
+        user    = { id: row.id, telegram_id: row.telegram_id, role: row.user_role ?? "member" };
+        tenant  = { id: row.tenant_id, kind: row.tenant_kind, name: row.tenant_name };
+        tenants = row.all_tenants;
+
+        try {
+          [newAccessToken, newRefreshToken] = await Promise.all([
+            makeAccessToken(user, tenant, tenants, env),
+            makeRefreshToken(user.id, newRefreshDraft.jti, env),
+          ]);
+        } catch (err) {
+          err.phase = "jwt";
+          throw err;
+        }
+
+        await insertRefreshSessionTx(tx, newRefreshDraft);
+        await revokeRefreshSessionTx(tx, {
+          jti: refreshClaims.jti,
+          userId: refreshClaims.userId,
+          reason: "rotated",
+          replacedByJti: newRefreshDraft.jti,
+        });
+      });
     } finally {
       await sql.end();
     }
   } catch (err) {
+    if (isRefreshSessionError(err)) {
+      return refreshSessionErr(err);
+    }
+    if (err?.phase === "jwt") {
+      console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
     console.error(JSON.stringify({ event: "auth.refresh.db_error", error: err?.message }));
     return jsonErr("Authentication service error", 503, "db_error");
   }
 
-  let newAccessToken, newRefreshToken;
-  try {
-    [newAccessToken, newRefreshToken] = await Promise.all([
-      makeAccessToken(user, tenant, tenants, env),
-      makeRefreshToken(user.id, env),
-    ]);
-  } catch (err) {
-    console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
-    return jsonErr("Token issuance failed", 503, "jwt_error");
-  }
+  return buildAuthResponse(
+    { access_token: newAccessToken, token_type: "Bearer", expires_in: ACCESS_MAX_AGE },
+    newAccessToken,
+    newRefreshToken,
+  );
+}
 
+async function handleCloudflareAuthRefresh(env, refreshClaims) {
+  let user, tenant, tenants, newAccessToken, newRefreshToken, newRefreshDraft;
+  try {
+    const store = createCloudflareIdentityStore(env);
+    const snapshot = await store.loadRefreshAuthSnapshot(refreshClaims);
+    user = snapshot.user;
+    tenant = snapshot.tenant;
+    tenants = snapshot.tenants;
+    newRefreshDraft = generateRefreshSessionDraft(user.id, snapshot.session.family_id);
+    try {
+      [newAccessToken, newRefreshToken] = await Promise.all([
+        makeAccessToken(user, tenant, tenants, env),
+        makeRefreshToken(user.id, newRefreshDraft.jti, env),
+      ]);
+    } catch (err) {
+      err.phase = "jwt";
+      throw err;
+    }
+    await store.rotateRefreshSession(refreshClaims, newRefreshDraft);
+  } catch (err) {
+    if (isNativeAuthError(err)) return refreshSessionErr(err);
+    if (err?.phase === "jwt") {
+      console.error(JSON.stringify({ event: "auth.refresh.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
+    console.error(JSON.stringify({ event: "auth.refresh.db_error", error: err?.message }));
+    return jsonErr("Authentication service error", 503, "db_error");
+  }
   return buildAuthResponse(
     { access_token: newAccessToken, token_type: "Bearer", expires_in: ACCESS_MAX_AGE },
     newAccessToken,
@@ -324,6 +654,37 @@ export async function handleAuthSwitchTenant(request, env, getSql) {
   const targetTenantId = body?.tenant_id;
   if (!targetTenantId || typeof targetTenantId !== "string") {
     return jsonErr("tenant_id required", 400, "missing_tenant_id");
+  }
+
+  if (isCloudflareMode(env)) {
+    let snapshot;
+    try {
+      // This is intentionally a live Account D1 membership lookup, not a
+      // JWT claim check: access-token membership can be five minutes stale.
+      snapshot = await createCloudflareIdentityStore(env).getAuthSnapshot(claims.sub, targetTenantId);
+    } catch (err) {
+      if (isNativeAuthError(err)) return jsonErr(err.message, err.status, err.code);
+      console.error(JSON.stringify({ event: "auth.switch_tenant.db_error", error: err?.message }));
+      return jsonErr("Authentication service error", 503, "db_error");
+    }
+    let newAccessToken;
+    try {
+      newAccessToken = await makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenants, env);
+    } catch (err) {
+      console.error(JSON.stringify({ event: "auth.switch_tenant.jwt_error", error: err?.message }));
+      return jsonErr("Token issuance failed", 503, "jwt_error");
+    }
+    const headers = new Headers({ "Content-Type": "application/json" });
+    headers.append(
+      "Set-Cookie",
+      `immi_access=${newAccessToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_MAX_AGE}`,
+    );
+    return new Response(JSON.stringify({
+      access_token: newAccessToken,
+      token_type: "Bearer",
+      expires_in: ACCESS_MAX_AGE,
+      tenant: { id: snapshot.tenant.id, kind: snapshot.tenant.kind, name: snapshot.tenant.name },
+    }), { status: 200, headers });
   }
 
   const allTenants = claims.tenants ?? [];

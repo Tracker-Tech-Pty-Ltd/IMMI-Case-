@@ -286,7 +286,7 @@ def main():
         print(f"  Score >= 3 (acceptable+): {pct_3plus:.1f}%")
 
     # By court breakdown
-    print(f"\n  By court:")
+    print("\n  By court:")
     court_scores = {}
     for r in valid:
         court = r.get("court", "?")

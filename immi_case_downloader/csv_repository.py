@@ -1,6 +1,5 @@
 """CSV-backed CaseRepository — wraps existing storage.py functions."""
 
-import os
 import logging
 
 from .models import ImmigrationCase
@@ -15,7 +14,6 @@ from .storage import (
     save_cases_csv,
     save_cases_json,
     ensure_output_dirs,
-    CASE_FIELDS,
 )
 
 logger = logging.getLogger(__name__)

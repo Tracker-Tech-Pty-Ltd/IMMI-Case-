@@ -1,0 +1,28 @@
+✗ DashboardPage                page.goto: Timeout 30000ms exceeded.
+Call log:
+[2m  - navigating to "https://immi.trackit.today/", waiting until "networkidle"[22m
+
+✓ CasesPage                    https://immi.trackit.today/cases
+✓ CaseAddPage                  https://immi.trackit.today/cases/add
+✓ CaseComparePage              https://immi.trackit.today/cases/compare
+✓ AnalyticsPage                https://immi.trackit.today/analytics
+✓ JudgeProfilesPage            https://immi.trackit.today/judge-profiles
+✓ JudgeComparePage             https://immi.trackit.today/judge-profiles/compare
+✓ LegislationsPage             https://immi.trackit.today/legislations
+✓ CourtLineagePage             https://immi.trackit.today/court-lineage
+✓ DownloadPage                 https://immi.trackit.today/download
+✓ PipelinePage                 https://immi.trackit.today/pipeline
+✓ CollectionsPage              https://immi.trackit.today/collections
+✓ GuidedSearchPage             https://immi.trackit.today/guided-search
+✓ SemanticSearchPage           https://immi.trackit.today/search/semantic
+✓ SavedSearchesPage            https://immi.trackit.today/saved-searches
+✓ LlmCouncilPage               https://immi.trackit.today/llm-council
+✓ LlmCouncilSessionsPage       https://immi.trackit.today/llm-council/sessions
+✓ DataDictionaryPage           https://immi.trackit.today/data-dictionary
+✓ TaxonomyPage                 https://immi.trackit.today/taxonomy
+✓ SearchTaxonomyPage           https://immi.trackit.today/search-taxonomy
+✓ DesignTokensPage             https://immi.trackit.today/design-tokens
+✓ JobStatusPage                https://immi.trackit.today/jobs
+
+21/22 captured · 1 failed
+Output: /Users/d/Developer/Active Projects/IMMI-Case-/design/screenshots

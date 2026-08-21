@@ -51,10 +51,13 @@ import {
   handleLegacyRun,
   handleStreamCouncil,
   handleRestoreByCode,
+  handleHealth,
 } from "./llm-council/handlers.js";
-import { handleTelegramLogin, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
+import { handleTelegramLogin, handleTelegramCallback, handleAuthMe, handleAuthLogout, handleAuthRefresh, handleAuthSwitchTenant } from "./auth/handlers.js";
 import { verifyJwt } from "./auth/jwt.js";
 import { requireAuth } from "./db/getSqlAsUser.js";
+import { dispatchCloudflareCaseRead } from "./case-api/cloudflare.js";
+import { getStorageMode } from "./storage/contracts.js";
 export { AuthNonce } from "./auth/nonce_do.js";
 
 // ── Table / column constants ──────────────────────────────────────────────────
@@ -86,6 +89,36 @@ const SORT_COL_MAP = {
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 200;
 const HEX_ID_RE = /^[0-9a-f]{12}$/;
+const CUTOVER_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Fail-closed write gate used during the worker-first cutover window.
+ *
+ * When enabled in the target Worker environment, every API mutation is
+ * rejected before it can reach Hyperdrive, the LLM Council handlers, auth
+ * handlers, or the Flask container. Reads and health checks remain available
+ * for verification while the old shared project is kept strictly read-only.
+ */
+export function getCutoverWriteFreezeResponse(request, env) {
+  if (env?.CUTOVER_WRITE_FREEZE !== "true") return null;
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/v1/") || !CUTOVER_WRITE_METHODS.has(request.method)) {
+    return null;
+  }
+  return Response.json(
+    {
+      error: "IMMI worker write freeze is active during cutover",
+      code: "cutover_write_freeze",
+    },
+    {
+      status: 503,
+      headers: {
+        "Cache-Control": "no-store",
+        "Retry-After": "0",
+      },
+    },
+  );
+}
 
 // ── Database client ───────────────────────────────────────────────────────────
 
@@ -116,6 +149,29 @@ function jsonOk(data, cacheControl = "no-cache") {
 
 function jsonErr(msg, status = 400) {
   return Response.json({ error: msg }, { status });
+}
+
+function isPipelineAdminClaim(claims) {
+  return claims?.is_admin === true || claims?.role === "owner" || claims?.role === "admin";
+}
+
+async function requirePipelineAdmin(request, env) {
+  if (env.AUTH_ENABLED === "false") {
+    return new Response(
+      JSON.stringify({ error: "Admin auth is disabled", code: "admin_auth_disabled" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const authResult = await requireAuth(request, env, verifyJwt);
+  if (authResult instanceof Response) return authResult;
+  if (!isPipelineAdminClaim(authResult.claims)) {
+    return new Response(
+      JSON.stringify({ error: "Admin access required", code: "admin_required" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return authResult;
 }
 
 // ── CSRF (stateless double-submit HMAC) ──────────────────────────────────────
@@ -946,6 +1002,71 @@ async function handleGetCase(caseId, env) {
   // container filesystem (gitignored). Return null so the frontend degrades
   // gracefully; the Flask path also returns null in production containers.
   return jsonOk({ case: row, full_text: null });
+}
+
+/** GET /api/v1/admin/pipeline-runs — read-only pipeline run monitor */
+async function handleAdminPipelineRuns(request, url, env) {
+  const authResult = await requirePipelineAdmin(request, env);
+  if (authResult instanceof Response) return authResult;
+
+  const limit = safeInt(url.searchParams.get("limit"), 30, 1, 100);
+  const sql = getSql(env);
+  const [runs, summary] = await Promise.all([
+    sql`
+      SELECT
+        run_id::text,
+        started_at,
+        finished_at,
+        trigger,
+        court,
+        phase,
+        discovered,
+        scraped,
+        extracted,
+        upserted,
+        llm_calls,
+        cost_usd::float8 AS cost_usd,
+        errors,
+        errors_json,
+        status,
+        abort_reason,
+        EXTRACT(EPOCH FROM COALESCE(finished_at, now()) - started_at)::int AS duration_seconds
+      FROM pipeline_runs
+      ORDER BY started_at DESC
+      LIMIT ${limit}
+    `,
+    sql`
+      SELECT
+        COUNT(*)::int AS total_runs,
+        COUNT(*) FILTER (WHERE status = 'running')::int AS running_runs,
+        COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_runs,
+        COUNT(*) FILTER (WHERE status = 'aborted')::int AS aborted_runs,
+        COALESCE(SUM(discovered), 0)::int AS discovered,
+        COALESCE(SUM(scraped), 0)::int AS scraped,
+        COALESCE(SUM(extracted), 0)::int AS extracted,
+        COALESCE(SUM(upserted), 0)::int AS upserted,
+        COALESCE(SUM(llm_calls), 0)::int AS llm_calls,
+        COALESCE(SUM(cost_usd), 0)::float8 AS cost_usd
+      FROM pipeline_runs
+      WHERE started_at >= now() - interval '30 days'
+    `,
+  ]);
+
+  return jsonOk({
+    runs,
+    summary: summary[0] ?? {
+      total_runs: 0,
+      running_runs: 0,
+      failed_runs: 0,
+      aborted_runs: 0,
+      discovered: 0,
+      scraped: 0,
+      extracted: 0,
+      upserted: 0,
+      llm_calls: 0,
+      cost_usd: 0,
+    },
+  });
 }
 
 /** GET /api/v1/stats — dashboard aggregate statistics */
@@ -2180,6 +2301,11 @@ export class FlaskBackend extends DurableObject {
             LLM_COUNCIL_GEMINI_PRO_MODEL:    env.LLM_COUNCIL_GEMINI_PRO_MODEL,
             LLM_COUNCIL_ANTHROPIC_MODEL:     env.LLM_COUNCIL_ANTHROPIC_MODEL,
             LLM_COUNCIL_GEMINI_FLASH_MODEL:  env.LLM_COUNCIL_GEMINI_FLASH_MODEL,
+            LLM_EXTRACT_CF_GATEWAY_URL:       env.LLM_EXTRACT_CF_GATEWAY_URL,
+            LLM_GEMMA_MODEL:                  env.LLM_GEMMA_MODEL,
+            LLM_MAX_OUTPUT_TOKENS:            env.LLM_MAX_OUTPUT_TOKENS,
+            PIPELINE_RUN_COST_CAP_USD:        env.PIPELINE_RUN_COST_CAP_USD,
+            PIPELINE_LLM_CALL_TIMEOUT_MS:     env.PIPELINE_LLM_CALL_TIMEOUT_MS,
             // NOTE: HYPERDRIVE_DATABASE_URL not injected here —
             // Cloudflare Containers cannot resolve *.hyperdrive.local DNS.
             // Flask uses SupabaseRepository (REST API) instead, which works
@@ -2547,8 +2673,10 @@ const LLM_COUNCIL_SESSION_RE =
 export async function dispatchLlmCouncil(request, env, url, path, method, ctx) {
   if (!path.startsWith(LLM_COUNCIL_PREFIX)) return null;
 
-  // Health stays on Flask (existing legacy behaviour).
-  if (path === "/api/v1/llm-council/health") return null;
+  // Health uses the same Worker-native AI Gateway path as sessions/runs.
+  if (path === "/api/v1/llm-council/health" && method === "GET") {
+    return handleHealth(request, env);
+  }
 
   // POST /api/v1/llm-council/sessions
   if (path === "/api/v1/llm-council/sessions" && method === "POST") {
@@ -2643,7 +2771,7 @@ async function requireCaseWriter(request, env) {
 // ── Flask proxy helper ────────────────────────────────────────────────────────
 
 async function proxyToFlask(request, env) {
-  const id        = env.FlaskBackend.idFromName("flask-v23");
+  const id        = env.FlaskBackend.idFromName("flask-v25");
   const container = env.FlaskBackend.get(id);
 
   // Inject Hyperdrive connection string so Flask can optionally use direct psycopg2.
@@ -2664,6 +2792,10 @@ export default {
     const url    = new URL(request.url);
     const path   = url.pathname;
     const method = request.method;
+    const storageMode = getStorageMode(env);
+
+    const cutoverFreeze = getCutoverWriteFreezeResponse(request, env);
+    if (cutoverFreeze) return cutoverFreeze;
 
     // Edge health check — no container needed
     if (path === "/health") {
@@ -2685,6 +2817,16 @@ export default {
       const filename = path.slice("/api/v1/judge-photo/".length);
       const r2Resp = await handleJudgePhoto(filename, env);
       if (r2Resp) return r2Resp;
+    }
+
+    // The Cloudflare-native read boundary is explicit: it never falls back to
+    // Hyperdrive when a D1/Vectorize request fails. A later route-manifest
+    // gate must prove every public GET is implemented before this mode can be
+    // traffic-serving; unsupported API routes are rejected below rather than
+    // silently reading the old Supabase source.
+    if (method === "GET" && storageMode === "cloudflare") {
+      const cloudflareRead = await dispatchCloudflareCaseRead(url, path, env);
+      if (cloudflareRead !== null) return cloudflareRead;
     }
 
     // ── Cases write path (POST/PUT/DELETE/batch) ──────────────────────────────
@@ -2766,6 +2908,8 @@ export default {
 
         if (path === "/api/v1/cases") {
           res = await handleGetCases(url, env);
+        } else if (path === "/api/v1/admin/pipeline-runs") {
+          res = await handleAdminPipelineRuns(request, url, env);
         } else if (path === "/api/v1/cases/count") {
           res = await handleGetCasesCount(url, env);
         } else if (path === "/api/v1/export/csv") {
@@ -2856,10 +3000,12 @@ export default {
       try {
         if (path === "/api/v1/auth/telegram" && method === "POST")
           return handleTelegramLogin(request, env, getSql);
+        if (path === "/api/v1/auth/telegram/callback" && method === "GET")
+          return handleTelegramCallback(request, env, getSql);
         if (path === "/api/v1/auth/me" && method === "GET")
           return handleAuthMe(request, env);
         if (path === "/api/v1/auth/logout" && method === "POST")
-          return handleAuthLogout(request, env);
+          return handleAuthLogout(request, env, getSql);
         if (path === "/api/v1/auth/refresh" && method === "POST")
           return handleAuthRefresh(request, env, getSql);
         if (path === "/api/v1/auth/switch-tenant" && method === "POST")
@@ -2895,6 +3041,16 @@ export default {
           { status: 503, headers: { "Content-Type": "application/json" } },
         );
       }
+    }
+
+    if (storageMode === "cloudflare" && path.startsWith("/api/v1/")) {
+      return Response.json(
+        {
+          error: "This API route is not yet available in the Cloudflare-native runtime",
+          code: "cloudflare_route_unavailable",
+        },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
     // ── Flask Container proxy path ────────────────────────────────────────────

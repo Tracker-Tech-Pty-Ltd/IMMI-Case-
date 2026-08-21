@@ -360,7 +360,6 @@ def main():
     print("SUMMARY")
     print("=" * 60)
     for key, count in changes.items():
-        field_total = df[key].notna().sum() if key in df.columns else 0
         non_empty = ((df[key].astype(str).str.strip() != "") & (df[key].astype(str) != "nan")).sum() if key in df.columns else 0
         pct = non_empty / total * 100
         print(f"  {key:25s}: +{count:>7,} new  →  {non_empty:>7,} total ({pct:.1f}%)")

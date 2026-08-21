@@ -32,9 +32,9 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Any
 
-_council_semaphore = threading.BoundedSemaphore(3)
-
 import requests
+
+_council_semaphore = threading.BoundedSemaphore(3)
 
 CF_GATEWAY_DEFAULT_URL = (
     "https://gateway.ai.cloudflare.com/v1/30ffcfbf8c4103048bc38a5398b7ec99"

@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -39,6 +39,34 @@ vi.mock("@/hooks/use-llm-council-sessions", () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+}));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+    user: { id: "test-user", display_name: "Test User" },
+    tenant: { id: "test-tenant", name: "Test Tenant" },
+    tenants: [],
+    accessToken: "test-token",
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+    switchTenant: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/council-celebrations", () => ({
+  fireSubmitGavelBurst: vi.fn(),
+  fireCouncilDoneCelebration: vi.fn(),
+  isSoundOn: vi.fn(() => false),
+  toggleSound: vi.fn(() => false),
+  playCue: vi.fn(),
+  recordCouncilRun: vi.fn(() => []),
+  unlockRobeTheme: vi.fn(),
+  isRobeThemeUnlocked: vi.fn(() => false),
+  timeOfDaySalutation: vi.fn(() => "Court is now in session."),
+  getCouncilStats: vi.fn(() => ({ totalRuns: 0, streak: 0 })),
 }));
 
 vi.mock("sonner", () => ({
@@ -200,7 +228,7 @@ describe("TurnCard", () => {
     const turn = makeTurn(1);
     renderTurnCard(turn, 1);
     const toggle = screen.getByTestId("experts-toggle");
-    toggle.click();
+    fireEvent.click(toggle);
     expect(await screen.findByText("OpenAI")).toBeInTheDocument();
   });
 

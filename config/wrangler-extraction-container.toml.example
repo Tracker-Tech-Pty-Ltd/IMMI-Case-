@@ -1,0 +1,28 @@
+# Operator-only extraction Container Worker. It has no D1/R2/Vectorize or
+# legacy database binding; the Container receives only extraction/AI secrets.
+name = "immi-extraction"
+main = "workers/extraction-container.js"
+compatibility_date = "2026-08-10"
+compatibility_flags = ["nodejs_compat"]
+
+[durable_objects]
+bindings = [
+  { name = "ExtractionBackend", class_name = "ExtractionBackend" },
+]
+
+[[migrations]]
+tag = "extraction-container-v1"
+new_sqlite_classes = ["ExtractionBackend"]
+
+[[containers]]
+class_name = "ExtractionBackend"
+image = "./Dockerfile"
+max_instances = 3
+
+[vars]
+LLM_GEMMA_MODEL = "workers-ai/@cf/google/gemma-4-26b-a4b-it"
+PIPELINE_RUN_COST_CAP_USD = "5"
+PIPELINE_LLM_CALL_TIMEOUT_MS = "28000"
+
+# Operator-set secrets only: EXTRACTION_SHARED_SECRET, CF_AIG_TOKEN,
+# LLM_EXTRACT_CF_GATEWAY_URL.

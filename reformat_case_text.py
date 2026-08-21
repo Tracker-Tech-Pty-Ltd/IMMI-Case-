@@ -31,7 +31,6 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
 
 # Section headings commonly found in AustLII decisions
 SECTION_HEADINGS = {

@@ -1,0 +1,1 @@
+import{j as s}from"./vendor-C0FagFki.js";import{E as n}from"./index-GlxSA6NU.js";function u({icon:t,title:r,description:e,action:o,className:a,contained:m=!0}){return s.jsx(n,{title:r,description:e,icon:t,action:o,contained:m,className:a})}export{u as E};

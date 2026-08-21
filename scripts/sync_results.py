@@ -31,7 +31,6 @@ from scripts.cloudflare_config import (
     JSON_PATH,
     TEXT_DIR,
 )
-from immi_case_downloader.models import ImmigrationCase
 
 
 HEADERS = {
@@ -369,12 +368,9 @@ def main():
     # Step 3: Save text files
     print(f"\nStep 3: Saving .txt files to {TEXT_DIR}...")
     synced: list[dict] = []
-    new_files = 0
-    skipped_files = 0
 
     for i, result in enumerate(results):
         filepath = save_text_file(result, TEXT_DIR)
-        was_new = not (TEXT_DIR / Path(filepath).name).exists() or filepath == str(TEXT_DIR / Path(filepath).name)
 
         synced.append({
             "case_id": result.get("case_id", ""),

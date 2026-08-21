@@ -13,7 +13,6 @@ Usage:
 import argparse
 import json
 import os
-import sys
 import time
 from datetime import datetime
 
@@ -174,9 +173,9 @@ def main():
 
             entry = f"--- Case {t['case_id']} ---\nTitle: {t['title']}\n"
             if t["need_outcome"]:
-                entry += f"[EXTRACT OUTCOME]\n"
+                entry += "[EXTRACT OUTCOME]\n"
             if t["need_lc"]:
-                entry += f"[EXTRACT LEGAL CONCEPTS]\n"
+                entry += "[EXTRACT LEGAL CONCEPTS]\n"
             entry += f"Catchwords: {t['catchwords'][:300]}\n"
             entry += f"Text:\n{text_portion[:2500]}\n"
             cases_parts.append(entry)

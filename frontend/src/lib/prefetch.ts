@@ -11,6 +11,7 @@ const prefetchMap: Record<string, () => Promise<unknown>> = {
   "/llm-council": () => import("@/pages/LlmCouncilPage"),
   "/llm-council/sessions": () => import("@/pages/LlmCouncilSessionsPage"),
   "/data-tools": () => import("@/pages/DataToolsPage"),
+  "/admin/pipeline-runs": () => import("@/pages/AdminPipelineRunsPage"),
   "/legislations": () => import("@/pages/LegislationsPage"),
   "/collections": () => import("@/pages/CollectionsPage"),
   "/data-dictionary": () => import("@/pages/DataDictionaryPage"),

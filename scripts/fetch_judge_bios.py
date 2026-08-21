@@ -546,12 +546,12 @@ def main():
     if args.mode == "deep-research":
         est_cost_low = total_batches * 2
         est_cost_high = total_batches * 5
-        print(f"\nMode: Deep Research (thorough, slow)")
+        print("\nMode: Deep Research (thorough, slow)")
         print(f"Plan: {total_batches} calls × {args.batch_size} judges/batch")
         print(f"Estimated cost: ${est_cost_low}-${est_cost_high}")
     else:
         est_cost = total_batches * 0.05
-        print(f"\nMode: Google Search Grounding (fast, cheap)")
+        print("\nMode: Google Search Grounding (fast, cheap)")
         print(f"Plan: {total_batches} calls × {args.batch_size} judges/batch")
         print(f"Estimated cost: ~${est_cost:.2f}")
 

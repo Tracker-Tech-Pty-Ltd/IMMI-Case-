@@ -1,0 +1,9 @@
+[mcp_servers.context7]
+args = [
+    "-y",
+    "@upstash/context7-mcp@latest",
+]
+command = "npx"
+
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?project_ref=urntbuqczarkuoaosjxd&features=docs%2Cdatabase%2Cfunctions%2Cdevelopment%2Cdebugging%2Cstorage"

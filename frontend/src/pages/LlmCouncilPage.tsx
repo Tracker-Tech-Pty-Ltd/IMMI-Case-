@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useParams, Navigate, useNavigate } from "react-router-dom";
+import { Link, useParams, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Bot,
@@ -51,6 +51,7 @@ import {
   useLlmCouncilSession,
   useAddTurn,
 } from "@/hooks/use-llm-council-sessions";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   fireSubmitGavelBurst,
   fireCouncilDoneCelebration,
@@ -658,8 +659,37 @@ interface NewSessionFormProps {
   onRunComplete: () => void;
 }
 
+function AuthRequiredNotice() {
+  return (
+    <section
+      data-testid="llm-council-auth-required"
+      className="rounded-xl border border-border/80 bg-card p-6 shadow-sm"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            Sign in to run the LLM IMMI Council
+          </p>
+          <p className="text-sm leading-relaxed text-muted-text">
+            Council sessions are saved under your tenant so follow-up turns and
+            recall codes stay private.
+          </p>
+        </div>
+        <Link
+          to="/login"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent/90"
+        >
+          <KeyRound className="h-4 w-4" />
+          Sign in
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) {
   const { t } = useTranslation();
+  const { isAuthenticated, isLoading } = useAuth();
   const [message, setMessage] = useState("");
   const [caseId, setCaseId] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -732,6 +762,14 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
     stream.reset();
     setSubmitError("");
     celebratedDoneRef.current = false;
+  }
+
+  if (isLoading) {
+    return <PageLoader />;
+  }
+
+  if (!isAuthenticated) {
+    return <AuthRequiredNotice />;
   }
 
   return (
@@ -1051,6 +1089,7 @@ function ThreadView({
 export function LlmCouncilPage() {
   const { t } = useTranslation();
   const { sessionId } = useParams<{ sessionId?: string }>();
+  const { isAuthenticated, isLoading } = useAuth();
 
   // Easter-egg: tap the Scale icon 5x to unlock the "robe" theme
   const [scaleTapCount, setScaleTapCount] = useState(0);
@@ -1223,11 +1262,17 @@ export function LlmCouncilPage() {
       </section>
 
       {sessionId ? (
+        isLoading ? (
+          <PageLoader />
+        ) : !isAuthenticated ? (
+          <AuthRequiredNotice />
+        ) : (
         <ThreadView
           sessionId={sessionId}
           onAchievements={pushAchievements}
           onRunComplete={refreshStats}
         />
+        )
       ) : (
         <>
           <section className="rounded-xl border border-dashed border-border bg-card p-5 text-sm text-muted-text shadow-sm">

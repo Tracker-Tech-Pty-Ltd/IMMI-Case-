@@ -175,7 +175,7 @@ def main() -> None:
         sys.exit(1)
 
     total = sum(v for v in counts.values() if v >= 0)
-    print(f"  ✓ All checks passed.")
+    print("  ✓ All checks passed.")
     print(f"  ✓ Total anon rows audited: {total}")
     print()
 

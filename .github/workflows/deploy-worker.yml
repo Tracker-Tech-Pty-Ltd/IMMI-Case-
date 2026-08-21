@@ -1,28 +1,29 @@
-name: Deploy Worker (Cloudflare Containers + Hyperdrive)
+name: Deploy IMMI Workers (Cloudflare-native, operator-only)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "workers/**"
-      - "Dockerfile"
-      - "wrangler.toml"
-      - "immi_case_downloader/**"
-      - "requirements.txt"
-      - "web.py"
-      - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
+    inputs:
+      confirm_native_deploy:
+        description: "Type I_UNDERSTAND only after import, shadow, rollback and change-window approval"
+        required: true
+        type: choice
+        options:
+          - "NO"
+          - "I_UNDERSTAND"
+        default: "NO"
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-worker
+  group: deploy-immi-cloudflare-native
   cancel-in-progress: true
 
 jobs:
   deploy:
+    if: ${{ inputs.confirm_native_deploy == 'I_UNDERSTAND' }}
     runs-on: ubuntu-latest
+    environment: immi-cloudflare-production
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -35,19 +36,72 @@ jobs:
       - name: Install Worker dependencies
         run: npm ci
 
-      # US-015: fail fast if any required Worker secret is missing on the
-      # remote Worker before we attempt to deploy. iteration 12 shipped
-      # without CSRF_SECRET bound, causing /api/v1/csrf-token + write
-      # endpoints to 500 until secret was added post-deploy.
-      - name: Preflight — verify required Worker secrets
+      - name: Materialise operator-supplied native configs
+        env:
+          MAIN_CONFIG_B64: ${{ secrets.IMMI_NATIVE_MAIN_WRANGLER_TOML_B64 }}
+          PIPELINE_CONFIG_B64: ${{ secrets.IMMI_NATIVE_PIPELINE_WRANGLER_TOML_B64 }}
+        run: |
+          test -n "$MAIN_CONFIG_B64"
+          test -n "$PIPELINE_CONFIG_B64"
+          printf '%s' "$MAIN_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/immi-native-main.toml"
+          printf '%s' "$PIPELINE_CONFIG_B64" | base64 --decode > "$RUNNER_TEMP/immi-native-pipeline.toml"
+
+      - name: Materialise immutable activation evidence
+        env:
+          ACTIVATION_EVIDENCE_B64: ${{ secrets.IMMI_NATIVE_ACTIVATION_EVIDENCE_B64 }}
+        run: |
+          test -n "$ACTIVATION_EVIDENCE_B64"
+          printf '%s' "$ACTIVATION_EVIDENCE_B64" | base64 --decode > "$RUNNER_TEMP/immi-native-activation-evidence.json"
+
+      - name: Gate effective native references
+        run: >-
+          python3 scripts/check_native_effective_references.py --json
+          --main-config "$RUNNER_TEMP/immi-native-main.toml"
+          --pipeline-config "$RUNNER_TEMP/immi-native-pipeline.toml"
+
+      - name: Gate snapshot, quality, performance, shadow, rollback and soak evidence
+        run: >-
+          python3 scripts/check_immi_activation_evidence.py
+          "$RUNNER_TEMP/immi-native-activation-evidence.json"
+          --main-config "$RUNNER_TEMP/immi-native-main.toml"
+          --pipeline-config "$RUNNER_TEMP/immi-native-pipeline.toml"
+
+      - name: Gate native config and disabled mutation defaults
+        run: >-
+          python3 scripts/check_cloudflare_native_target.py
+          --main-config "$RUNNER_TEMP/immi-native-main.toml"
+          --pipeline-config "$RUNNER_TEMP/immi-native-pipeline.toml"
+
+      - name: Preflight — verify native main Worker secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: immi-case-standalone
+          WORKER_KIND: main
         run: bash scripts/preflight_secrets.sh
 
-      - name: Deploy Worker + Flask Container + Hyperdrive
+      - name: Preflight — verify native pipeline Worker secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy
+          WORKER_NAME: austlii-scraper-native
+          WORKER_KIND: pipeline
+        run: bash scripts/preflight_secrets.sh
 
+      - name: Build React SPA (static assets)
+        run: |
+          cd frontend
+          npm ci
+          npm run build:cloudflare
+
+      - name: Deploy native main Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --no-install wrangler deploy --config "$RUNNER_TEMP/immi-native-main.toml"
+
+      - name: Deploy native pipeline Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --no-install wrangler deploy --config "$RUNNER_TEMP/immi-native-pipeline.toml"

@@ -181,7 +181,7 @@ def main():
             print(f"  ERROR: {citation} — {e}")
             failed += 1
 
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"Test records removed: {test_count if args.apply else 0}")
     print(f"Downloaded: {downloaded}")
     print(f"Failed: {failed}")

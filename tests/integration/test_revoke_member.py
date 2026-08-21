@@ -24,10 +24,16 @@ import requests
 
 # ── Config from environment ───────────────────────────────────────────────────
 
-DB_URL = os.environ["SUPABASE_DB_URL"]
-JWT_SECRET = os.environ["JWT_SECRET_CURRENT"]
+DB_URL = os.environ.get("SUPABASE_DB_URL", "")
+JWT_SECRET = os.environ.get("JWT_SECRET_CURRENT", "")
 JWT_KID = os.environ.get("JWT_KID_CURRENT", "k1")
 BASE_URL = os.environ.get("FLASK_BASE_URL", "https://immi.trackit.today").rstrip("/")
+
+if not DB_URL or not JWT_SECRET:
+    pytest.skip(
+        "SUPABASE_DB_URL and JWT_SECRET_CURRENT are required for revoke-member integration",
+        allow_module_level=True,
+    )
 
 # Unique per process to avoid collision on concurrent CI runs
 TELEGRAM_ID = 9_900_000_000 + (os.getpid() % 100_000)

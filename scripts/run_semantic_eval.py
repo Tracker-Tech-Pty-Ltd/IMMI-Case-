@@ -17,7 +17,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from immi_case_downloader.semantic_search_eval import (
+from immi_case_downloader.semantic_search_eval import (  # noqa: E402
     run_semantic_evaluation,
     write_report_files,
 )

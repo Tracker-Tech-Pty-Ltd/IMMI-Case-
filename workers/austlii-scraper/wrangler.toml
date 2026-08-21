@@ -1,30 +1,117 @@
-#:schema node_modules/wrangler/config-schema.json
-name = "austlii-scraper"
+# Active IMMI production pipeline configuration: Cloudflare-native only.
+# IDs and service names are operator-supplied outside source control.
+name = "austlii-scraper-native"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2026-08-10"
+compatibility_flags = ["nodejs_compat"]
 
-# Workers Paid plan recommended for 30s CPU time (free plan = 10ms)
-
-# ─── R2 Bucket ────────────────────────────────────────────────────────────────
 [[r2_buckets]]
 binding = "CASE_RESULTS"
-bucket_name = "austlii-case-results"
+bucket_name = "immi-content"
 
-# ─── Queue Producer ───────────────────────────────────────────────────────────
+[[d1_databases]]
+binding = "IMMI_CATALOG_DB"
+database_name = "immi-catalog"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "../../migrations/d1/catalog"
+
+[[d1_databases]]
+binding = "IMMI_OPS_DB"
+database_name = "immi-ops"
+database_id = "00000000-0000-0000-0000-000000000003"
+migrations_dir = "../../migrations/d1/ops"
+
+[[kv_namespaces]]
+binding = "PIPELINE_KV"
+id = "00000000-0000-0000-0000-000000000004"
+
+[browser]
+binding = "MYBROWSER"
+
 [[queues.producers]]
 binding = "SCRAPE_QUEUE"
-queue = "austlii-scrape-queue"
+queue = "immi-scrape-queue"
 
-# ─── Queue Consumer ───────────────────────────────────────────────────────────
+[[queues.producers]]
+binding = "EXTRACT_QUEUE"
+queue = "immi-extract-queue"
+
+[[queues.producers]]
+binding = "NATIVE_CASE_QUEUE"
+queue = "immi-case-mutation-queue"
+
 [[queues.consumers]]
-queue = "austlii-scrape-queue"
+queue = "immi-pipeline-control-queue"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "immi-pipeline-control-dlq"
+
+[[queues.consumers]]
+queue = "immi-pipeline-control-dlq"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-scrape-queue"
 max_batch_size = 5
 max_batch_timeout = 30
 max_retries = 3
-dead_letter_queue = "austlii-scrape-dlq"
+dead_letter_queue = "immi-scrape-dlq"
 max_concurrency = 20
 
-# ─── Environment Variables ────────────────────────────────────────────────────
-# Set AUTH_TOKEN via: wrangler secret put AUTH_TOKEN
-# [vars]
-# AUTH_TOKEN is stored as a secret, not in plaintext
+[[queues.consumers]]
+queue = "immi-scrape-dlq"
+max_batch_size = 20
+max_batch_timeout = 30
+max_retries = 3
+
+[[queues.consumers]]
+queue = "immi-extract-queue"
+max_batch_size = 5
+max_batch_timeout = 60
+max_retries = 2
+dead_letter_queue = "immi-extract-dlq"
+max_concurrency = 1
+
+[[queues.consumers]]
+queue = "immi-extract-dlq"
+max_batch_size = 20
+max_batch_timeout = 60
+max_retries = 3
+
+[[durable_objects.bindings]]
+name = "COST_CAP_DO"
+class_name = "CostCapDO"
+
+[[migrations]]
+tag = "pipeline-cost-cap-v1"
+new_classes = ["CostCapDO"]
+
+# The extraction Container is CPU/LLM-only. It receives no D1/R2/Vectorize
+# credentials and returns extraction JSON to this Worker for native storage.
+[[services]]
+binding = "EXTRACTION_BACKEND"
+service = "immi-extraction-replace"
+entrypoint = "ExtractionBackend"
+remote = true
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["0 2 * * 1", "0 3 * * 1", "0 4 * * 1", "0 5 * * 1"]
+
+[vars]
+PIPELINE_ENABLED = "false"
+NATIVE_PIPELINE_ENABLED = "false"
+PIPELINE_BIWEEKLY_GATE = "true"
+PIPELINE_RUN_COST_CAP_USD = "5"
+PIPELINE_MONTHLY_HARD_CAP_USD = "10"
+PIPELINE_DISCOVERY_LOOKBACK_YEARS = "2"
+PIPELINE_PER_COURT_RATE_LIMIT_MS = "1500"
+PIPELINE_CONTAINER_EXTRACT_TIMEOUT_MS = "300000"
+FIRECRAWL_ENABLED = "false"
+
+# Operator-set only: AUTH_TOKEN, EXTRACTION_SHARED_SECRET and extraction provider secrets.

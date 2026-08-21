@@ -7,6 +7,7 @@ export interface AuthUser {
   first_name?: string;
   last_name?: string;
   photo_url?: string;
+  role?: "owner" | "member" | "admin" | string;
 }
 
 export interface AuthTenant {

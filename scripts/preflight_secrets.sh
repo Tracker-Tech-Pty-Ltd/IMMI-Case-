@@ -9,7 +9,7 @@
 #
 # Required env (CI): CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 #
-# Required secrets list (kept in sync with wrangler.toml comment block):
+# Required secrets list (kept in sync with the Cloudflare-native auth runtime):
 #   CSRF_SECRET    — HMAC key used by workers/llm-council/auth.js +
 #                    workers/proxy.js for double-submit CSRF tokens.
 #                    Without it, /api/v1/csrf-token + writes 500 with
@@ -20,12 +20,9 @@
 #                    provider keys (ANTHROPIC_API_KEY, GEMINI_API_KEY,
 #                    OPENAI_API_KEY) live in the Gateway provider config,
 #                    NOT as Worker secrets.
-#
-# NON-secrets (do NOT add to this list):
-#   HYPERDRIVE     — declared as a [[hyperdrive]] binding in wrangler.toml.
-#                    connectionString is derived from the binding, not a
-#                    wrangler secret. Worker reads env.HYPERDRIVE.connectionString.
-#   FlaskBackend   — Durable Object class binding for the Flask Container.
+#   JWT_SECRET_CURRENT / JWT_KID_CURRENT — Worker auth signing material.
+#   TELEGRAM_BOT_TOKEN — Telegram Login HMAC verification secret.
+#   AUTH_TOKEN        — pipeline enqueue authentication (pipeline worker only).
 #
 # Exit codes:
 #   0 — all required secrets present
@@ -34,10 +31,25 @@
 
 set -euo pipefail
 
-REQUIRED_SECRETS=(
-  CSRF_SECRET
-  CF_AIG_TOKEN
-)
+WORKER_KIND="${WORKER_KIND:-main}"
+case "$WORKER_KIND" in
+  main)
+    REQUIRED_SECRETS=(
+      CSRF_SECRET
+      CF_AIG_TOKEN
+      JWT_SECRET_CURRENT
+      JWT_KID_CURRENT
+      TELEGRAM_BOT_TOKEN
+    )
+    ;;
+  pipeline)
+    REQUIRED_SECRETS=(AUTH_TOKEN EXTRACTION_SHARED_SECRET)
+    ;;
+  *)
+    echo "[preflight] FATAL: WORKER_KIND must be main or pipeline" >&2
+    exit 2
+    ;;
+esac
 
 # Resolve worker name. Priority:
 #   1. WORKER_NAME env (CI override / test injection)
@@ -57,7 +69,7 @@ if [[ -z "${WORKER_NAME:-}" ]]; then
   WORKER_NAME="immi-case"
 fi
 
-echo "[preflight] checking secrets bound on Worker '$WORKER_NAME'..."
+echo "[preflight] checking $WORKER_KIND secrets bound on Worker '$WORKER_NAME'..."
 
 if ! command -v npx >/dev/null 2>&1; then
   echo "[preflight] FATAL: npx not on PATH. Install Node.js + npm." >&2
@@ -65,7 +77,7 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 # `wrangler secret list` JSON shape: [{ "name": "FOO", "type": "secret_text" }, ...]
-secrets_json="$(npx --yes wrangler secret list --name "$WORKER_NAME" --format=json 2>&1)" || {
+secrets_json="$(npx --no-install wrangler secret list --name "$WORKER_NAME" --format=json 2>&1)" || {
   echo "[preflight] FATAL: wrangler secret list failed:" >&2
   printf '%s\n' "$secrets_json" >&2
   exit 2
@@ -101,7 +113,7 @@ if (( ${#missing[@]} > 0 )); then
   done
   echo "" >&2
   echo "Set missing secrets via:" >&2
-  echo "  npx wrangler secret put <NAME> --name $WORKER_NAME" >&2
+  echo "  npx --no-install wrangler secret put <NAME> --name $WORKER_NAME" >&2
   echo "Then re-run this preflight before redeploying." >&2
   exit 1
 fi

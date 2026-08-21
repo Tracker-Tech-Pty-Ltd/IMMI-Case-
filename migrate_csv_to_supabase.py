@@ -86,7 +86,7 @@ def main():
         print(f"    - {c.citation}: {c.title[:60]}")
 
     print("\nDone! Supabase database ready.")
-    print(f"  Run: python web.py --backend supabase --port 8080")
+    print("  Run: python web.py --backend supabase --port 8080")
 
 
 if __name__ == "__main__":

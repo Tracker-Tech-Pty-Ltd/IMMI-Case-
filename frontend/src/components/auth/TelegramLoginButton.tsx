@@ -1,5 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useEffect, useMemo, useRef } from "react";
 
 interface TelegramLoginButtonProps {
   botName: string;
@@ -21,41 +20,36 @@ export function TelegramLoginButton({
   size = "large",
 }: TelegramLoginButtonProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const { login } = useAuth();
+  void onSuccess;
+  void onError;
 
-  const handleAuth = useCallback(
-    async (user: Record<string, string>) => {
-      try {
-        await login(user);
-        onSuccess?.();
-      } catch (err) {
-        onError?.(err instanceof Error ? err : new Error("Login failed"));
-      }
-    },
-    [login, onSuccess, onError],
-  );
+  const authUrl = useMemo(() => {
+    if (typeof window === "undefined") return "/api/v1/auth/telegram/callback";
+    const next = window.location.pathname.startsWith("/app") ? "/app/" : "/";
+    const url = new URL("/api/v1/auth/telegram/callback", window.location.origin);
+    url.searchParams.set("next", next);
+    return url.toString();
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
     // StrictMode guard: avoid double-mounting the script
     if (ref.current.childElementCount > 0) return;
 
-    window.onTelegramAuthCallback = handleAuth;
-
     const script = document.createElement("script");
     script.src = "https://telegram.org/js/telegram-widget.js?22";
     script.setAttribute("data-telegram-login", botName);
     script.setAttribute("data-size", size);
-    script.setAttribute("data-onauth", "onTelegramAuthCallback(user)");
+    script.setAttribute("data-auth-url", authUrl);
     script.setAttribute("data-request-access", "write");
     script.async = true;
 
     ref.current.appendChild(script);
 
     return () => {
-      delete window.onTelegramAuthCallback;
+      ref.current?.querySelector("script[src^='https://telegram.org/js/telegram-widget.js']")?.remove();
     };
-  }, [botName, size, handleAuth]);
+  }, [authUrl, botName, size]);
 
   return <div ref={ref} />;
 }

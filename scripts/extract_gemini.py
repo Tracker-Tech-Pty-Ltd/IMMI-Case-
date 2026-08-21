@@ -162,7 +162,7 @@ async def call_gemini_async(
                     continue
                 return []
 
-            except Exception as e:
+            except Exception:
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -436,7 +436,7 @@ def main():
     print(f"  Total progress: {len(progress):,}")
 
     # Apply to CSV
-    print(f"\nApplying results to CSV...")
+    print("\nApplying results to CSV...")
     apply_to_csv(progress)
 
 

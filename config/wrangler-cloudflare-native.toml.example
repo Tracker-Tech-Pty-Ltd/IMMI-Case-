@@ -1,0 +1,78 @@
+# Non-deployable operator template for the standalone Cloudflare-native IMMI
+# Worker. It deliberately contains invalid placeholder IDs and no account_id,
+# routes, secrets, Hyperdrive, Supabase or Flask binding. Copy outside source
+# control only after the paid-resource, privacy and staging gates are approved.
+name = "immi-case-standalone"
+main = "workers/cloudflare-native.js"
+compatibility_date = "2026-08-10"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "IMMI_CATALOG_DB"
+database_name = "REPLACE_WITH_IMMI_CATALOG_DB"
+database_id = "REPLACE_WITH_TARGET_D1_ID"
+migrations_dir = "migrations/d1/catalog"
+
+[[d1_databases]]
+binding = "IMMI_ACCOUNT_DB"
+database_name = "REPLACE_WITH_IMMI_ACCOUNT_DB"
+database_id = "REPLACE_WITH_TARGET_D1_ID"
+migrations_dir = "migrations/d1/account"
+
+[[d1_databases]]
+binding = "IMMI_OPS_DB"
+database_name = "REPLACE_WITH_IMMI_OPS_DB"
+database_id = "REPLACE_WITH_TARGET_D1_ID"
+migrations_dir = "migrations/d1/ops"
+
+[[r2_buckets]]
+binding = "IMMI_CONTENT"
+bucket_name = "REPLACE_WITH_IMMI_CONTENT_BUCKET"
+
+[[vectorize]]
+binding = "CASE_VECTORS"
+index_name = "REPLACE_WITH_CASE_VECTORS_INDEX"
+
+[ai]
+binding = "AI"
+
+[[durable_objects.bindings]]
+name = "AUTH_NONCE"
+class_name = "AuthNonce"
+
+[[durable_objects.bindings]]
+name = "COUNCIL_SESSION"
+class_name = "CouncilSessionDO"
+
+[[migrations]]
+tag = "cloudflare-native-v1"
+new_sqlite_classes = ["AuthNonce", "CouncilSessionDO"]
+
+[vars]
+AUTH_ENABLED = "true"
+IMMI_STORAGE_MODE = "cloudflare"
+IMMI_CASE_MUTATIONS_ENABLED = "false"
+
+[[queues.producers]]
+binding = "CASE_MUTATION_QUEUE"
+queue = "immi-case-mutation-queue"
+
+[[queues.producers]]
+binding = "PIPELINE_CONTROL_QUEUE"
+queue = "immi-pipeline-control-queue"
+
+[[queues.consumers]]
+queue = "immi-case-mutation-queue"
+max_batch_size = 20
+max_batch_timeout = 5
+dead_letter_queue = "immi-case-mutation-dlq"
+
+[[queues.consumers]]
+queue = "immi-case-mutation-dlq"
+max_batch_size = 20
+max_batch_timeout = 5
+max_retries = 3
+
+# Operator-set secrets only (never write values into this template):
+# CSRF_SECRET, JWT_SECRET_CURRENT, JWT_SECRET_PREVIOUS, JWT_KID_CURRENT,
+# JWT_KID_PREVIOUS, TELEGRAM_BOT_TOKEN, CF_AIG_TOKEN
