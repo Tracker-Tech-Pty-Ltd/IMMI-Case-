@@ -1,11 +1,11 @@
 /**
  * AustLII Case Scraper — Cloudflare Worker
  *
- * Producer: HTTP POST /enqueue → pushes ScrapeJob messages to Queue
- * Consumer: Queue handler → fetches AustLII pages, parses, stores in R2
+ * Cron-triggered only: the scheduled handler discovers and enqueues scrape
+ * jobs; queue consumers fetch AustLII pages, parse, and store in R2.
  *
  * Architecture:
- *   enqueue_urls.py → POST /enqueue → Queue → Consumer → R2
+ *   cron (scheduled) → discovery → Queue → Consumer → R2
  *   sync_results.py ← R2 (via S3-compatible API)
  */
 
@@ -163,58 +163,13 @@ export default {
       });
     }
 
-    // During worker-first cutover, disabling the pipeline must also block
-    // direct producer writes. Queue consumers and cron already fail closed
-    // below; without this guard /enqueue and /scrape could still write to the
-    // old shared R2/Queue bindings while PIPELINE_ENABLED=false.
-    if (
-      !nativePipelineReady(env) &&
-      request.method === "POST" &&
-      (url.pathname === "/enqueue" || url.pathname === "/scrape")
-    ) {
-      return Response.json(
-        {
-          error: "AustLII native pipeline is disabled during cutover",
-          code: env.PIPELINE_ENABLED === "true" ? "native_pipeline_disabled" : "pipeline_disabled",
-        },
-        {
-          status: 503,
-          headers: { "Cache-Control": "no-store", "Retry-After": "0" },
-        },
-      );
-    }
-
-    // Enqueue endpoint
-    if (url.pathname === "/enqueue" && request.method === "POST") {
-      return handleEnqueue(request, env);
-    }
-
-    // Progress check
-    if (url.pathname === "/progress") {
-      return handleProgress(env);
-    }
-
-    // Direct scrape: bypasses Queue, processes synchronously
-    if (url.pathname === "/scrape" && request.method === "POST") {
-      return handleDirectScrape(request, env);
-    }
-
-    // Discovery diff dry-run: protected acceptance endpoint, no queue writes.
-    if (url.pathname === "/admin/discovery-diff" && request.method === "GET") {
-      return handleDiscoveryDiff(request, env);
-    }
-
-    // List R2 keys for sync
-    if (url.pathname === "/list") {
-      return handleList(request, env);
-    }
-
-    // Batch-get R2 objects for sync
-    if (url.pathname === "/batch-get" && request.method === "POST") {
-      return handleBatchGet(request, env);
-    }
-
-    return Response.json({ error: "Not found" }, { status: 404 });
+    // Cron-triggered only: the pipeline is driven exclusively by the scheduled
+    // handler and queue consumers. No HTTP trigger endpoints are exposed, so
+    // no AUTH_TOKEN secret is required.
+    return Response.json(
+      { error: "Cron-triggered only", code: "cron_only" },
+      { status: 404 },
+    );
   },
 
   // ─── Queue Consumer ──────────────────────────────────────────────────────
@@ -354,145 +309,8 @@ export default {
   },
 };
 
-// ─── Enqueue Handler ──────────────────────────────────────────────────────────
-
-async function handleEnqueue(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  // Auth check
-  const token = request.headers.get("X-Auth-Token");
-  if (!token || token !== env.AUTH_TOKEN) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await request.json()) as EnqueueRequest;
-  if (!body.jobs || !Array.isArray(body.jobs)) {
-    return Response.json(
-      { error: "Request body must have a 'jobs' array" },
-      { status: 400 },
-    );
-  }
-
-  if (body.jobs.length > MAX_BATCH_ENQUEUE) {
-    return Response.json(
-      { error: `Max ${MAX_BATCH_ENQUEUE} jobs per request` },
-      { status: 400 },
-    );
-  }
-
-  let queued = 0;
-  let skipped = 0;
-  const errors: string[] = [];
-
-  // Send in batches of 25 (smaller to avoid Queue backpressure)
-  const chunks = chunkArray(body.jobs, 25);
-  for (const chunk of chunks) {
-    const messages = chunk
-      .filter((job) => {
-        if (!job.case_id || !job.url) {
-          errors.push(`Missing case_id or url: ${JSON.stringify(job)}`);
-          return false;
-        }
-        return true;
-      })
-      .map((job) => ({ body: job }));
-
-    if (messages.length > 0) {
-      try {
-        await env.SCRAPE_QUEUE.sendBatch(messages);
-        queued += messages.length;
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        errors.push(`sendBatch failed (${messages.length} msgs): ${errMsg}`);
-      }
-    }
-    skipped += chunk.length - messages.length;
-  }
-
-  const response: EnqueueResponse = { queued, skipped, errors };
-  return Response.json(response);
-}
-
 function nativePipelineReady(env: Env): boolean {
   return env.PIPELINE_ENABLED === "true" && env.NATIVE_PIPELINE_ENABLED === "true";
-}
-
-// ─── Direct Scrape Handler ────────────────────────────────────────────────────
-
-async function handleDirectScrape(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  // Auth check
-  const token = request.headers.get("X-Auth-Token");
-  if (!token || token !== env.AUTH_TOKEN) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const job = (await request.json()) as ScrapeJob;
-  if (!job.case_id || !job.url) {
-    return Response.json(
-      { error: "Missing case_id or url" },
-      { status: 400 },
-    );
-  }
-
-  // Check if already processed
-  const existing = await env.CASE_RESULTS.head(`results/${job.case_id}.json`);
-  if (existing) {
-    return Response.json({ case_id: job.case_id, skipped: true });
-  }
-
-  try {
-    await processJob(job, env);
-    return Response.json({ case_id: job.case_id, success: true });
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    return Response.json(
-      { case_id: job.case_id, success: false, error },
-      { status: 502 },
-    );
-  }
-}
-
-// ─── Progress Handler ─────────────────────────────────────────────────────────
-
-async function handleProgress(env: Env): Promise<Response> {
-  // Count results and errors in R2
-  let resultCount = 0;
-  let errorCount = 0;
-
-  // List results/ prefix
-  let cursor: string | undefined;
-  do {
-    const listed = await env.CASE_RESULTS.list({
-      prefix: "results/",
-      cursor,
-      limit: 1000,
-    });
-    resultCount += listed.objects.length;
-    cursor = listed.truncated ? listed.cursor : undefined;
-  } while (cursor);
-
-  // List errors/ prefix
-  cursor = undefined;
-  do {
-    const listed = await env.CASE_RESULTS.list({
-      prefix: "errors/",
-      cursor,
-      limit: 1000,
-    });
-    errorCount += listed.objects.length;
-    cursor = listed.truncated ? listed.cursor : undefined;
-  } while (cursor);
-
-  return Response.json({
-    results: resultCount,
-    errors: errorCount,
-    total: resultCount + errorCount,
-    timestamp: new Date().toISOString(),
-  });
 }
 
 // ─── Job Processor ────────────────────────────────────────────────────────────
@@ -576,76 +394,6 @@ async function processJob(
   return { success: true, r2Key: jsonKey };
 }
 
-// ─── List Handler (for sync) ──────────────────────────────────────────────────
-
-async function handleList(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  const token = request.headers.get("X-Auth-Token");
-  if (!token || token !== env.AUTH_TOKEN) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const url = new URL(request.url);
-  const prefix = url.searchParams.get("prefix") || "results/";
-  const cursor = url.searchParams.get("cursor") || undefined;
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "1000"), 1000);
-
-  const listed = await env.CASE_RESULTS.list({ prefix, cursor, limit });
-
-  return Response.json({
-    keys: listed.objects.map((obj) => obj.key),
-    truncated: listed.truncated,
-    cursor: listed.truncated ? listed.cursor : null,
-  });
-}
-
-// ─── Batch Get Handler (for sync) ────────────────────────────────────────────
-
-async function handleBatchGet(
-  request: Request,
-  env: Env,
-): Promise<Response> {
-  const token = request.headers.get("X-Auth-Token");
-  if (!token || token !== env.AUTH_TOKEN) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await request.json()) as { keys: string[] };
-  if (!body.keys || !Array.isArray(body.keys) || body.keys.length === 0) {
-    return Response.json(
-      { error: "Request body must have a non-empty 'keys' array" },
-      { status: 400 },
-    );
-  }
-
-  if (body.keys.length > 50) {
-    return Response.json(
-      { error: "Max 50 keys per request" },
-      { status: 400 },
-    );
-  }
-
-  const results: Record<string, unknown> = {};
-
-  await Promise.all(
-    body.keys.map(async (key) => {
-      try {
-        const obj = await env.CASE_RESULTS.get(key);
-        if (obj) {
-          const text = await obj.text();
-          results[key] = JSON.parse(text);
-        }
-      } catch {
-        // Skip individual failures silently
-      }
-    }),
-  );
-
-  return Response.json({ results });
-}
-
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
@@ -705,51 +453,6 @@ async function putScrapeError(
     JSON.stringify(errorResult),
     { httpMetadata: { contentType: "application/json" } },
   );
-}
-
-async function handleDiscoveryDiff(request: Request, env: Env): Promise<Response> {
-  const token = request.headers.get("X-Auth-Token");
-  if (!token || token !== env.AUTH_TOKEN) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const url = new URL(request.url);
-  const courts = parseCourtList(url.searchParams.get("courts"));
-  const scheduledTime = parseScheduledTime(url.searchParams.get("scheduled_time"));
-  const runId = `dry-run-${crypto.randomUUID()}`;
-  const results = [];
-
-  for (const court of courts) {
-    const result = await discoverCourt(env, court, runId, scheduledTime);
-    results.push({
-      court,
-      candidates: result.candidate_urls.length,
-      new_cases: result.new_case_urls.length,
-      skipped_reason: result.skipped_reason ?? null,
-      errors: result.errors,
-      sample_new_cases: result.new_cases.slice(0, 10).map((item) => ({
-        case_id: item.case_id,
-        citation: item.citation,
-        title: item.title,
-        url: item.url,
-        year: item.year,
-      })),
-    });
-  }
-
-  return Response.json({
-    run_id: runId,
-    dry_run: true,
-    target_table: env.PIPELINE_TARGET_TABLE || "immigration_cases_staging",
-    scheduled_time: new Date(scheduledTime).toISOString(),
-    courts,
-    totals: {
-      candidates: results.reduce((sum, item) => sum + item.candidates, 0),
-      new_cases: results.reduce((sum, item) => sum + item.new_cases, 0),
-      errors: results.reduce((sum, item) => sum + item.errors.length, 0),
-    },
-    results,
-  });
 }
 
 function parseCourtList(raw: string | null): CourtCode[] {

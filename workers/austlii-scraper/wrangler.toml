@@ -114,4 +114,4 @@ PIPELINE_PER_COURT_RATE_LIMIT_MS = "1500"
 PIPELINE_CONTAINER_EXTRACT_TIMEOUT_MS = "300000"
 FIRECRAWL_ENABLED = "false"
 
-# Operator-set only: AUTH_TOKEN, EXTRACTION_SHARED_SECRET and extraction provider secrets.
+# Operator-set only: EXTRACTION_SHARED_SECRET and extraction provider secrets.

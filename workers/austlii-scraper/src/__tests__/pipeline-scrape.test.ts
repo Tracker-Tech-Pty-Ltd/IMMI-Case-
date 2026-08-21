@@ -69,26 +69,16 @@ describe("pipeline scrape queue", () => {
     expect(ack).toHaveBeenCalledOnce();
   });
 
-  it.each(["/enqueue", "/scrape"]) (
-    "blocks %s producer writes while PIPELINE_ENABLED is false",
+  it.each(["/enqueue", "/scrape", "/progress", "/list", "/batch-get"]) (
+    "returns 404 for HTTP trigger endpoint %s (cron-triggered only)",
     async (path) => {
       const response = await worker.fetch(
         new Request(`https://example.com${path}`, { method: "POST" }),
-        { PIPELINE_ENABLED: "false" } as unknown as Env,
+        { PIPELINE_ENABLED: "true", NATIVE_PIPELINE_ENABLED: "true" } as unknown as Env,
       );
 
-      expect(response.status).toBe(503);
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
-      await expect(response.json()).resolves.toMatchObject({ code: "pipeline_disabled" });
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toMatchObject({ code: "cron_only" });
     },
   );
-
-  it("blocks legacy pipeline activation even if PIPELINE_ENABLED is accidentally true", async () => {
-    const response = await worker.fetch(
-      new Request("https://example.com/enqueue", { method: "POST" }),
-      { PIPELINE_ENABLED: "true", NATIVE_PIPELINE_ENABLED: "false" } as unknown as Env,
-    );
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({ code: "native_pipeline_disabled" });
-  });
 });
