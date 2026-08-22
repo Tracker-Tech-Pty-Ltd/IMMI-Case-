@@ -30,7 +30,9 @@ function clientError(error) {
 
 async function readJson(request) {
   const length = Number(request.headers.get("content-length") || "0");
-  if (Number.isFinite(length) && length > 128 * 1024) return null;
+  // 1 MiB ceiling: case full text can exceed 128 KiB (e.g. AATA 2 ≈ 170 KiB),
+  // so the original 128 KiB cap silently rejected legitimate large cases.
+  if (Number.isFinite(length) && length > 1024 * 1024) return null;
   try {
     const value = await request.json();
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
