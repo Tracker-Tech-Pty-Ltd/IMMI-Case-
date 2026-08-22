@@ -39,7 +39,27 @@ async function readJson(request) {
   }
 }
 
+function timingSafeEqualString(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 async function requireWriter(request, env, stores) {
+  // Service-to-service: the VPS AustLII crawler is a cron job with no login.
+  // It presents a shared secret (CRAWLER_WRITE_TOKEN) in the Authorization
+  // header. Compared in constant time; only honored when the secret is set.
+  if (env.CRAWLER_WRITE_TOKEN) {
+    const header = request.headers.get("Authorization") || "";
+    const bearer = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (bearer && timingSafeEqualString(bearer, env.CRAWLER_WRITE_TOKEN)) {
+      return { auth: { service: "crawler", subject: "austlii-crawler" } };
+    }
+  }
+
   const csrfFailure = await verifyCsrf(request, env);
   if (csrfFailure) return csrfFailure;
   const authResult = await requireAuth(request, env, verifyJwt);

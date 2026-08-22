@@ -220,4 +220,50 @@ describe("Cloudflare-native case mutations", () => {
     expect(queue.send).toHaveBeenCalledWith(expect.objectContaining({ kind: "case.source.delete" }));
     expect(queue.send).toHaveBeenCalledWith(expect.objectContaining({ kind: "catalog.rebuild" }));
   });
+
+  it("accepts a crawler service token without login or CSRF", async () => {
+    const current = stores();
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const req = new Request("https://immi.example/api/v1/cases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer crawler-secret" },
+      body: JSON.stringify({ title: "Example", citation: "[2024] AATA 2", text: "case text" }),
+    });
+    const response = await dispatchCloudflareCaseMutation(
+      req,
+      "/api/v1/cases",
+      {
+        IMMI_STORAGE_MODE: "cloudflare",
+        IMMI_CASE_MUTATIONS_ENABLED: "true",
+        CASE_MUTATION_QUEUE: queue,
+        CRAWLER_WRITE_TOKEN: "crawler-secret",
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(mockVerifyCsrf).not.toHaveBeenCalled();
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(current.identityStore.assertMembership).not.toHaveBeenCalled();
+    expect(current.caseStore.putImportedCase).toHaveBeenCalledOnce();
+  });
+
+  it("falls through to JWT auth when the crawler token is absent", async () => {
+    const current = stores();
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const response = await dispatchCloudflareCaseMutation(
+      request("/api/v1/cases", { title: "Example", text: "case text" }),
+      "/api/v1/cases",
+      {
+        IMMI_STORAGE_MODE: "cloudflare",
+        IMMI_CASE_MUTATIONS_ENABLED: "true",
+        CASE_MUTATION_QUEUE: queue,
+        CRAWLER_WRITE_TOKEN: "crawler-secret",
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(mockVerifyCsrf).toHaveBeenCalled();
+    expect(mockRequireAuth).toHaveBeenCalled();
+    expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);
+  });
 });
