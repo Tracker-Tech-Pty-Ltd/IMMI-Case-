@@ -17,7 +17,7 @@
  *  - Wrapped in QueryClientProvider + MemoryRouter (useParams needs Router)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -65,18 +65,30 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/lib/council-celebrations", () => ({
-  fireSubmitGavelBurst: vi.fn(),
-  fireCouncilDoneCelebration: vi.fn(),
-  isSoundOn: vi.fn(() => false),
-  toggleSound: vi.fn(() => false),
-  playCue: vi.fn(),
-  recordCouncilRun: vi.fn(() => []),
-  unlockRobeTheme: vi.fn(),
-  isRobeThemeUnlocked: vi.fn(() => false),
-  timeOfDaySalutation: vi.fn(() => "Court is now in session."),
-  getCouncilStats: vi.fn(() => ({ totalRuns: 0, streak: 0 })),
-}));
+// playHaptic is left as the REAL implementation (not stubbed) so the Slice H
+// haptic-on-submit test below can assert against navigator.vibrate directly,
+// the same way frontend/__tests__/council-celebrations.test.ts does. It is a
+// safe no-op in every other test here: jsdom defines neither
+// navigator.vibrate nor window.matchMedia by default, so playHaptic's
+// feature-detect returns early without touching either.
+vi.mock("@/lib/council-celebrations", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/council-celebrations")
+  >("@/lib/council-celebrations");
+  return {
+    fireSubmitGavelBurst: vi.fn(),
+    fireCouncilDoneCelebration: vi.fn(),
+    isSoundOn: vi.fn(() => false),
+    toggleSound: vi.fn(() => false),
+    playCue: vi.fn(),
+    playHaptic: actual.playHaptic,
+    recordCouncilRun: vi.fn(() => []),
+    unlockRobeTheme: vi.fn(),
+    isRobeThemeUnlocked: vi.fn(() => false),
+    timeOfDaySalutation: vi.fn(() => "Court is now in session."),
+    getCouncilStats: vi.fn(() => ({ totalRuns: 0, streak: 0 })),
+  };
+});
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -490,5 +502,256 @@ describe("LlmCouncilPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/Session not found/i)).toBeInTheDocument();
     });
+  });
+});
+
+// ─── Slice H — Mobile/iOS optimisations (MessageInput additions) ─────────────
+//
+// MessageInput is a local, unexported component inside LlmCouncilPage.tsx
+// (the ralplan-pending-work-2026-05-10.md spec names a standalone
+// frontend/src/components/llm-council/MessageInput.tsx, which does not
+// exist in current code — MessageInput has always lived inline in this
+// page file. Following current code per task instructions: these tests
+// exercise it through the rendered LlmCouncilPage, same as the rest of
+// this file).
+//
+// navigator.userAgent / navigator.maxTouchPoints are read once per mount
+// via isIosDevice(), so each test stubs them with Object.defineProperty
+// (configurable so afterEach in this suite's beforeEach reset works) before
+// rendering.
+describe("LlmCouncilPage — Slice H mobile/iOS input additions", () => {
+  const originalUserAgent = navigator.userAgent;
+  const originalMaxTouchPoints = navigator.maxTouchPoints;
+
+  function stubUserAgent(ua: string, maxTouchPoints = 0) {
+    Object.defineProperty(navigator, "userAgent", {
+      value: ua,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "maxTouchPoints", {
+      value: maxTouchPoints,
+      configurable: true,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseCreateSession.mockReturnValue(idleMutation());
+    mockUseAddTurn.mockReturnValue(idleMutation());
+    mockUseLlmCouncilSession.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  });
+
+  afterEach(() => {
+    stubUserAgent(originalUserAgent, originalMaxTouchPoints);
+  });
+
+  // Hint rendering condition — non-iOS shows the Cmd+Enter kbd hint.
+  it("shows the Cmd+Enter hint (not the iOS hint) on a desktop user agent", () => {
+    stubUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      0,
+    );
+    renderNewSession();
+    expect(screen.getByText("Cmd")).toBeInTheDocument();
+    expect(screen.getByText("Enter")).toBeInTheDocument();
+    expect(screen.queryByTestId("ios-send-hint")).not.toBeInTheDocument();
+  });
+
+  // Hint rendering condition — iPhone user agent shows the iOS fallback hint.
+  it("shows the iOS fallback hint on an iPhone user agent", () => {
+    stubUserAgent(
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+      5,
+    );
+    renderNewSession();
+    expect(screen.getByTestId("ios-send-hint")).toHaveTextContent(
+      /no cmd\+enter on ios/i,
+    );
+    expect(screen.queryByText("Cmd")).not.toBeInTheDocument();
+  });
+
+  // Hint rendering condition — iPadOS 13+ reports as "Macintosh" but is
+  // touch-driven (maxTouchPoints > 1); must still be detected as iOS.
+  it("shows the iOS fallback hint on an iPadOS-13+ user agent (desktop UA + touch)", () => {
+    stubUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/605.1.15",
+      5,
+    );
+    renderNewSession();
+    expect(screen.getByTestId("ios-send-hint")).toBeInTheDocument();
+  });
+
+  // Hint rendering condition — a real Mac (no touch points) is NOT
+  // misdetected as an iPad just because it shares the "Macintosh" token.
+  it("does not show the iOS hint on a real Mac with no touch points", () => {
+    stubUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
+      0,
+    );
+    renderNewSession();
+    expect(screen.queryByTestId("ios-send-hint")).not.toBeInTheDocument();
+  });
+
+  // Swipe handle rendering condition — hidden for short/empty messages.
+  it("does not render the swipe-to-send handle when the message is 5 chars or fewer", () => {
+    renderNewSession();
+    const textarea = screen.getByPlaceholderText(
+      /Compare strongest review grounds/i,
+    );
+    fireEvent.change(textarea, { target: { value: "short" } }); // exactly 5 chars
+    expect(
+      screen.queryByTestId("swipe-to-send-handle"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Swipe handle rendering condition — appears once the message exceeds
+  // 5 chars, per the plan's threshold.
+  it("renders the swipe-to-send handle once the message exceeds 5 chars", () => {
+    renderNewSession();
+    const textarea = screen.getByPlaceholderText(
+      /Compare strongest review grounds/i,
+    );
+    fireEvent.change(textarea, { target: { value: "six chars+" } });
+    expect(screen.getByTestId("swipe-to-send-handle")).toBeInTheDocument();
+  });
+
+  // Swipe handler wiring — a rightward drag past the threshold submits,
+  // same as clicking Send. Assert on the SSE POST the same way the
+  // existing "POSTs to ... stream" test above does.
+  it("submits via a rightward swipe past the threshold on the swipe handle", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      const body = new ReadableStream({
+        start() {
+          /* keep open — we only check that the POST happened */
+        },
+      });
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+    });
+    try {
+      renderNewSession();
+      const textarea = screen.getByPlaceholderText(
+        /Compare strongest review grounds/i,
+      );
+      fireEvent.change(textarea, {
+        target: { value: "Is procedural fairness required here?" },
+      });
+      const handle = screen.getByTestId("swipe-to-send-handle");
+
+      fireEvent.touchStart(handle, { touches: [{ clientX: 0 }] });
+      fireEvent.touchEnd(handle, { changedTouches: [{ clientX: 80 }] });
+
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith(
+          "/api/v1/llm-council/stream",
+          expect.objectContaining({
+            method: "POST",
+            body: expect.stringContaining(
+              "Is procedural fairness required here?",
+            ),
+          }),
+        );
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  // Swipe handler wiring — a short drag below the threshold must NOT submit
+  // (distinguishes a deliberate swipe from touch-scroll wobble).
+  it("does not submit when the swipe distance is below the threshold", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      renderNewSession();
+      const textarea = screen.getByPlaceholderText(
+        /Compare strongest review grounds/i,
+      );
+      fireEvent.change(textarea, {
+        target: { value: "Is procedural fairness required here?" },
+      });
+      const handle = screen.getByTestId("swipe-to-send-handle");
+
+      fireEvent.touchStart(handle, { touches: [{ clientX: 0 }] });
+      fireEvent.touchEnd(handle, { changedTouches: [{ clientX: 10 }] }); // well under the 48px threshold
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  // Haptic wiring — Send button click (item 1 of the plan's 3 haptic
+  // touchpoints) routes through the shared handleSend, which now calls
+  // playHaptic() right alongside the existing fireSubmitGavelBurst()/
+  // playCue("gavel") submit ritual. playHaptic is NOT stubbed by the module
+  // mock above, so this exercises the real implementation end-to-end and
+  // asserts on navigator.vibrate directly — the same technique
+  // council-celebrations.test.ts uses.
+  it("vibrates on Send button click via the shared submit handler", async () => {
+    const vibrateSpy = vi.fn();
+    Object.defineProperty(navigator, "vibrate", {
+      value: vibrateSpy,
+      configurable: true,
+      writable: true,
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      const body = new ReadableStream({
+        start() { /* keep open — only the haptic call matters here */ },
+      });
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+    });
+    try {
+      renderNewSession();
+      fireEvent.change(
+        screen.getByPlaceholderText(/Compare strongest review grounds/i),
+        { target: { value: "Does the haptic fire on send?" } },
+      );
+      fireEvent.submit(
+        screen.getByRole("button", { name: /Send/i }).closest("form")!,
+      );
+      await waitFor(() => {
+        expect(vibrateSpy).toHaveBeenCalledWith(20);
+      });
+    } finally {
+      fetchSpy.mockRestore();
+      // @ts-expect-error - removing a DOM property defined per-test
+      delete navigator.vibrate;
+    }
+  });
+
+  // Swipe handler wiring — a leftward drag must NOT submit either.
+  it("does not submit on a leftward swipe", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      renderNewSession();
+      const textarea = screen.getByPlaceholderText(
+        /Compare strongest review grounds/i,
+      );
+      fireEvent.change(textarea, {
+        target: { value: "Is procedural fairness required here?" },
+      });
+      const handle = screen.getByTestId("swipe-to-send-handle");
+
+      fireEvent.touchStart(handle, { touches: [{ clientX: 80 }] });
+      fireEvent.touchEnd(handle, { changedTouches: [{ clientX: 0 }] });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

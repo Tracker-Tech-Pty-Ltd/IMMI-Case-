@@ -26,6 +26,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useParams, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowRight,
   Bot,
   Eraser,
   KeyRound,
@@ -58,6 +59,7 @@ import {
   isSoundOn,
   toggleSound,
   playCue,
+  playHaptic,
   recordCouncilRun,
   unlockRobeTheme,
   isRobeThemeUnlocked,
@@ -449,6 +451,29 @@ function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
 }
 
 // ---------------------------------------------------------------------------
+// iOS detection (Slice H) — the on-screen keyboard on iOS Safari/iPadOS has
+// no Cmd/Ctrl key, so the Cmd+Enter submit shortcut is unreachable there.
+// Physical-keyboard iPads still work fine with Cmd+Enter, but we can't tell
+// "has a physical keyboard attached" from userAgent alone, so the inline
+// hint is shown for the whole iOS family — worst case a physical-keyboard
+// iPad user sees a redundant hint, which is harmless.
+// ---------------------------------------------------------------------------
+
+function isIosDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ reports its userAgent as desktop Safari ("Macintosh…") but
+  // is still touch-driven — maxTouchPoints > 1 distinguishes it from an
+  // actual Mac.
+  return ua.includes("Macintosh") && (navigator.maxTouchPoints ?? 0) > 1;
+}
+
+// Swipe-to-send: horizontal drag distance (px) on the send handle that
+// counts as a deliberate swipe rather than an accidental touch wobble.
+const SWIPE_TO_SEND_THRESHOLD_PX = 48;
+
+// ---------------------------------------------------------------------------
 // MessageInput — shared composer for new session + follow-up
 // ---------------------------------------------------------------------------
 
@@ -478,6 +503,9 @@ function MessageInput({
 }: MessageInputProps) {
   const { t } = useTranslation();
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const [isIos] = useState(() => isIosDevice());
+  const swipeStartXRef = useRef<number | null>(null);
+  const [swipeActive, setSwipeActive] = useState(false);
 
   useEffect(() => {
     if (autoFocus && taRef.current) {
@@ -485,18 +513,50 @@ function MessageInput({
     }
   }, [autoFocus]);
 
-  // Cmd/Ctrl+Enter submits
+  function canSubmit(): boolean {
+    return !disabled && !isPending && value.trim().length > 0;
+  }
+
+  // Cmd/Ctrl+Enter submits — unreachable on iOS's on-screen keyboard, which
+  // is why the iOS hint + swipe-to-send handle below exist as fallbacks.
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (!disabled && !isPending && value.trim()) {
+      if (canSubmit()) {
         onSubmit();
       }
     }
   }
 
+  // Swipe-to-send — roll-our-own touch tracking on a dedicated handle so
+  // desktop mouse drag/selection inside the textarea itself is untouched.
+  // A plain tap still submits via onClick (keeps the handle keyboard/mouse
+  // accessible); the touch handlers additionally recognise a deliberate
+  // rightward swipe as the same action.
+  function handleSwipeTouchStart(e: React.TouchEvent<HTMLButtonElement>) {
+    swipeStartXRef.current = e.touches[0]?.clientX ?? null;
+    setSwipeActive(true);
+  }
+
+  function handleSwipeTouchEnd(e: React.TouchEvent<HTMLButtonElement>) {
+    const startX = swipeStartXRef.current;
+    swipeStartXRef.current = null;
+    setSwipeActive(false);
+    if (startX === null) return;
+    const endX = e.changedTouches[0]?.clientX ?? startX;
+    if (endX - startX >= SWIPE_TO_SEND_THRESHOLD_PX && canSubmit()) {
+      onSubmit();
+    }
+  }
+
+  function handleSwipeTouchCancel() {
+    swipeStartXRef.current = null;
+    setSwipeActive(false);
+  }
+
   const charCount = value.length;
   const overLimit = charCount > maxChars * 0.9;
+  const showSwipeToSend = value.trim().length > 5 && !isPending && !disabled;
 
   return (
     <div className="space-y-2">
@@ -522,19 +582,47 @@ function MessageInput({
             <Eraser className="h-3.5 w-3.5" />
           </button>
         ) : null}
+        {showSwipeToSend ? (
+          <button
+            type="button"
+            data-testid="swipe-to-send-handle"
+            aria-label={t("llm_council.swipe_to_send_label", {
+              defaultValue: "Swipe right, or tap, to submit your question",
+            })}
+            onClick={() => canSubmit() && onSubmit()}
+            onTouchStart={handleSwipeTouchStart}
+            onTouchEnd={handleSwipeTouchEnd}
+            onTouchCancel={handleSwipeTouchCancel}
+            className={`absolute bottom-2 right-2 grid h-8 w-8 place-items-center rounded-full bg-accent text-white shadow-sm transition-transform duration-150 hover:bg-accent/90 ${
+              swipeActive ? "scale-110" : "scale-100"
+            }`}
+          >
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] text-muted-text">
-          <kbd className="rounded border border-border bg-surface px-1 font-mono text-[10px]">
-            Cmd
-          </kbd>
-          <span className="mx-1">+</span>
-          <kbd className="rounded border border-border bg-surface px-1 font-mono text-[10px]">
-            Enter
-          </kbd>
-          <span className="ml-2">
-            {t("llm_council.kbd_hint", { defaultValue: "to send" })}
-          </span>
+          {isIos ? (
+            <span data-testid="ios-send-hint">
+              {t("llm_council.ios_send_hint", {
+                defaultValue: "Tap Send button (no Cmd+Enter on iOS)",
+              })}
+            </span>
+          ) : (
+            <>
+              <kbd className="rounded border border-border bg-surface px-1 font-mono text-[10px]">
+                Cmd
+              </kbd>
+              <span className="mx-1">+</span>
+              <kbd className="rounded border border-border bg-surface px-1 font-mono text-[10px]">
+                Enter
+              </kbd>
+              <span className="ml-2">
+                {t("llm_council.kbd_hint", { defaultValue: "to send" })}
+              </span>
+            </>
+          )}
         </span>
         <span
           className={`text-[11px] tabular-nums ${
@@ -577,6 +665,7 @@ function RestoreByCodeRibbon() {
     setBusy(true);
     try {
       const result = await restoreByCode(normalised);
+      playHaptic();
       // Token already persisted by the api fetcher — navigate into the session view.
       navigate(`/llm-council/sessions/${result.session_id}`);
     } catch (err) {
@@ -739,9 +828,12 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
     const msg = message.trim();
     if (!msg) return;
     setSubmitError("");
-    // Submit-moment gavel ritual
+    // Submit-moment gavel ritual — haptic covers every submit route (Send
+    // button click, Cmd/Ctrl+Enter, swipe/tap on the mobile send handle)
+    // since they all funnel through this shared handleSend.
     fireSubmitGavelBurst();
     playCue("gavel");
+    playHaptic();
     celebratedDoneRef.current = false;
     try {
       await stream.start({
@@ -928,6 +1020,7 @@ function ThreadView({
     setSubmitError("");
     fireSubmitGavelBurst();
     playCue("gavel");
+    playHaptic();
     try {
       const result = await addTurn.mutateAsync({ message: msg });
       setInput("");

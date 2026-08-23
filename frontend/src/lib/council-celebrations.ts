@@ -220,6 +220,27 @@ function playCueImpl(
 }
 
 // ---------------------------------------------------------------------------
+// Haptics — navigator.vibrate() feedback for touch actions (Slice H mobile
+// polish). iOS Safari does not implement navigator.vibrate at all; other
+// browsers can expose the method but still throw when called (permissions
+// policy, calling outside a user-gesture task, etc.), so this guards with
+// BOTH feature-detection and a try-catch and no-ops silently either way.
+// Honours prefers-reduced-motion — vibration is a physical motion stimulus,
+// the same category the confetti bursts below already gate on.
+// ---------------------------------------------------------------------------
+
+export function playHaptic(pattern: number | number[] = 20): void {
+  if (prefersReducedMotion()) return;
+  if (typeof navigator === "undefined") return;
+  if (typeof navigator.vibrate !== "function") return;
+  try {
+    navigator.vibrate(pattern);
+  } catch {
+    /* unsupported or blocked by the browser — non-essential, swallow */
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Confetti — courtroom-tasteful palette (amber + navy + cream)
 // ---------------------------------------------------------------------------
 

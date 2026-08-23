@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Search, Sparkles } from "lucide-react";
+import { playHaptic } from "@/lib/council-celebrations";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -679,6 +680,7 @@ function RecallCodeCard({ code }: { code: string }) {
     try {
       navigator.clipboard.writeText(code);
       setCopied(true);
+      playHaptic();
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       /* clipboard blocked — non-fatal, code is visible on screen */
