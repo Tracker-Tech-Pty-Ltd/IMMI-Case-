@@ -311,6 +311,217 @@ describe("runCouncil — happy path, no history", () => {
 });
 
 // ---------------------------------------------------------------------------
+// shared_law_sections_confidence_percent — moderator success path
+// ---------------------------------------------------------------------------
+
+describe("runCouncil — shared_law_sections_confidence_percent (moderator success path)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("scores 100 with a full-overlap reason when all 3 providers cite the same section", async () => {
+    // moderatorJsonObj has all 3 providers citing "Migration Act 1958 (Cth) s 36"
+    // in both provider_law_sections and shared_law_sections — full agreement.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(chatResponse("OpenAI answer"))
+      .mockResolvedValueOnce(chatResponse("Gemini answer"))
+      .mockResolvedValueOnce(chatResponse("Anthropic answer"))
+      .mockResolvedValueOnce(chatResponse(moderatorJson));
+
+    const result = await runCouncil({ env: mockEnv, question: "Confidence full agreement" });
+
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(100);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "Shared-all overlap: 1/1 unique sections; mean pairwise citation overlap: 100.0%."
+    );
+    // Regression guard: the old hardcoded placeholder must be gone.
+    expect(result.moderator.shared_law_sections_confidence_reason).not.toContain(
+      "not implemented"
+    );
+  });
+
+  it("scores 0 with an honest per-provider reason when one provider cites nothing", async () => {
+    const moderatorObjNoOverlap = {
+      ...moderatorJsonObj,
+      provider_law_sections: {
+        openai: ["Migration Act 1958 (Cth) s 36"],
+        gemini_pro: [],
+        anthropic: ["Migration Act 1958 (Cth) s 36"],
+      },
+      shared_law_sections: [],
+    };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(chatResponse("OpenAI answer"))
+      .mockResolvedValueOnce(chatResponse("Gemini answer"))
+      .mockResolvedValueOnce(chatResponse("Anthropic answer"))
+      .mockResolvedValueOnce(chatResponse(JSON.stringify(moderatorObjNoOverlap)));
+
+    const result = await runCouncil({ env: mockEnv, question: "Confidence missing provider" });
+
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(0);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "gemini_pro has no identifiable statutory/regulatory section citation for consistency scoring."
+    );
+  });
+
+  // Regression tests: the moderator's own `provider_law_sections` and
+  // `shared_law_sections` claims are unverified LLM output. The main
+  // success path must merge `provider_law_sections` with citations
+  // extracted from each expert's raw answer text, then RECOMPUTE
+  // `shared_law_sections` from that merged data — never trust the
+  // moderator's own `shared_law_sections` claim directly. Expected values
+  // below were captured directly from the Python reference
+  // (_build_provider_law_sections + _compute_shared_law_sections +
+  // _compute_shared_law_sections_confidence in
+  // immi_case_downloader/llm_council.py) via a one-off REPL check against
+  // these exact scenarios.
+
+  it("discards a moderator-hallucinated shared section absent from every provider list and every answer text (must not score 100)", async () => {
+    const noCitationAnswer =
+      "The tribunal considered the primary claim without any statutory citation.";
+    const moderatorObjHallucinatedShared = {
+      ...moderatorJsonObj,
+      provider_law_sections: {
+        openai: ["Migration Act 1958 (Cth) s 36"],
+        gemini_pro: ["Migration Act 1958 (Cth) s 424A"],
+        anthropic: ["Migration Act 1958 (Cth) s 500"],
+      },
+      // Moderator claims all 3 real per-provider citations PLUS a 4th
+      // ("s 91") that no provider declared and no answer text mentions —
+      // a pure hallucination. Trusting this directly makes the
+      // intersection ratio 4/3 > 1, which clamps to a false 100%.
+      shared_law_sections: [
+        "Migration Act 1958 (Cth) s 36",
+        "Migration Act 1958 (Cth) s 424A",
+        "Migration Act 1958 (Cth) s 500",
+        "Migration Act 1958 (Cth) s 91",
+      ],
+    };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(chatResponse(noCitationAnswer))
+      .mockResolvedValueOnce(chatResponse(noCitationAnswer))
+      .mockResolvedValueOnce(chatResponse(noCitationAnswer))
+      .mockResolvedValueOnce(
+        chatResponse(JSON.stringify(moderatorObjHallucinatedShared))
+      );
+
+    const result = await runCouncil({
+      env: mockEnv,
+      question: "Hallucinated shared section test",
+    });
+
+    // The 3 providers' real citations are pairwise-disjoint, so the
+    // recomputed shared set must be empty — the hallucinated section
+    // is discarded, not carried through.
+    expect(result.moderator.shared_law_sections).toEqual([]);
+    expect(result.moderator.shared_law_sections_confidence_percent).not.toBe(100);
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(0);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "Shared-all overlap: 0/3 unique sections; mean pairwise citation overlap: 0.0%."
+    );
+  });
+
+  it("scores > 0 from expert answer text when the moderator declares no provider_law_sections at all", async () => {
+    const moderatorObjNoDeclaredCitations = {
+      ...moderatorJsonObj,
+      provider_law_sections: {},
+      shared_law_sections: [],
+    };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        chatResponse("Migration Act 1958 (Cth) s 36 is the key criterion for this case.")
+      )
+      .mockResolvedValueOnce(
+        chatResponse("Migration Act 1958 (Cth) s 36 applies squarely here.")
+      )
+      .mockResolvedValueOnce(
+        chatResponse("Migration Act 1958 (Cth) s 36 is directly on point.")
+      )
+      .mockResolvedValueOnce(
+        chatResponse(JSON.stringify(moderatorObjNoDeclaredCitations))
+      );
+
+    const result = await runCouncil({
+      env: mockEnv,
+      question: "Moderator omits provider_law_sections test",
+    });
+
+    // provider_law_sections must be built from answer text even though the
+    // moderator declared none.
+    expect(result.moderator.provider_law_sections).toEqual({
+      openai: ["Migration Act 1958 (Cth) s 36"],
+      gemini_pro: ["Migration Act 1958 (Cth) s 36"],
+      anthropic: ["Migration Act 1958 (Cth) s 36"],
+    });
+    expect(result.moderator.shared_law_sections).toEqual([
+      "Migration Act 1958 (Cth) s 36",
+    ]);
+    expect(result.moderator.shared_law_sections_confidence_percent).toBeGreaterThan(0);
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(100);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "Shared-all overlap: 1/1 unique sections; mean pairwise citation overlap: 100.0%."
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shared_law_sections_confidence_percent — fallback-moderator path
+// ---------------------------------------------------------------------------
+
+describe("runCouncil — shared_law_sections_confidence_percent (fallback-moderator path)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("computes a real confidence score from expert answer text when the moderator call fails", async () => {
+    // All 3 experts succeed and each cites the same law section inline in
+    // their answer text; the moderator's own call fails (HTTP 500 exhausts
+    // retries), forcing the fallback-moderator path. Since expert citation
+    // data IS available (the raw answer text), the fallback path must
+    // extract it and report a real score — not a blanket placeholder.
+    // Each answer opens directly with the citation (nothing capitalized
+    // precedes it) so the citation regex captures a clean, identical
+    // string per provider instead of sweeping up differing lead-in prose.
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        chatResponse("Migration Act 1958 (Cth) s 36 is the key criterion for this case.")
+      )
+      .mockResolvedValueOnce(chatResponse("Migration Act 1958 (Cth) s 36 applies squarely here."))
+      .mockResolvedValueOnce(chatResponse("Migration Act 1958 (Cth) s 36 is directly on point."))
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500))
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500));
+
+    const result = await runCouncil({ env: mockEnv, question: "Fallback confidence test" });
+
+    expect(result.moderator.success).toBe(true);
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(100);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "Shared-all overlap: 1/1 unique sections; mean pairwise citation overlap: 100.0%."
+    );
+    expect(result.moderator.shared_law_sections_confidence_reason).not.toContain(
+      "not implemented"
+    );
+    expect(result.moderator.shared_law_sections_confidence_reason).not.toContain(
+      "no citation cross-check performed"
+    );
+  });
+
+  it("gives an honest reason (not a placeholder) when zero experts succeed", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500))
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500))
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500))
+      .mockResolvedValueOnce(makeResponse({ error: "fail" }, 500));
+
+    const result = await runCouncil({ env: mockEnv, question: "Fallback all-fail test" });
+
+    expect(result.moderator.success).toBe(false);
+    expect(result.moderator.shared_law_sections_confidence_percent).toBe(0);
+    expect(result.moderator.shared_law_sections_confidence_reason).toBe(
+      "No successful expert outputs are available for consistency scoring."
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runCouncil — multi-turn (2 prior turns → 6 messages per expert)
 // ---------------------------------------------------------------------------
 

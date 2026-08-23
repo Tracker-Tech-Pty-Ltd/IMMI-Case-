@@ -15,6 +15,9 @@ import {
   stripReasoningArtifacts,
   extractFirstJsonObject,
   isGpt5ReasoningModel,
+  buildProviderLawSections,
+  computeSharedLawSections,
+  computeSharedLawSectionsConfidence,
 } from "./runner-helpers.js";
 import { buildCaseContextFromQuestion } from "./retrieval.js";
 
@@ -573,6 +576,27 @@ function fallbackModerator(opinions) {
     };
   }
 
+  // Fallback mode has no moderator JSON to declare citations, but the
+  // successful experts' raw answer text is available — extract law-section
+  // citations directly from it (raw={}) so the confidence score reflects
+  // real data instead of a blanket placeholder.
+  const successfulKeys = new Set(successful.map((o) => o.provider_key));
+  const successfulProviderOrder = successful.map((o) => o.provider_key);
+  const provider_law_sections = buildProviderLawSections(
+    {},
+    opinions,
+    successfulKeys
+  );
+  const shared_law_sections = computeSharedLawSections({
+    providerLawSections: provider_law_sections,
+    providerOrder: successfulProviderOrder,
+  });
+  const sharedLawConfidence = computeSharedLawSectionsConfidence({
+    providerLawSections: provider_law_sections,
+    providerOrder: successfulProviderOrder,
+    sharedLawSections: shared_law_sections,
+  });
+
   const sorted = [...successful].sort((a, b) => b.answer.length - a.answer.length);
   const ranking = sorted.map((op, idx) => ({
     rank: idx + 1,
@@ -614,11 +638,10 @@ function fallbackModerator(opinions) {
     conflict_points: [
       "Fallback mode cannot reliably resolve doctrinal conflicts across model answers.",
     ],
-    provider_law_sections: {},
-    shared_law_sections: [],
-    shared_law_sections_confidence_percent: 0,
-    shared_law_sections_confidence_reason:
-      "Fallback mode; no citation cross-check performed.",
+    provider_law_sections,
+    shared_law_sections,
+    shared_law_sections_confidence_percent: sharedLawConfidence.percent,
+    shared_law_sections_confidence_reason: sharedLawConfidence.reason,
     composed_answer,
     mock_judgment: composed_answer,
     consensus: "Partial consensus generated via fallback path.",
@@ -966,18 +989,35 @@ export async function runModerator({
   const follow_up_questions = asStringList(parsed.follow_up_questions, 10);
   const agreement_points = asStringList(parsed.agreement_points, 10);
   const conflict_points = asStringList(parsed.conflict_points, 10);
-  const shared_law_sections = asStringList(parsed.shared_law_sections, 25);
 
-  const providerLawSectionsRaw =
-    parsed.provider_law_sections &&
-    typeof parsed.provider_law_sections === "object"
-      ? parsed.provider_law_sections
-      : {};
-  const provider_law_sections = {};
-  for (const pk of [...successfulKeys].sort()) {
-    const items = asStringList(providerLawSectionsRaw[pk], 25);
-    if (items.length) provider_law_sections[pk] = items;
-  }
+  // The moderator's own `provider_law_sections` claim is unverified — merge
+  // it with citations extracted directly from each successful expert's raw
+  // answer text (buildProviderLawSections), then recompute `shared_law_sections`
+  // FROM those merged provider lists rather than trusting the moderator's own
+  // `shared_law_sections` claim. Without this, a moderator that omits a
+  // provider's citations yields a false 0% confidence, and a moderator that
+  // hallucinates a "shared" section no provider actually cites can inflate
+  // the intersection ratio past 100%. The moderator's raw `shared_law_sections`
+  // field is intentionally never read below — Python's reference ignores it
+  // entirely for the same reason.
+  const providerOrderForLaw = rankingKeyOrder.length
+    ? rankingKeyOrder
+    : [...successfulKeys].sort();
+  const provider_law_sections = buildProviderLawSections(
+    parsed.provider_law_sections,
+    opinions,
+    successfulKeys
+  );
+  const shared_law_sections = computeSharedLawSections({
+    providerLawSections: provider_law_sections,
+    providerOrder: providerOrderForLaw,
+  });
+
+  const sharedLawConfidence = computeSharedLawSectionsConfidence({
+    providerLawSections: provider_law_sections,
+    providerOrder: providerOrderForLaw,
+    sharedLawSections: shared_law_sections,
+  });
 
   let consensus = String(parsed.consensus || "").trim();
   let disagreements = String(parsed.disagreements || "").trim();
@@ -1007,9 +1047,8 @@ export async function runModerator({
     conflict_points,
     provider_law_sections,
     shared_law_sections,
-    shared_law_sections_confidence_percent: 0,
-    shared_law_sections_confidence_reason:
-      "Worker-side citation cross-check not implemented in v1.",
+    shared_law_sections_confidence_percent: sharedLawConfidence.percent,
+    shared_law_sections_confidence_reason: sharedLawConfidence.reason,
     consensus,
     disagreements,
     outcome_likelihood_percent: likelihoodPct,
