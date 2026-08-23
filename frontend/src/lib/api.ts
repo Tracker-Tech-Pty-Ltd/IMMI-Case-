@@ -61,6 +61,37 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+/**
+ * Error subclass carrying the structured `code` field the Worker attaches
+ * to error responses (`{ error, code }`), so callers can distinguish e.g.
+ * `case_mutations_disabled` from a generic failure without string-matching
+ * the message. Falls back to a plain `Error` shape (`.message` still set)
+ * for any caller that doesn't care about `.code`.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
+ * Code the Cloudflare Worker returns on `/api/v1/cases*` mutation endpoints
+ * while `IMMI_CASE_MUTATIONS_ENABLED` is off during the data-platform
+ * migration (see `workers/case-api/cloudflare_mutations.js`).
+ */
+export const CASE_MUTATIONS_DISABLED_CODE = "case_mutations_disabled";
+
+/** True when `error` is the typed 503 the backend returns during the case-mutation write freeze. */
+export function isCaseMutationsDisabledError(error: unknown): boolean {
+  return error instanceof ApiError && error.code === CASE_MUTATIONS_DISABLED_CODE;
+}
+
 export async function apiFetch<T>(
   url: string,
   options: ApiRequestOptions = {},
@@ -122,7 +153,11 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(error.error || `API error: ${res.status}`);
+    throw new ApiError(
+      error.error || `API error: ${res.status}`,
+      res.status,
+      error.code,
+    );
   }
 
   return res.json();

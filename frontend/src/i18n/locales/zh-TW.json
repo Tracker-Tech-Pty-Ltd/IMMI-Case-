@@ -848,7 +848,9 @@
     "unable_to_load_message": "請重試。若問題持續發生，請檢查 API 及後端連線狀態。",
     "retry": "重試",
     "try_again": "再試一次",
-    "something_went_wrong": "發生錯誤"
+    "something_went_wrong": "發生錯誤",
+    "case_mutations_disabled_title": "案件編輯功能暫時唯讀",
+    "case_mutations_disabled_message": "系統正在遷移案件資料平台，新增、編輯與刪除案件功能暫時停用。您輸入的內容不會遺失，將保留在此處，直到編輯功能恢復。"
   },
   "empty_states": {
     "no_cases_title": "查無符合條件之案例",

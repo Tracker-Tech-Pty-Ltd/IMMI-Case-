@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Save } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useCase, useUpdateCase } from "@/hooks/use-cases";
+import { isCaseMutationsDisabledError } from "@/lib/api";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { CaseMutationsDisabledNotice } from "@/components/shared/CaseMutationsDisabledNotice";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { toast } from "sonner";
 import type { ImmigrationCase } from "@/types/case";
@@ -83,6 +85,7 @@ export function CaseEditPage() {
   const [formEditsByCaseId, setFormEditsByCaseId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [mutationsDisabled, setMutationsDisabled] = useState(false);
 
   const baseForm = data?.case ? buildInitialForm(data.case) : EMPTY_EDITS;
   const currentEdits = formEditsByCaseId[caseId] ?? EMPTY_EDITS;
@@ -163,6 +166,7 @@ export function CaseEditPage() {
       toast.error(t("pages.case_edit.title_required"));
       return;
     }
+    setMutationsDisabled(false);
     try {
       await updateMutation.mutateAsync({ id, data: form });
       toast.success(t("pages.case_edit.success"));
@@ -173,6 +177,10 @@ export function CaseEditPage() {
       });
       navigate(`/cases/${id}`);
     } catch (err) {
+      if (isCaseMutationsDisabledError(err)) {
+        setMutationsDisabled(true);
+        return;
+      }
       toast.error((err as Error).message);
     }
   };
@@ -366,6 +374,7 @@ export function CaseEditPage() {
                 />
               </div>
             </div>
+            {mutationsDisabled && <CaseMutationsDisabledNotice />}
             <div className="flex gap-2">
               <button
                 type="button"

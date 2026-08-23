@@ -848,7 +848,9 @@
     "unable_to_load_message": "Please try again. If the problem persists, check the API/backend connection.",
     "retry": "Retry",
     "try_again": "Try again",
-    "something_went_wrong": "Something went wrong"
+    "something_went_wrong": "Something went wrong",
+    "case_mutations_disabled_title": "Case editing is temporarily read-only",
+    "case_mutations_disabled_message": "We are migrating the case data platform, so saving, editing, and deleting cases is temporarily disabled. Your input has not been lost — it will remain here until editing is restored."
   },
   "empty_states": {
     "no_cases_title": "No cases match your criteria",

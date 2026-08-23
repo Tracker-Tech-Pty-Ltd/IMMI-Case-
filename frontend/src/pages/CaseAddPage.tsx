@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { Plus, ChevronDown } from "lucide-react";
 import { useState, useCallback } from "react";
 import { useCreateCase } from "@/hooks/use-cases";
+import { isCaseMutationsDisabledError } from "@/lib/api";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
+import { CaseMutationsDisabledNotice } from "@/components/shared/CaseMutationsDisabledNotice";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +40,7 @@ export function CaseAddPage() {
   const createMutation = useCreateCase();
   const [form, setForm] = useState<Record<string, string>>({});
   const [adminOpen, setAdminOpen] = useState(false);
+  const [mutationsDisabled, setMutationsDisabled] = useState(false);
 
   const updateField = useCallback((key: string, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -53,11 +56,16 @@ export function CaseAddPage() {
       toast.error(t("pages.case_add.citation_format"));
       return;
     }
+    setMutationsDisabled(false);
     try {
       const newCase = await createMutation.mutateAsync(form);
       toast.success(t("pages.case_add.success"));
       navigate(`/cases/${newCase.case_id}`);
     } catch (err) {
+      if (isCaseMutationsDisabledError(err)) {
+        setMutationsDisabled(true);
+        return;
+      }
       toast.error((err as Error).message);
     }
   };
@@ -229,6 +237,7 @@ export function CaseAddPage() {
                 />
               </div>
             </div>
+            {mutationsDisabled && <CaseMutationsDisabledNotice />}
             <div className="flex gap-2">
               <button
                 type="button"

@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { List, LayoutGrid, FileText } from "lucide-react";
 import { useCases, useFilterOptions, useBatchCases } from "@/hooks/use-cases";
+import { isCaseMutationsDisabledError } from "@/lib/api";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
 import { FilterPill } from "@/components/shared/FilterPill";
 import { Pagination } from "@/components/shared/Pagination";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { CaseMutationsDisabledNotice } from "@/components/shared/CaseMutationsDisabledNotice";
 import { TagInputModal } from "@/components/shared/TagInputModal";
 import { SaveSearchModal } from "@/components/saved-searches/SaveSearchModal";
 import { SavedSearchPanel } from "@/components/saved-searches/SavedSearchPanel";
@@ -38,6 +40,7 @@ export function CasesPage() {
   const [focusedIdx, setFocusedIdx] = useState(-1);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [mutationsDisabled, setMutationsDisabled] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [editingSearchId, setEditingSearchId] = useState<string | null>(null);
   const tableRef = useRef<HTMLTableSectionElement>(null);
@@ -117,6 +120,7 @@ export function CasesPage() {
 
   const runBatch = useCallback(
     async (action: string, tag?: string) => {
+      setMutationsDisabled(false);
       try {
         const result = await batchMutation.mutateAsync({
           action,
@@ -127,6 +131,11 @@ export function CasesPage() {
         setSelected(new Set());
         setDeleteConfirm(false);
       } catch (e) {
+        if (isCaseMutationsDisabledError(e)) {
+          setDeleteConfirm(false);
+          setMutationsDisabled(true);
+          return;
+        }
         toast.error((e as Error).message);
       }
     },
@@ -500,6 +509,8 @@ export function CasesPage() {
         onDeleteRequest={() => setDeleteConfirm(true)}
         onClearSelection={() => setSelected(new Set())}
       />
+
+      {mutationsDisabled && <CaseMutationsDisabledNotice />}
 
       {/* Data load error */}
       {isCasesError && !data && (
