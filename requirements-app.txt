@@ -1,0 +1,19 @@
+# Application/runtime dependencies for the Flask app, CLI, and local development.
+# Test-only dependencies live in requirements-test.txt.
+# The Cloudflare extraction Container uses requirements-extractor.txt.
+flask>=3.0.0,<4
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+pandas>=2.0.0
+tqdm>=4.65.0
+python-dateutil>=2.8.0
+flask-wtf>=1.2.0
+Flask-Limiter>=3.5
+supabase>=2.0.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0
+fuzzywuzzy>=0.18.0
+numpy>=1.24.0
+Pillow>=10.0.0
+pypdf>=4.0.0
