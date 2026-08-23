@@ -12,7 +12,7 @@ IMMI-Case 是一個澳洲移民法律研究工具，完整爬取、解析並呈�
 
 系統由三層構成：
 - **Python 爬蟲管線**：自動從 9 個法院 / 仲裁庭抓取案件元資料與全文（支援 Cloudflare Workers 加速）
-- **Cloudflare Worker (Hyperdrive 直連 Supabase)**：44 個原生 GET 端點承擔生產讀流量（cases/stats/analytics/judge profiles/legal concepts）。Flask Durable Object (`flask-v15`) 已大幅縮編，僅承擔寫操作 (POST/PUT/DELETE)、LLM Council 搜尋、CSRF token mint、SPA fallback — 不再是「主要 API」
+- **Cloudflare Worker（D1 原生，`workers/cloudflare-native.js`）**：讀寫全部在單一 standalone Worker 內完成 —— D1（×3：catalog/account/ops）+ R2 + Vectorize + Queues + Durable Objects，正式環境完全沒有 Postgres / Hyperdrive / Flask container。舊版 `workers/proxy.js`（Hyperdrive → Supabase）已於 commit `f91f45f` 刪除；Flask 應用（`immi_case_downloader/`、`web.py`）現在**僅供本機開發使用**，不在正式流量路徑上。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 - **React SPA**：24 個頁面，雙語（English + 繁體中文），完整深色模式，設計令牌系統
 
 **核心能力**：
@@ -176,10 +176,10 @@ open http://localhost:8080/
 ### 4.5 Test
 
 ```bash
-# Python 單元 + E2E 測試（~1,291 個 — 1,032 unit + 259 E2E，source-counted via `grep "def test_"`）
+# Python 單元 + E2E 測試（~1,367 個 — 1,107 unit + 260 E2E，source-counted via `grep "def test_"`）
 python3 -m pytest
 
-# 僅前端單元測試（449 個 — 50 files，source-counted via `grep "(it|test)\("`）
+# 僅前端單元測試（490 個 — 55 files，source-counted via `grep "(it|test)\("`）
 cd frontend && npx vitest run
 
 # 僅 E2E
@@ -306,35 +306,35 @@ python migrate_csv_to_supabase.py
 
 ## 6. Architecture（The Web of Truth）
 
-> 完整、可驗證的 production 架構文件：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — **若本節描述與該檔衝突，以該檔為準**。本節為簡化概覽，可能落後於實際 worker handler 數量與 Flask DO instance suffix。
+> 完整、可驗證的 production 架構文件：[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — **若本節描述與該檔衝突，以該檔為準**。本節為簡化概覽。正式環境自 2026-08-11 起為 `workers/cloudflare-native.js`（D1 + R2 + Vectorize + Queues + Durable Objects）；舊版 `proxy.js` / Hyperdrive / Flask DO 架構已於 commit `f91f45f` 移除，Flask 應用現僅供本機開發。
 
 ### 6.1 系統資料流
 
 ```mermaid
 flowchart LR
     A["AustLII\n(austlii.edu.au)"] -->|HTTP scrape| B["BaseScraper\n(harvest)"]
-    CF["Cloudflare Workers\n(austlii-scraper)"] -->|R2 sync| B
-    B -->|ImmigrationCase objects| C["SmartPipeline\n(alchemy)"]
-    C -->|upsert| D[("Repository\n(archive)")]
+    CF["Cloudflare Workers\n(austlii-scraper, cron-only)"] -->|R2 sync| B
+    VPS["External VPS crawler\n(CRAWLER_WRITE_TOKEN)"] -->|POST /api/v1/cases| E
+    B -->|ImmigrationCase objects, local dev| C["SmartPipeline\n(alchemy)"]
+    C -->|upsert, local dev| D[("Repository\n(archive)")]
     D --> D1[CSV / JSON]
     D --> D2[SQLite FTS5]
-    D --> D3["Supabase\n(PostgreSQL + pgvector)"]
-    D3 -->|Hyperdrive| E["Cloudflare Worker\nproxy.js (judgment)"]
-    D2 -->|dev only| FALLBACK["Flask DO\nflask-v15"]
-    FALLBACK -.->|writes / LLM / CSRF| E
+    E["Cloudflare Worker\ncloudflare-native.js (judgment)"] --> D3[("D1 ×3\ncatalog / account / ops")]
+    E --> D4[("R2\ncase full text")]
+    E --> D5[("Vectorize\ncase-vectors")]
     E -->|JSON /api/v1/*| F["React SPA\n(revelation)"]
-    LLM["Claude Sonnet\n10× parallel agents"] -->|batch JSON| C
-    EMBED["OpenAI / Gemini\nembeddings"] -->|1536-dim vectors| D3
+    LLM["Claude Sonnet\n10× parallel agents, local extraction"] -->|batch JSON| C
+    AI["Workers AI\n@cf/qwen/qwen3-embedding-0.6b"] -->|1024-dim vectors| D5
 ```
 
 **各節點說明**：
 
 | 節點 | 輸入 | 輸出 | 錯誤路徑 |
 |------|------|------|----------|
-| **Harvest** (BaseScraper) | AustLII URL 列表 | ImmigrationCase 物件串流 | rate-limit → exponential backoff，UA 偽裝繞過 HTTP 410 |
-| **Alchemy** (SmartPipeline) | 原始 ImmigrationCase | 去重、補齊欄位的 Case 物件 | 缺欄位 → LLM sub-agent 補救 |
-| **Archive** (Repository) | Case 物件 | CSV / SQLite / Supabase 持久化 | CSV fallback 若 SQLite 未初始化 |
-| **Judgment** (Cloudflare Worker `proxy.js`, 44 handlers) | HTTP request | JSON response | Hyperdrive 直查 Supabase；未命中或 throw 才 fall-through 到 Flask DO `flask-v15` (POST/PUT/DELETE writes、LLM Council、CSRF、SPA fallback)。詳見 `docs/ARCHITECTURE.md` |
+| **Harvest** (BaseScraper) | AustLII URL 列表 | ImmigrationCase 物件串流 | rate-limit → exponential backoff，UA 偽裝繞過 HTTP 410；本機開發/一次性匯入用途 |
+| **Alchemy** (SmartPipeline) | 原始 ImmigrationCase | 去重、補齊欄位的 Case 物件 | 缺欄位 → LLM sub-agent 補救；本機開發用途 |
+| **Archive** (Repository, 本機開發) | Case 物件 | CSV / SQLite 持久化（Supabase 僅為一次性 ETL 工具，非正式環境依賴） | CSV fallback 若 SQLite 未初始化 |
+| **Judgment** (Cloudflare Worker `cloudflare-native.js`) | HTTP request | JSON response | D1/R2/Vectorize 直查，無 Postgres/Hyperdrive/Flask；未匹配路由回傳 503。正式案件寫入來自外部 VPS crawler（`CRAWLER_WRITE_TOKEN` 服務驗證）。詳見 `docs/ARCHITECTURE.md` |
 | **Revelation** (React SPA) | JSON API | 可互動 UI | TanStack Query retry、keepPreviousData 防閃爍 |
 
 ### 6.2 搜尋請求流程
@@ -343,21 +343,21 @@ flowchart LR
 sequenceDiagram
     actor User
     participant SPA as React SPA
-    participant W as Cloudflare Worker (proxy.js)
-    participant F as Flask DO (flask-v15)
-    participant PG as Hyperdrive → Supabase + pgvector
+    participant W as Cloudflare Worker (cloudflare-native.js)
+    participant D1 as D1 (IMMI_CATALOG_DB, FTS5)
+    participant VEC as Vectorize (CASE_VECTORS)
 
     User->>SPA: 輸入關鍵字 + 選擇 mode=hybrid
     SPA->>W: GET /api/v1/search?q=...&mode=hybrid
-    Note over W: handleSearch — LLM Council mode 仍走 Flask
-    W->>F: forward (LLM Council 路徑)
-    F->>PG: 1. FTS lexical candidates (N=100)
-    F->>PG: 2. Embed query → semantic candidates (N=100)
-    F->>F: 3. RRF fusion & rerank
-    F-->>W: top-K results
+    Note over W: dispatchCloudflareCaseRead — 全程在 Worker 內完成，無 Flask
+    W->>D1: 1. FTS5 lexical candidates
+    W->>VEC: 2. Vectorize semantic candidates
+    W->>W: 3. RRF fusion & rerank
     W-->>SPA: JSON {success: true, data: [...]}
     SPA-->>User: 顯示結果列表 + 語意相似度分數
 ```
+
+> LLM Council（`/api/v1/llm-council/*`）的檢索路徑不同：`CouncilSessionDO` + D1 FTS5 lexical retrieval（曾實作 Vectorize 語意檢索，於 commit `93cace7` 刻意改回 lexical）。
 
 ---
 
@@ -366,7 +366,7 @@ sequenceDiagram
 ```
 IMMI-Case-/
 ├── run.py                          # CLI entry point (harvest/search/download)
-├── web.py                          # Flask Durable Object entry (writes / LLM Council / CSRF / SPA fallback). Production reads bypass this — see workers/proxy.js
+├── web.py                          # Flask entry point — LOCAL DEV ONLY, not deployed to production. Production is workers/cloudflare-native.js
 ├── Makefile                        # 快捷指令：make dev / test-py / test-fe
 │
 ├── immi_case_downloader/           # [Core Weave] 主套件
@@ -382,10 +382,10 @@ IMMI-Case-/
 │   │   ├── base.py                 #   BaseScraper: session, UA, retry, rate-limit
 │   │   ├── austlii.py              #   AustLIIScraper: year listing + keyword fallback
 │   │   └── federal_court.py        #   FederalCourtScraper (DNS broken, legacy)
-│   ├── web/                        # Flask blueprint — residual surface only
-│   │   ├── __init__.py             #   Flask app factory (writes / LLM / CSRF / SPA fallback)
-│   │   ├── routes/api.py           #   POST/PUT/DELETE 寫入 + LLM Council search；GET 讀取已遷至 workers/proxy.js
-│   │   ├── routes/legislations.py  #   Flask fallback；Worker (handleLegislationsList/Search) 是主路徑
+│   ├── web/                        # Flask blueprint — LOCAL DEV ONLY，不在正式流量路徑上
+│   │   ├── __init__.py             #   Flask app factory（本機開發用；正式環境為 workers/cloudflare-native.js）
+│   │   ├── routes/api.py           #   本機開發用 REST API；正式環境讀寫全部在 Worker 內完成（case-api/cloudflare.js + cloudflare_mutations.js）
+│   │   ├── routes/legislations.py  #   本機開發用；Worker (handleLegislationsList/Search) 是正式環境路徑
 │   │   ├── helpers.py              #   get_repo(), safe_int(), EDITABLE_FIELDS
 │   │   └── jobs.py                 #   4 background job runners
 │   ├── data/legislations.json      #   6 澳洲移民法律靜態資料
@@ -399,7 +399,7 @@ IMMI-Case-/
 │   │   ├── lib/api.ts              #   CSRF-aware fetch wrapper
 │   │   └── tokens/tokens.json      #   設計令牌單一來源
 │   ├── scripts/build-tokens.ts     #   tokens.json → CSS + TS 建置腳本
-│   └── __tests__/                  #   449 Vitest 單元測試（50 files）
+│   └── __tests__/                  #   490 Vitest 單元測試（55 files）
 │
 ├── scripts/                        # [The Tools]
 │   ├── backfill_case_embeddings.py #   pgvector 嵌入向量批次填充
@@ -407,11 +407,13 @@ IMMI-Case-/
 │   └── two_stage_embedding_backfill.py
 │
 ├── tests/                          # [Quality Gate]
-│   ├── test_models.py              #   1,032 Python 單元測試（50 files）
-│   └── e2e/react/                  #   259 Playwright E2E 測試（24 files）
+│   ├── test_models.py              #   1,107 Python 單元測試（71 files）
+│   └── e2e/                        #   260 Playwright E2E 測試（25 files，含 tests/e2e/react/ + playwright/ + 根層 smoke/export）
 │
-├── supabase/migrations/            # PostgreSQL schema 遷移 (17 個)
-├── workers/austlii-scraper/        # Cloudflare Worker (TypeScript)
+├── supabase/migrations/            # PostgreSQL schema 遷移 (17 個) — 一次性 ETL/匯入工具，非正式環境依賴
+├── migrations/d1/                  # D1 schema 遷移 (catalog / account / ops) — 正式環境資料層
+├── workers/cloudflare-native.js    # 正式環境 Worker 進入點 (D1 + R2 + Vectorize + Queues + Durable Objects)
+├── workers/austlii-scraper/        # 獨立 Cloudflare Worker (TypeScript)，cron-only，不再有 HTTP 觸發端點
 └── downloaded_cases/               # 本地資料 (gitignored)
     ├── immigration_cases.csv       #   149,016 案件 × 31 欄位
     ├── cases.db                    #   SQLite (322 MB, FTS5+WAL + judge_bios)
@@ -583,15 +585,15 @@ gh pr create --title "feat: judge name normalization" --body "..."
 
 | 層級 | 技術 |
 |------|------|
-| **Backend** | **Cloudflare Worker** (`workers/proxy.js`, JS, 44 native handlers, Hyperdrive → Supabase) — 99% reads. Flask Container DurableObject (`flask-v15`, Python + flask-wtf) — writes / LLM Council / CSRF / SPA fallback。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
+| **Backend** | **Cloudflare Worker**（`workers/cloudflare-native.js`, JS，standalone entrypoint）— D1 (×3) + R2 + Vectorize + Queues + Durable Objects，讀寫全部在 Worker 內完成，正式環境無 Postgres/Hyperdrive/Flask container。Flask（`immi_case_downloader/`, `web.py`）**僅供本機開發**。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) |
 | **Frontend** | React 18, TypeScript, Vite 7, Tailwind CSS v4, TanStack Query v5, Recharts, Sonner |
 | **i18n** | react-i18next — English + 繁體中文（全站雙語） |
-| **Storage** | CSV/JSON（預設）, SQLite FTS5+WAL, Supabase PostgreSQL + pgvector |
-| **Testing** | pytest (1,032 unit + 259 E2E Playwright), Vitest (449 frontend unit) — source-counted via grep, see CLAUDE.md for verification command |
-| **LLM** | Claude Sonnet 4.6（欄位萃取，10 平行 sub-agent） |
-| **Embeddings** | OpenAI text-embedding-3-small (1536-dim), Gemini embedding-001 |
-| **Scraper** | Cloudflare Workers + R2（批量），AustLII 直接爬取（增量） |
-| **Deployment** | Cloudflare Worker（custom domain `immi.trackit.today`；wrangler deploy）+ Flask Container DurableObject `flask-v15`（容器映像隨 Worker 一起部署）+ Supabase（資料層）+ Hyperdrive pooler |
+| **Storage** | 正式環境：Cloudflare D1（×3：catalog/account/ops）+ R2 + Vectorize。本機開發：CSV/JSON（預設）, SQLite FTS5+WAL, Supabase PostgreSQL + pgvector（`--backend supabase`，一次性 ETL 用途） |
+| **Testing** | pytest (1,107 unit + 260 E2E Playwright), Vitest (490 frontend unit) — source-counted via grep, see CLAUDE.md for verification command |
+| **LLM** | Claude Sonnet 4.6（本機欄位萃取，10 平行 sub-agent）；LLM Council 走 Cloudflare AI Gateway（`CouncilSessionDO` + D1 FTS5 lexical retrieval） |
+| **Embeddings** | 正式環境（案件語意搜尋）：Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b`（1024-dim）→ Vectorize。本機開發腳本另有 OpenAI text-embedding-3-small (1536-dim) / Gemini embedding-001 |
+| **Scraper** | `workers/austlii-scraper/`（cron-only，無 HTTP 觸發端點）+ R2；正式案件寫入由外部 VPS crawler 透過 `CRAWLER_WRITE_TOKEN` 服務驗證 POST 至主 Worker |
+| **Deployment** | Cloudflare Worker（custom domain `immi.trackit.today`；`wrangler deploy`，`name = "immi-case-standalone"`）。無 Flask Container、無 Hyperdrive。checked-in `wrangler.toml` 的資源 ID 為刻意留白的 placeholder，正式 ID 由 `deploy-worker.yml` 的 gated `workflow_dispatch` 注入 |
 
 ---
 

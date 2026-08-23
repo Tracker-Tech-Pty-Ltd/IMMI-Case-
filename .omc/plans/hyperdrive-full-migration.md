@@ -6,8 +6,17 @@
 | Project | IMMI-Case- (`immi.trackit.today`) |
 | Author | autopilot /team (architect × 2, test-engineer × 1, synthesized by main session) |
 | Date | 2026-04-26 |
-| Status | DRAFT — awaiting owner sign-off before Phase 2 (Execution) |
+| Status | **SUPERSEDED** (as of 2026-08-11) — see note below |
 | Origin | `/autopilot 直接寫 phase 1, 2, 3, 4 ... with /team` after JudgeProfilesPage contract-drift bug fix |
+
+> **SUPERSEDED**: This plan's goal (retire the Flask Container so there is one
+> truth source per endpoint) was reached, but not via the Hyperdrive-incremental
+> path described below. Production instead moved to a ground-up D1-native
+> rewrite, `workers/cloudflare-native.js` (D1 ×3 + R2 + Vectorize + Queues +
+> Durable Objects), live since ~2026-08-11. The legacy `workers/proxy.js`
+> (Hyperdrive → Supabase) and Flask container this plan's Phase 1–4 assumed as
+> the starting point were deleted wholesale in commit `f91f45f`, not migrated
+> endpoint-by-endpoint. See `docs/ARCHITECTURE.md` for the shipped architecture.
 
 > **Why this exists**: today's JudgeProfilesPage rendering crash was caused by Worker/Flask handler drift (Worker missing `top_visa_subclasses`). The drift is structural — it cannot be eliminated while two stacks serve the same API surface. This plan retires the Flask Container entirely so there is **one truth source** per endpoint.
 

@@ -1,11 +1,21 @@
 # LLM Council Worker Migration + Multi-Turn Sessions
 
-**Status**: planned (not started)
+**Status**: **PARTIALLY-SHIPPED** — see note below
 **Owner**: Developer
 **Started**: 2026-04-28
 **Driver**: Ralph loop (max 20 iterations) + per-story fresh subagent
 **Spec source**: This doc + `.omc/prd.json` (machine-readable acceptance criteria)
 **Progress log**: `.omc/progress.txt`
+
+> **PARTIALLY-SHIPPED**: The core goal — Worker-native LLM Council, no Flask/Container
+> hop — shipped as `CouncilSessionDO` + `workers/llm-council/` (commits `f25c0fb`,
+> `410582a`, `b55886e` for streaming Chairman synthesis, `20e7c6f`/`cdeca95` for
+> 6-digit retrieve-code). It differs from this doc's design in two ways: (1) session
+> persistence is the `CouncilSessionDO` Durable Object, not "Postgres via Hyperdrive"
+> as §2 describes; (2) grounding/RAG retrieval is **D1 FTS5 lexical** (commit
+> `93cace7`), not Vectorize semantic — an earlier Vectorize-based attempt (`763ec5f`)
+> was deliberately replaced. Flask + `flask-v15`/Hyperdrive referenced in §2's
+> "Before" diagram no longer exist in production at all (deleted in `f91f45f`).
 
 ---
 

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Australian immigration court/tribunal case downloader and manager. Scrapes case metadata and full text from AustLII, stores as CSV/JSON (or Supabase/SQLite), and provides a **React SPA** for browsing, editing, and exporting.
+Australian immigration court/tribunal case downloader and manager. Scrapes case metadata and full text from AustLII, stores as CSV/JSON (or Supabase/SQLite for local dev), and provides a **React SPA** for browsing, editing, and exporting.
 
-**Production data layer**: Cloudflare Worker (`workers/proxy.js`) handles all read traffic natively via Hyperdrive → Supabase PostgreSQL — Flask Container is only used for writes, LLM search, CSRF, and React SPA serving.
+**Production data layer**: a standalone Cloudflare Worker (`workers/cloudflare-native.js`) serves the entire request path — D1 (×3: catalog/account/ops), R2, Vectorize, Queues, and Durable Objects — with **no Postgres, Hyperdrive, or Flask container** anywhere in production. Live since ~2026-08-11 (`.claude/STATE.md`). The legacy `workers/proxy.js` (Hyperdrive → Supabase) and `workers/db/getSqlAsUser.js` were deleted in commit `f91f45f`. The Flask app (`immi_case_downloader/`, `web.py`, `make api`) is **local-dev only** and is not wired to production traffic. `scripts/check_cloudflare_native_target.py` and `scripts/check_immi_activation_evidence.py` are the authoritative, machine-checked spec of what production config is allowed to look like — when in doubt, trust them over prose docs (including this file).
 
 ## Commands
 
@@ -133,11 +133,25 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
   scripts/build-tokens.ts → Token pipeline: JSON → CSS + TS
 
 workers/
-  proxy.js            → Main Cloudflare Worker: read-path via Hyperdrive, write-path
-                        via Flask Container, React SPA serving (see §Worker Architecture)
-  austlii-scraper/    → Separate Cloudflare Worker for async bulk AustLII scraping
-                        Uses Cloudflare Queue (SCRAPE_QUEUE) + R2 bucket (CASE_RESULTS)
-                        max_batch_size=5, max_concurrency=20, dead_letter_queue configured
+  cloudflare-native.js → Production Worker entrypoint. D1 (×3) + R2 + Vectorize + Queues +
+                        Durable Objects; no Postgres/Hyperdrive/Flask import at all
+                        (see §Worker Architecture (Production))
+  case-api/           → Case reads (cloudflare.js), mutations (cloudflare_mutations.js,
+                        gated by IMMI_CASE_MUTATIONS_ENABLED), actions (cloudflare_actions.js)
+  llm-council/        → CouncilSessionDO + D1 FTS5 lexical retrieval (retrieval.js);
+                        Vectorize-based retrieval deliberately abandoned (commit 93cace7)
+  auth/               → JWT (HS256), Telegram HMAC, AuthNonce DO — now backed by
+                        IMMI_ACCOUNT_DB (D1) instead of Supabase
+  storage/cloudflare.js → CloudflareIdentityStore / CloudflareCaseStore etc.; D1+R2+Vectorize
+                        access layer. assertMembership() is the app-layer tenant-isolation
+                        boundary (no Postgres RLS in this stack)
+  austlii-scraper/    → Separate Cloudflare Worker for async bulk AustLII scraping.
+                        Cron-triggered only (commit d0972db) — HTTP trigger endpoints
+                        removed. Cloudflare Queue (SCRAPE_QUEUE) + R2 bucket (CASE_RESULTS),
+                        max_batch_size=5, max_concurrency=20, dead_letter_queue configured.
+                        Production case ingestion now comes from an external VPS crawler
+                        POSTing to the main Worker via CRAWLER_WRITE_TOKEN service auth
+                        (commit abe5b02), not from this Worker's own HTTP surface.
 ```
 
 ### Key Design Patterns
@@ -156,83 +170,67 @@ workers/
 
 ### Flow
 1. User clicks TelegramLoginButton → Telegram Widget callback
-2. `POST /api/v1/auth/telegram` → Worker verifies HMAC hash → AuthNonce DO checks replay → DB upserts user → issues HS256 JWT (5min) + httpOnly refresh cookie (7d)
-3. Subsequent reads: `Authorization: Bearer <access_token>` header → Worker verifies JWT → `getSqlAsUser()` wraps query in `sql.begin() + SET LOCAL request.jwt.claims` → RLS enforces tenant isolation
-4. Writes proxied to Flask with `Authorization` + `X-Internal-Route: worker` headers → Flask re-verifies JWT with same `JWT_SECRET_CURRENT`
+2. `POST /api/v1/auth/telegram` → Worker verifies HMAC hash → AuthNonce DO checks replay → `CloudflareIdentityStore.upsertTelegramUser()` upserts the user + (on first login) a personal tenant into `IMMI_ACCOUNT_DB` (D1) → issues HS256 JWT (5min) + httpOnly refresh cookie (7d)
+3. Subsequent reads: `Authorization: Bearer <access_token>` header → Worker verifies JWT → `CloudflareIdentityStore.assertMembership(auth)` (`workers/storage/cloudflare.js`) looks up a live `memberships` row for `(tenant_id, user_id)` in `IMMI_ACCOUNT_DB` — **app-layer tenant isolation**, not Postgres RLS (there is no Postgres in this path)
+4. Writes (`POST/PUT/DELETE /api/v1/cases*`) are handled **in the Worker itself** via `dispatchCloudflareCaseMutation`, gated by `IMMI_CASE_MUTATIONS_ENABLED` (checked-in `wrangler.toml` default is `"false"`, fail-closed — no Flask hop of any kind exists to proxy to). The one bypass is the VPS AustLII crawler, which authenticates with a `CRAWLER_WRITE_TOKEN` shared secret (constant-time compare in `requireWriter()`) instead of a user JWT — see commit `abe5b02`.
 
 ### Key Files
-- `workers/auth/jwt.js` — HS256 sign/verify with kid rotation
-- `workers/auth/telegram.js` — HMAC-SHA256 Telegram hash verification
-- `workers/auth/nonce_do.js` — AuthNonce Durable Object (replay protection, Oceania-pinned)
-- `workers/auth/handlers.js` — Auth route handlers
-- `workers/db/getSqlAsUser.js` — Transaction-wrapped DB client with SET LOCAL
-- `immi_case_downloader/web/auth.py` — Flask JWT middleware
-- `supabase/migrations/20260503_001_tenancy.sql` — Schema: users, tenants, tenant_members
+- `workers/auth/jwt.js` — HS256 sign/verify with kid rotation (unchanged)
+- `workers/auth/telegram.js` — HMAC-SHA256 Telegram hash verification (unchanged)
+- `workers/auth/nonce_do.js` — AuthNonce Durable Object (replay protection, Oceania-pinned; unchanged)
+- `workers/auth/cloudflare_handlers.js` — Auth route handlers, D1-backed (replaces the deleted Supabase-era `workers/auth/handlers.js` path)
+- `workers/storage/cloudflare.js` — `CloudflareIdentityStore`: `assertMembership()`, `upsertTelegramUser()` — the tenant-isolation boundary, backed by `IMMI_ACCOUNT_DB`
+- `immi_case_downloader/web/auth.py` — Flask JWT middleware; **local-dev only**, not in the production request path
+- `migrations/d1/account/0001_account.sql` — D1 schema: users, tenants, memberships, immi_refresh_sessions (replaces the deleted `supabase/migrations/20260503_001_tenancy.sql` in production)
 - `frontend/src/contexts/AuthContext.tsx` — React auth state
 - `frontend/src/components/auth/TelegramLoginButton.tsx` — Telegram widget wrapper
 
 ### Critical Gotchas
-- **`set_config(..., true)`** — third arg MUST be `true` (transaction-local). `false` = session-local → cross-tenant leak via Hyperdrive pool
-- **AuthNonce DO** — pinned to Oceania with `{ locationHint: "oc" }` for au-east p95
-- **Flask ingress guard** — Flask rejects requests without `X-Internal-Route: worker` header
-- **JWT TTL** — access token 5min, refresh cookie 7d. Max revocation lag: 5min for reads, instant for writes (DB re-check)
-- **Refresh-token rotation + revocation** — refresh JWTs include `jti` and must have a live row in `immi_refresh_sessions`. `POST /api/v1/auth/refresh` locks the old `jti`, verifies it is not revoked/expired, inserts the replacement session, then revokes the old row in one transaction. `POST /api/v1/auth/logout` revokes the presented `jti` before clearing cookies. Flask treats `type: "refresh"` JWTs as invalid access tokens.
+- **Tenant isolation is app-layer, not RLS** — `assertMembership()` runs a D1 SELECT per authenticated request; there is no database-level enforcement backstop like Postgres RLS. A route that forgets to call it is a real leak vector — this is literally the "Option C" the original 2026-05 design doc rejected, but it's what shipped once the stack moved off Postgres.
+- **AuthNonce DO** — pinned to Oceania with `{ locationHint: "oc" }` for au-east p95 (unchanged)
+- **No Flask in production** — there is nothing to proxy writes to; `dispatchCloudflareCaseMutation` handles them directly in the Worker. Do not re-introduce an `X-Internal-Route` / Flask-ingress-guard pattern; that design was for the deleted `proxy.js`.
+- **JWT TTL** — access token 5min, refresh cookie 7d. Max revocation lag: 5min for reads, instant for writes (D1 re-check via `assertMembership()`)
+- **Refresh-token rotation + revocation** — refresh JWTs include `jti` and must have a live row in `immi_refresh_sessions` (D1 `IMMI_ACCOUNT_DB` now, not Postgres). `POST /api/v1/auth/refresh` locks the old `jti`, verifies it is not revoked/expired, inserts the replacement session, then revokes the old row. `POST /api/v1/auth/logout` revokes the presented `jti` before clearing cookies.
 - **Wrangler secrets** — `JWT_SECRET_CURRENT`, `JWT_SECRET_PREVIOUS`, `JWT_KID_CURRENT`, `JWT_KID_PREVIOUS`, `TELEGRAM_BOT_TOKEN`
-- **`AUTH_ENABLED=false`** — set this Worker env var to disable JWT injection entirely; auth routes fall through to Flask (404), all reads stay anonymous. Use for emergency rollback or staging without Telegram config.
-- **Structured auth logs** — every authenticated DB query emits `{"event":"db.authed_query","kid","tenant_id","user_id","query_ms","ok"}` via `console.log` in `getSqlAsUser.js`. Pipe to Cloudflare Logpush → Grafana or Datadog to monitor per-tenant query latency and failure rates.
+- **`AUTH_ENABLED=false`** — set this Worker env var (checked-in default is `"true"`) to disable JWT injection entirely; `dispatchAuth()` returns `null` and every auth route falls through to the Worker's generic 404 (`cloudflare_route_unavailable`) — there is no Flask fallback to catch it anymore. Use for emergency rollback or staging without Telegram config.
+- **Structured logs** — mutation and auth handlers `console.log(JSON.stringify({event, ...}))`; pipe to Cloudflare Logpush → Grafana or Datadog to monitor per-tenant activity and failure rates.
 
 ### Worker Architecture (Production)
 
-All GET requests to `/api/v1/*` are intercepted by `proxy.js` first. If a native Hyperdrive handler exists, Flask is **never called**. Only unmatched paths fall through.
+Everything lives in one standalone Worker, `workers/cloudflare-native.js`. There is no Flask container, no Hyperdrive, no Postgres anywhere in this path — the file's own header comment says it "intentionally does not import the legacy proxy, Flask container, or postgres.js." `fetch()` dispatches in this fixed order (see `workers/cloudflare-native.js` for the exact code):
 
 ```
-Request → Cloudflare Worker (proxy.js)
+Request → Cloudflare Worker (cloudflare-native.js)
 │
-├── GET /api/v1/*  ── Native Hyperdrive path (44 endpoints as of 2026-05-02 — verify with `grep -c "^async function handle\\|^function handle" workers/proxy.js`)
-│   │
-│   ├── /api/v1/cases                          → handleGetCases
-│   ├── /api/v1/cases/count                    → handleGetCasesCount
-│   ├── /api/v1/cases/:id  (12 hex chars)      → handleGetCase
-│   ├── /api/v1/cases/compare                  → handleCompareCases       (batch SQL)
-│   ├── /api/v1/cases/:id/related              → handleRelatedCases       (find_related_cases RPC)
-│   ├── /api/v1/stats                          → handleGetStats
-│   ├── /api/v1/stats/trends                   → handleStatsTrends
-│   ├── /api/v1/filter-options                 → handleGetFilterOptions
-│   ├── /api/v1/court-lineage                  → handleCourtLineage       (get_court_year_trends RPC + JS structure)
-│   ├── /api/v1/data-dictionary                → handleDataDictionary     (static JS const, no DB)
-│   ├── /api/v1/visa-registry                  → handleVisaRegistry       (static JS const, no DB)
-│   ├── /api/v1/taxonomy/countries             → handleTaxonomyCountries  (GROUP BY SQL)
-│   ├── /api/v1/analytics/outcomes             → handleAnalyticsOutcomes
-│   ├── /api/v1/analytics/judges               → handleAnalyticsJudges
-│   ├── /api/v1/analytics/legal-concepts       → handleAnalyticsLegalConcepts
-│   ├── /api/v1/analytics/nature-outcome       → handleAnalyticsNatureOutcome
-│   ├── /api/v1/analytics/filter-options       → handleAnalyticsFilterOptions
-│   ├── /api/v1/analytics/monthly-trends       → handleAnalyticsMonthlyTrends
-│   ├── /api/v1/analytics/flow-matrix          → handleAnalyticsFlowMatrix
-│   ├── /api/v1/analytics/judge-bio            → handleAnalyticsJudgeBio
-│   ├── /api/v1/analytics/visa-families        → handleAnalyticsVisaFamilies
-│   ├── /api/v1/analytics/success-rate         → handleAnalyticsSuccessRate
-│   ├── /api/v1/analytics/concept-effectiveness→ handleAnalyticsConceptEffectiveness
-│   ├── /api/v1/analytics/concept-cooccurrence → handleAnalyticsConceptCooccurrence
-│   ├── /api/v1/analytics/concept-trends       → handleAnalyticsConceptTrends
-│   ├── /api/v1/analytics/judge-leaderboard    → handleAnalyticsJudgeLeaderboard
-│   ├── /api/v1/analytics/judge-profile        → handleAnalyticsJudgeProfile
-│   └── /api/v1/analytics/judge-compare        → handleAnalyticsJudgeCompare
-│       ↳ handler returns null → falls through to Flask (e.g. tag filter active)
-│       ↳ handler throws → falls through to Flask (Hyperdrive error recovery)
-│
-└── Everything else → Flask Container (Durable Object "flask-v15" — bumped from v13. See `workers/proxy.js:2725` for current)
-    ├── POST/PUT/DELETE /api/v1/*   (writes — need Python validation)
-    ├── GET /api/v1/search          (semantic/LLM — needs OpenAI/Gemini SDK)
-    ├── GET /api/v1/csrf-token      (session-based)
-    ├── GET /api/v1/legislations/*  (3 endpoints, static JSON)
-    ├── /app/*  and  /             (React SPA catch-all → index.html)
-    └── Any unmatched GET /api/v1/* path
+├── GET /health                                → static ok/worker-identity JSON
+├── GET /api/v1/csrf-token                     → getCsrfToken(env)
+├── dispatchAuth()                             → auth/cloudflare_handlers.js (D1 IMMI_ACCOUNT_DB)
+│                                                 telegram, bootstrap, callback, me, logout,
+│                                                 refresh, switch-tenant — no-op (null) if
+│                                                 AUTH_ENABLED=false
+├── dispatchCloudflareCaseAction()             → case-api/cloudflare_actions.js
+├── dispatchCloudflarePipelineControl()        → pipeline/control_handlers.js (PIPELINE_CONTROL_QUEUE)
+├── dispatchCloudflareCaseMutation()           → case-api/cloudflare_mutations.js
+│                                                 POST/PUT/DELETE /api/v1/cases* — gated by
+│                                                 IMMI_CASE_MUTATIONS_ENABLED (default "false");
+│                                                 CRAWLER_WRITE_TOKEN bypass for the VPS crawler
+├── GET /api/v1/admin/pipeline-runs            → admin/cloudflare_handlers.js (D1 IMMI_OPS_DB)
+├── GET /api/v1/job-status, /pipeline-status   → pipeline/cloudflare_handlers.js
+├── dispatchCloudflareCouncil()                → llm-council/cloudflare_handlers.js
+│                                                 CouncilSessionDO + D1 FTS5 lexical retrieval
+│                                                 (Vectorize-based retrieval abandoned, 93cace7)
+├── GET-only: dispatchCloudflareCaseRead()     → case-api/cloudflare.js
+│                                                 cases, stats, analytics, judge profiles,
+│                                                 semantic/related search via Vectorize CASE_VECTORS
+│                                                 + Workers AI embeddings (`@cf/qwen/qwen3-embedding-0.6b`)
+├── /api/* still unmatched                     → 503 cloudflare_route_unavailable
+└── everything else                            → env.ASSETS.fetch(request) (Workers Static Assets,
+                                                   SPA fallback to index.html) or 503
 ```
 
-**Adding a new GET endpoint?** If it only reads DB → implement in Worker with `getSql(env)` + postgres.js template literal. Do NOT add to Flask just because it's easier.
+**Adding a new GET endpoint?** Implement it as a D1 query in `workers/case-api/cloudflare.js` (or the relevant `storage/cloudflare.js` store method). There is no Flask to fall back to — an unhandled route is a real 503, not a soft degrade.
 
-**Critical**: `getSql(env)` creates a new `postgres` client **per request** — module-level singletons cause "Cannot perform I/O on behalf of a different request" errors in Workers. Hyperdrive manages actual connection pooling.
+**Critical**: `env.IMMI_CATALOG_DB` / `IMMI_ACCOUNT_DB` / `IMMI_OPS_DB` are D1 bindings, not Postgres connections — there is no per-request client to construct and no Hyperdrive pooler in this stack. Mutations go through `CASE_MUTATION_QUEUE` (`handleCaseMutationQueue` in `cloudflare-native.js`) with a dead-letter queue (`immi-case-mutation-dlq`) for poison messages.
 
 ### Data Flow
 
@@ -330,16 +328,22 @@ Request → Cloudflare Worker (proxy.js)
 
 ## Production Deployment (Cloudflare Workers)
 
-- **Production URL**: `https://immi.trackit.today`
+- **Production URL**: `https://immi.trackit.today`, served entirely by `workers/cloudflare-native.js` (`name = "immi-case-standalone"` in `wrangler.toml`). No Flask container, no Hyperdrive, no separate DO for a Python backend.
+- **Machine-checked config spec**: `scripts/check_cloudflare_native_target.py` (validates D1/R2/Vectorize/Queue bindings shape) and `scripts/check_immi_activation_evidence.py` (validates embedding model/dims, D1 size caps, required bindings) are the **authoritative, fail-closed gates** for what a deployable config looks like. Read these before trusting any prose description of "what production requires" — including this file.
+- **Checked-in `wrangler.toml` carries placeholder resource IDs by design** — real D1/R2/Vectorize/Queue IDs are operator-supplied secrets injected only inside the gated `workflow_dispatch` of `deploy-worker.yml`. Do not "fix" the placeholders in source control; that would defeat the fail-closed design.
+- **`IMMI_CASE_MUTATIONS_ENABLED` / pipeline-enable flags default to `"false"`** — case writes and the extraction pipeline are fail-closed until an operator explicitly flips them for a given deploy.
 - **Worker custom domain syntax**: `[[routes]]` + `pattern = "host"` + `custom_domain = true`. **NOT** `[[custom_domains]]` (invalid). `pattern = "host/*"` only works if DNS already exists.
-- **CI must `npm ci` before `wrangler deploy`** — `postgres` package imported by `workers/proxy.js` not auto-installed
-- **SPA basename** — `resolveRouterBasename()` in `frontend/src/lib/router.ts` auto-detects `/` vs `/app/`
-- **Durable Object name**: `idFromName("flask-v15")` (current; was v13/v14 in earlier revisions). Bumping suffix creates fresh container state; keep stable unless intentionally resetting. Authoritative reference: `workers/proxy.js:2475` and `docs/ARCHITECTURE.md`
+- **CI must `npm ci` before `wrangler deploy`** — `workers/cloudflare-native.js` has its own dependency set; verify with the checked-in `package.json`, not assumptions carried over from the deleted `proxy.js`.
+- **SPA basename** — `resolveRouterBasename()` in `frontend/src/lib/router.ts` auto-detects `/` vs `/app/`. SPA serving is Workers Static Assets (`[assets]` binding `ASSETS` in `wrangler.toml`, `not_found_handling = "single-page-application"`), not a Flask fallback.
+- **No Flask Durable Object** — the `flask-v15`/`getSqlAsUser`/Hyperdrive era is gone from production; the only Durable Objects are `AuthNonce` and `CouncilSessionDO` (`wrangler.toml` `[[durable_objects.bindings]]`).
 - **Testing fresh domains**: macOS DNS cache lies — use `curl --resolve host:443:<CF_IP>` to bypass; flush with `sudo dscacheutil -flushcache`
-- **austlii-scraper Worker**: separate deploy in `workers/austlii-scraper/`; set `AUTH_TOKEN` via `wrangler secret put AUTH_TOKEN`
+- **austlii-scraper Worker**: separate deploy in `workers/austlii-scraper/`, cron-triggered only (commit `d0972db` — HTTP trigger endpoints and its `AUTH_TOKEN` secret were removed). Production case ingestion is now an external VPS crawler POSTing to the main Worker via `CRAWLER_WRITE_TOKEN` (commit `abe5b02`).
+- **Emergency rollback path**: `workers/austlii-scraper/scripts/rollback_run.ts` still targets legacy Supabase (`HYPERDRIVE_SERVICE_URL` / `DATABASE_URL` / `SUPABASE_DB_URL`) intentionally — it is a break-glass script for the old stack, not evidence that Supabase is still in the live path.
 - **Architecture diagrams (Cloudflare Pages)**: `https://immi-diagrams.pages.dev` — static HTML diagrams; deploy with `npx wrangler pages deploy /tmp/immi-diagrams --project-name immi-diagrams`. Diagrams live at `~/.agent/diagrams/` (not in repo).
 
-## Performance Baseline (2026-05-05)
+## Performance Baseline (2026-05-05) — HISTORICAL, Hyperdrive-era
+
+**This section describes the retired `workers/proxy.js` + Hyperdrive + Supabase stack and no longer reflects production.** Kept for historical reference only; no equivalent benchmark has been re-run against `workers/cloudflare-native.js` (D1/Vectorize) as of this writing.
 
 Post–Wave 6 state (19 handlers with Cache API, 8 cron pre-warmed every 5 min):
 
@@ -379,7 +383,7 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 
 - `downloaded_cases/` is gitignored — all scraped data is local only
 - **149,016 case records** (2000-2026): 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
-- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,764 tests — 1,039 Python unit (52 files) + 259 Playwright E2E (24 files) + 466 frontend unit (51 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
+- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,857 tests — 1,107 Python unit (71 files) + 260 Playwright E2E (25 files, all of `tests/e2e/` — `tests/e2e/react/` (236 tests/21 files) + `tests/e2e/playwright/` + root-level `test_smoke.py`/`test_export.py`/`test_credentialed_auth_smoke.py`) + 490 frontend unit (55 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Default host is `127.0.0.1`; use `--host 0.0.0.0` to expose externally
 

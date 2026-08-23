@@ -379,7 +379,7 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 
 - `downloaded_cases/` is gitignored — all scraped data is local only
 - **149,016 case records** (2000-2026): 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
-- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,764 tests — 1,039 Python unit (52 files) + 259 Playwright E2E (24 files) + 466 frontend unit (51 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
+- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,857 tests — 1,107 Python unit (71 files) + 260 Playwright E2E (25 files, all of `tests/e2e/` — `tests/e2e/react/` (236 tests/21 files) + `tests/e2e/playwright/` + root-level `test_smoke.py`/`test_export.py`/`test_credentialed_auth_smoke.py`) + 490 frontend unit (55 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Default host is `127.0.0.1`; use `--host 0.0.0.0` to expose externally
 

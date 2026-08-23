@@ -1,10 +1,23 @@
 # Biweekly Cloudflare-Native Case Extraction Pipeline
 
-**Status:** APPROVED — iter #2 consensus + iter #3 (Gemma 4 verified, Browser Rendering Tier-2) + iter #4 (Discord alerts, $10/mo hard cap, soak α locked, 14-field mandatory — Opt-A removed as fallback). All 5 user open questions Q1–Q5 RESOLVED 2026-05-10. Ready for execution via `/oh-my-claudecode:team` or `/oh-my-claudecode:ralph`.
+**Status:** **SUPERSEDED** (case-ingestion mechanism) — see note below. Was: APPROVED — iter #2 consensus + iter #3 (Gemma 4 verified, Browser Rendering Tier-2) + iter #4 (Discord alerts, $10/mo hard cap, soak α locked, 14-field mandatory — Opt-A removed as fallback). All 5 user open questions Q1–Q5 RESOLVED 2026-05-10.
 **Owner:** Planner
 **Last revised:** 2026-05-10
 **Risk class:** HIGH (writes to prod `immigration_cases`, ~149K rows, autonomous, biweekly)
 **Scope statement:** Delivers **discovery + scrape + extraction + idempotent upsert** of new AustLII cases on a biweekly cron. The user's prompt mentioned "data-cleaning" and "data-mining"; this plan delivers (a) bounded extraction-time cleaning (insert-only + audit log + allow-list) and (b) the foundation telemetry that data-mining work would consume. **Out-of-scope, deferred to follow-up ADRs:** post-extraction analytics jobs, retro-cleanup of historical 149K rows beyond extraction touchpoints, and the post-soak null-fill flip (which carries CLAUDE.md 2026-05-02 cleanup-rule obligations: column-level snapshot + dry-run + ground-truth eyeball — repeated in §C Follow-ups).
+
+> **SUPERSEDED**: The recommended path, Opt-D (cron discovery → `flask-v22`
+> DO container runs `extract_structured_fields_llm.py` → Worker upserts via
+> Hyperdrive), did not ship. Production instead: (1) made `workers/austlii-scraper`
+> cron-triggered only with its HTTP endpoints removed (commit `d0972db`); (2) case
+> ingestion into production now comes from an **external VPS crawler** POSTing
+> directly to the main Worker's `/api/v1/cases`, authenticated with a
+> `CRAWLER_WRITE_TOKEN` shared secret instead of any Flask/Hyperdrive path (commit
+> `abe5b02`), with the mutation body ceiling raised to 1 MiB for large judgements
+> (commit `5e1d560`). There is no Flask container in production at all to host the
+> Opt-D extraction step (deleted in `f91f45f`). Whether the VPS crawler reproduces
+> this plan's 14-field extraction parity, cost caps, and audit-log/rollback
+> guarantees has not been verified against this document.
 
 ---
 

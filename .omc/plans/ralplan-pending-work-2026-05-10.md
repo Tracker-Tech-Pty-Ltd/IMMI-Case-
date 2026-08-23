@@ -1,7 +1,24 @@
 # Ralplan Consensus — Pending LLM Council & Pipeline Work
 **Date**: 2026-05-10
-**Status**: Planner-validated · awaiting operator pick of first slice
+**Status**: **PARTIALLY-SHIPPED** — see per-slice note below
 **Scope**: E (RAG) · F (Streaming Chairman) · H (Mobile/iOS) · I (AustLII pipeline)
+
+> **PARTIALLY-SHIPPED** (verified against git log 2026-08-23):
+> - **Slice F** (Streaming Chairman) — SHIPPED: commit `b55886e` "streaming Chairman
+>   synthesis (Slice F Phase 1)".
+> - **Slice E** (RAG) — SHIPPED IN A DIFFERENT FORM: Council grounding shipped, but as
+>   D1 FTS5 lexical retrieval (commit `93cace7`), not the Supabase-pgvector-via-Hyperdrive
+>   + BGE-embedding design in this doc's §Slice E. An intermediate Vectorize-based
+>   attempt (`763ec5f`) was tried first, then deliberately replaced.
+> - **Slice I** (AustLII pipeline) — see `.omc/plans/biweekly-cloud-extraction-pipeline.md`
+>   status header: SUPERSEDED — shipped as an external VPS crawler + `CRAWLER_WRITE_TOKEN`
+>   (commit `abe5b02`), not the Opt-D Flask-container-DO design that doc recommended.
+> - **Slice H** (Mobile/iOS) — SHIPPED in this uncommitted working-tree change (no commit
+>   yet): haptic feedback on send/recall-code-copy/restore success, a swipe-to-send
+>   handle, and an iOS keyboard hint are all wired in. Note: `MessageInput` lives inline
+>   inside `frontend/src/pages/LlmCouncilPage.tsx`, not as the standalone
+>   `frontend/src/components/llm-council/MessageInput.tsx` file this doc's §Slice H
+>   names — it has always lived in the page file; follow current code over the plan.
 
 ---
 

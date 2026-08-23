@@ -1,8 +1,18 @@
 # Multi-Tenant Auth: Worker JWT + Supabase RLS via GUC
 
-**Status**: IMPLEMENTED (2026-05-04) — 7/12 ACs verified; 5 deferred to infra phase
+**Status**: **SUPERSEDED at the DB layer** (as of ~2026-08-11) — see note below. Was: IMPLEMENTED (2026-05-04) — 7/12 ACs verified; 5 deferred to infra phase
 **Mode**: Consensus — DELIBERATE
 **Date**: 2026-05-03
+
+> **SUPERSEDED**: Postgres + RLS-via-GUC (`SET LOCAL request.jwt.claims`,
+> `workers/db/getSqlAsUser.js`) is gone from production — deleted along with
+> `proxy.js` in commit `f91f45f`. Tenant isolation is now **app-layer**:
+> `CloudflareIdentityStore.assertMembership()` (`workers/storage/cloudflare.js`)
+> runs a D1 (`IMMI_ACCOUNT_DB`) `SELECT` per request — this is precisely "Option
+> C — App-layer tenant filter (no RLS)" that §1 Options Considered below marked
+> *Invalidated*. It is what shipped once the stack moved to D1, which has no RLS
+> equivalent. The JWT design (HS256, kid rotation, Telegram HMAC, AuthNonce DO)
+> below is otherwise unchanged and still accurate.
 
 ## Implementation Status (2026-05-04)
 
