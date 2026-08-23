@@ -32,6 +32,10 @@ jobs:
         run: .venv/bin/ruff check immi_case_downloader/ scripts/ *.py
 
       - name: Run Python unit tests
+        # The two bundle/reference checks below shell out to node/esbuild and need
+        # worker node_modules, which this job does not install; the test-worker job
+        # runs the same checks directly ("Verify Cloudflare-native bundle closure",
+        # "Verify effective native references"). They still run locally via make test-py.
         run: >-
           .venv/bin/pytest
           tests/
@@ -39,6 +43,8 @@ jobs:
           --ignore=tests/e2e
           --ignore=tests/integration
           --ignore=tests/test_separation_preflight.py
+          --ignore=tests/test_cloudflare_native_bundle.py
+          --ignore=tests/test_native_effective_references.py
 
   test-frontend:
     runs-on: ubuntu-latest
