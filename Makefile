@@ -98,8 +98,7 @@ typecheck:
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 install:
-	"$(PYTHON)" -m pip install -r requirements.txt
-	"$(PYTHON)" -m pip install -r requirements-test.txt
+	"$(PYTHON)" -m pip install -r requirements-app.txt -r requirements-test.txt
 	cd "$(REPO_ROOT)/frontend" && npm install
 
 migrate:

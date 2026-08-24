@@ -115,7 +115,7 @@ git clone <repo-url>
 cd IMMI-Case-
 
 # Python dependencies
-pip install -r requirements.txt
+pip install -r requirements-app.txt -r requirements-test.txt
 
 # Frontend dependencies
 cd frontend && npm install && cd ..

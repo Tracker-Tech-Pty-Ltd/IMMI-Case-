@@ -1,2 +1,3 @@
-# Active Cloudflare extraction Container dependency set.
-flask>=3.0.0,<4
+# Compatibility shim for external tooling that still expects requirements.txt.
+# New consumers must use requirements-app.txt or requirements-extractor.txt explicitly.
+-r requirements-extractor.txt

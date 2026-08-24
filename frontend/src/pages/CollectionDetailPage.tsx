@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -51,10 +51,14 @@ export function CollectionDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Sync localOrder when external store changes
-  useEffect(() => {
+  // Sync localOrder when the external store changes. Adjusting state during
+  // render is React's documented alternative to setState-in-an-effect: it
+  // re-renders immediately instead of committing the stale order first.
+  const [syncedOrder, setSyncedOrder] = useState(collection?.case_order);
+  if (collection?.case_order !== syncedOrder) {
+    setSyncedOrder(collection?.case_order);
     setLocalOrder(collection?.case_order ?? []);
-  }, [collection?.case_order]);
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor),
