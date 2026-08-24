@@ -50,6 +50,9 @@ htmlcov/
 # Claude Code agent runtime locks — session-scoped, never source
 **/scheduled_tasks.lock
 
+# Claude Code native worktrees (EnterWorktree) — isolated checkouts, never source
+.claude/worktrees/
+
 # Supabase CLI temp
 supabase/.temp/
 
