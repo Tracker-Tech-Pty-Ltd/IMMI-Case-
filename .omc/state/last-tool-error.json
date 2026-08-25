@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd \\\"/Users/d/Developer/Active Projects/IMMI-Case-/\\\" && rtk git add \\\\\\n  workers/llm-council/runner.js \\\\\\n  workers/__tests__/llm-council-runner.test.js \\\\\\n  immi_case_downloader/llm_c...",
-  "error": "Exit code 128\nFAILED: git add\nfatal: pathspec ' ' did not match any files",
-  "timestamp": "2026-05-07T20:55:59.632Z",
-  "retry_count": 1
-}

@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd \\\"/Users/d/Developer/Active Projects/IMMI-Case-/frontend\\\" && rtk vitest __tests__/system-pages.test.tsx 2>&1\",\"timeout\":60000,\"description\":\"Run system-pages tests to see current failu...",
-  "error": "Exit code 1\nPASS (0) FAIL (0)",
-  "timestamp": "2026-05-07T08:48:43.533Z",
-  "retry_count": 1
-}

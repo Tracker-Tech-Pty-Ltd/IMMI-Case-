@@ -53,6 +53,13 @@ htmlcov/
 # Claude Code native worktrees (EnterWorktree) — isolated checkouts, never source
 .claude/worktrees/
 
+# OMC agent runtime state — session-scoped, never source. Authored artefacts
+# under .omc/ (plans, research, design, prd) stay tracked deliberately.
+.omc/sessions/
+.omc/state/
+.omc/project-memory.json
+frontend/.omc/
+
 # Supabase CLI temp
 supabase/.temp/
 
