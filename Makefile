@@ -99,6 +99,9 @@ typecheck:
 
 install:
 	"$(PYTHON)" -m pip install -r requirements-app.txt -r requirements-test.txt
+	# Root deps hold vitest + wrangler; workers/ has no package.json of its own,
+	# so test-workers resolves against the root node_modules.
+	npm install
 	cd "$(REPO_ROOT)/frontend" && npm install
 
 migrate:
