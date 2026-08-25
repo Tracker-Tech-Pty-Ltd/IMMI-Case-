@@ -15,7 +15,7 @@ make install      # Install all Python + Node dependencies
 make api          # Flask API only (http://localhost:8080)
 make ui           # Vite dev server only (http://localhost:5173, HMR)
 make build        # Build React frontend → immi_case_downloader/static/react/
-make test         # All tests: Python unit + frontend Vitest
+make test         # All tests: Python unit + frontend Vitest + Worker Vitest
 make test-py      # Python unit tests only (excludes E2E)
 make test-fe      # Frontend Vitest tests only
 make test-e2e     # Playwright E2E (requires running server)
