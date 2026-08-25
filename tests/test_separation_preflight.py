@@ -8,8 +8,22 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
+BSMART_ROOT = ROOT.parent / "Bsmart System"
+MANIFEST = BSMART_ROOT / "immi/SEPARATION-MANIFEST.md"
+
+# Without the manifest the verifier reports SEPARATION_MANIFEST_MISSING and its
+# status becomes "error" rather than "blocked", so any assertion about the
+# blocked contract is meaningless. That is the normal state on CI and on any
+# checkout without the sibling repo — skip rather than fail, so a red result
+# always means a real regression.
+requires_manifest = pytest.mark.skipif(
+    not MANIFEST.is_file(),
+    reason=f"separation manifest absent at {MANIFEST}",
+)
 SPEC = importlib.util.spec_from_file_location(
     "verify_immi_separation",
     ROOT / "scripts/verify_immi_separation.py",
@@ -30,8 +44,8 @@ DEPLOY_SPEC.loader.exec_module(DEPLOY_MODULE)
 def _args() -> SimpleNamespace:
     return SimpleNamespace(
         immi_root=str(ROOT),
-        bsmart_root=str(ROOT.parent / "Bsmart System"),
-        manifest=str(ROOT.parent / "Bsmart System/immi/SEPARATION-MANIFEST.md"),
+        bsmart_root=str(BSMART_ROOT),
+        manifest=str(MANIFEST),
         source_ref=MODULE.SOURCE_REF,
         target_ref=None,
         live=False,
@@ -47,6 +61,7 @@ def test_strip_sql_comments_does_not_count_identifiers_in_comments() -> None:
     assert "council_turns" in stripped
 
 
+@requires_manifest
 def test_current_repositories_are_blocked_only_by_activation_inputs() -> None:
     report = MODULE.build_report(_args())
     assert report["status"] == "blocked"
@@ -71,6 +86,7 @@ def test_deploy_gate_fails_closed_without_target() -> None:
     assert DEPLOY_MODULE.main() == 1
 
 
+@requires_manifest
 def test_shell_wrapper_repeats_and_compares_reports(tmp_path: Path) -> None:
     script = ROOT / "scripts/run_immi_separation_preflight.sh"
     result = subprocess.run(
