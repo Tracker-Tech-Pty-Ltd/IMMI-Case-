@@ -42,7 +42,6 @@ jobs:
           -q --timeout=120
           --ignore=tests/e2e
           --ignore=tests/integration
-          --ignore=tests/test_separation_preflight.py
           --ignore=tests/test_cloudflare_native_bundle.py
           --ignore=tests/test_native_effective_references.py
 
