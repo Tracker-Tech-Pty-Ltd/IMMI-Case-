@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd \\\"/Users/d/Developer/Active Projects/IMMI-Case-/workers\\\" && rtk ls package.json 2>/dev/null && rtk read package.json | grep -E \\\"vitest|test|scripts\\\" | head -10\",\"description\":\"Check ...",
-  "error": "Exit code 1",
-  "timestamp": "2026-05-03T14:07:17.433Z",
-  "retry_count": 1
-}

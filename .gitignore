@@ -50,15 +50,24 @@ htmlcov/
 # Claude Code agent runtime locks — session-scoped, never source
 **/scheduled_tasks.lock
 
-# Claude Code native worktrees (EnterWorktree) — isolated checkouts, never source
-.claude/worktrees/
+# OMC agent runtime state — session-scoped, never source.
+# An .omc/ below the repo root is always accidental: the hook writes one into
+# whatever directory a command happened to cd into (frontend/, workers/,
+# frontend/src/). Ignore every .omc/, then re-admit the repo-root one so its
+# authored artefacts (plans, research, design, prd) stay tracked.
+**/.omc/
+!/.omc/
+/.omc/sessions/
+/.omc/state/
+/.omc/project-memory.json
+# ...including a nested .omc/ under an authored subtree (the re-admit above
+# would otherwise let e.g. .omc/research/ux-audit/.omc/state/ back in).
+/.omc/**/.omc/
 
-# OMC agent runtime state — session-scoped, never source. Authored artefacts
-# under .omc/ (plans, research, design, prd) stay tracked deliberately.
-.omc/sessions/
-.omc/state/
-.omc/project-memory.json
-frontend/.omc/
+# Same story for a stray .claude/ below the repo root.
+**/.claude/
+!/.claude/
+.claude/worktrees/
 
 # Supabase CLI temp
 supabase/.temp/

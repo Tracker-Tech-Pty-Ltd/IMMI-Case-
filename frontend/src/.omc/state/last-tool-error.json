@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd \\\"/Users/d/Developer/Active Projects/IMMI-Case-\\\" && rtk make test-fe 2>&1\",\"timeout\":300000,\"description\":\"Run frontend Vitest suite to verify a11y modal/combobox changes\"}",
-  "error": "Exit code 2\n\n<--- Last few GCs --->\n\n[5864:0x998000000]    81143 ms: Mark-Compact 3999.5 (4128.2) -> 3984.2 (4129.9) MB, pooled: 9 MB, 1396.88 / 0.00 ms  (average mu = 0.112, current mu = 0.033) allocation failure; scavenge might not succeed\n[5864:0x998000000]    82880 ms: Mark-Compact 4001.8 (4131.7) -> 3986.5 (4133.4) MB, pooled: 5 MB, 1701.04 / 0.00 ms  (average mu = 0.065, current mu = 0.021) allocation failure; scavenge might not succeed\n\n\n<--- JS stacktrace --->\n\nFATAL ERROR: Ineffective m...",
-  "timestamp": "2026-05-06T19:34:54.151Z",
-  "retry_count": 1
-}
