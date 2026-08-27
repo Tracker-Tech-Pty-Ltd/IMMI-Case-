@@ -60,7 +60,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 | [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | TODO |
 | [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | TODO |
 | [010](010-fix-analytics-win-rate.md) | Stop the monthly-trends win rate diverging from every other analytics endpoint | P1 | S | LOW | 009 | TODO |
-| [011](011-fix-scraper-cost-caps-and-retries.md) | Stop double-billing extraction and dropping cases on transient failures | P1 | L | MED | — | TODO |
+| [011](011-fix-scraper-cost-caps-and-retries.md) | Stop double-billing extraction and dropping cases on transient failures | P1 | L | MED | — | DONE — merged to main |
 
 ### Tier 2 — Worker performance
 
@@ -80,7 +80,7 @@ Silent failures the user cannot see or recover from.
 |------|-------|-----|-----|------|------------|--------|
 | [015](015-surface-frontend-errors.md) | Replace infinite spinners and silent failures with real error states | P1 | L | MED | 001 | TODO |
 | [016](016-fix-query-cache-correctness.md) | Fix stale-data bleed, query keys and CSRF token lifetime | P2 | M | LOW | 001 | TODO |
-| [017](017-fix-frontend-async-and-navigation.md) | Clipboard, blob downloads, share links and stream re-entrancy | P3 | M | LOW | — | TODO |
+| [017](017-fix-frontend-async-and-navigation.md) | Clipboard, blob downloads, share links and stream re-entrancy | P3 | M | LOW | — | DONE — merged to main |
 | [018](018-complete-the-i18n-catalogue.md) | Define the 88 missing keys and translate the hardcoded strings | P2 | M | LOW | 001 | TODO |
 
 ### Tier 4 — Frontend performance
@@ -89,7 +89,7 @@ Bundle composition and render cost.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [019](019-fix-the-entry-bundle.md) | Stop preloading charts, both locales and a render-blocking font on every route | P2 | M | MED | 001 | TODO |
+| [019](019-fix-the-entry-bundle.md) | Stop preloading charts, both locales and a render-blocking font on every route | P2 | M | MED | 001 | DONE — merged to main |
 | [020](020-fix-render-performance.md) | Debounce search, memoise the dashboard, and stop double-rendering the case list | P2 | M | MED | 001 | TODO |
 
 ### Tier 5 — Design system & accessibility
@@ -111,7 +111,7 @@ Real bugs, lower blast radius: the Flask app is not in production.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [026](026-fix-seek-pagination.md) | Make the seek pagination return the right rows on every page | P2 | M | MED | 027 | TODO |
-| [027](027-fix-csv-data-integrity.md) | Stop silently destroying rows and columns in the master CSV | P1 | L | MED | — | TODO |
+| [027](027-fix-csv-data-integrity.md) | Stop silently destroying rows and columns in the master CSV | P1 | L | MED | — | DONE — merged to main |
 | [028](028-fix-flask-analytics-fallback.md) | Stop returning empty analytics and calling it a timeout | P2 | M | MED | 027 | TODO |
 | [029](029-harden-scraper-and-extraction.md) | Checkpointing, honest failure reporting and safe result truncation | P2 | L | MED | — | TODO |
 
@@ -125,7 +125,7 @@ Dead code from the Supabase/Hyperdrive cutover, and duplicated implementations.
 | [031](031-delete-dead-frontend-modules.md) | Remove the abandoned api.ts split and 8 unreferenced modules | P3 | S | LOW | 033 | TODO |
 | [032](032-consolidate-the-extraction-scripts.md) | Collapse ten divergent copies of one LLM extraction job | P3 | L | MED | 041 | TODO |
 | [033](033-single-source-the-domain-vocabulary.md) | One visa registry, generated for both runtimes | P3 | M | MED | 002 | TODO |
-| [034](034-split-the-god-modules.md) | Break up api.py, CloudflareCaseStore and the duplicated council engine | P3 | L | MED | — | TODO |
+| [034](034-split-the-god-modules.md) | Break up api.py, CloudflareCaseStore and the duplicated council engine | P3 | L | MED | — | DONE — merged to main |
 
 ### Tier 8 — Dependencies
 
@@ -135,7 +135,7 @@ Four manifests, no lockfile on the Python side, 8 production advisories.
 |------|-------|-----|-----|------|------------|--------|
 | [035](035-fix-frontend-dependency-advisories.md) | Clear the 8 production advisories and the manifest hygiene issues | P1 | S | MED | — | TODO |
 | [036](036-bound-the-python-dependencies.md) | Pin, lock and declare what the code actually imports | P2 | M | MED | 032 | TODO |
-| [037](037-align-the-worker-toolchains.md) | One wrangler, one vitest, one declared Node version | P2 | S | LOW | — | TODO |
+| [037](037-align-the-worker-toolchains.md) | One wrangler, one vitest, one declared Node version | P2 | S | LOW | — | DONE — merged to main |
 
 ### Tier 9 — Tests
 
@@ -143,7 +143,7 @@ Coverage where it protects production, not where it inflates a number.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [038](038-test-the-production-sql-layer.md) | Run the D1 query layer against a real schema | P1 | M | LOW | — | TODO |
+| [038](038-test-the-production-sql-layer.md) | Run the D1 query layer against a real schema | P1 | M | LOW | — | DONE — merged to main |
 | [039](039-fix-the-frontend-test-harness.md) | Make the mocks able to fail and the assertions about behaviour | P2 | M | LOW | 002 | TODO |
 | [040](040-revive-the-e2e-suites.md) | Pick one E2E stack, make it run, and gate it | P2 | L | MED | 001, 002, 003 | TODO |
 | [041](041-cover-the-extraction-scripts.md) | Give the 2,821 unmeasured extraction lines a coverage story | P3 | M | LOW | 002 | TODO |
