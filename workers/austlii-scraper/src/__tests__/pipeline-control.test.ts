@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  startPipelineRun: vi.fn(async () => "11111111-1111-4111-8111-111111111111"),
+  startPipelineRun: vi.fn(
+    async (
+      _env: unknown,
+      _options: { trigger: string; courts: string[]; phase: string; runId?: string },
+    ): Promise<string> => "11111111-1111-4111-8111-111111111111",
+  ),
   runDiscoveryAndEnqueue: vi.fn(async () => undefined),
   updateControlCommand: vi.fn(async () => undefined),
+  readControlCommand: vi.fn(
+    async (): Promise<{ status: string; run_id: string | null } | null> => null,
+  ),
   latestRunningPipelineRun: vi.fn(async () => "11111111-1111-4111-8111-111111111111"),
   findCasesMissingContent: vi.fn(async () => [{ case_id: "abcdef123456", url: "https://example.com/case", citation: "[2026] FCA 1", court_code: "FCA", title: "Case", phase: "scrape" }]),
   requestPipelineStop: vi.fn(async () => undefined),
@@ -19,9 +27,11 @@ vi.mock("../discover", () => ({
 vi.mock("../pipeline-db", () => ({
   addPipelineRunMetrics: vi.fn(),
   assertSchemaConsistent: vi.fn(),
+  controlRunId: (id: string) => `cmd-${id}`,
   findCasesMissingContent: mocks.findCasesMissingContent,
   isPipelineStopRequested: mocks.isPipelineStopRequested,
   latestRunningPipelineRun: mocks.latestRunningPipelineRun,
+  readControlCommand: mocks.readControlCommand,
   requestPipelineStop: mocks.requestPipelineStop,
   recordPipelineDeadLetter: mocks.recordPipelineDeadLetter,
   startPipelineRun: mocks.startPipelineRun,
@@ -51,6 +61,7 @@ beforeEach(() => {
   mocks.isPipelineStopRequested.mockResolvedValue(false);
   mocks.findCasesMissingContent.mockResolvedValue([{ case_id: "abcdef123456", url: "https://example.com/case", citation: "[2026] FCA 1", court_code: "FCA", title: "Case", phase: "scrape" }]);
   mocks.scrapeLegislation.mockResolvedValue(undefined);
+  mocks.readControlCommand.mockResolvedValue(null);
 });
 
 describe("native pipeline control queue", () => {
@@ -74,7 +85,7 @@ describe("native pipeline control queue", () => {
       queue: "immi-pipeline-control-queue",
       messages: [{ body: { kind: "pipeline.control", command_id: "cmd-start", action: "start", courts: ["FCA"] }, ack, retry: vi.fn() }],
     } as never, env());
-    expect(mocks.startPipelineRun).toHaveBeenCalledWith(expect.anything(), { trigger: "manual", courts: ["FCA"], phase: "discovery" });
+    expect(mocks.startPipelineRun).toHaveBeenCalledWith(expect.anything(), { trigger: "manual", courts: ["FCA"], phase: "discovery", runId: "cmd-cmd-start" });
     expect(mocks.runDiscoveryAndEnqueue).toHaveBeenCalledWith(expect.anything(), RUN_ID, ["FCA"]);
     expect(mocks.updateControlCommand).toHaveBeenCalledWith(expect.anything(), "cmd-start", { status: "completed", runId: RUN_ID });
     expect(ack).toHaveBeenCalledOnce();
@@ -114,5 +125,69 @@ describe("native pipeline control queue", () => {
     expect(mocks.scrapeLegislation).toHaveBeenCalledWith(expect.anything(), "migration-act-1958");
     expect(mocks.updateControlCommand).toHaveBeenCalledWith(expect.anything(), "cmd-law", { status: "completed" });
     expect(ack).toHaveBeenCalledOnce();
+  });
+
+  it("reuses the run a redelivered download command already started", async () => {
+    mocks.readControlCommand.mockResolvedValue({ status: "running", run_id: RUN_ID });
+    const ack = vi.fn();
+    const sendBatch = vi.fn(async () => undefined);
+    const current = env();
+    current.SCRAPE_QUEUE = { sendBatch } as never;
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: "cmd-download", action: "download", courts: ["FCA"], limit: 1 }, ack, retry: vi.fn() }],
+    } as never, current);
+    expect(mocks.startPipelineRun).not.toHaveBeenCalled();
+    expect(sendBatch).toHaveBeenCalledWith([expect.objectContaining({ body: expect.objectContaining({ run_id: RUN_ID }) })]);
+  });
+
+  it("acks a control command that already completed without redoing work", async () => {
+    mocks.readControlCommand.mockResolvedValue({ status: "completed", run_id: RUN_ID });
+    const ack = vi.fn();
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: "cmd-download", action: "download", courts: ["FCA"], limit: 1 }, ack, retry: vi.fn() }],
+    } as never, env());
+    expect(ack).toHaveBeenCalledOnce();
+    expect(mocks.startPipelineRun).not.toHaveBeenCalled();
+    expect(mocks.runDiscoveryAndEnqueue).not.toHaveBeenCalled();
+    expect(mocks.updateControlCommand).not.toHaveBeenCalled();
+  });
+
+  it("derives the same run id when the command row never learned it", async () => {
+    mocks.readControlCommand.mockResolvedValue({ status: "running", run_id: null });
+    const ack = vi.fn();
+    const sendBatch = vi.fn(async () => undefined);
+    const current = env();
+    current.SCRAPE_QUEUE = { sendBatch } as never;
+    const commandId = "cmd-download";
+
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: commandId, action: "download", courts: ["FCA"], limit: 1 }, ack, retry: vi.fn() }],
+    } as never, current);
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: commandId, action: "download", courts: ["FCA"], limit: 1 }, ack, retry: vi.fn() }],
+    } as never, current);
+
+    expect(mocks.startPipelineRun).toHaveBeenCalledTimes(2);
+    for (const call of mocks.startPipelineRun.mock.calls) {
+      expect(call[1]).toEqual(expect.objectContaining({ runId: `cmd-${commandId}` }));
+    }
+  });
+
+  it("passes the deterministic run id on a first delivery", async () => {
+    mocks.readControlCommand.mockResolvedValue(null);
+    const ack = vi.fn();
+    const sendBatch = vi.fn(async () => undefined);
+    const current = env();
+    current.SCRAPE_QUEUE = { sendBatch } as never;
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: "cmd-download", action: "download", courts: ["FCA"], limit: 1 }, ack, retry: vi.fn() }],
+    } as never, current);
+    expect(mocks.startPipelineRun).toHaveBeenCalledOnce();
+    expect(mocks.startPipelineRun.mock.calls[0][1]).toEqual(expect.objectContaining({ runId: "cmd-cmd-download" }));
   });
 });

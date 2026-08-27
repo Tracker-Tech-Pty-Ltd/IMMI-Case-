@@ -19,9 +19,11 @@ import type { CourtCode } from "./pipeline-config";
 import {
   addPipelineRunMetrics,
   assertSchemaConsistent,
+  controlRunId,
   findCasesMissingContent,
   isPipelineStopRequested,
   latestRunningPipelineRun,
+  readControlCommand,
   requestPipelineStop,
   recordPipelineDeadLetter,
   startPipelineRun,
@@ -91,16 +93,32 @@ async function handlePipelineControlBatch(
     const control = message.body;
     try {
       if (!nativePipelineReady(env)) throw new Error("native pipeline is disabled");
+      const prior = await readControlCommand(env, control.command_id);
+      if (prior?.status === "completed") {
+        console.log(JSON.stringify({
+          event: "pipeline.control.duplicate_ignored",
+          command_id: control.command_id,
+          run_id: prior.run_id,
+        }));
+        message.ack();
+        continue;
+      }
+      const priorRunId = prior?.run_id ?? null;
       await updateControlCommand(env, control.command_id, { status: "running" });
       if (control.action === "stop") {
         const runId = await latestRunningPipelineRun(env);
         if (runId) await requestPipelineStop(env, runId);
         await updateControlCommand(env, control.command_id, { status: "completed", runId: runId ?? undefined });
       } else if (control.action === "download") {
-        const runId = await startPipelineRun(env, {
+        // Deterministic id + INSERT OR IGNORE: a redelivery converges on the
+        // same run row whether or not the previous attempt got as far as
+        // writing run_id back onto the command. priorRunId is preferred when
+        // present so a run started before this change is still honoured.
+        const runId = priorRunId ?? await startPipelineRun(env, {
           trigger: "manual",
           courts: controlCourts(control.courts),
           phase: "download",
+          runId: controlRunId(control.command_id),
         });
         await updateControlCommand(env, control.command_id, { status: "running", runId });
         const targets = await findCasesMissingContent(env, controlCourts(control.courts), control.limit ?? 50);
@@ -125,10 +143,11 @@ async function handlePipelineControlBatch(
         if (failures.length) throw new Error(failures.join("; "));
         await updateControlCommand(env, control.command_id, { status: "completed" });
       } else {
-        const runId = await startPipelineRun(env, {
+        const runId = priorRunId ?? await startPipelineRun(env, {
           trigger: "manual",
           courts: controlCourts(control.courts),
           phase: "discovery",
+          runId: controlRunId(control.command_id),
         });
         await updateControlCommand(env, control.command_id, { status: "running", runId });
         await runDiscoveryAndEnqueue(env, runId, controlCourts(control.courts));
