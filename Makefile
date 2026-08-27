@@ -1,7 +1,7 @@
 # IMMI-Case Makefile — common development commands
 # Usage: make <target>
 
-.PHONY: help dev build test test-py test-fe test-workers test-e2e lint typecheck audit-rls-guards clean
+.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-rls-guards clean
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,9 @@ help:
 	@echo "  make test-e2e     Playwright E2E tests (requires running server)"
 	@echo "  make coverage     Python unit tests with HTML coverage report"
 	@echo ""
-	@echo "  make lint         Ruff lint Python source"
+	@echo "  make lint         Ruff (Python) + ESLint (frontend)"
+	@echo "  make lint-py      Ruff lint Python source only"
+	@echo "  make lint-fe      ESLint the frontend only"
 	@echo "  make typecheck    TypeScript type check (tsc -b --noEmit, all projects)"
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
@@ -89,8 +91,13 @@ coverage:
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
 
-lint:
+lint: lint-py lint-fe
+
+lint-py:
 	"$(PYTHON)" -m ruff check immi_case_downloader/ scripts/ *.py
+
+lint-fe:
+	cd "$(REPO_ROOT)/frontend" && npm run lint
 
 typecheck:
 	cd "$(REPO_ROOT)/frontend" && npx tsc -b --noEmit

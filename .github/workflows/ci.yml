@@ -77,6 +77,10 @@ jobs:
             exit 1
           fi
 
+      - name: ESLint
+        run: npm run lint
+        working-directory: frontend
+
       - name: Build production bundle
         run: npm run build:cloudflare
         working-directory: frontend
