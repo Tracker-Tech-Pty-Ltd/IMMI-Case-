@@ -40,6 +40,32 @@ class YearListingUnavailable(RuntimeError):
     """
 
 
+_DECISION_NUMBER_RE = re.compile(r"/(\d+)\.html?$", re.IGNORECASE)
+
+
+def _recency_key(case: ImmigrationCase) -> tuple[int, int, str]:
+    """Newest-first sort key: (year, decision number, url).
+
+    AustLII numbers judgments sequentially within a year per court, so a
+    higher number is a later decision. The number is taken from the case URL
+    (every browse hit matches /<n>.html) and falls back to the trailing
+    integer of the citation, e.g. "[2024] AATA 123". A case with neither
+    sorts as the oldest of its year rather than being dropped or crashing.
+
+    Do NOT sort on the citation string: reversed string order puts
+    "[2024] AATA 99" ahead of "[2024] AATA 100", which is backwards.
+    Do NOT sort on `date` either: `_browse_year` does not populate it —
+    date is extracted later, during the download phase.
+    """
+    number = 0
+    match = _DECISION_NUMBER_RE.search(case.url or "")
+    if match is None:
+        match = re.search(r"(\d+)\s*$", case.citation or "")
+    if match is not None:
+        number = int(match.group(1))
+    return (case.year or 0, number, case.url or "")
+
+
 class AustLIIScraper(BaseScraper):
     """Scraper for AustLII immigration case databases."""
 
@@ -132,7 +158,20 @@ class AustLIIScraper(BaseScraper):
                     cases.append(case)
                     existing_urls.add(case.url)
 
-        return cases[:max_results]
+        if len(cases) > max_results:
+            # The browse loop runs oldest year first, so a plain slice kept
+            # the OLDEST max_results cases and silently dropped the newest —
+            # the opposite of what a case-law user wants. Sort newest-first
+            # before capping, and say out loud that rows were dropped.
+            cases.sort(key=_recency_key, reverse=True)
+            logger.warning(
+                f"  {db_code}: {len(cases)} cases found but max_results="
+                f"{max_results}; dropping the {len(cases) - max_results} "
+                f"oldest. Raise --max-results to keep them."
+            )
+            return cases[:max_results]
+
+        return cases
 
     # Databases where ALL cases are immigration-related (no keyword filter needed)
     IMMIGRATION_ONLY_DBS = {"RRTA", "MRTA", "ARTA"}

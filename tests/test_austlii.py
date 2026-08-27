@@ -346,3 +346,66 @@ class TestSearchDatabase:
             "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2023, 2024, 500
         )
         assert [c.year for c in cases] == [2024]
+
+    def test_truncation_keeps_the_newest_years(self):
+        """max_results must drop the oldest cases, not the newest."""
+        from immi_case_downloader.models import ImmigrationCase
+
+        scraper = self._scraper()
+        scraper._browse_year = lambda db_code, db_info, year, keywords: [
+            ImmigrationCase(title=f"case {year}-{n}", year=year,
+                            citation=f"[{year}] AATA {n}",
+                            url=f"https://example.test/{year}/{n}.html")
+            for n in range(6)
+        ]
+
+        cases = scraper._search_database(
+            "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2020, 2024, 6
+        )
+
+        assert len(cases) == 6
+        assert {c.year for c in cases} == {2024}
+
+    def test_truncation_keeps_the_highest_decision_numbers_within_a_year(self):
+        """Within one year, decision 100 is newer than decision 99.
+
+        A reversed sort on the citation string puts "[2024] AATA 99" ahead of
+        "[2024] AATA 100", which is exactly backwards — this is the test that
+        catches it.
+        """
+        from immi_case_downloader.models import ImmigrationCase
+
+        scraper = self._scraper()
+        scraper._browse_year = lambda db_code, db_info, year, keywords: [
+            ImmigrationCase(title=f"case {n}", year=2024,
+                            citation=f"[2024] AATA {n}",
+                            url=f"https://example.test/2024/{n}.html")
+            for n in (7, 9, 12, 88, 99, 100, 101, 250, 3, 41, 5, 60)
+        ]
+
+        cases = scraper._search_database(
+            "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2024, 2024, 3
+        )
+
+        assert [c.citation for c in cases] == [
+            "[2024] AATA 250", "[2024] AATA 101", "[2024] AATA 100",
+        ]
+
+    def test_truncation_is_stable_when_no_decision_number_is_available(self):
+        """A case with no parseable number sorts oldest, and nothing raises."""
+        from immi_case_downloader.models import ImmigrationCase
+
+        scraper = self._scraper()
+        scraper._browse_year = lambda db_code, db_info, year, keywords: [
+            ImmigrationCase(title="numbered", year=2024,
+                            citation="[2024] AATA 5",
+                            url="https://example.test/2024/5.html"),
+            ImmigrationCase(title="bare", year=2024, url="https://example.test/x"),
+        ] * 6
+
+        cases = scraper._search_database(
+            "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2024, 2024, 6
+        )
+
+        assert len(cases) == 6
+        assert all(c.title == "numbered" for c in cases)
