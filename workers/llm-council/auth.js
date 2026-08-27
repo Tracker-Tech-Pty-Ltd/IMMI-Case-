@@ -1,22 +1,20 @@
 /**
- * auth.js — HMAC-signed session token mint + verify for LLM Council sessions.
+ * auth.js — HMAC-signed session token mint for LLM Council sessions.
  *
- * Token shape:  base64url(HMAC-SHA256(env.CSRF_SECRET, sessionId))
+ * Token shape:  base64url(HMAC-SHA256(importCouncilTokenKey(env.CSRF_SECRET), sessionId))
  *
- * Stateless: no DB lookup needed for verification. Reuses the existing
- * `CSRF_SECRET` Wrangler secret (already used by proxy.js CSRF infra).
+ * AUTHORITY: this token is NOT an authentication credential. Access to every
+ * Council route is gated by JWT + CloudflareIdentityStore.assertMembership()
+ * (see workers/llm-council/cloudflare_handlers.js requireSessionAuth). The
+ * token is an opaque per-session handle the SPA stores in localStorage and
+ * echoes back as X-Session-Token; the Worker does not read it. Do not
+ * reintroduce a verifier without first changing that documented auth model.
  *
- * Constant-time comparison: verifyToken decodes the candidate signature and
- * passes it directly to `crypto.subtle.verify("HMAC", ...)`, which is
- * constant-time by Web Crypto specification. We never use `===` on token
- * bytes / strings (timing leak).
- *
- * NOTE: never log token values. Use `token.slice(0, 8) + "…(" + len + ")"`
- * if you need a debug breadcrumb.
+ * NOTE: never log token values.
  */
 
 // ---------------------------------------------------------------------------
-// base64url encode / decode (Worker-safe; mirrors proxy.js helpers)
+// base64url encode (Worker-safe; mirrors proxy.js helpers)
 // ---------------------------------------------------------------------------
 
 /**
@@ -32,39 +30,40 @@ function b64urlEncode(bytes) {
     .replace(/=+$/, "");
 }
 
-/**
- * Decode a base64url string back to bytes. Throws on malformed input
- * (non-base64url characters); callers MUST wrap in try/catch when validating
- * untrusted tokens — see verifyToken below.
- * @param {string} s
- * @returns {Uint8Array}
- */
-function b64urlDecode(s) {
-  let str = s.replace(/-/g, "+").replace(/_/g, "/");
-  while (str.length % 4) str += "=";
-  // atob throws on invalid characters — caller must catch.
-  const bin = atob(str);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 // ---------------------------------------------------------------------------
 // HMAC key import (lazy; one per call — Workers prohibit cross-request keys)
 // ---------------------------------------------------------------------------
 
+// Purpose separation: the Council session token and the double-submit CSRF
+// token both derive from CSRF_SECRET, but must never share raw key material —
+// otherwise a compromise or rotation of one protocol silently couples to the
+// other. HMAC with a fixed label is a KDF here, not an authentication step.
+const COUNCIL_TOKEN_LABEL = "immi-council-session-token/v1";
+
 /**
- * Import the secret string as a raw HMAC-SHA256 key.
+ * Derive the Council-session signing key from the base secret.
  * @param {string} secret
  * @returns {Promise<CryptoKey>}
  */
-async function importHmacKey(secret) {
-  return crypto.subtle.importKey(
+async function importCouncilTokenKey(secret) {
+  const base = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign", "verify"],
+    ["sign"],
+  );
+  const derived = await crypto.subtle.sign(
+    "HMAC",
+    base,
+    new TextEncoder().encode(COUNCIL_TOKEN_LABEL),
+  );
+  return crypto.subtle.importKey(
+    "raw",
+    derived,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
 }
 
@@ -104,7 +103,7 @@ export function nanoid21() {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute base64url(HMAC-SHA256(env.CSRF_SECRET, sessionId)).
+ * Compute base64url(HMAC-SHA256(importCouncilTokenKey(env.CSRF_SECRET), sessionId)).
  *
  * @param {{CSRF_SECRET?: string}} env
  * @param {string} sessionId
@@ -118,66 +117,11 @@ export async function mintToken(env, sessionId) {
   if (typeof sessionId !== "string" || sessionId.length === 0) {
     throw new Error("sessionId required");
   }
-  const key = await importHmacKey(env.CSRF_SECRET);
+  const key = await importCouncilTokenKey(env.CSRF_SECRET);
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
     new TextEncoder().encode(sessionId),
   );
   return b64urlEncode(sig);
-}
-
-// ---------------------------------------------------------------------------
-// verifyToken
-// ---------------------------------------------------------------------------
-
-/**
- * Constant-time verify a session token against a sessionId.
- *
- * Uses `crypto.subtle.verify("HMAC", ...)`, which by Web Crypto specification
- * compares MAC bytes in constant time. We deliberately do NOT short-circuit
- * on first byte mismatch and we never use `===` on the token itself.
- *
- * Returns false (never throws) for any malformed input, missing secret,
- * decode failure, or signature mismatch — callers should treat the boolean
- * as the sole authority.
- *
- * @param {{CSRF_SECRET?: string}} env
- * @param {string} sessionId
- * @param {string | null | undefined} token  base64url-encoded HMAC
- * @returns {Promise<boolean>}
- */
-export async function verifyToken(env, sessionId, token) {
-  if (!env || !env.CSRF_SECRET) return false;
-  if (typeof sessionId !== "string" || sessionId.length === 0) return false;
-  if (typeof token !== "string" || token.length === 0) return false;
-
-  let sigBytes;
-  try {
-    sigBytes = b64urlDecode(token);
-  } catch {
-    return false;
-  }
-
-  // HMAC-SHA256 always produces 32 bytes. The length of an HMAC tag is not
-  // secret, so a length pre-check is not a timing leak.
-  if (sigBytes.length !== 32) return false;
-
-  let key;
-  try {
-    key = await importHmacKey(env.CSRF_SECRET);
-  } catch {
-    return false;
-  }
-
-  try {
-    return await crypto.subtle.verify(
-      "HMAC",
-      key,
-      sigBytes,
-      new TextEncoder().encode(sessionId),
-    );
-  } catch {
-    return false;
-  }
 }
