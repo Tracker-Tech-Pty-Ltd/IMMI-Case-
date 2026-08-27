@@ -467,8 +467,8 @@ def test_split_judges_allows_four_char_singleton(client, monkeypatch):
     ]
     monkeypatch.setattr("immi_case_downloader.web.routes.api._analytics_cache", {})
     monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: cases)
-    with patch("immi_case_downloader.web.routes.api._load_judge_bios", return_value={}), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides", return_value={}
+    with patch("immi_case_downloader.web.judge_names._load_judge_bios", return_value={}), patch(
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides", return_value={}
     ):
         resp = client.get("/api/v1/analytics/judges?limit=10")
 
@@ -496,8 +496,8 @@ def test_judge_analytics_merges_suffix_variants_of_same_name(client, monkeypatch
     ]
     monkeypatch.setattr("immi_case_downloader.web.routes.api._analytics_cache", {})
     monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: cases)
-    with patch("immi_case_downloader.web.routes.api._load_judge_bios", return_value={}), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides", return_value={}
+    with patch("immi_case_downloader.web.judge_names._load_judge_bios", return_value={}), patch(
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides", return_value={}
     ):
         resp = client.get("/api/v1/analytics/judges?limit=10")
 
@@ -521,8 +521,8 @@ def test_judge_analytics_merges_title_prefix_variants(client, monkeypatch):
     ]
     monkeypatch.setattr("immi_case_downloader.web.routes.api._analytics_cache", {})
     monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: cases)
-    with patch("immi_case_downloader.web.routes.api._load_judge_bios", return_value={}), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides", return_value={}
+    with patch("immi_case_downloader.web.judge_names._load_judge_bios", return_value={}), patch(
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides", return_value={}
     ):
         resp = client.get("/api/v1/analytics/judges?limit=10")
 
@@ -547,8 +547,8 @@ def test_judge_analytics_merges_mixed_case_variants(client, monkeypatch):
     ]
     monkeypatch.setattr("immi_case_downloader.web.routes.api._analytics_cache", {})
     monkeypatch.setattr("immi_case_downloader.web.routes.api._get_analytics_cases", lambda: cases)
-    with patch("immi_case_downloader.web.routes.api._load_judge_bios", return_value={}), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides", return_value={}
+    with patch("immi_case_downloader.web.judge_names._load_judge_bios", return_value={}), patch(
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides", return_value={}
     ):
         resp = client.get("/api/v1/analytics/judges?limit=10")
 
@@ -715,8 +715,8 @@ def test_alias_specificity_initial_surname_beats_singleton(client, monkeypatch):
         "l symons": "Linda Symons",
         "symons": "Judge Catherine Symons",
     }
-    with patch("immi_case_downloader.web.routes.api._load_judge_bios", return_value={}), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides", return_value=overrides
+    with patch("immi_case_downloader.web.judge_names._load_judge_bios", return_value={}), patch(
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides", return_value=overrides
     ):
         resp = client.get("/api/v1/analytics/judges?limit=10")
 

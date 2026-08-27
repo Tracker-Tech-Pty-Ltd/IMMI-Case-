@@ -16,13 +16,13 @@ from flask import Blueprint, request, jsonify
 
 from ...config import END_YEAR, AUSTLII_DATABASES
 from ...visa_registry import VISA_REGISTRY, get_registry_for_api
+from ..cache_registry import register_cache_invalidator
 from ..helpers import get_repo, safe_int, error_response as _error
 from ..security import rate_limit
 
-# ── Import api module by reference so unit-test patches on api.* propagate here ──
 from . import api as _api
 # Constants are immutable — direct import is safe (no patch needed for these).
-from .api import DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, SUPABASE_RPC_TIMEOUT_SECONDS
+from .api_constants import DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, SUPABASE_RPC_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,9 @@ _lineage_cache_ts: float = 0.0
 _LINEAGE_CACHE_TTL_SECONDS = 300.0
 
 
+@register_cache_invalidator
 def _reset_lineage_cache() -> None:
-    """Reset the lineage cache. Called by api.py's /cache/invalidate endpoint."""
+    """Reset the lineage cache. Registered with the web cache registry."""
     global _lineage_cache_payload, _lineage_cache_ts
     with _lineage_cache_lock:
         _lineage_cache_payload = None

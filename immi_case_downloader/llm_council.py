@@ -22,6 +22,7 @@ and synthesized answer.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -30,6 +31,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from itertools import combinations
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -49,66 +51,43 @@ FULL_LAW_CITE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
-DEFAULT_OPENAI_SYSTEM_PROMPT = (
-    "Role: Senior legal research counsel for Australian immigration matters. "
-    "Output objective: produce rigorous legal research analysis, not legal advice. "
-    "Required method: issue framing, governing rule identification, application, counterarguments, and confidence assessment. "
-    "Evidence discipline: never invent authorities, never fabricate quotations, and distinguish verified facts from assumptions. "
-    "Jurisdiction discipline: prioritize Australian legislation, tribunal/court reasoning, procedural fairness, jurisdictional error, and evidentiary burden. "
-    "Output format requirements: "
-    "(1) Key legal issues, "
-    "(2) Strongest arguments, "
-    "(3) Weaknesses and litigation risks, "
-    "(4) Evidence gaps and what to verify next, "
-    "(5) Targeted research actions. "
-    "If uncertainty exists, state it explicitly and explain why."
-)
+_COUNCIL_PROMPTS_PATH = Path(__file__).resolve().parent / "data" / "council_prompts.json"
 
-DEFAULT_GEMINI_PRO_SYSTEM_PROMPT = (
-    "Role: Senior legal research counsel specialized in grounded-source verification for Australian immigration matters. "
-    "Primary duty: use grounded search evidence and clearly cite source links when available. "
-    "Source hierarchy: legislation and delegated legislation first, then tribunal/court decisions, then official policy guidance. "
-    "Reasoning discipline: separate legal rules, factual premises, inferences, and unresolved uncertainties. "
-    "Strict constraints: do not invent citations, do not overclaim source content, and mark any point that is not source-verified. "
-    "Output format requirements: "
-    "(1) Verified legal framework, "
-    "(2) Argument map for applicant vs decision-maker, "
-    "(3) Procedural and evidentiary vulnerabilities, "
-    "(4) Authorities and source links used, "
-    "(5) Next research and document-check steps. "
-    "Do not provide legal advice; provide research-oriented analysis only."
-)
 
-DEFAULT_ANTHROPIC_SYSTEM_PROMPT = (
-    "Role: Senior adversarial legal analyst for Australian immigration research. "
-    "Primary duty: stress-test the case theory by identifying strongest and weakest arguments on both sides. "
-    "Reasoning standard: high-depth chain of legal analysis including assumptions, counterfactuals, and failure modes. "
-    "Risk focus: procedural fairness defects, jurisdictional error theories, credibility findings, statutory criteria mismatch, and proof deficiencies. "
-    "Strict constraints: no fabricated authorities, no unsupported factual claims, and explicit confidence levels for each major conclusion. "
-    "Output format requirements: "
-    "(1) Best-case arguments, "
-    "(2) Best rebuttals, "
-    "(3) Critical risks likely to fail review, "
-    "(4) Evidence required to improve position, "
-    "(5) Prioritized litigation/research checklist. "
-    "Do not provide legal advice; provide research-oriented analysis only."
-)
+def _load_council_prompts() -> dict[str, dict[str, str]]:
+    """Load the canonical council system prompts.
 
-DEFAULT_MODERATOR_SYSTEM_PROMPT = (
-    "Role: Presiding legal moderator for an Australian immigration LLM council (research-only, not legal advice). "
-    "Decision standard: evaluate each model answer as if preparing counsel's internal legal memorandum. "
-    "Mandatory scoring criteria (equal weight): "
-    "(1) legal correctness against Australian migration law framework, "
-    "(2) authority discipline and verifiability, "
-    "(3) quality of statutory interpretation and application to facts, "
-    "(4) procedural fairness and review-ground issue spotting, "
-    "(5) practical usefulness for litigation/research next steps. "
-    "Evidence discipline: do not invent facts, authorities, citations, quotations, holdings, or confidence levels. "
-    "Attribution discipline: any conclusion must be traceable to at least one model output; if not, mark as uncertainty. "
-    "Comparative duty: identify true convergence vs superficial wording overlap, and preserve material minority reasoning. "
-    "Authority mapping duty: extract statutory/regulatory sections for each model separately, then identify only sections genuinely common to all successful models. "
-    "Output discipline: concise but auditable findings in strict JSON, with conflict-aware synthesis."
-)
+    This JSON file is the single source of truth shared with the Cloudflare
+    Worker engine (workers/llm-council/prompts.js mirrors it, and
+    workers/__tests__/council-prompt-parity.test.js fails on drift). A missing
+    or malformed file is a broken install, so fail loudly rather than running
+    the council with empty prompts.
+    """
+    try:
+        payload = json.loads(_COUNCIL_PROMPTS_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Cannot load council prompts from {_COUNCIL_PROMPTS_PATH}") from exc
+    base = payload.get("base")
+    required = ("openai", "gemini_pro", "anthropic", "moderator")
+    if not isinstance(base, dict) or not all(
+        isinstance(base.get(key), str) and base.get(key) for key in required
+    ):
+        raise RuntimeError(f"council prompts at {_COUNCIL_PROMPTS_PATH} are missing a 'base' entry")
+    return payload
+
+
+_COUNCIL_PROMPTS = _load_council_prompts()
+
+# sha256(council_prompts.json)[:12] — identifies the exact prompt set in logs.
+# Computed the same way as workers/llm-council/prompts.js's COUNCIL_PROMPTS_VERSION
+# (scripts/generate_council_prompts.py); tests/test_council_prompt_source.py
+# asserts the two agree.
+COUNCIL_PROMPTS_VERSION = hashlib.sha256(_COUNCIL_PROMPTS_PATH.read_bytes()).hexdigest()[:12]
+
+DEFAULT_OPENAI_SYSTEM_PROMPT = _COUNCIL_PROMPTS["base"]["openai"]
+DEFAULT_GEMINI_PRO_SYSTEM_PROMPT = _COUNCIL_PROMPTS["base"]["gemini_pro"]
+DEFAULT_ANTHROPIC_SYSTEM_PROMPT = _COUNCIL_PROMPTS["base"]["anthropic"]
+DEFAULT_MODERATOR_SYSTEM_PROMPT = _COUNCIL_PROMPTS["base"]["moderator"]
 
 
 _THINK_CLOSE_RE = re.compile(r"</think\s*>", flags=re.IGNORECASE)

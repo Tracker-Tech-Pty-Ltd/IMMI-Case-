@@ -11,17 +11,19 @@ from datetime import datetime
 from immi_case_downloader.web.routes.api import (
     _parse_case_date,
     _extract_month_key,
-    _is_real_judge_name,
-    _normalise_judge_name,
     _normalise_outcome,
     _normalise_concept,
     _split_concepts,
-    _split_judges,
     _determine_court_type,
     _win_outcomes_for_court_type,
     _is_win,
     _round_rate,
     _clean_visa,
+)
+from immi_case_downloader.web.judge_names import (
+    _is_real_judge_name,
+    _normalise_judge_name,
+    _split_judges,
 )
 # _valid_case_id moved to api_cases.py (cq-001 Phase D1)
 from immi_case_downloader.web.routes.api_cases import _valid_case_id

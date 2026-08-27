@@ -103,70 +103,29 @@ function classifyError(err) {
 }
 
 // ---------------------------------------------------------------------------
-// System prompts (ported verbatim from llm_council.py DEFAULT_*_SYSTEM_PROMPT)
+// System prompts — canonical text lives in
+// immi_case_downloader/data/council_prompts.json (see ./prompts.js).
+// Imported and re-exported here so existing importers of runner.js keep
+// their import path: workers/llm-council/handlers.js:37-40 and
+// workers/__tests__/llm-council-runner.test.js:21-24 both pull these four
+// names from runner.js.
 // ---------------------------------------------------------------------------
+import {
+  ANTHROPIC_GROUNDED_SYSTEM_PROMPT,
+  COUNCIL_PROMPTS_VERSION,
+  DEFAULT_ANTHROPIC_SYSTEM_PROMPT,
+  DEFAULT_GEMINI_PRO_SYSTEM_PROMPT,
+  DEFAULT_MODERATOR_SYSTEM_PROMPT,
+  DEFAULT_OPENAI_SYSTEM_PROMPT,
+} from "./prompts.js";
 
-export const DEFAULT_OPENAI_SYSTEM_PROMPT =
-  "Role: Senior legal research counsel for Australian immigration matters. " +
-  "Output objective: produce rigorous legal research analysis, not legal advice. " +
-  "Required method: issue framing, governing rule identification, application, counterarguments, and confidence assessment. " +
-  "Evidence discipline: never invent authorities, never fabricate quotations, and distinguish verified facts from assumptions. " +
-  "Jurisdiction discipline: prioritize Australian legislation, tribunal/court reasoning, procedural fairness, jurisdictional error, and evidentiary burden. " +
-  "Output format requirements: " +
-  "(1) Key legal issues, " +
-  "(2) Strongest arguments, " +
-  "(3) Weaknesses and litigation risks, " +
-  "(4) Evidence gaps and what to verify next, " +
-  "(5) Targeted research actions. " +
-  "If uncertainty exists, state it explicitly and explain why.";
-
-export const DEFAULT_GEMINI_PRO_SYSTEM_PROMPT =
-  "Role: Senior legal research counsel specialized in grounded-source verification for Australian immigration matters. " +
-  "Search tool: you have google_search grounding enabled. Actively use it to verify recent statutory amendments, " +
-  "AAT/ART decisions, Federal Court judgments, DFAT country reports, UNHCR guidance, and case-law citations. " +
-  "Always prefer 2024-2026 primary sources. Cite via groundingMetadata where possible. " +
-  "Source hierarchy: legislation and delegated legislation first, then tribunal/court decisions, then official policy guidance. " +
-  "Reasoning discipline: separate legal rules, factual premises, inferences, and unresolved uncertainties. " +
-  "Strict constraints: do not invent citations, do not overclaim source content, and mark any point that is not source-verified. " +
-  "Output format requirements: " +
-  "(1) Verified legal framework (with statute citations), " +
-  "(2) Argument map for applicant vs decision-maker, " +
-  "(3) Procedural and evidentiary vulnerabilities, " +
-  "(4) Authorities and source links used (include URLs from search results), " +
-  "(5) Next research and document-check steps. " +
-  "Do not provide legal advice; provide research-oriented analysis only.";
-
-export const DEFAULT_ANTHROPIC_SYSTEM_PROMPT =
-  "Role: Senior adversarial legal analyst for Australian immigration research. " +
-  "Search tool: you have web_search enabled (max 5 uses per turn). Use it strategically to verify the most " +
-  "current Australian Migration Act amendments, AAT/ART/Federal Court decisions on jurisdictional error, " +
-  "and recent country-information reports relevant to the applicant's claim. " +
-  "Primary duty: stress-test the case theory by identifying strongest and weakest arguments on both sides. " +
-  "Reasoning standard: high-depth chain of legal analysis including assumptions, counterfactuals, and failure modes. " +
-  "Risk focus: procedural fairness defects, jurisdictional error theories, credibility findings, statutory criteria mismatch, and proof deficiencies. " +
-  "Strict constraints: no fabricated authorities, no unsupported factual claims, and explicit confidence levels for each major conclusion. " +
-  "Output format requirements: " +
-  "(1) Best-case arguments (with case-name + section citations), " +
-  "(2) Best rebuttals, " +
-  "(3) Critical risks likely to fail review, " +
-  "(4) Evidence required to improve position, " +
-  "(5) Prioritized litigation/research checklist. " +
-  "Do not provide legal advice; provide research-oriented analysis only.";
-
-export const DEFAULT_MODERATOR_SYSTEM_PROMPT =
-  "Role: Presiding legal moderator for an Australian immigration LLM council (research-only, not legal advice). " +
-  "Decision standard: evaluate each model answer as if preparing counsel's internal legal memorandum. " +
-  "Mandatory scoring criteria (equal weight): " +
-  "(1) legal correctness against Australian migration law framework, " +
-  "(2) authority discipline and verifiability, " +
-  "(3) quality of statutory interpretation and application to facts, " +
-  "(4) procedural fairness and review-ground issue spotting, " +
-  "(5) practical usefulness for litigation/research next steps. " +
-  "Evidence discipline: do not invent facts, authorities, citations, quotations, holdings, or confidence levels. " +
-  "Attribution discipline: any conclusion must be traceable to at least one model output; if not, mark as uncertainty. " +
-  "Comparative duty: identify true convergence vs superficial wording overlap, and preserve material minority reasoning. " +
-  "Authority mapping duty: extract statutory/regulatory sections for each model separately, then identify only sections genuinely common to all successful models. " +
-  "Output discipline: concise but auditable findings in strict JSON, with conflict-aware synthesis.";
+export {
+  ANTHROPIC_GROUNDED_SYSTEM_PROMPT,
+  DEFAULT_ANTHROPIC_SYSTEM_PROMPT,
+  DEFAULT_GEMINI_PRO_SYSTEM_PROMPT,
+  DEFAULT_MODERATOR_SYSTEM_PROMPT,
+  DEFAULT_OPENAI_SYSTEM_PROMPT,
+};
 
 // ---------------------------------------------------------------------------
 // buildHistoryMessages  (Decision D2)
@@ -1809,8 +1768,11 @@ export function streamCouncil({ env, question, caseContext = "", prevTurns, mode
    */
   const pickStreamGenerator = (providerKey, model, systemPrompt) => {
     if (providerKey === "anthropic") {
+      // The only live path that actually attaches a search tool (see the
+      // web_search_20250305 tools block in streamAnthropicNative), so it is
+      // the only path allowed to tell the model it has one.
       return streamAnthropicNative({
-        env, model, systemPrompt, userPrompt,
+        env, model, systemPrompt: ANTHROPIC_GROUNDED_SYSTEM_PROMPT, userPrompt,
         externalSignal: orchestrationAbort.signal,
       });
     }
@@ -1885,6 +1847,7 @@ export function streamCouncil({ env, question, caseContext = "", prevTurns, mode
       logCouncilEvent({
         event: "council.expert.stream", provider_key: providerKey,
         model, ok: true, latency_ms: elapsed,
+        prompts_version: COUNCIL_PROMPTS_VERSION, grounded: providerKey === "anthropic",
       });
       return {
         provider_key: providerKey, provider_label: providerLabel, model,
@@ -1900,6 +1863,7 @@ export function streamCouncil({ env, question, caseContext = "", prevTurns, mode
       logCouncilEvent({
         event: "council.expert.stream", provider_key: providerKey,
         model, ok: false, error_class: errClass, latency_ms: elapsed,
+        prompts_version: COUNCIL_PROMPTS_VERSION, grounded: providerKey === "anthropic",
       });
       return {
         provider_key: providerKey, provider_label: providerLabel, model,
