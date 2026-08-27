@@ -5,6 +5,14 @@
  * or object-store credentials into the Container.
  */
 
+import { DurableObject } from "cloudflare:workers";
+
+const CONTAINER_PORT = 8080;
+const START_RETRY_DELAY_MS = 500;
+// 60 × 500ms = 30s of container boot budget. The caller's own ceiling is
+// PIPELINE_CONTAINER_EXTRACT_TIMEOUT_MS (300000) in the scraper Worker.
+const MAX_START_ATTEMPTS = 60;
+
 export class ExtractionBackend extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -28,16 +36,22 @@ export class ExtractionBackend extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     const containerUrl = `http://container${url.pathname}${url.search}`;
+    const method = request.method;
+    const headers = new Headers(request.headers);
+    // Buffer once: `new Request(url, request)` disturbs the original body,
+    // so a second attempt on a POST would throw "Body has already been used"
+    // and be rethrown as an unrelated failure.
+    const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();
     let lastError;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_START_ATTEMPTS; attempt += 1) {
       try {
-        const port = this.ctx.container.getTcpPort(8080);
-        return await port.fetch(new Request(containerUrl, request));
+        const port = this.ctx.container.getTcpPort(CONTAINER_PORT);
+        return await port.fetch(new Request(containerUrl, { method, headers, body }));
       } catch (error) {
         lastError = error;
         const message = error?.message || "";
         if (!message.includes("not listening") && !message.includes("not running")) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, START_RETRY_DELAY_MS));
       }
     }
     return Response.json({ error: "Extraction container unavailable", detail: lastError?.message || "timeout" }, { status: 503 });

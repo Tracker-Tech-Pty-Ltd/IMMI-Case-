@@ -53,13 +53,17 @@ max_batch_size = 20
 max_batch_timeout = 5
 max_retries = 3
 
+# max_concurrency MUST stay 1: the per-court AustLII spacing in
+# rateLimitPipelineScrape() is a KV read-modify-write and gives no real
+# spacing across parallel consumers. Raising this risks the multi-hour
+# AustLII IP block the delay exists to prevent.
 [[queues.consumers]]
 queue = "immi-scrape-queue"
 max_batch_size = 5
 max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "immi-scrape-dlq"
-max_concurrency = 20
+max_concurrency = 1
 
 [[queues.consumers]]
 queue = "immi-scrape-dlq"

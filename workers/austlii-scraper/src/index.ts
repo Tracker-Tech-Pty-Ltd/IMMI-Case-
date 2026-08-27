@@ -10,7 +10,7 @@
  */
 
 import { extractFullText, extractMetadata } from "./parser";
-import { discoverCourt, runDiscoveryAndEnqueue } from "./discover";
+import { runDiscoveryAndEnqueue } from "./discover";
 import { handleExtractBatch } from "./extract";
 import { scrapeLegislation } from "./legislation";
 import { sendPipelineAlert } from "./alerts";
@@ -19,9 +19,11 @@ import type { CourtCode } from "./pipeline-config";
 import {
   addPipelineRunMetrics,
   assertSchemaConsistent,
+  controlRunId,
   findCasesMissingContent,
   isPipelineStopRequested,
   latestRunningPipelineRun,
+  readControlCommand,
   requestPipelineStop,
   recordPipelineDeadLetter,
   startPipelineRun,
@@ -35,8 +37,6 @@ import type {
   ScrapeJob,
   ScrapeResult,
   ScrapeError,
-  EnqueueRequest,
-  EnqueueResponse,
   PipelineControlMessage,
 } from "./types";
 
@@ -70,8 +70,6 @@ const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-const MAX_BATCH_ENQUEUE = 500;
-
 function isPipelineControl(value: unknown): value is PipelineControlMessage {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<PipelineControlMessage>;
@@ -95,16 +93,32 @@ async function handlePipelineControlBatch(
     const control = message.body;
     try {
       if (!nativePipelineReady(env)) throw new Error("native pipeline is disabled");
+      const prior = await readControlCommand(env, control.command_id);
+      if (prior?.status === "completed") {
+        console.log(JSON.stringify({
+          event: "pipeline.control.duplicate_ignored",
+          command_id: control.command_id,
+          run_id: prior.run_id,
+        }));
+        message.ack();
+        continue;
+      }
+      const priorRunId = prior?.run_id ?? null;
       await updateControlCommand(env, control.command_id, { status: "running" });
       if (control.action === "stop") {
         const runId = await latestRunningPipelineRun(env);
         if (runId) await requestPipelineStop(env, runId);
         await updateControlCommand(env, control.command_id, { status: "completed", runId: runId ?? undefined });
       } else if (control.action === "download") {
-        const runId = await startPipelineRun(env, {
+        // Deterministic id + INSERT OR IGNORE: a redelivery converges on the
+        // same run row whether or not the previous attempt got as far as
+        // writing run_id back onto the command. priorRunId is preferred when
+        // present so a run started before this change is still honoured.
+        const runId = priorRunId ?? await startPipelineRun(env, {
           trigger: "manual",
           courts: controlCourts(control.courts),
           phase: "download",
+          runId: controlRunId(control.command_id),
         });
         await updateControlCommand(env, control.command_id, { status: "running", runId });
         const targets = await findCasesMissingContent(env, controlCourts(control.courts), control.limit ?? 50);
@@ -129,10 +143,11 @@ async function handlePipelineControlBatch(
         if (failures.length) throw new Error(failures.join("; "));
         await updateControlCommand(env, control.command_id, { status: "completed" });
       } else {
-        const runId = await startPipelineRun(env, {
+        const runId = priorRunId ?? await startPipelineRun(env, {
           trigger: "manual",
           courts: controlCourts(control.courts),
           phase: "discovery",
+          runId: controlRunId(control.command_id),
         });
         await updateControlCommand(env, control.command_id, { status: "running", runId });
         await runDiscoveryAndEnqueue(env, runId, controlCourts(control.courts));
@@ -151,7 +166,7 @@ async function handlePipelineControlBatch(
 // ─── HTTP Handler (Producer) ─────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, _env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     // Health check
@@ -185,7 +200,7 @@ export default {
     if (batch.messages.length > 0 && batch.messages.every((message) => isPipelineControl(message.body))) {
       return handlePipelineControlBatch(batch as unknown as MessageBatch<PipelineControlMessage>, env);
     }
-    if (batch.messages.every((message) => isExtractJob(message.body))) {
+    if (batch.messages.length > 0 && batch.messages.every((message) => isExtractJob(message.body))) {
       return handleExtractBatch(batch as MessageBatch<ExtractJob>, env);
     }
 
@@ -228,7 +243,8 @@ export default {
         const error = err instanceof Error ? err.message : String(err);
         console.error(`Failed to process ${job.case_id}: ${error}`);
 
-        await putScrapeError(job, env, error, 0);
+        const statusCode = err instanceof RetryableScrapeError ? err.statusCode : 0;
+        await putScrapeError(job, env, error, statusCode);
         if (job.run_id) {
           await addPipelineRunMetrics(env, job.run_id, { errors: 1 }).catch(() => undefined);
         }
@@ -315,6 +331,21 @@ function nativePipelineReady(env: Env): boolean {
 
 // ─── Job Processor ────────────────────────────────────────────────────────────
 
+/**
+ * A scrape failure that is worth another delivery. The queue has
+ * max_retries = 3 and a dead-letter queue, so retryable failures have a
+ * bounded home; non-retryable ones (404, other 4xx) are recorded and acked.
+ */
+class RetryableScrapeError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "RetryableScrapeError";
+    this.statusCode = statusCode;
+  }
+}
+
 async function processJob(
   job: ScrapeJob,
   env: Env,
@@ -331,14 +362,21 @@ async function processJob(
   });
 
   if (response.status === 429) {
-    // Rate limited — throw to trigger Queue retry
-    throw new Error(`Rate limited (429) for ${job.url}`);
+    throw new RetryableScrapeError(`Rate limited (429) for ${job.url}`, 429);
   }
 
   if (response.status === 404) {
     // Page not found — record as error, don't retry
     await putScrapeError(job, env, "Page not found", 404);
     return { success: false };
+  }
+
+  if (response.status >= 500) {
+    // Upstream outage — retry rather than dropping the case for this run.
+    throw new RetryableScrapeError(
+      `HTTP ${response.status}: ${response.statusText} for ${job.url}`,
+      response.status,
+    );
   }
 
   if (!response.ok) {
@@ -351,13 +389,14 @@ async function processJob(
   // Extract full text
   const fullText = extractFullText(html);
   if (!fullText || fullText.length < 50) {
-    await putScrapeError(job, env, "No content extracted from page", 0);
-    return { success: false };
+    // A truncated or challenge page is usually transient — retry it.
+    throw new RetryableScrapeError(`No content extracted from ${job.url}`, 0);
   }
 
-  // Extract metadata from the full page text (not just the content div)
-  const pageText = extractFullText(html);
-  const metadata = extractMetadata(pageText);
+  // extractFullText prefers the case content div (#page-main / #cases_doc /
+  // .document) and only falls back to <body>; metadata is read from that
+  // same text, so parse once and reuse it.
+  const metadata = extractMetadata(fullText);
 
   // Build success result
   const result: ScrapeResult = {
@@ -395,14 +434,6 @@ async function processJob(
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
 
 function isExtractJob(job: QueueJob): job is ExtractJob {
   return job.phase === "extract" || "r2_key" in job;
@@ -455,25 +486,6 @@ async function putScrapeError(
   );
 }
 
-function parseCourtList(raw: string | null): CourtCode[] {
-  if (!raw || raw.trim() === "" || raw.trim().toLowerCase() === "all") {
-    return [...COURT_CODES];
-  }
-
-  const allowed = new Set<string>(COURT_CODES);
-  const courts = raw
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is CourtCode => allowed.has(item));
-  return courts.length > 0 ? courts : [...COURT_CODES];
-}
-
-function parseScheduledTime(raw: string | null): number {
-  if (!raw) return Date.now();
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : Date.now();
-}
-
 async function forwardToExtract(job: ScrapeJob, env: Env, r2Key: string): Promise<void> {
   if (!job.run_id || !env.EXTRACT_QUEUE) return;
   await env.EXTRACT_QUEUE.send({
@@ -492,10 +504,13 @@ async function rateLimitPipelineScrape(job: ScrapeJob, env: Env): Promise<void> 
   if (!Number.isFinite(delayMs) || delayMs <= 0) return;
 
   const key = `ratelimit:${job.court_code}`;
-  const now = Date.now();
-  const previous = Number(await env.PIPELINE_KV.get(key));
+  const raw = await env.PIPELINE_KV.get(key);
+  const previous = raw === null ? Number.NaN : Number.parseInt(raw, 10);
   if (Number.isFinite(previous)) {
-    const waitMs = previous + delayMs - now;
+    // Clamp to one delay window so a corrupt/future timestamp cannot stall
+    // the consumer. Correctness of the spacing depends on the scrape queue
+    // running at max_concurrency = 1 — see workers/austlii-scraper/wrangler.toml.
+    const waitMs = Math.min(previous + delayMs - Date.now(), delayMs);
     if (waitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }

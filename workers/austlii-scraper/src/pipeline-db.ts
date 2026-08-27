@@ -109,6 +109,25 @@ export async function recordPipelineDeadLetter(
   ).run();
 }
 
+export interface ControlCommandState {
+  status: string;
+  run_id: string | null;
+}
+
+/**
+ * Read a control command's persisted state so a queue redelivery can reuse
+ * the run it already started instead of forking a phantom one.
+ */
+export async function readControlCommand(
+  env: Env,
+  commandId: string,
+): Promise<ControlCommandState | null> {
+  const row = await ops(env).prepare(
+    "SELECT status, run_id FROM pipeline_control_commands WHERE command_id = ? LIMIT 1",
+  ).bind(commandId).first<ControlCommandState>();
+  return row ?? null;
+}
+
 export async function updateControlCommand(
   env: Env,
   commandId: string,
@@ -217,14 +236,30 @@ export async function assertSchemaConsistent(env: Env): Promise<void> {
 
 export async function startPipelineRun(
   env: Env,
-  options: { trigger: "cron" | "manual" | "webhook"; courts: CourtCode[]; phase: string },
+  options: {
+    trigger: "cron" | "manual" | "webhook";
+    courts: CourtCode[];
+    phase: string;
+    /**
+     * Deterministic id for a run that must survive queue redelivery. Derived
+     * from the control command id so a redelivery — including one that
+     * crashed before the command row learned its run_id — converges on the
+     * same pipeline_runs row instead of forking a phantom one.
+     */
+    runId?: string;
+  },
 ): Promise<string> {
-  const runId = crypto.randomUUID();
+  const runId = options.runId ?? crypto.randomUUID();
   await ops(env).prepare(`
-    INSERT INTO pipeline_runs (run_id, trigger, court, phase, status, started_at)
+    INSERT OR IGNORE INTO pipeline_runs (run_id, trigger, court, phase, status, started_at)
     VALUES (?, ?, ?, ?, 'running', ?)
   `).bind(runId, options.trigger, options.courts.join(","), options.phase, new Date().toISOString()).run();
   return runId;
+}
+
+/** Stable pipeline-run id for a control command. Same command => same run. */
+export function controlRunId(commandId: string): string {
+  return `cmd-${commandId}`;
 }
 
 export async function updatePipelineRun(env: Env, runId: string, patch: PipelineRunPatch): Promise<void> {

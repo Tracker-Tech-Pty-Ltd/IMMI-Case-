@@ -23,6 +23,7 @@ const RUN_ID = "11111111-1111-4111-8111-111111111111";
 function baseEnv(overrides: Record<string, unknown> = {}) {
   const nativeMessages: unknown[] = [];
   const ack = vi.fn();
+  const costCalls: Array<{ ledger: string; url: string; usd: number | null }> = [];
   return {
     env: {
       PIPELINE_ENABLED: "true",
@@ -48,10 +49,22 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
           cost_usd: 0.1,
         })),
       },
+      COST_CAP_DO: {
+        idFromName: (name: string) => name,
+        get: (ledger: string) => ({
+          fetch: vi.fn(async (input: string, init?: RequestInit) => {
+            const usd = init?.body ? Number(JSON.parse(String(init.body)).usd) : null;
+            costCalls.push({ ledger, url: input, usd });
+            if (input.includes("/remaining")) return Response.json({ remaining_usd: 5 });
+            return Response.json({ spent_usd: usd ?? 0 });
+          }),
+        }),
+      },
       ...overrides,
     },
     nativeMessages,
     ack,
+    costCalls,
   };
 }
 
@@ -110,5 +123,234 @@ describe("native extraction handoff", () => {
     } as never, current.env as never);
     expect(retry).toHaveBeenCalledOnce();
     expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
+  });
+
+  it("charges both the run and the month ledger", async () => {
+    const current = baseEnv();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(current.costCalls.filter((call) => call.url.includes("/charge")).map((call) => call.ledger)).toEqual([
+      `run:${RUN_ID}`,
+      `month:${new Date().toISOString().slice(0, 7)}`,
+    ]);
+  });
+
+  it("aborts the run when a ledger reports zero remaining", async () => {
+    const current = baseEnv({
+      COST_CAP_DO: {
+        idFromName: (name: string) => name,
+        get: () => ({
+          fetch: vi.fn(async (input: string) => {
+            if (input.includes("/remaining")) return Response.json({ remaining_usd: 0 });
+            return Response.json({ spent_usd: 0 });
+          }),
+        }),
+      },
+    });
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(updateRun).toHaveBeenCalledWith(current.env, RUN_ID, expect.objectContaining({ status: "aborted", abortReason: "cost_cap_hit" }));
+    expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
+    expect(current.ack).toHaveBeenCalledOnce();
+  });
+
+  it("retries instead of aborting when a cost ledger returns a malformed body", async () => {
+    const current = baseEnv({
+      COST_CAP_DO: {
+        idFromName: (name: string) => name,
+        get: () => ({
+          fetch: vi.fn(async () => Response.json({})),
+        }),
+      },
+    });
+    const retry = vi.fn();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
+    } as never, current.env as never);
+    expect(retry).toHaveBeenCalledOnce();
+    expect(current.ack).not.toHaveBeenCalled();
+    expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
+    expect(updateRun).not.toHaveBeenCalledWith(current.env, RUN_ID, expect.objectContaining({ abortReason: "cost_cap_hit" }));
+  });
+
+  it("retries when the cost ledger throws", async () => {
+    const current = baseEnv({
+      COST_CAP_DO: {
+        idFromName: (name: string) => name,
+        get: () => ({
+          fetch: vi.fn(async () => { throw new Error("ledger unreachable"); }),
+        }),
+      },
+    });
+    const retry = vi.fn();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
+    } as never, current.env as never);
+    expect(retry).toHaveBeenCalledOnce();
+    expect(current.ack).not.toHaveBeenCalled();
+    expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
+    expect(updateRun).not.toHaveBeenCalledWith(current.env, RUN_ID, expect.objectContaining({ abortReason: "cost_cap_hit" }));
+  });
+
+  it("fails closed when the cost cap binding is absent", async () => {
+    const current = baseEnv({ COST_CAP_DO: undefined });
+    const retry = vi.fn();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
+    } as never, current.env as never);
+    expect(retry).toHaveBeenCalledOnce();
+    expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
+  });
+
+  it("charges the batch cost before staging results", async () => {
+    const current = baseEnv({
+      NATIVE_CASE_QUEUE: {
+        send: vi.fn(async () => { throw new Error("queue down"); }),
+      },
+    });
+    const retry = vi.fn();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
+    } as never, current.env as never);
+    expect(current.costCalls.some((call) => call.url.includes("/charge") && call.usd === 0.1)).toBe(true);
+  });
+
+  it("retries only the case whose staging failed", async () => {
+    const secondCaseId = "abcdef654321";
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: secondCaseId,
+              base: { title: "", citation: "", full_text: "", text_snippet: "" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const ack1 = vi.fn();
+    const retry1 = vi.fn();
+    const ack2 = vi.fn();
+    const retry2 = vi.fn();
+    await handleExtractBatch({
+      messages: [
+        { body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: ack1, retry: retry1 },
+        { body: { phase: "extract", run_id: RUN_ID, case_id: secondCaseId, court_code: "FCA", r2_key: "runs/source2.json", scraped_at: new Date().toISOString() }, ack: ack2, retry: retry2 },
+      ],
+    } as never, current.env as never);
+    expect(ack1).toHaveBeenCalledOnce();
+    expect(retry1).not.toHaveBeenCalled();
+    expect(retry2).toHaveBeenCalledOnce();
+    expect(ack2).not.toHaveBeenCalled();
+  });
+
+  it("retries an input case the backend did not return", async () => {
+    const secondCaseId = "abcdef654321";
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [{
+            case_id: CASE_ID,
+            base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+            fields: {},
+          }],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const ack1 = vi.fn();
+    const retry1 = vi.fn();
+    const ack2 = vi.fn();
+    const retry2 = vi.fn();
+    await handleExtractBatch({
+      messages: [
+        { body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: ack1, retry: retry1 },
+        { body: { phase: "extract", run_id: RUN_ID, case_id: secondCaseId, court_code: "FCA", r2_key: "runs/source2.json", scraped_at: new Date().toISOString() }, ack: ack2, retry: retry2 },
+      ],
+    } as never, current.env as never);
+    expect(ack1).toHaveBeenCalledOnce();
+    expect(ack2).not.toHaveBeenCalled();
+    expect(retry2).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a case the backend returned that was not in the batch", async () => {
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: "ffffffffffff",
+              base: { title: "Stray", citation: "[2026] FCA 2", full_text: "stray text" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(current.ack).toHaveBeenCalledOnce();
+    expect(current.env.NATIVE_CASE_QUEUE.send).toHaveBeenCalledOnce();
+    const parsedLogs = errorSpy.mock.calls.map((call) => {
+      try {
+        return JSON.parse(String(call[0]));
+      } catch {
+        return null;
+      }
+    });
+    expect(parsedLogs).toContainEqual(expect.objectContaining({
+      event: "extract.enqueue.unexpected_case",
+      reason: "not_in_batch",
+    }));
+    errorSpy.mockRestore();
+  });
+
+  it("stages a duplicated case only once", async () => {
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(current.env.NATIVE_CASE_QUEUE.send).toHaveBeenCalledOnce();
+    expect(current.ack).toHaveBeenCalledOnce();
   });
 });
