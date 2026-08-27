@@ -1284,10 +1284,21 @@ def _call_with_timeout(
     timeout_seconds: float = SUPABASE_RPC_TIMEOUT_SECONDS,
     executor: ThreadPoolExecutor | None = None,
 ):
-    """Execute a callable with timeout protection."""
+    """Execute a callable with timeout protection.
+
+    On timeout, cancel the future.  A task still queued behind a saturated pool
+    is cancelled before it ever runs, which stops doomed work from occupying a
+    worker and pushing the *next* caller's queue wait past its own timeout.  A
+    task that has already started cannot be cancelled — ``cancel()`` returns
+    ``False`` and the thread runs to completion.
+    """
     worker = executor or _rpc_executor
     future = worker.submit(func)
-    return future.result(timeout=timeout_seconds)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except FuturesTimeoutError:
+        future.cancel()
+        raise
 
 
 def _call_in_app_context(
