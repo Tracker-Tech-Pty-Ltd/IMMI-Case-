@@ -8,7 +8,7 @@
 
 這份文件把下列來源整合成單一執行藍圖：
 
-- `IMPROVEMENT_PLAN.md`
+- `docs/archive/IMPROVEMENT_PLAN.md`
 - `frontend/I18N_IMPLEMENTATION_PLAN.md`
 - `.auto-claude/roadmap/roadmap.json`
 - `.auto-claude/roadmap/roadmap_discovery.json`
@@ -232,7 +232,7 @@
 
 來源：
 
-- `IMPROVEMENT_PLAN.md` Phase 0
+- `docs/archive/IMPROVEMENT_PLAN.md` Phase 0
 - roadmap 缺少 rate limiting / auth layer
 
 範圍：
@@ -262,7 +262,7 @@
 
 來源：
 
-- `IMPROVEMENT_PLAN.md` Phase 1
+- `docs/archive/IMPROVEMENT_PLAN.md` Phase 1
 - `api.py` monolith 與高風險參數解析
 
 目標：
@@ -288,7 +288,7 @@
 
 來源：
 
-- `IMPROVEMENT_PLAN.md` Phase 1
+- `docs/archive/IMPROVEMENT_PLAN.md` Phase 1
 - roadmap technical debt：daemon threads + dict-based status
 
 目標：
@@ -314,7 +314,7 @@
 
 來源：
 
-- `IMPROVEMENT_PLAN.md` Phase 6
+- `docs/archive/IMPROVEMENT_PLAN.md` Phase 6
 
 目標：
 
@@ -369,7 +369,7 @@
 
 來源：
 
-- `IMPROVEMENT_PLAN.md` Phase 5
+- `docs/archive/IMPROVEMENT_PLAN.md` Phase 5
 - roadmap known gap：Federal Court scraper broken
 
 目標：

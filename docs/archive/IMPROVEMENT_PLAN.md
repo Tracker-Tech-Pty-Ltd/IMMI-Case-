@@ -1,4 +1,16 @@
-# IMMI-Case Improvement Plan
+# IMMI-Case Improvement Plan (HISTORICAL — 2026-04-10 snapshot)
+
+> **SUPERSEDED. This is not a backlog.** Everything below is a snapshot taken
+> on 2026-04-10, before the Cloudflare-native cutover of ~2026-08-11
+> (commit `f91f45f`). It describes the Flask app, which `README.md` and
+> `docs/ARCHITECTURE.md` now classify as **local-dev only, not deployed to
+> production**. It also contradicts itself: the header claims the E2E selectors
+> were fixed, while §"Phase 2" on the same page reports 33 E2E tests failing.
+> Neither statement reflects the suite today.
+>
+> For what production actually is, read `docs/ARCHITECTURE.md`. For the live
+> backlog, read `.claude/STATE.md`. Do not resume any phase from this file
+> without re-verifying it against the current codebase first.
 
 > **Status Update (2026-04-10):**
 > - **Webapp Split (Phase 3):** ✅ COMPLETE. Logic moved to `immi_case_downloader/web/` with Blueprints.
@@ -104,26 +116,10 @@
 
 ---
 
-## Ralph Loop: E2E Test Fixes (Immediate)
+## Ralph Loop: E2E Test Fixes — REMOVED
 
-```markdown
-# PROMPT.md — Phase 2-Fix: E2E Test Stabilization
-
-## Context
-33 E2E tests are failing due to Playwright Strict Mode violations (ambiguous selectors) and timeouts.
-
-## Task
-1.  **Analyze Failures:** Review `pytest` output for specific selector ambiguities.
-    *   `get_by_text("Save Search")` -> matches button AND helper text.
-    *   `get_by_text("Dashboard")` -> matches link AND heading.
-    *   `get_by_text("Scrape AustLII")` -> timeout.
-2.  **Refactor Selectors:** Update `tests/e2e/react/` files to use robust locators:
-    *   `get_by_role("button", name="...")`
-    *   `get_by_role("link", name="...", exact=True)`
-    *   `get_by_role("heading", name="...")`
-3.  **Fix Navigation:** Ensure sidebar navigation tests wait for stability before clicking.
-4.  **Verify:** Run `python3 -m pytest tests/e2e/react/` until all pass.
-
-## Completion
-Output <promise>E2E TESTS FIXED</promise> when `pytest` reports 0 failures for the E2E suite.
-```
+This section used to contain a copy-pasteable autonomous-agent prompt whose
+completion condition was "`pytest` reports 0 failures for the E2E suite". That
+condition was unreachable when this file was archived — the E2E suite failed at
+*collection*, not at assertion. The prompt has been deleted so no agent picks it
+up as a live instruction. E2E collection health is tracked in `.claude/STATE.md`.
