@@ -509,14 +509,19 @@ class SmartPipeline:
             if year_fixed > 0:
                 self.log.add("clean", "info", "year_fix", f"Fixed {year_fixed} cases with year=0")
 
-        # Deduplicate by URL
+        # Deduplicate by URL, falling back to case_id for URL-less cases
         if self.config.deduplicate:
             before_count = len(cases)
-            seen_urls = set()
+            seen_keys = set()
             unique = []
             for case in cases:
-                if case.url not in seen_urls:
-                    seen_urls.add(case.url)
+                case.ensure_id()
+                # Blank URLs are an expected state (manual adds, href parse
+                # failures). Keying on url alone collapsed every one of them
+                # into a single surviving row.
+                key = case.url or f"__noid__{case.case_id}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
                     unique.append(case)
             dupes_removed = before_count - len(unique)
             cases = unique
