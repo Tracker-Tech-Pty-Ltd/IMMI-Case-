@@ -51,7 +51,12 @@ def main():
         print("No results to merge.")
         return
 
-    df = pd.read_csv(CSV_PATH, low_memory=False)
+    df = pd.read_csv(
+        CSV_PATH,
+        encoding="utf-8-sig",
+        dtype={"visa_subclass": str, "visa_subclass_number": str},
+        low_memory=False,
+    )
     print(f"CSV: {len(df):,} records")
 
     outcome_updated = 0

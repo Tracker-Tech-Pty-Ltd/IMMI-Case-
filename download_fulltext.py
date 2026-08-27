@@ -183,7 +183,12 @@ def main():
     log("=" * 60)
 
     # Load CSV
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(
+        CSV_PATH,
+        encoding="utf-8-sig",
+        dtype={"visa_subclass": str, "visa_subclass_number": str},
+        low_memory=False,
+    )
     log(f"Loaded {len(df)} records from CSV")
 
     # Create scraper

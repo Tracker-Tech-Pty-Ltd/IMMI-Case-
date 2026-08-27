@@ -10,7 +10,9 @@ Every test uses tmp_path. No test may read or write anything under
 downloaded_cases/.
 """
 
+import ast
 import sqlite3
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +23,7 @@ from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline, start_pipeline
 from immi_case_downloader.sqlite_repository import SqliteRepository
 from immi_case_downloader.storage import (
+    CASE_FIELDS,
     ensure_output_dirs,
     invalidate_cases_cache,
     load_all_cases,
@@ -526,3 +529,113 @@ class TestStartPipelineRace:
             assert second is False
         finally:
             pl._active_pipeline = old
+
+
+# ── visa_subclass / visa_subclass_number dtype guard ─────────────────────
+
+
+class TestVisaSubclassDtypeGuard:
+    def test_root_scripts_guard_visa_subclass_dtype(self):
+        """Every pd.read_csv of the master CSV must guard both visa columns
+        as str, or the next read-modify-write cycle re-writes '866.0'.
+
+        Uses ast, not string slicing: a text window after `pd.read_csv(`
+        can match a comment, a docstring, or the *next* call's dtype=, so it
+        can pass while the call it is meant to check is unguarded.
+        """
+        repo_root = Path(__file__).resolve().parents[1]
+        candidates = [
+            "download_fulltext.py",
+            "normalize_metadata.py",
+            "merge_llm_extraction.py",
+            "download_missing_22.py",
+            "immi_case_downloader/storage.py",
+        ]
+        checked = 0
+        offenders = []
+
+        for rel in candidates:
+            path = repo_root / rel
+            if not path.exists():
+                # A sibling plan (032) may have archived a script by now.
+                continue
+            checked += 1
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if isinstance(func, ast.Attribute):
+                    name = func.attr
+                elif isinstance(func, ast.Name):
+                    name = func.id
+                else:
+                    name = None
+                if name != "read_csv":
+                    continue
+
+                dtype_kw = next(
+                    (kw for kw in node.keywords if kw.arg == "dtype"), None
+                )
+                guarded = False
+                if dtype_kw is not None and isinstance(dtype_kw.value, ast.Dict):
+                    keys = {
+                        k.value
+                        for k in dtype_kw.value.keys
+                        if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                    }
+                    guarded = {"visa_subclass", "visa_subclass_number"} <= keys
+                if not guarded:
+                    offenders.append(f"{rel}:{node.lineno}")
+
+        assert checked >= 4, (
+            f"only found {checked} of {len(candidates)} candidate files — "
+            "the guard is checking nothing"
+        )
+        assert not offenders, f"unguarded pd.read_csv call(s): {offenders}"
+
+
+# ── End-to-end: the repository's own round trip stops writing '866.0' ───
+
+
+class TestCsvRoundTripVisaColumns:
+    def test_csv_round_trip_preserves_both_visa_columns(self, tmp_path):
+        """load_all() -> save_many() must not re-corrupt visa_subclass or
+        visa_subclass_number back into '866.0' — this is the test that
+        catches Step 8e (the canonical reader) being skipped."""
+
+        def _row(case_id: str, visa_subclass: str, visa_subclass_number: str) -> str:
+            values = []
+            for field in CASE_FIELDS:
+                if field == "case_id":
+                    values.append(case_id)
+                elif field == "visa_subclass":
+                    values.append(visa_subclass)
+                elif field == "visa_subclass_number":
+                    values.append(visa_subclass_number)
+                elif field == "year":
+                    values.append("2024")
+                else:
+                    values.append("")
+            return ",".join(values)
+
+        csv_path = tmp_path / "immigration_cases.csv"
+        # One populated row and one blank row per column — the blank is what
+        # makes pandas infer float64 in the first place.
+        csv_path.write_text(
+            ",".join(CASE_FIELDS) + "\n"
+            + _row("aaa111111111", "866", "866") + "\n"
+            + _row("bbb222222222", "", "") + "\n"
+        )
+
+        repo = CsvRepository(str(tmp_path))
+        loaded = {c.case_id: c for c in repo.load_all()}
+        assert loaded["aaa111111111"].visa_subclass == "866"
+        assert loaded["aaa111111111"].visa_subclass_number == "866"
+
+        # An empty batch still reloads and rewrites the whole file — precisely
+        # the read-modify-write round trip under test.
+        repo.save_many([])
+
+        raw = csv_path.read_text()
+        assert "866.0" not in raw

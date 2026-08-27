@@ -134,7 +134,11 @@ def load_cases_csv(base_dir: str = OUTPUT_DIR) -> list[dict]:
     if not os.path.exists(filepath):
         return []
 
-    df = pd.read_csv(filepath, encoding="utf-8-sig", dtype={"visa_subclass": str})
+    df = pd.read_csv(
+        filepath,
+        encoding="utf-8-sig",
+        dtype={"visa_subclass": str, "visa_subclass_number": str},
+    )
     return df.to_dict("records")
 
 
