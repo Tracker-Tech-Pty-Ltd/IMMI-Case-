@@ -127,10 +127,14 @@ def _normalise_judge_name(raw: str) -> str:
     return name
 
 
-@lru_cache(maxsize=1)
-def _load_judge_bios() -> dict[str, dict]:
-    """Load judge biography map from disk once per process."""
-    bio_path = os.path.join(get_output_dir(), "judge_bios.json")
+@lru_cache(maxsize=8)
+def _load_judge_bios_for(output_dir: str) -> dict[str, dict]:
+    """Load the judge biography map for *output_dir*, once per directory.
+
+    Keyed on the directory so two apps in one process (tests, multi-tenant dev)
+    never serve each other's bios.
+    """
+    bio_path = os.path.join(output_dir, "judge_bios.json")
     if not os.path.exists(bio_path):
         return {}
     try:
@@ -152,14 +156,19 @@ def _load_judge_bios() -> dict[str, dict]:
     return bios
 
 
-@lru_cache(maxsize=1)
-def _load_judge_name_overrides() -> dict[str, str]:
+def _load_judge_bios() -> dict[str, dict]:
+    """Judge biography map for the current app's output dir."""
+    return _load_judge_bios_for(get_output_dir())
+
+
+@lru_cache(maxsize=8)
+def _load_judge_name_overrides_for(output_dir: str) -> dict[str, str]:
     """Load alias -> full-name overrides from output dir, fallback to packaged defaults."""
     package_default = (
         Path(__file__).resolve().parents[1] / "data" / "judge_name_overrides.json"
     )
     candidate_paths = [
-        Path(get_output_dir()) / "judge_name_overrides.json",
+        Path(output_dir) / "judge_name_overrides.json",
         package_default,
     ]
     overrides: dict[str, str] = {}
@@ -192,6 +201,11 @@ def _load_judge_name_overrides() -> dict[str, str]:
             overrides.setdefault(alias_key, full_name)
 
     return overrides
+
+
+def _load_judge_name_overrides() -> dict[str, str]:
+    """Alias -> full-name overrides for the current app's output dir."""
+    return _load_judge_name_overrides_for(get_output_dir())
 
 
 def _judge_query_aliases(raw: str) -> set[str]:
