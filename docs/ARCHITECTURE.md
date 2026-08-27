@@ -156,6 +156,27 @@ evidenced.
 
 ---
 
+## Schema changes (D1 migrations)
+
+Schema lives in `migrations/d1/{catalog,account,ops}/*.sql` and is bound to the
+three databases by `migrations_dir` at `wrangler.toml` lines 23, 29 and 35.
+
+**Nothing applies these automatically.** `make`, CI and
+`.github/workflows/deploy-worker.yml` deploy code only; there is no migration
+step anywhere in the pipeline. An operator applies them by hand with
+`wrangler d1 migrations apply <BINDING> --remote --config <operator config>`,
+using a config that carries real resource IDs (the checked-in `wrangler.toml`
+has placeholders by design).
+
+`make migrate` (`Makefile:107-108`) runs `supabase db push` and targets the
+**retired** Supabase ETL project. It has no effect on D1 and is not the
+migration path for production.
+
+Full procedure, including the offline parse check, the re-runnability rule and
+the Time-Travel-only rollback story: **`docs/ops/d1-migrations.md`**.
+
+---
+
 ## Layer 2 — LLM Council (`workers/llm-council/`)
 
 - Entry: `dispatchCloudflareCouncil()` → `cloudflare_handlers.js`.
