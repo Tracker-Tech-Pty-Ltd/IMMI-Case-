@@ -1724,8 +1724,10 @@ def analytics_outcomes():
                         by_subclass[cleaned][norm] += cnt
                         by_family[get_family(cleaned)][norm] += cnt
             _rpc_ok = True
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_outcomes RPC failed/timed out, falling back to Python")
+        except FuturesTimeoutError:
+            logger.warning("analytics_outcomes RPC timed out, falling back to Python")
+        except Exception:
+            logger.warning("analytics_outcomes RPC failed, falling back to Python", exc_info=True)
     # Skip Python fallback for Supabase repos — if the RPC timed out, the
     # fallback (which also queries Supabase) will also timeout, wasting another
     # 20 seconds and blowing the Cloudflare Worker 30 s wall-clock limit.
@@ -1745,8 +1747,10 @@ def analytics_outcomes():
                     if cleaned:
                         by_subclass[cleaned][norm] += 1
                         by_family[get_family(cleaned)][norm] += 1
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_outcomes fallback also timed out, returning empty result")
+        except FuturesTimeoutError:
+            logger.warning("analytics_outcomes fallback timed out, returning empty result")
+        except Exception:
+            logger.warning("analytics_outcomes fallback failed, returning empty result", exc_info=True)
 
     result = {
         "by_court": {k: dict(v) for k, v in sorted(by_court.items())},
@@ -1793,8 +1797,10 @@ def analytics_judges():
                 if court:
                     judge_courts[key].add(court)
             _rpc_ok = True
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_judges RPC failed/timed out, falling back to Python")
+        except FuturesTimeoutError:
+            logger.warning("analytics_judges RPC timed out, falling back to Python")
+        except Exception:
+            logger.warning("analytics_judges RPC failed, falling back to Python", exc_info=True)
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
@@ -1810,8 +1816,10 @@ def analytics_judges():
                     judge_display_name.setdefault(key, display_name)
                     if c.court_code:
                         judge_courts[key].add(c.court_code)
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_judges fallback also timed out, returning empty result")
+        except FuturesTimeoutError:
+            logger.warning("analytics_judges fallback timed out, returning empty result")
+        except Exception:
+            logger.warning("analytics_judges fallback failed, returning empty result", exc_info=True)
 
     judges = [
         {
@@ -1852,8 +1860,10 @@ def analytics_legal_concepts():
                 if canonical:
                     concept_counter[canonical] += int(r["cnt"])
             _rpc_ok = True
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_legal_concepts RPC failed/timed out, falling back to Python")
+        except FuturesTimeoutError:
+            logger.warning("analytics_legal_concepts RPC timed out, falling back to Python")
+        except Exception:
+            logger.warning("analytics_legal_concepts RPC failed, falling back to Python", exc_info=True)
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
@@ -1861,8 +1871,10 @@ def analytics_legal_concepts():
             for c in _apply_filters(cases):
                 for concept in _split_concepts(c.legal_concepts):
                     concept_counter[concept] += 1
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_legal_concepts fallback also timed out, returning empty result")
+        except FuturesTimeoutError:
+            logger.warning("analytics_legal_concepts fallback timed out, returning empty result")
+        except Exception:
+            logger.warning("analytics_legal_concepts fallback failed, returning empty result", exc_info=True)
 
     concepts = [
         {"name": name, "count": count}
@@ -1896,8 +1908,10 @@ def analytics_nature_outcome():
                 norm = _normalise_outcome(r["outcome"])
                 nature_outcome[r["case_nature"]][norm] += int(r["cnt"])
             _rpc_ok = True
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_nature_outcome RPC failed/timed out, falling back to Python")
+        except FuturesTimeoutError:
+            logger.warning("analytics_nature_outcome RPC timed out, falling back to Python")
+        except Exception:
+            logger.warning("analytics_nature_outcome RPC failed, falling back to Python", exc_info=True)
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
@@ -1907,8 +1921,10 @@ def analytics_nature_outcome():
                     continue
                 norm = _normalise_outcome(c.outcome)
                 nature_outcome[c.case_nature][norm] += 1
-        except (FuturesTimeoutError, Exception):
-            logger.warning("analytics_nature_outcome fallback also timed out, returning empty result")
+        except FuturesTimeoutError:
+            logger.warning("analytics_nature_outcome fallback timed out, returning empty result")
+        except Exception:
+            logger.warning("analytics_nature_outcome fallback failed, returning empty result", exc_info=True)
 
     # Get top natures by total count
     nature_totals = {n: sum(outcomes.values()) for n, outcomes in nature_outcome.items()}
