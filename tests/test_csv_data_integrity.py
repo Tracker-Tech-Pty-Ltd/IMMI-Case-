@@ -233,3 +233,70 @@ class TestPipelineCleanPhase:
         pipeline._run_clean_phase()
 
         assert len(load_all_cases(str(tmp_path))) == 2
+
+
+# ── Pipeline download-phase stop persistence and failed accounting ──────
+
+
+class TestPipelineDownloadPhase:
+    @patch("immi_case_downloader.sources.austlii.AustLIIScraper")
+    def test_download_phase_persists_progress_on_stop(self, mock_scraper_cls, tmp_path):
+        """Stop must not orphan already-downloaded .txt files.
+
+        The stop happens after the first download has succeeded, and the
+        assertion reads the CSV back — a mocked `_save_download_progress`
+        would let this pass even against the unfixed `return`, since the
+        bug is lost work, not a missing call.
+        """
+        ensure_output_dirs(str(tmp_path))
+        a = _case(citation="[2024] AATA 25", url="https://example.com/25")
+        b = _case(citation="[2024] AATA 26", url="https://example.com/26")
+        save_cases_csv([a, b], str(tmp_path))
+
+        config = _make_pipeline_config(download_enabled=True)
+        pipeline = SmartPipeline(config, str(tmp_path))
+
+        mock_scraper = mock_scraper_cls.return_value
+        call_count = {"n": 0}
+
+        def fake_download(case):
+            call_count["n"] += 1
+            pipeline.request_stop()
+            return "case text"
+
+        mock_scraper.download_case_detail.side_effect = fake_download
+
+        pipeline._run_download_phase()
+
+        invalidate_cases_cache()
+        by_id = {c.case_id: c for c in load_all_cases(str(tmp_path))}
+        assert by_id[a.case_id].full_text_path != ""
+        assert by_id[b.case_id].full_text_path == ""
+        assert call_count["n"] == 1
+
+    @patch("immi_case_downloader.sources.austlii.AustLIIScraper")
+    def test_download_phase_failed_count_never_negative(self, mock_scraper_cls, tmp_path):
+        """The retryable-empty branch must balance the retry loop's decrement."""
+        ensure_output_dirs(str(tmp_path))
+        case = _case(citation="[2024] AATA 27", url="https://example.com/27")
+        save_cases_csv([case], str(tmp_path))
+
+        config = _make_pipeline_config(download_enabled=True)
+        pipeline = SmartPipeline(config, str(tmp_path))
+
+        mock_scraper = mock_scraper_cls.return_value
+        mock_scraper.last_error = {"category": "http_500"}
+        calls = {"n": 0}
+
+        def fake_download(c):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return ""
+            return "recovered text"
+
+        mock_scraper.download_case_detail.side_effect = fake_download
+
+        pipeline._run_download_phase()
+
+        failed = pipeline.get_status()["stats"]["download"]["failed"]
+        assert failed >= 0

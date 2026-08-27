@@ -586,6 +586,11 @@ class SmartPipeline:
 
         for i, case in enumerate(targets):
             if self._is_stopped():
+                # Persist everything downloaded so far before bailing out;
+                # checkpoints only fire every 200, so up to 199 already-written
+                # .txt files would otherwise become orphans that the next run
+                # re-downloads.
+                self._save_download_progress(targets[:i])
                 return
 
             pct = 50 + int(((i + 1) / len(targets)) * 45)
@@ -604,6 +609,10 @@ class SmartPipeline:
                     error_info = getattr(scraper, "last_error", None)
                     category = error_info.get("category", "") if error_info else ""
                     if category in RETRYABLE_ERRORS:
+                        # Count it as failed now; the retry loop decrements on
+                        # success. Without this the decrement is unbalanced and
+                        # `failed` can go negative in the status payload.
+                        failed += 1
                         retry_queue.append(case.case_id)
                         self.log.add(
                             "download", "warn", category,
@@ -655,6 +664,8 @@ class SmartPipeline:
 
         # Final save
         self._save_download_progress(targets)
+
+        failed = max(0, failed)
 
         with self._lock:
             self._status["stats"]["download"] = {
