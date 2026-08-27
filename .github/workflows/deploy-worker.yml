@@ -36,6 +36,10 @@ jobs:
       - name: Install Worker dependencies
         run: npm ci
 
+      - name: Gate wrangler toolchain alignment
+        run: |
+          node -e 'const r=require("./package.json").devDependencies.wrangler;const p=require("./workers/austlii-scraper/package.json").devDependencies.wrangler;if(r!==p){console.error("wrangler declaration mismatch: root "+r+" vs pipeline "+p);process.exit(1);}console.log("wrangler aligned at "+r);'
+
       - name: Materialise operator-supplied native configs
         env:
           MAIN_CONFIG_B64: ${{ secrets.IMMI_NATIVE_MAIN_WRANGLER_TOML_B64 }}
