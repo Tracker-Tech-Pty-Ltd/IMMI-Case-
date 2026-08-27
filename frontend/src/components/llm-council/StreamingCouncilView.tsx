@@ -361,17 +361,30 @@ export function useCouncilStream(): UseCouncilStreamResult {
         return curr;
       } finally {
         clearInterval(watchdog);
-        controllerRef.current = null;
-        setIsStreaming(false);
+        // Only tear down the shared ref/state if this run is still the
+        // current one. A superseded run reaches here *after* start() has
+        // installed the successor's controller and bumped genRef, so an
+        // unguarded teardown would null the successor's AbortController and
+        // clear its isStreaming flag. Every other state-touching block in
+        // this hook is already gated the same way (see `update` and the
+        // watchdog interval above).
+        if (myGen === genRef.current) {
+          controllerRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
     [],
   );
 
-  // Cleanup on unmount
+  // Cleanup on unmount. Bump the generation FIRST: the abort below makes the
+  // in-flight fetch reject on a later microtask, and every state-touching block
+  // in start() is gated on `myGen === genRef.current`.
   useEffect(() => {
     return () => {
+      genRef.current += 1;
       controllerRef.current?.abort();
+      controllerRef.current = null;
     };
   }, []);
 
@@ -675,16 +688,31 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
 // ---------------------------------------------------------------------------
 
 function RecallCodeCard({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = useCallback(() => {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    };
+  }, []);
+
+  const onCopy = useCallback(async () => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     try {
-      navigator.clipboard.writeText(code);
-      setCopied(true);
+      // navigator.clipboard is undefined outside a secure context, and
+      // writeText() *rejects* on denied permission or an unfocused document.
+      // Both must be observed before claiming success: this code is the only
+      // handle the user has for restoring the session.
+      await navigator.clipboard.writeText(code);
+      setCopyState("copied");
       playHaptic();
-      window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* clipboard blocked — non-fatal, code is visible on screen */
+      setCopyState("failed");
     }
+    resetTimerRef.current = setTimeout(() => setCopyState("idle"), 2000);
   }, [code]);
 
   return (
@@ -715,15 +743,22 @@ function RecallCodeCard({ code }: { code: string }) {
           </code>
           <button
             type="button"
-            onClick={onCopy}
+            onClick={() => {
+              void onCopy();
+            }}
             data-testid="recall-code-copy"
             aria-label="Copy recall code"
             className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-accent/60 hover:bg-accent/10 hover:text-accent"
           >
-            {copied ? (
+            {copyState === "copied" ? (
               <>
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                 Copied
+              </>
+            ) : copyState === "failed" ? (
+              <>
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                Copy failed
               </>
             ) : (
               <>
@@ -734,6 +769,14 @@ function RecallCodeCard({ code }: { code: string }) {
           </button>
         </div>
       </div>
+      {copyState === "failed" ? (
+        <div
+          data-testid="recall-code-copy-failed"
+          className="mt-2 text-[11px] text-amber-700 dark:text-amber-400"
+        >
+          Copy failed — select the code above and copy it manually.
+        </div>
+      ) : null}
     </div>
   );
 }

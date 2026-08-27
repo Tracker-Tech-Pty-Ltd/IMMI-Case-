@@ -20,6 +20,7 @@ import { CasesFilters } from "@/components/cases/CasesFilters";
 import { CasesTable } from "@/components/cases/CasesTable";
 import { CasesBulkActions } from "@/components/cases/CasesBulkActions";
 import { cn } from "@/lib/utils";
+import { downloadBlob } from "@/lib/download-blob";
 import { toast } from "sonner";
 import type { CaseFilters, ImmigrationCase } from "@/types/case";
 
@@ -173,12 +174,10 @@ export function CasesPage() {
     );
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cases-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      blob,
+      `cases-export-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
     toast.success(t("cases.exported", { count: data.cases.length }));
   }, [data, t]);
 
