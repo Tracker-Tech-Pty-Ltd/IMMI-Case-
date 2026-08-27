@@ -1,4 +1,5 @@
 import type { SavedSearch, CaseFilters } from "@/types/case";
+import { resolveRouterBasename } from "@/lib/router";
 
 const STORAGE_KEY = "saved-searches";
 const MAX_SAVED_SEARCHES = 50;
@@ -296,10 +297,22 @@ export function decodeUrlToFilters(searchParams: URLSearchParams): CaseFilters {
 }
 
 /**
- * Generate a shareable URL for a saved search
+ * Generate a shareable URL for a saved search.
+ *
+ * The SPA is served at "/" in production (Cloudflare Worker static assets)
+ * and at "/app" on the legacy local-dev Flask surface. resolveRouterBasename()
+ * is the single source of truth for which one is live — App.tsx feeds it to
+ * BrowserRouter. A share URL that drops the basename lands outside the router.
+ *
+ * `basename` is injectable so the function is unit-testable without
+ * mutating window.location; callers should omit it.
  */
-export function generateShareableUrl(filters: CaseFilters): string {
+export function generateShareableUrl(
+  filters: CaseFilters,
+  basename: string = resolveRouterBasename(window.location.pathname),
+): string {
   const params = encodeFiltersToUrl(filters);
-  const baseUrl = `${window.location.origin}/cases`;
+  const prefix = basename === "/" ? "" : basename.replace(/\/$/, "");
+  const baseUrl = `${window.location.origin}${prefix}/cases`;
   return params ? `${baseUrl}?${params}` : baseUrl;
 }
