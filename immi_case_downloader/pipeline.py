@@ -745,6 +745,12 @@ def start_pipeline(config: PipelineConfig, output_dir: str = OUTPUT_DIR) -> bool
         if _active_pipeline is not None and _active_pipeline.get_status()["running"]:
             return False
         pipeline = SmartPipeline(config, output_dir)
+        # Claim the slot inside the same lock. `run()` does not set running=True
+        # until it is scheduled on the new thread, so a second caller entering
+        # this lock first would otherwise see running=False and start a rival
+        # pipeline that rewrites the same CSV from its own snapshot.
+        with pipeline._lock:
+            pipeline._status["running"] = True
         _active_pipeline = pipeline
 
     thread = threading.Thread(target=pipeline.run, daemon=True)

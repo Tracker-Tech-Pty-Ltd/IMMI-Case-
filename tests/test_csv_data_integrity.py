@@ -17,7 +17,7 @@ import pytest
 
 from immi_case_downloader.csv_repository import CsvRepository
 from immi_case_downloader.models import ImmigrationCase
-from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline
+from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline, start_pipeline
 from immi_case_downloader.sqlite_repository import SqliteRepository
 from immi_case_downloader.storage import (
     ensure_output_dirs,
@@ -300,3 +300,27 @@ class TestPipelineDownloadPhase:
 
         failed = pipeline.get_status()["stats"]["download"]["failed"]
         assert failed >= 0
+
+
+# ── start_pipeline check-then-act race ───────────────────────────────────
+
+
+class TestStartPipelineRace:
+    @patch("immi_case_downloader.pipeline.threading.Thread")
+    def test_start_pipeline_claims_slot_before_thread_starts(self, mock_thread_cls):
+        """The slot must be claimed inside the lock, before the thread ever
+        runs — otherwise a second caller entering the lock first sees a
+        freshly-assigned instance with running=False and starts a rival
+        pipeline that rewrites the same CSV."""
+        import immi_case_downloader.pipeline as pl
+
+        old = pl._active_pipeline
+        pl._active_pipeline = None
+        try:
+            config = _make_pipeline_config()
+            first = start_pipeline(config)
+            second = start_pipeline(config)
+            assert first is True
+            assert second is False
+        finally:
+            pl._active_pipeline = old
