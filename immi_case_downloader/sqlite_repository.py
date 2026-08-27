@@ -128,15 +128,26 @@ class SqliteRepository:
         return conn
 
     def close(self):
-        """Close all connections across all threads."""
+        """Close every connection this repository can close from this thread.
+
+        A connection opened on another thread cannot be closed from here —
+        sqlite3's check_same_thread guard raises — so it stays in the tracking
+        list to be closed by its own thread (or at interpreter exit) instead of
+        being silently forgotten while still open. This matters because a Flask
+        `teardown_appcontext` pop can run this from a worker thread; clearing
+        the list unconditionally leaked the request thread's connection.
+        """
         with self._all_conns_lock:
+            still_open = []
             for conn in self._all_conns:
                 try:
                     conn.close()
                 except Exception:
-                    pass
-            self._all_conns.clear()
-        self._local.conn = None
+                    still_open.append(conn)
+            self._all_conns[:] = still_open
+        own = getattr(self._local, "conn", None)
+        if own is None or own not in still_open:
+            self._local.conn = None
 
     def __del__(self):
         try:
