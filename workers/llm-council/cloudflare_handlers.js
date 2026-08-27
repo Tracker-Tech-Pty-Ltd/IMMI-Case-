@@ -400,6 +400,10 @@ async function handleHealth(request, env) {
   if (live) {
     const authResult = await requireAuth(request, env, verifyJwt);
     if (authResult instanceof Response) return authResult;
+    // A live probe is a paid CF AI Gateway call. Same limiter, same
+    // fail-closed contract as every other credit-spending Council route.
+    const limited = await applyRateLimit(request, env);
+    if (!limited.success) return rateLimitFailure(limited);
   }
   if (!live || !env.CF_AIG_TOKEN) {
     return jsonResponse({

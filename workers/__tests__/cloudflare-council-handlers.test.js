@@ -240,4 +240,37 @@ describe("Cloudflare-native Council handlers", () => {
     expect(rl.limit).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
   });
+
+  it("does not rate-limit the static health echo", async () => {
+    const response = await dispatchCloudflareCouncil(
+      request("GET", "/api/v1/llm-council/health"),
+      { IMMI_STORAGE_MODE: "cloudflare", CF_AIG_TOKEN: "fake-token" },
+      "/api/v1/llm-council/health", "GET",
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("fails closed on a live health probe when the limiter binding is absent", async () => {
+    const response = await dispatchCloudflareCouncil(
+      request("GET", "/api/v1/llm-council/health?live=1"),
+      { IMMI_STORAGE_MODE: "cloudflare", CF_AIG_TOKEN: "fake-token" },
+      "/api/v1/llm-council/health", "GET",
+    );
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("rate_limiter_unconfigured");
+  });
+
+  it("consults the limiter before spending AI credit on a live probe", async () => {
+    const response = await dispatchCloudflareCouncil(
+      request("GET", "/api/v1/llm-council/health?live=1"),
+      {
+        IMMI_STORAGE_MODE: "cloudflare", CF_AIG_TOKEN: "fake-token",
+        RL_COUNCIL_TURN: { limit: vi.fn(async () => ({ success: false })) },
+      },
+      "/api/v1/llm-council/health", "GET",
+    );
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe("rate_limited");
+    expect(mockRunExpert).not.toHaveBeenCalled();
+  });
 });
