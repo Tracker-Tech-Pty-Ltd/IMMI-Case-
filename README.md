@@ -103,7 +103,7 @@ It built the labyrinth.
 | 工具 | 最低版本 | 備註 |
 |------|----------|------|
 | Python | 3.11+ | 3.14 已驗證可用 |
-| Node.js | 18+ | 推薦 20 LTS |
+| Node.js | 22+ | CI 使用 22；wrangler 4.120.0 要求 >=22 |
 | npm | 9+ | 或 bun 1.0+ |
 | PostgreSQL | — | 可選，使用 Supabase 雲端則免本地安裝 |
 
