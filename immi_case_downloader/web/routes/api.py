@@ -1071,9 +1071,22 @@ def _invalidate_cases_cache() -> None:
         _analytics_cache.clear()
 
 
+# The only query params any cached analytics endpoint reads.  Building the cache
+# key from the whole query string let an unbounded set of ignored params (utm_*,
+# cache-busters) each mint a distinct entry.
+_ANALYTICS_FILTER_PARAMS = (
+    "court", "year_from", "year_to",
+    "case_natures", "visa_subclasses", "visa_families", "outcome_types",
+)
+# `limit` is not a filter (it does not gate the RPC fast path) but analytics_judges
+# and analytics_legal_concepts truncate their result with it, so it must be part of
+# the key or a ?limit=5 request would be served a 20-item cached list.
+_ANALYTICS_CACHE_KEY_PARAMS = _ANALYTICS_FILTER_PARAMS + ("limit",)
+
+
 def _analytics_cache_key() -> str:
-    """Build a stable cache key from the current request's sorted query args."""
-    return str(sorted(request.args.items()))
+    """Build a stable cache key from the params the analytics endpoints actually read."""
+    return str([(p, request.args.get(p, "")) for p in _ANALYTICS_CACHE_KEY_PARAMS])
 
 
 def _analytics_get(key: str) -> dict | None:
@@ -1180,10 +1193,7 @@ def _has_analytics_filters() -> bool:
     Used to decide whether to take the fast Supabase RPC path (no filters)
     or the Python aggregation path (filters require loading cases locally).
     """
-    return any(request.args.get(p) for p in (
-        "court", "year_from", "year_to",
-        "case_natures", "visa_subclasses", "visa_families", "outcome_types",
-    ))
+    return any(request.args.get(p) for p in _ANALYTICS_FILTER_PARAMS)
 
 
 def _apply_filters(cases: list[ImmigrationCase]) -> list[ImmigrationCase]:
