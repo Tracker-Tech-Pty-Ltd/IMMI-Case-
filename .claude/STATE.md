@@ -1,6 +1,97 @@
 # IMMI-Case Worktree Closeout State
 
-Updated: 2026-08-21 Australia/Melbourne
+Updated: 2026-08-27 Australia/Melbourne
+
+## 2026-08-27 `/improve deep` 全倉審計 + 52 份實作計畫 — IN PROGRESS
+
+基準 commit `42826a3`。全程未改動任何原始碼（僅新增 `plans/`）。
+
+### 驗證基線（本機實測，非引用）
+| 閘門 | 指令 | 結果 |
+|---|---|---|
+| Python 測試 | `make test-py` | 1141 passed / **3 failed** / 7 skipped，coverage 71% |
+| 前端測試 | `cd frontend && npx vitest run` | 490 passed / 55 files |
+| Worker 測試 | `cd workers && npx vitest run` | 345 passed / 25 files |
+| 真實 typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0（169 檔） |
+| 假 typecheck（CI 實際跑的） | `npx tsc --noEmit` | exit 0 但**載入 0 檔** |
+| Python lint（現行範圍） | `make lint` | All checks passed |
+| Python lint（全倉） | `.venv/bin/ruff check .` | **43 errors，全在 `tests/`** |
+| 前端依賴 | `npm audit` / `--omit=dev` | 17 項（2 critical）/ **8 項（7 high）** |
+
+3 個 Python 失敗是**環境性**，非程式碼缺陷：Homebrew Python 3.14.7 的 `pyexpat.so` 需要
+`_XML_SetAllocTrackerActivationThreshold`，macOS `/usr/lib/libexpat.1.dylib` 沒有該符號 →
+`pypdf` import 失敗 → `tests/test_backfill_judge_overrides_from_pdf.py` 整模組載入失敗。Linux CI 不受影響。
+
+### 審計結果
+13 類 deep 掃描 + 逐類對抗式驗證（26 agents，3.39M tokens）→ **238 個倖存發現**
+（HIGH 144 / MED 69 / LOW 25；effort S 173 / M 54 / L 11），13 個駁回、60 個證據被修正。
+
+四項最高槓桿（皆由 orchestrator 親自機器驗證）：
+1. **LLM Council 生產全掛** — `workers/llm-council/cloudflare_handlers.js:40-45` 的 `applyRateLimit`
+   在缺 binding 時 fail-closed，而 `wrangler.toml` 從未宣告 `RL_COUNCIL_TURN`。
+   退役的 `handlers.js:71` 原本是 fail-open；cloudflare-native 切換時翻轉了預設卻沒補 binding。
+2. **前端無編譯閘門** — `ci.yml:64` 跑 `npx tsc --noEmit`，而 `tsconfig.json` 是 `files:[]` + 純
+   project references，載入 0 檔；CI 三個 job 也從不 build 前端。
+3. **App 主動遷離已決定設計方向** — `use-theme-preset.ts:464-481` 每個分支都回 `"claude"`，
+   並把已存的 `"parchment"`（＝Legal Codex 調色盤 `#1b2838`/`#5c4306`/`#f5f4f1`）改寫掉。
+4. **Worker 零邊緣快取** — `grep -rn 'caches\.' workers` = 0 次；proxy.js 刪除後 Cache API 全失。
+
+### 計畫
+`plans/001`–`plans/052`，238 個發現全部分派、零重複零遺漏。按**檔案領地**切分以支援並行實作。
+硬性序列：001 → 002 → 003（共用 `Makefile` + `ci.yml`）。
+006 含蓄意破壞性變更（部署後 operator 端點全 403 直到授權）。
+
+### 待辦
+codex `gpt-5.6-sol` 審查計畫 → 依審查修訂 → commit → Sonnet 團隊實作 → codex 覆審 → opus 精修（≤3 並行）→ 驗證 → commit。
+
+## 2026-08-25 Repo Completion Pass + VPS Crawler 修復與首輪 2026 回填 — HANDOFF
+
+### A. Repo completion pass（已全部 push 至 origin/main，CI 綠）
+- 8 個主題 commit + 3 個 CI fix-forward：`6cf7f7a`(ci 恢復完整套件+ruff step) `65abc6a`(LLM Council 信心分數原生計算) `a1222c1`(mutations-disabled 前端降級) `1b486a5`(Slice H 行動端) `b5a8f00`(docs 對齊 cloudflare-native) `4ec9c73`(ruff 釘 0.15.18) `a8db5d2`(CI 排除 node 依賴測試) `f0a4517`(guard 註解位置)
+- CI run 32614730554 全綠：test-python **1134 passed**（原本只跑 11 檔白名單）、fe 490、worker 345
+- 驗證基線：本機 make test-py = 1141/5(環境性)/5；fe 490/55；workers 345/25。詳見 memory `immi-local-test-baseline`
+- 未決：ruff 0.16 升級（394 findings，138 可 --fix）延至 ~2026-09-23；operator 項（flags、舊 immi-case Worker 刪除、Supabase 除役、租戶隔離測試矩陣）仍封鎖
+
+### B. VPS AustLII crawler（host `hstgr` = Hostinger srv1822588，UTC）
+- 路徑 `/opt/austlii-crawler/`（crawler.py + pipeline.sh + venv），以 `austlii-crawler`(UID 995) 執行，流量經 wg1-home → 住宅 IP 175.37.35.150
+- Cron `0 14 * * 1` UTC（= 週二 00:00 AEST），只爬當年（2026）四法院：ARTA/FCA/FedCFamC2G/HCA，POST /api/v1/cases 帶 CRAWLER_WRITE_TOKEN，Worker 按 case_id 冪等 upsert
+- Log：`/var/log/austlii-crawl.log`（unbuffered，每 25 筆 progress 心跳）
+- **2026-08-24 套用的補丁**（備份 `*.bak-20260824` 同目錄）：
+  1. 挑戰頁等待上限 120s（原無界 while 迴圈曾致 ~3h 無聲卡死）— listing 層跳過法院、case 層記 failed 續跑
+  2. pipeline 用 `python -u`（stdout 原為全緩衝，log 假死）
+  3. POST timeout 30s→90s（大 payload 失敗率 24%→~2%）
+  4. pipeline.sh 加 flock 防重入（已實戰擋下 08-24 14:00 UTC cron 重疊）
+- 已知教訓：`pgrep -f`/`pkill -f` 會匹配自身 ssh cmdline——診斷用 `ps -u austlii-crawler`，kill 用精確 PID
+
+### C. 首輪 2026 回填現況（2026-08-25 05:56 AEST 快照）
+- Run #3 進行中（08-24 09:02 UTC 起）：posted=2,325 / skipped=3 / failed=49（~2%）
+- ARTA 1,748 筆完成；FCA（列表 1,188）進行中；之後 FedCFamC2G、HCA
+- 生產：**151,295 total / 2026 年 2,478 筆**（起點 220）。完成時 log 會有 `完成：posted=…` 行
+- 失敗案例（~49，多為挑戰頁卡 120s）由下週 cron 自動重試補上
+
+### D. 資料品質審計結果（2026-08-25，600 筆抽樣 + 5 筆 R2 內文深查）
+- ✅ 無重複 citation、無挑戰頁污染、全文 100% 入 R2（checksum 驗證）、內文 17K-125K chars 含真實判決
+- ⚠️ 新案結構化欄位全空：date 95% 空（**日期在 title 內可 regex 補**）、judges/outcome/applicant/visa 全空 → 新案在 Analytics/法官檔案/篩選器隱形，需獨立抽取 pass
+- ⚠️ 次要：text_snippet 未生成；全文頭尾帶 AustLII 導覽雜訊（inner_text(body) 全抓）
+- detail API 的 full_text 在回應**頂層**，不在 case 物件內（勿誤判為空）
+
+### E. TODO（優先序）
+- P1-1 確認本輪爬完（log `完成：` 行；各法院 listing 數 vs DB 數對帳）
+- P1-2 date 補填：從 title regex 抽日期——(a) crawler.py 加入 payload（一次改，之後每週自動）(b) 對已入庫 ~2,300 筆跑 backfill
+- P1-3 對 2026 新案跑結構化欄位抽取 pass（機制待定：本地腳本直寫 vs 遷移中的 extraction pipeline——後者被 PIPELINE_ENABLED=false 閘住）
+- P2-4 crawler 加「跳過已知 citation」：起跑先拉現有清單，週跑從 ~10h+ 縮到 <1h、大減挑戰頁觸發
+- P2-5 text_snippet 生成；P2-6 全文去 AustLII 頁面雜訊；P2-7 **把 crawler.py/pipeline.sh 納入版控**（現只存在 VPS + .bak）
+- P3 ruff 0.16（~09-23）、前端死碼（api-cases.ts、saved-searches.test.ts 永不被 vitest glob 收集）、E2E council skip 測試決策、operator 封鎖項
+
+### F. Watch list
+1. 本輪爬完與否（今天內）＋最終 failed 數
+2. 下次無人值守 cron：**2026-08-31 14:00 UTC（= 09-01 週二 00:00 AEST）**——看 log 心跳與計數增量
+3. wg1-home 隧道：住宅線路斷線/換 IP 會讓爬蟲遇 challenge/封鎖（`wg show wg1-home latest-handshakes`）
+4. stats API 偶發空回應（08-24 ~18:42 AEST 出現 2 次）——再現則查 Worker/cache
+5. crawl log 的 failed 率 >5% 需調查
+6. D1 容量：2026 全年將 +4-5K 案（見 D1 Capacity Migration 章節）
+7. Analytics 圖表缺 2026 新案 = 預期行為（抽取未跑），非 bug
+8. 文件測試計數（README/CLAUDE/AGENTS）會隨新測試漂移，下次 doc pass 重算
 
 ## 2026-08-21 D1 Capacity Migration + Supabase Status — COMPLETE ✓
 
