@@ -250,18 +250,24 @@ class SqliteRepository:
         count = 0
         # Batch in chunks of 500 for memory efficiency
         batch = []
-        for case in cases:
-            case.ensure_id()
-            d = case.to_dict()
-            batch.append(tuple(d.get(c, "") for c in cols))
-            if len(batch) >= 500:
+        try:
+            for case in cases:
+                case.ensure_id()
+                d = case.to_dict()
+                batch.append(tuple(d.get(c, "") for c in cols))
+                if len(batch) >= 500:
+                    conn.executemany(sql, batch)
+                    count += len(batch)
+                    batch.clear()
+            if batch:
                 conn.executemany(sql, batch)
                 count += len(batch)
-                batch.clear()
-        if batch:
-            conn.executemany(sql, batch)
-            count += len(batch)
-        conn.commit()
+            conn.commit()
+        except Exception:
+            # Without this the implicit transaction stays open holding a partial
+            # write, which the next unrelated commit on this thread flushes.
+            conn.rollback()
+            raise
         return count
 
     def update(self, case_id: str, updates: dict) -> bool:
