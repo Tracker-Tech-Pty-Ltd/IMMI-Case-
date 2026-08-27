@@ -1,7 +1,23 @@
 """Data models for immigration cases."""
 
 import hashlib
+import math
 from dataclasses import dataclass, asdict
+
+
+def _is_missing(value) -> bool:
+    """True for the three shapes an absent CSV/DB cell arrives in.
+
+    pandas turns an empty CSV field into float('nan'); a CSV round-trip turns
+    that into the string "nan"; a SQL NULL arrives as None. Testing those
+    explicitly instead of plain falsiness means a legitimate 0 or False is
+    preserved rather than blanked.
+    """
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    return str(value) == "nan"
 
 
 @dataclass
@@ -45,9 +61,20 @@ class ImmigrationCase:
 
     def ensure_id(self):
         """Generate a stable case_id if not already set."""
-        if not self.case_id:
-            key = self.citation or self.url or self.title
-            self.case_id = hashlib.sha256(key.encode()).hexdigest()[:12]
+        if self.case_id:
+            return
+        key = self.citation or self.url or self.title
+        if not key:
+            # Nothing identifying: hashing "" gave every blank-key case the
+            # same id (e3b0c442…). Fall back to the whole record so two
+            # different blank-key rows stay distinguishable, and stay
+            # deterministic so reloading the CSV does not mint a new id.
+            key = repr(sorted(
+                (name, value)
+                for name, value in self.to_dict().items()
+                if name != "case_id"
+            ))
+        self.case_id = hashlib.sha256(key.encode()).hexdigest()[:12]
 
     @classmethod
     def from_dict(cls, data: dict) -> "ImmigrationCase":
@@ -58,9 +85,9 @@ class ImmigrationCase:
             if k in valid_fields:
                 if k == "year":
                     try:
-                        filtered[k] = int(v) if v and str(v) != "nan" else 0
+                        filtered[k] = 0 if _is_missing(v) else int(v)
                     except (ValueError, TypeError):
                         filtered[k] = 0
                 else:
-                    filtered[k] = str(v) if v and str(v) != "nan" else ""
+                    filtered[k] = "" if _is_missing(v) else str(v)
         return cls(**filtered)

@@ -61,8 +61,14 @@ def is_garbage_country(val: str) -> bool:
 def print_fill_rates(rows: list[dict], court_filter: str = "", label: str = ""):
     total = len(rows)
     if court_filter:
-        rows = [r for r in rows if r.get("court_code", "") == court_filter]
+        rows = [r for r in rows if (r.get("court_code") or "") == court_filter]
         total = len(rows)
+
+    if not rows:
+        print(f"\n{'='*70}")
+        print(f"No rows match{' court ' + court_filter if court_filter else ''}")
+        print(f"{'='*70}")
+        return
 
     title = f"Fill Rates{' — ' + label if label else ''}{' (' + court_filter + ')' if court_filter else ''}"
     print(f"\n{'='*70}")
@@ -75,14 +81,14 @@ def print_fill_rates(rows: list[dict], court_filter: str = "", label: str = ""):
         if field not in rows[0]:
             print(f"  {field:30s}: (field not in CSV)")
             continue
-        filled = sum(1 for r in rows if r.get(field, "").strip())
+        filled = sum(1 for r in rows if (r.get(field) or "").strip())
         pct = filled / total * 100 if total > 0 else 0
         bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
         print(f"  {field:30s}: {filled:>8,} / {total:,} = {pct:5.1f}% {bar}")
 
 
 def print_court_breakdown(rows: list[dict]):
-    courts = sorted(set(r.get("court_code", "?") for r in rows))
+    courts = sorted(set(r.get("court_code") or "?" for r in rows))
     print(f"\n{'='*70}")
     print("Fill Rates by Court")
     print(f"{'='*70}")
@@ -91,13 +97,13 @@ def print_court_breakdown(rows: list[dict]):
     print("-" * 70)
 
     for court in courts:
-        court_rows = [r for r in rows if r.get("court_code", "") == court]
+        court_rows = [r for r in rows if (r.get("court_code") or "") == court]
         total = len(court_rows)
         if total == 0:
             continue
 
         def pct(field: str) -> str:
-            n = sum(1 for r in court_rows if r.get(field, "").strip())
+            n = sum(1 for r in court_rows if (r.get(field) or "").strip())
             return f"{n/total*100:.0f}%"
 
         print(
@@ -113,7 +119,7 @@ def check_garbage_values(rows: list[dict]):
     print(f"{'='*70}")
 
     # Country garbage
-    garbage_country = [r for r in rows if is_garbage_country(r.get("country_of_origin", ""))]
+    garbage_country = [r for r in rows if is_garbage_country(r.get("country_of_origin") or "")]
     print(f"\ncountry_of_origin garbage values: {len(garbage_country)}")
     if garbage_country:
         for r in garbage_country[:5]:
@@ -129,7 +135,7 @@ def check_garbage_values(rows: list[dict]):
         print(f"\nis_represented values: {dict(sorted(valid_rep.items()))}")
 
     # Country value lengths
-    long_countries = [r for r in rows if len(r.get("country_of_origin", "")) > 50]
+    long_countries = [r for r in rows if len(r.get("country_of_origin") or "") > 50]
     if long_countries:
         print(f"\nLong country values (>50 chars): {len(long_countries)}")
         for r in long_countries[:3]:
@@ -141,7 +147,7 @@ def sample_values(rows: list[dict], field: str, n: int = 15):
     print(f"Sample values: {field}")
     print(f"{'='*70}")
 
-    filled = [r for r in rows if r.get(field, "").strip()]
+    filled = [r for r in rows if (r.get(field) or "").strip()]
     if not filled:
         print("  (no values)")
         return
@@ -158,6 +164,10 @@ def compare_to_baseline(current: list[dict], baseline_path: Path):
     baseline = load_csv(baseline_path)
     baseline_map = {r["case_id"]: r for r in baseline if r.get("case_id")}
 
+    if not current:
+        print("No current rows to compare.")
+        return
+
     print(f"\n{'='*70}")
     print(f"Comparison: Current vs {baseline_path.name}")
     print(f"{'='*70}")
@@ -171,17 +181,17 @@ def compare_to_baseline(current: list[dict], baseline_path: Path):
 
         prev_filled = sum(
             1 for r in current
-            if baseline_map.get(r.get("case_id", ""), {}).get(field, "").strip()
+            if (baseline_map.get(r.get("case_id") or "", {}).get(field) or "").strip()
         )
-        curr_filled = sum(1 for r in current if r.get(field, "").strip())
+        curr_filled = sum(1 for r in current if (r.get(field) or "").strip())
 
         # Check regressions (field was filled in baseline but empty now)
         reg = 0
         imp = 0
         for r in current:
-            cid = r.get("case_id", "")
-            baseline_val = baseline_map.get(cid, {}).get(field, "")
-            curr_val = r.get(field, "")
+            cid = r.get("case_id") or ""
+            baseline_val = baseline_map.get(cid, {}).get(field) or ""
+            curr_val = r.get(field) or ""
             if baseline_val.strip() and not curr_val.strip():
                 reg += 1
             elif not baseline_val.strip() and curr_val.strip():
@@ -218,7 +228,7 @@ def main():
     else:
         # Sample key fields
         for field in ["country_of_origin", "is_represented", "visa_outcome_reason", "legal_test_applied"]:
-            if field in rows[0]:
+            if rows and field in rows[0]:
                 sample_values(rows, field, n=8)
 
     if args.compare_to:

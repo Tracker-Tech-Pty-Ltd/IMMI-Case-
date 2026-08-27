@@ -30,6 +30,42 @@ from ..models import ImmigrationCase
 logger = logging.getLogger(__name__)
 
 
+class YearListingUnavailable(RuntimeError):
+    """AustLII would not serve a year listing at all.
+
+    Distinct from a listing that loaded fine and contained no immigration
+    cases, which is an empty list. SmartPipeline._crawl_with_fallback relies
+    on that distinction to rotate crawl strategies when AustLII rate-limits
+    us; returning [] for both made the rotation unreachable.
+    """
+
+
+_DECISION_NUMBER_RE = re.compile(r"/(\d+)\.html?$", re.IGNORECASE)
+
+
+def _recency_key(case: ImmigrationCase) -> tuple[int, int, str]:
+    """Newest-first sort key: (year, decision number, url).
+
+    AustLII numbers judgments sequentially within a year per court, so a
+    higher number is a later decision. The number is taken from the case URL
+    (every browse hit matches /<n>.html) and falls back to the trailing
+    integer of the citation, e.g. "[2024] AATA 123". A case with neither
+    sorts as the oldest of its year rather than being dropped or crashing.
+
+    Do NOT sort on the citation string: reversed string order puts
+    "[2024] AATA 99" ahead of "[2024] AATA 100", which is backwards.
+    Do NOT sort on `date` either: `_browse_year` does not populate it —
+    date is extracted later, during the download phase.
+    """
+    number = 0
+    match = _DECISION_NUMBER_RE.search(case.url or "")
+    if match is None:
+        match = re.search(r"(\d+)\s*$", case.citation or "")
+    if match is not None:
+        number = int(match.group(1))
+    return (case.year or 0, number, case.url or "")
+
+
 class AustLIIScraper(BaseScraper):
     """Scraper for AustLII immigration case databases."""
 
@@ -90,12 +126,25 @@ class AustLIIScraper(BaseScraper):
         is only applied at the very end as a total cap.
         """
         cases = []
+        failed_years = []
 
         # Browse every year — no early exit so all years get coverage
         for year in range(start_year, end_year + 1):
-            year_cases = self._browse_year(db_code, db_info, year, keywords)
+            try:
+                year_cases = self._browse_year(db_code, db_info, year, keywords)
+            except YearListingUnavailable as exc:
+                failed_years.append(year)
+                logger.warning(f"  {exc}")
+                continue
             cases.extend(year_cases)
             logger.debug(f"  {db_code}/{year}: {len(year_cases)} cases found")
+
+        if failed_years:
+            logger.warning(
+                f"  {db_code}: {len(failed_years)} of "
+                f"{end_year - start_year + 1} years could not be fetched "
+                f"({failed_years}); results are incomplete"
+            )
 
         # Strategy 2: If browsing found few results, try keyword search
         if len(cases) < 10:
@@ -109,7 +158,20 @@ class AustLIIScraper(BaseScraper):
                     cases.append(case)
                     existing_urls.add(case.url)
 
-        return cases[:max_results]
+        if len(cases) > max_results:
+            # The browse loop runs oldest year first, so a plain slice kept
+            # the OLDEST max_results cases and silently dropped the newest —
+            # the opposite of what a case-law user wants. Sort newest-first
+            # before capping, and say out loud that rows were dropped.
+            cases.sort(key=_recency_key, reverse=True)
+            logger.warning(
+                f"  {db_code}: {len(cases)} cases found but max_results="
+                f"{max_results}; dropping the {len(cases) - max_results} "
+                f"oldest. Raise --max-results to keep them."
+            )
+            return cases[:max_results]
+
+        return cases
 
     # Databases where ALL cases are immigration-related (no keyword filter needed)
     IMMIGRATION_ONLY_DBS = {"RRTA", "MRTA", "ARTA"}
@@ -127,6 +189,10 @@ class AustLIIScraper(BaseScraper):
         use /cgi-bin/viewdoc/au/cases/cth/{DB}/{year}/{num}.html format.
         AATA cases conveniently include '(Migration)' or '(Refugee)' in titles.
         RRTA/MRTA/ARTA are dedicated immigration tribunals — all cases included.
+
+        Returns an empty list when the listing loaded but held no immigration
+        cases. Raises YearListingUnavailable when neither the direct listing
+        nor the viewdb fallback could be fetched.
         """
         # Try the year listing page directly
         url = f"{AUSTLII_BASE}/au/cases/cth/{db_code}/{year}/"
@@ -136,7 +202,10 @@ class AustLIIScraper(BaseScraper):
             url = f"{AUSTLII_BASE}/cgi-bin/viewdb/au/cases/cth/{db_code}/"
             response = self.fetch(url, params={"year": str(year)})
             if not response:
-                return []
+                raise YearListingUnavailable(
+                    f"{db_code}/{year}: listing unavailable "
+                    f"({self.last_error or 'no response'})"
+                )
 
         soup = BeautifulSoup(response.text, "lxml")
         cases = []
@@ -354,7 +423,17 @@ class AustLIIScraper(BaseScraper):
         extracted = self._metadata_extractor.extract(
             text, citation=case.citation or ""
         )
+        valid_fields = ImmigrationCase.__dataclass_fields__
         for key, value in extracted.items():
+            if key not in valid_fields:
+                # asdict() only serialises declared fields, so an undeclared
+                # key would be set on the instance and then vanish silently at
+                # persistence time. Same guard from_dict() already applies.
+                logger.warning(
+                    f"MetadataExtractor emitted unknown field '{key}' for "
+                    f"{case.url or case.citation or case.title}; dropping it"
+                )
+                continue
             setattr(case, key, value)
 
     @staticmethod

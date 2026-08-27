@@ -73,7 +73,11 @@ def extract_llm(
         if isinstance(exc.reason, socket.timeout):
             raise ExtractionTimeoutError(unfilled) from exc
         return {}, 0.0
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        # UnicodeDecodeError is a ValueError, not a JSONDecodeError and not an
+        # OSError, so a non-UTF-8 body used to escape this function entirely
+        # and abort the caller's whole batch. An undecodable body is just
+        # unusable model output: no extraction, no cost.
         return {}, 0.0
 
     values = _parse_values(payload, unfilled)
