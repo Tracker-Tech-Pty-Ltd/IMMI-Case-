@@ -36,6 +36,14 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: (id) => {
+            // Tiny shared utilities (clsx / tailwind-merge / class-variance-authority)
+            // are imported by nearly every component AND by recharts. Left
+            // unassigned, Rollup folds them into the "charts" chunk, which forces
+            // the entry chunk to statically import charts-*.js — 413 kB raw /
+            // 120 kB gzip of Recharts + d3 downloaded, parsed and top-level
+            // evaluated on every route, including chart-free ones. Pinning them
+            // to the always-eager "vendor" chunk makes that edge impossible.
+            if (id.includes("node_modules/clsx") || id.includes("node_modules/tailwind-merge") || id.includes("node_modules/class-variance-authority")) return "vendor";
             if (id.includes("node_modules/recharts") || id.includes("node_modules/victory-vendor") || id.includes("node_modules/d3-")) return "charts";
             if (id.includes("node_modules/i18next") || id.includes("node_modules/react-i18next")) return "i18n";
             if (id.includes("node_modules/@dnd-kit")) return "dnd";
