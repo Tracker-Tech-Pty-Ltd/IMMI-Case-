@@ -156,6 +156,27 @@ evidenced.
 
 ---
 
+## Schema changes (D1 migrations)
+
+Schema lives in `migrations/d1/{catalog,account,ops}/*.sql` and is bound to the
+three databases by `migrations_dir` at `wrangler.toml` lines 23, 29 and 35.
+
+**Nothing applies these automatically.** `make`, CI and
+`.github/workflows/deploy-worker.yml` deploy code only; there is no migration
+step anywhere in the pipeline. An operator applies them by hand with
+`wrangler d1 migrations apply <BINDING> --remote --config <operator config>`,
+using a config that carries real resource IDs (the checked-in `wrangler.toml`
+has placeholders by design).
+
+`make migrate` (`Makefile:107-108`) runs `supabase db push` and targets the
+**retired** Supabase ETL project. It has no effect on D1 and is not the
+migration path for production.
+
+Full procedure, including the offline parse check, the re-runnability rule and
+the Time-Travel-only rollback story: **`docs/ops/d1-migrations.md`**.
+
+---
+
 ## Layer 2 — LLM Council (`workers/llm-council/`)
 
 - Entry: `dispatchCloudflareCouncil()` → `cloudflare_handlers.js`.
@@ -242,6 +263,11 @@ evidenced.
 | `.omc/plans/hyperdrive-full-migration.md` | Plan to migrate Flask endpoints to Workers via Hyperdrive | Superseded — the destination (Worker-native, Flask retired) was reached via a D1-native rewrite, not the Hyperdrive-incremental path this plan describes |
 | `.omc/plans/llm-council-worker-migration.md` | Plan: Worker-native Council with Postgres/Hyperdrive session storage | Partially shipped — Worker-native Council shipped as `CouncilSessionDO`, but session storage is D1/DO-based, not Postgres |
 | `.omc/plans/auth-multitenant-jwt-rls.md` | "IMPLEMENTED" Postgres RLS via GUC | Superseded at the DB layer — RLS/Postgres replaced by D1 + app-layer `assertMembership()`; JWT/Telegram/nonce-DO design survived |
+| `docs/HYPERDRIVE_CACHE_RFC.md` | "Production still needs the second Hyperdrive config id" | Void — Hyperdrive deleted in `f91f45f`. Banner added; §3.1 and §6 marked DO-NOT-RUN / VOID |
+| `docs/archive/IMPROVEMENT_PLAN.md` | Flask-era phase backlog, 2026-04-10 | Archived out of the repo root; historical snapshot only. Live backlog is `.claude/STATE.md` |
+| `docs/plans/2026-03-15-system-integration-roadmap.md` | "可作為多個 session 的主待辦清單" | Historical 2026-03-15 snapshot, banner added; not a backlog |
+| `docs/plans/2026-05-03-perf-optimization-plan.md` | Hyperdrive-era perf baseline + autopilot loop | Historical; measures the retired stack, no D1 equivalent re-run |
+| `tests/integration/README.md`, `tests/e2e/README.md` | RLS / Supabase verification procedures | Corrected — RLS scripts verify the retired stack; the e2e smoke's teardown targets Supabase while production rows live in D1 |
 
 ---
 
@@ -271,4 +297,6 @@ python3 scripts/check_immi_activation_evidence.py --help
 
 If `workers/proxy.js` or `workers/db/getSqlAsUser.js` reappear, or a
 new GET handler is added outside `workers/case-api/cloudflare.js`,
-architecture is regressing from this document — open an RFC.
+architecture is regressing from this document — record the decision as a
+new ADR: copy `docs/adr/TEMPLATE.md` to `docs/adr/NNNN-<slug>.md` and add
+a row to `docs/adr/README.md`.

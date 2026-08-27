@@ -1,11 +1,19 @@
-# IMMI-Case- Performance Optimization Plan
+# IMMI-Case- Performance Optimization Plan (HISTORICAL — 2026-05-03 baseline)
+
+> **SUPERSEDED. Do not execute this plan.** Every measurement below was taken
+> against the Hyperdrive → Supabase Postgres stack that was removed from
+> production in commit `f91f45f` (2026-08-21). Production now runs on
+> `workers/cloudflare-native.js` over Cloudflare D1 / R2 / Vectorize, and no
+> equivalent benchmark has been re-run against it. Treat every number here as
+> historical. See `docs/ARCHITECTURE.md` and
+> `docs/adr/0001-cloudflare-native-d1-stack.md`.
 
 **Baseline taken**: 2026-05-03
 **Production URL**: https://immi.trackit.today
 **Repo**: `/Users/d/Developer/Active Projects/IMMI-Case-`
-**Owner agent**: autonomous loop (see `.omc/autopilot/HANDOFF_PROMPT.md`)
+**Owner agent**: (historical) autonomous loop, `.omc/autopilot/HANDOFF_PROMPT.md`
 
-This plan is the source of truth. The accompanying progress log lives at `.omc/autopilot/perf-progress.md` (created on first loop iteration).
+This plan was the source of truth for the 2026-05 Hyperdrive-era perf work only.
 
 ---
 
