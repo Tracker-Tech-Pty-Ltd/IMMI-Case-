@@ -28,7 +28,12 @@ def log(msg):
 
 
 def main():
-    df = pd.read_csv(CSV_PATH, low_memory=False)
+    df = pd.read_csv(
+        CSV_PATH,
+        encoding="utf-8-sig",
+        dtype={"visa_subclass": str, "visa_subclass_number": str},
+        low_memory=False,
+    )
     log(f"Loaded {len(df):,} records")
 
     # Find cases without full_text_path

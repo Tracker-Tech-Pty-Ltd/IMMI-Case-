@@ -285,7 +285,12 @@ def infer_legal_concepts(row):
 def main():
     dry_run = "--dry-run" in sys.argv
 
-    df = pd.read_csv(CSV_PATH, low_memory=False)
+    df = pd.read_csv(
+        CSV_PATH,
+        encoding="utf-8-sig",
+        dtype={"visa_subclass": str, "visa_subclass_number": str},
+        low_memory=False,
+    )
     log(f"Loaded {len(df):,} records")
 
     if not dry_run:

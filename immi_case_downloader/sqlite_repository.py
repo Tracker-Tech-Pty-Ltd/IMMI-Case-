@@ -4,6 +4,7 @@ import os
 import sqlite3
 import threading
 import logging
+from datetime import datetime
 
 from .models import ImmigrationCase
 from .storage import CASE_FIELDS
@@ -21,8 +22,15 @@ ALLOWED_SORT_COLUMNS = frozenset({
     "visa_subclass_number", "applicant_name", "hearing_date", "case_id",
 })
 
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS cases (
+# _CASES_TABLE_SQL, _INDEX_STATEMENTS, _FTS_STATEMENTS and _TRIGGER_STATEMENTS
+# are the single source of truth. _SCHEMA_SQL / _FTS_SQL / _TRIGGERS_SQL below
+# are built from them so initialize() keeps working unchanged. The migration
+# in _rebuild_cases_without_url_unique() runs each statement individually via
+# conn.execute() — executescript() issues an implicit COMMIT before it runs,
+# which would end the migration's transaction early — so the statements must
+# also exist as a list, not just as one script string.
+_CASES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS {table} (
     case_id TEXT PRIMARY KEY,
     citation TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL DEFAULT '',
@@ -30,7 +38,7 @@ CREATE TABLE IF NOT EXISTS cases (
     court_code TEXT NOT NULL DEFAULT '',
     date TEXT NOT NULL DEFAULT '',
     year INTEGER NOT NULL DEFAULT 0,
-    url TEXT NOT NULL DEFAULT '' UNIQUE,
+    url TEXT NOT NULL DEFAULT '',
     judges TEXT NOT NULL DEFAULT '',
     catchwords TEXT NOT NULL DEFAULT '',
     outcome TEXT NOT NULL DEFAULT '',
@@ -55,45 +63,51 @@ CREATE TABLE IF NOT EXISTS cases (
     visa_outcome_reason TEXT NOT NULL DEFAULT '',
     legal_test_applied TEXT NOT NULL DEFAULT ''
 );
-
-CREATE INDEX IF NOT EXISTS idx_court_code ON cases(court_code);
-CREATE INDEX IF NOT EXISTS idx_year ON cases(year);
-CREATE INDEX IF NOT EXISTS idx_court_year ON cases(court_code, year);
-CREATE INDEX IF NOT EXISTS idx_source ON cases(source);
-CREATE INDEX IF NOT EXISTS idx_outcome ON cases(outcome);
-CREATE INDEX IF NOT EXISTS idx_case_nature ON cases(case_nature);
-CREATE INDEX IF NOT EXISTS idx_visa_type ON cases(visa_type);
-CREATE INDEX IF NOT EXISTS idx_visa_subclass_number ON cases(visa_subclass_number);
-CREATE INDEX IF NOT EXISTS idx_court_outcome ON cases(court_code, outcome);
 """
 
-_FTS_SQL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
+_INDEX_STATEMENTS = [
+    "CREATE INDEX IF NOT EXISTS idx_court_code ON cases(court_code)",
+    "CREATE INDEX IF NOT EXISTS idx_year ON cases(year)",
+    "CREATE INDEX IF NOT EXISTS idx_court_year ON cases(court_code, year)",
+    "CREATE INDEX IF NOT EXISTS idx_source ON cases(source)",
+    "CREATE INDEX IF NOT EXISTS idx_outcome ON cases(outcome)",
+    "CREATE INDEX IF NOT EXISTS idx_case_nature ON cases(case_nature)",
+    "CREATE INDEX IF NOT EXISTS idx_visa_type ON cases(visa_type)",
+    "CREATE INDEX IF NOT EXISTS idx_visa_subclass_number ON cases(visa_subclass_number)",
+    "CREATE INDEX IF NOT EXISTS idx_court_outcome ON cases(court_code, outcome)",
+    # Partial unique index: real URLs stay unique, blank URLs are exempt.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_url_unique ON cases(url) WHERE url != ''",
+]
+_INDEXES_SQL = ";\n".join(_INDEX_STATEMENTS) + ";\n"
+
+_SCHEMA_SQL = _CASES_TABLE_SQL.format(table="cases") + _INDEXES_SQL
+
+_FTS_STATEMENTS = [
+    """CREATE VIRTUAL TABLE IF NOT EXISTS cases_fts USING fts5(
     citation, title, catchwords, judges, outcome,
     user_notes, case_nature, legal_concepts,
     content='cases', content_rowid='rowid'
-);
-"""
+)""",
+]
+_FTS_SQL = ";\n".join(_FTS_STATEMENTS) + ";\n"
 
-_TRIGGERS_SQL = """
--- Keep FTS index in sync with cases table
-CREATE TRIGGER IF NOT EXISTS cases_ai AFTER INSERT ON cases BEGIN
+_TRIGGER_STATEMENTS = [
+    """CREATE TRIGGER IF NOT EXISTS cases_ai AFTER INSERT ON cases BEGIN
     INSERT INTO cases_fts(rowid, citation, title, catchwords, judges, outcome, user_notes, case_nature, legal_concepts)
     VALUES (new.rowid, new.citation, new.title, new.catchwords, new.judges, new.outcome, new.user_notes, new.case_nature, new.legal_concepts);
-END;
-
-CREATE TRIGGER IF NOT EXISTS cases_ad AFTER DELETE ON cases BEGIN
+END""",
+    """CREATE TRIGGER IF NOT EXISTS cases_ad AFTER DELETE ON cases BEGIN
     INSERT INTO cases_fts(cases_fts, rowid, citation, title, catchwords, judges, outcome, user_notes, case_nature, legal_concepts)
     VALUES ('delete', old.rowid, old.citation, old.title, old.catchwords, old.judges, old.outcome, old.user_notes, old.case_nature, old.legal_concepts);
-END;
-
-CREATE TRIGGER IF NOT EXISTS cases_au AFTER UPDATE ON cases BEGIN
+END""",
+    """CREATE TRIGGER IF NOT EXISTS cases_au AFTER UPDATE ON cases BEGIN
     INSERT INTO cases_fts(cases_fts, rowid, citation, title, catchwords, judges, outcome, user_notes, case_nature, legal_concepts)
     VALUES ('delete', old.rowid, old.citation, old.title, old.catchwords, old.judges, old.outcome, old.user_notes, old.case_nature, old.legal_concepts);
     INSERT INTO cases_fts(rowid, citation, title, catchwords, judges, outcome, user_notes, case_nature, legal_concepts)
     VALUES (new.rowid, new.citation, new.title, new.catchwords, new.judges, new.outcome, new.user_notes, new.case_nature, new.legal_concepts);
-END;
-"""
+END""",
+]
+_TRIGGERS_SQL = ";\n".join(_TRIGGER_STATEMENTS) + ";\n"
 
 
 class SqliteRepository:
@@ -152,6 +166,156 @@ class SqliteRepository:
         conn.executescript(_FTS_SQL)
         conn.executescript(_TRIGGERS_SQL)
         conn.commit()
+        if self._has_legacy_url_unique(conn):
+            self._rebuild_cases_without_url_unique(conn)
+
+    @staticmethod
+    def _has_legacy_url_unique(conn: sqlite3.Connection) -> bool:
+        """True when `cases.url` still carries the old table-level UNIQUE.
+
+        SQLite implements an inline UNIQUE as an auto-index with origin 'u';
+        the replacement partial index has origin 'c'. That is the discriminator.
+        """
+        for row in conn.execute("PRAGMA index_list('cases')").fetchall():
+            if row["origin"] != "u":
+                continue
+            cols = [
+                r["name"]
+                for r in conn.execute(f'PRAGMA index_info("{row["name"]}")').fetchall()
+            ]
+            if cols == ["url"]:
+                return True
+        return False
+
+    def _rebuild_cases_without_url_unique(self, conn: sqlite3.Connection) -> None:
+        """One-time migration: drop the table-level UNIQUE on `cases.url`.
+
+        Blank URLs are an expected state, and the inline UNIQUE made a second
+        URL-less case raise IntegrityError. Runs once per database; the
+        detection in _has_legacy_url_unique() makes it a no-op afterwards.
+
+        Everything happens inside one explicit transaction that is committed
+        only after the new table, indexes, triggers and FTS content have been
+        verified. Any failure rolls the whole thing back and re-raises, leaving
+        the database exactly as it was.
+        """
+        cols = ", ".join(CASE_FIELDS)
+        before = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
+        want_indexes = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='cases' AND name IS NOT NULL AND sql IS NOT NULL"
+            )
+        }
+        backup_path = self._backup_before_migration(before)
+        logger.warning(
+            "Migrating SQLite schema at %s: dropping the legacy UNIQUE on "
+            "cases.url (%d rows). Backup: %s. This runs once.",
+            self.db_path, before, backup_path,
+        )
+
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            for trigger in ("cases_ai", "cases_ad", "cases_au"):
+                conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+            conn.execute("DROP TABLE IF EXISTS cases_migrated")
+            # One statement, via execute() — executescript() would commit here.
+            conn.execute(_CASES_TABLE_SQL.format(table="cases_migrated").strip().rstrip(";"))
+            conn.execute(
+                f"INSERT INTO cases_migrated ({cols}) SELECT {cols} FROM cases"
+            )
+            after = conn.execute("SELECT COUNT(*) FROM cases_migrated").fetchone()[0]
+            if after != before:
+                raise RuntimeError(
+                    f"row count mismatch during migration: {before} -> {after}"
+                )
+            conn.execute("DROP TABLE cases")
+            conn.execute("ALTER TABLE cases_migrated RENAME TO cases")
+
+            # Indexes, FTS and triggers went with the dropped table. Recreate
+            # them INSIDE the transaction so a failure here rolls back too.
+            for statement in _INDEX_STATEMENTS:
+                conn.execute(statement)
+            for statement in _FTS_STATEMENTS:
+                conn.execute(statement)
+            for statement in _TRIGGER_STATEMENTS:
+                conn.execute(statement)
+            conn.execute("INSERT INTO cases_fts(cases_fts) VALUES('rebuild')")
+
+            # Verify before committing, not after.
+            got_indexes = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name='cases' AND name IS NOT NULL AND sql IS NOT NULL"
+                )
+            }
+            missing = want_indexes - got_indexes - {"sqlite_autoindex_cases_1"}
+            if missing:
+                raise RuntimeError(f"indexes lost during migration: {sorted(missing)}")
+            triggers = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger'"
+                )
+            }
+            if not {"cases_ai", "cases_ad", "cases_au"} <= triggers:
+                raise RuntimeError(f"triggers lost during migration: {sorted(triggers)}")
+            final = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
+            if final != before:
+                raise RuntimeError(f"row count mismatch after swap: {before} -> {final}")
+            if self._has_legacy_url_unique(conn):
+                raise RuntimeError("legacy UNIQUE on cases.url survived the rebuild")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            logger.error(
+                "SQLite url-UNIQUE migration rolled back; schema unchanged. "
+                "Pre-migration backup is at %s", backup_path,
+            )
+            raise
+
+        problem = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if problem != "ok":
+            logger.error(
+                "PRAGMA integrity_check after migration returned %r. The "
+                "pre-migration backup is at %s", problem, backup_path,
+            )
+            raise RuntimeError(f"integrity_check failed after migration: {problem}")
+        logger.warning(
+            "SQLite url-UNIQUE migration complete: %d rows, integrity_check ok. "
+            "Backup kept at %s — delete it once you are satisfied.",
+            before, backup_path,
+        )
+
+    def _backup_before_migration(self, row_count: int) -> str:
+        """Copy the database file aside before the rebuild. Returns the path.
+
+        Fails closed: no free space, or no backup, means no migration. The real
+        corpus is ~340 MB, gitignored, and exists only on this machine.
+        """
+        import shutil
+
+        size = os.path.getsize(self.db_path)
+        free = shutil.disk_usage(os.path.dirname(os.path.abspath(self.db_path))).free
+        # One file copy plus, briefly, a second copy of the table inside the
+        # database itself. 2.5x is the copy + the in-file duplicate + slack.
+        needed = int(size * 2.5)
+        if free < needed:
+            raise RuntimeError(
+                f"refusing to migrate {self.db_path}: need ~{needed} bytes free "
+                f"for a backup and the table rebuild, have {free}"
+            )
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup_path = f"{self.db_path}.pre-url-unique-{stamp}.bak"
+        # WAL mode: copy the sidecar files too, or the copy can be stale.
+        shutil.copy2(self.db_path, backup_path)
+        for suffix in ("-wal", "-shm"):
+            sidecar = self.db_path + suffix
+            if os.path.exists(sidecar):
+                shutil.copy2(sidecar, backup_path + suffix)
+        logger.warning(
+            "Pre-migration backup of %d rows written to %s", row_count, backup_path
+        )
+        return backup_path
 
     @staticmethod
     def _build_case_filters(
@@ -250,18 +414,24 @@ class SqliteRepository:
         count = 0
         # Batch in chunks of 500 for memory efficiency
         batch = []
-        for case in cases:
-            case.ensure_id()
-            d = case.to_dict()
-            batch.append(tuple(d.get(c, "") for c in cols))
-            if len(batch) >= 500:
+        try:
+            for case in cases:
+                case.ensure_id()
+                d = case.to_dict()
+                batch.append(tuple(d.get(c, "") for c in cols))
+                if len(batch) >= 500:
+                    conn.executemany(sql, batch)
+                    count += len(batch)
+                    batch.clear()
+            if batch:
                 conn.executemany(sql, batch)
                 count += len(batch)
-                batch.clear()
-        if batch:
-            conn.executemany(sql, batch)
-            count += len(batch)
-        conn.commit()
+            conn.commit()
+        except Exception:
+            # Without this the implicit transaction stays open holding a partial
+            # write, which the next unrelated commit on this thread flushes.
+            conn.rollback()
+            raise
         return count
 
     def update(self, case_id: str, updates: dict) -> bool:
