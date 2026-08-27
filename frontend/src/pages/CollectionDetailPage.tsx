@@ -23,6 +23,7 @@ import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { downloadBlob } from "@/lib/download-blob";
 import { CollectionEditor } from "@/components/collections/CollectionEditor";
 import { SortableCaseItem } from "@/components/collections/SortableCaseItem";
 import {
@@ -94,12 +95,7 @@ export function CollectionDetailPage() {
         case_notes: collection.case_notes,
       });
       const blob = new Blob([html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${collection.name.replace(/[^a-z0-9]/gi, "_")}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${collection.name.replace(/[^a-z0-9]/gi, "_")}.html`);
       toast.success(t("bookmarks.export_success", "Report downloaded"));
     } catch (err) {
       toast.error(t("bookmarks.export_failed", "Export failed"));
