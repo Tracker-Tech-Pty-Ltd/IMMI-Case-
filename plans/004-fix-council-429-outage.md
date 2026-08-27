@@ -1218,7 +1218,14 @@ Machine-checkable. ALL must hold:
 - [ ] `grep -v 'RL_COUNCIL_TURN' wrangler.toml > /tmp/immi-no-rl.toml && .venv/bin/python scripts/check_cloudflare_native_target.py --main-config /tmp/immi-no-rl.toml 2>&1 | grep -c 'RL_COUNCIL_TURN'` returns `1`
 - [ ] `.venv/bin/python scripts/check_cloudflare_native_target.py 2>&1 | grep -c '^- '` returns `6` (unchanged from HEAD)
 - [ ] `grep -c 'errorResponse("Rate limit exceeded — try again shortly", 429)' workers/llm-council/cloudflare_handlers.js` returns `0`
-- [ ] `grep -c 'return rateLimitFailure(limited);' workers/llm-council/cloudflare_handlers.js` returns `6`
+- [ ] `grep -c 'return rateLimitFailure(limited);' workers/llm-council/cloudflare_handlers.js` returns `7`
+      — five original call sites (create-session, add-turn, restore-by-code,
+      legacy `/run`, `/stream`), plus `handleDeleteSession` from Step 3 and
+      `handleHealth`'s live probe from Step 7. Step 3's own verification says
+      "six call sites now" because that is the correct *intermediate* count,
+      before Step 7 adds the seventh. If you get `6` here, Step 7 was not
+      applied — do not "fix" this by reverting Step 7, which would reopen the
+      unmetered paid-probe path that Step 7 exists to close.
 - [ ] `grep -c 'verifyToken' workers/llm-council/auth.js` returns `0`
 - [ ] `grep -rn 'verifyToken' workers/ frontend/src --include=*.js --include=*.ts --include=*.tsx | grep -v node_modules` returns no output
 - [ ] `grep -c 'importCouncilTokenKey' workers/llm-council/auth.js` returns `2` or more
