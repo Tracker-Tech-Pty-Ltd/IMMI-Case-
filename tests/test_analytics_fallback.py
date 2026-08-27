@@ -9,7 +9,6 @@ review (cross-thread close() leak, cross-repository cache bleed).
 
 import os
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 import pytest
@@ -82,6 +81,154 @@ def sqlite_app(tmp_path, fallback_cases):
     application.config["TESTING"] = True
     application.config["WTF_CSRF_ENABLED"] = False
     return application
+
+
+# ── PYCORR-03: the fallback returns real data on both local backends ──────
+
+
+class TestFallbackReturnsDataOnCsvBackend:
+    def test_outcomes_fallback_returns_data_on_csv_backend(self, csv_app):
+        resp = csv_app.test_client().get("/api/v1/analytics/outcomes")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["by_court"]["AATA"]["Remitted"] == 3
+
+    def test_judges_fallback_returns_data_on_csv_backend(self, csv_app):
+        resp = csv_app.test_client().get("/api/v1/analytics/judges")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["judges"]
+        assert data["judges"][0]["count"] == 3
+
+    def test_legal_concepts_fallback_returns_data_on_csv_backend(self, csv_app):
+        resp = csv_app.test_client().get("/api/v1/analytics/legal-concepts")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert {"name": "Character Test", "count": 3} in data["concepts"]
+
+    def test_nature_outcome_fallback_returns_data_on_csv_backend(self, csv_app):
+        resp = csv_app.test_client().get("/api/v1/analytics/nature-outcome")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["matrix"]["Protection"]["Remitted"] == 3
+
+
+# ── PYCORR-03 + Step 3: the fallback also runs on the sqlite backend ──────
+
+_ANALYTICS_ENDPOINTS = [
+    ("/api/v1/analytics/outcomes", "by_court"),
+    ("/api/v1/analytics/judges", "judges"),
+    ("/api/v1/analytics/legal-concepts", "concepts"),
+    ("/api/v1/analytics/nature-outcome", "matrix"),
+]
+
+
+class TestFallbackReturnsDataOnSqliteBackend:
+    @pytest.mark.parametrize("path,primary_key", _ANALYTICS_ENDPOINTS)
+    def test_analytics_returns_data_on_sqlite_backend(self, sqlite_app, path, primary_key):
+        resp = sqlite_app.test_client().get(path)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data[primary_key], f"{path} returned an empty {primary_key!r}"
+
+
+# ── PYCORR-14: a timed-out, still-queued task must not run later ──────────
+
+
+class TestCancelOnTimeout:
+    def test_call_with_timeout_cancels_queued_work_on_timeout(self):
+        pool = ThreadPoolExecutor(max_workers=1)
+        block_event = threading.Event()
+        recorder: list[int] = []
+
+        def _blocker():
+            block_event.wait(timeout=5.0)
+
+        def _recorder_func():
+            recorder.append(1)
+
+        # Occupy the pool's single worker so the next submission only queues.
+        pool.submit(_blocker)
+        with pytest.raises(FuturesTimeoutError):
+            _call_with_timeout(_recorder_func, timeout_seconds=0.1, executor=pool)
+
+        block_event.set()
+        pool.shutdown(wait=True)
+        # The queued task must have been cancelled before it ever started.
+        assert recorder == []
+
+
+# ── PYCORR-13: the cache key is whitelist-driven ───────────────────────────
+
+
+class TestAnalyticsCacheKey:
+    def test_analytics_cache_key_ignores_unlisted_params(self, csv_app):
+        from immi_case_downloader.web.routes.api import _analytics_cache_key
+
+        with csv_app.test_request_context("/api/v1/analytics/outcomes?utm_source=news"):
+            with_utm = _analytics_cache_key()
+        with csv_app.test_request_context("/api/v1/analytics/outcomes"):
+            without_utm = _analytics_cache_key()
+        assert with_utm == without_utm
+
+    def test_analytics_cache_key_distinguishes_limit(self, csv_app):
+        from immi_case_downloader.web.routes.api import _analytics_cache_key
+
+        with csv_app.test_request_context("/api/v1/analytics/judges?limit=5"):
+            key_5 = _analytics_cache_key()
+        with csv_app.test_request_context("/api/v1/analytics/judges?limit=50"):
+            key_50 = _analytics_cache_key()
+        assert key_5 != key_50
+
+    def test_analytics_cache_key_distinguishes_court(self, csv_app):
+        from immi_case_downloader.web.routes.api import _analytics_cache_key
+
+        with csv_app.test_request_context("/api/v1/analytics/outcomes?court=AATA"):
+            key_aata = _analytics_cache_key()
+        with csv_app.test_request_context("/api/v1/analytics/outcomes?court=FCA"):
+            key_fca = _analytics_cache_key()
+        assert key_aata != key_fca
+
+
+# ── Step 3: a filtered request must run the fallback without ever ─────────
+# ── attempting an RPC, on a backend that has RPC methods ───────────────────
+
+
+class _FakeRpcRepo:
+    """A repo exposing analytics RPC methods that must never be called when
+    a filter is present — the filtered path must go straight to the Python
+    fallback (Step 3) rather than attempt (and skip on failure) an RPC.
+    """
+
+    def __init__(self, cases):
+        self._cases = cases
+
+    def count_cases(self):
+        return len(self._cases)
+
+    def get_analytics_outcomes(self):
+        raise AssertionError("RPC must not be called")
+
+    def get_analytics_judges_raw(self):
+        raise AssertionError("RPC must not be called")
+
+    def get_analytics_concepts_raw(self):
+        raise AssertionError("RPC must not be called")
+
+    def get_analytics_nature_outcome(self):
+        raise AssertionError("RPC must not be called")
+
+    def load_all(self):
+        return self._cases
+
+
+class TestFilteredRequestRunsFallbackWithoutAttemptingRpc:
+    def test_filtered_request_still_runs_the_fallback_when_no_rpc_was_tried(self, csv_app, fallback_cases):
+        csv_app.config["REPO"] = _FakeRpcRepo(fallback_cases)
+        resp = csv_app.test_client().get("/api/v1/analytics/outcomes?court=AATA")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["by_court"]["AATA"]["Remitted"] == 3
 
 
 # ── Step 1b: cross-thread close() must not untrack a live connection ──────
