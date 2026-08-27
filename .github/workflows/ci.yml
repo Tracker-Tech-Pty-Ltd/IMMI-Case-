@@ -71,11 +71,38 @@ jobs:
         run: |
           set -euo pipefail
           src=$(grep -c '/frontend/src/' /tmp/tsc-listfiles.txt || true)
-          echo "typechecked $src files under frontend/src/"
+          tests=$(grep -c '/frontend/__tests__/' /tmp/tsc-listfiles.txt || true)
+          echo "typechecked $src files under frontend/src/, $tests under frontend/__tests__/"
           if [ "$src" -lt 150 ]; then
-            echo "::error::TypeScript project graph collapsed: only $src files under src/ were typechecked (expected >= 150). A tsconfig 'files'/'include'/'references' change has made the gate vacuous."
+            echo "::error::TypeScript project graph collapsed: only $src files under src/ were typechecked (expected >= 150)."
             exit 1
           fi
+          if [ "$tests" -lt 50 ]; then
+            echo "::error::TypeScript project graph collapsed: only $tests files under __tests__/ were typechecked (expected >= 50). Check that tsconfig.test.json is still referenced from tsconfig.json."
+            exit 1
+          fi
+
+      - name: Assert the tsconfig project graph is intact
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const raw = fs.readFileSync("tsconfig.json", "utf8").replace(/^\s*\/\/.*$/gm, "");
+            const cfg = JSON.parse(raw);
+            const want = ["./tsconfig.app.json", "./tsconfig.node.json", "./tsconfig.test.json"];
+            const got = (cfg.references || []).map(r => r.path).sort();
+            const missing = want.filter(p => !got.includes(p));
+            if (missing.length) {
+              console.error("::error::tsconfig.json is missing project reference(s): " + missing.join(", "));
+              process.exit(1);
+            }
+            if (cfg.compilerOptions) {
+              console.error("::error::tsconfig.json must stay references-only; compilerOptions here causes TS5101.");
+              process.exit(1);
+            }
+            console.log("tsconfig references OK: " + got.join(", "));
+          '
 
       - name: ESLint
         run: npm run lint
