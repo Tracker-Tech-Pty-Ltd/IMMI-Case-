@@ -133,15 +133,3 @@ export interface PipelineControlMessage {
   end_year?: number;
   law_ids?: string[];
 }
-
-/** Batch enqueue request body */
-export interface EnqueueRequest {
-  jobs: ScrapeJob[];
-}
-
-/** Batch enqueue response */
-export interface EnqueueResponse {
-  queued: number;
-  skipped: number;
-  errors: string[];
-}

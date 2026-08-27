@@ -10,7 +10,7 @@
  */
 
 import { extractFullText, extractMetadata } from "./parser";
-import { discoverCourt, runDiscoveryAndEnqueue } from "./discover";
+import { runDiscoveryAndEnqueue } from "./discover";
 import { handleExtractBatch } from "./extract";
 import { scrapeLegislation } from "./legislation";
 import { sendPipelineAlert } from "./alerts";
@@ -35,8 +35,6 @@ import type {
   ScrapeJob,
   ScrapeResult,
   ScrapeError,
-  EnqueueRequest,
-  EnqueueResponse,
   PipelineControlMessage,
 } from "./types";
 
@@ -69,8 +67,6 @@ async function handleDeadLetterBatch(
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
-const MAX_BATCH_ENQUEUE = 500;
 
 function isPipelineControl(value: unknown): value is PipelineControlMessage {
   if (!value || typeof value !== "object") return false;
@@ -151,7 +147,7 @@ async function handlePipelineControlBatch(
 // ─── HTTP Handler (Producer) ─────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, _env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     // Health check
@@ -185,7 +181,7 @@ export default {
     if (batch.messages.length > 0 && batch.messages.every((message) => isPipelineControl(message.body))) {
       return handlePipelineControlBatch(batch as unknown as MessageBatch<PipelineControlMessage>, env);
     }
-    if (batch.messages.every((message) => isExtractJob(message.body))) {
+    if (batch.messages.length > 0 && batch.messages.every((message) => isExtractJob(message.body))) {
       return handleExtractBatch(batch as MessageBatch<ExtractJob>, env);
     }
 
@@ -355,9 +351,10 @@ async function processJob(
     return { success: false };
   }
 
-  // Extract metadata from the full page text (not just the content div)
-  const pageText = extractFullText(html);
-  const metadata = extractMetadata(pageText);
+  // extractFullText prefers the case content div (#page-main / #cases_doc /
+  // .document) and only falls back to <body>; metadata is read from that
+  // same text, so parse once and reuse it.
+  const metadata = extractMetadata(fullText);
 
   // Build success result
   const result: ScrapeResult = {
@@ -395,14 +392,6 @@ async function processJob(
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
 
 function isExtractJob(job: QueueJob): job is ExtractJob {
   return job.phase === "extract" || "r2_key" in job;
@@ -453,25 +442,6 @@ async function putScrapeError(
     JSON.stringify(errorResult),
     { httpMetadata: { contentType: "application/json" } },
   );
-}
-
-function parseCourtList(raw: string | null): CourtCode[] {
-  if (!raw || raw.trim() === "" || raw.trim().toLowerCase() === "all") {
-    return [...COURT_CODES];
-  }
-
-  const allowed = new Set<string>(COURT_CODES);
-  const courts = raw
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is CourtCode => allowed.has(item));
-  return courts.length > 0 ? courts : [...COURT_CODES];
-}
-
-function parseScheduledTime(raw: string | null): number {
-  if (!raw) return Date.now();
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
 async function forwardToExtract(job: ScrapeJob, env: Env, r2Key: string): Promise<void> {
