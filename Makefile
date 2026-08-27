@@ -30,6 +30,7 @@ help:
 	@echo "  make test-fe      Frontend Vitest tests only"
 	@echo "  make test-e2e     Playwright E2E tests (requires running server)"
 	@echo "  make coverage     Python unit tests with HTML coverage report"
+	@echo "  make coverage-fe  Frontend Vitest with coverage thresholds"
 	@echo ""
 	@echo "  make lint         Ruff (Python) + ESLint (frontend)"
 	@echo "  make lint-py      Ruff lint Python source only"
@@ -71,6 +72,9 @@ test-fe:
 
 test-workers:
 	cd "$(REPO_ROOT)/workers" && npx vitest run
+
+coverage-fe:
+	cd "$(REPO_ROOT)/frontend" && npx vitest run --coverage
 
 # AC4 safety guard: reject any set_config call without transaction-local flag (true).
 # A literal `false` or missing third argument leaks JWT claims across pooled connections.

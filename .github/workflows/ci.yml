@@ -88,8 +88,8 @@ jobs:
       - name: Assert the committed design tokens are not stale
         run: git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts
 
-      - name: Run Vitest tests
-        run: npx vitest run
+      - name: Run Vitest tests with coverage thresholds
+        run: npx vitest run --coverage
         working-directory: frontend
 
   test-worker:
