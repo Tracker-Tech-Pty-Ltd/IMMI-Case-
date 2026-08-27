@@ -1,7 +1,15 @@
-# IMMI-Case 系統整合主計畫
+# IMMI-Case 系統整合主計畫（歷史文件 — 2026-03-15 快照）
+
+> **已作廢（SUPERSEDED）。這不是現行待辦清單。**
+> 本文件為 2026-03-15 的快照，早於 ~2026-08-11 的 Cloudflare-native 切換
+> （commit `f91f45f`）。它描述的是 Flask 後端，而該後端現已是
+> **local-dev only、未部署至 production**（見 `README.md` 與
+> `docs/ARCHITECTURE.md`）。
+> 現行 production 架構請讀 `docs/ARCHITECTURE.md`；現行待辦清單請讀
+> `.claude/STATE.md`。本文件僅作歷史紀錄保留。
 
 日期：2026-03-15  
-狀態：可作為多個 session 的主待辦清單  
+狀態：歷史快照（原記為「可作為多個 session 的主待辦清單」）  
 方法：Test-Driven + Subagent-Driven + Browser Visual Verification
 
 ## 1. 這份計畫涵蓋什麼
