@@ -32,7 +32,7 @@ help:
 	@echo "  make coverage     Python unit tests with HTML coverage report"
 	@echo ""
 	@echo "  make lint         Ruff lint Python source"
-	@echo "  make typecheck    TypeScript type check (tsc --noEmit)"
+	@echo "  make typecheck    TypeScript type check (tsc -b --noEmit, all projects)"
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
 	@echo "  make install      Install all Python + Node dependencies"
@@ -93,7 +93,7 @@ lint:
 	"$(PYTHON)" -m ruff check immi_case_downloader/ scripts/ *.py
 
 typecheck:
-	cd "$(REPO_ROOT)/frontend" && npx tsc --noEmit
+	cd "$(REPO_ROOT)/frontend" && npx tsc -b --noEmit
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 

@@ -60,9 +60,22 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: TypeScript typecheck
-        run: npx tsc --noEmit
+      - name: TypeScript typecheck (build mode)
         working-directory: frontend
+        run: |
+          set -euo pipefail
+          npx tsc -b --noEmit --force --listFiles | tee /tmp/tsc-listfiles.txt
+
+      - name: Assert the typecheck is not vacuous
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          src=$(grep -c '/frontend/src/' /tmp/tsc-listfiles.txt || true)
+          echo "typechecked $src files under frontend/src/"
+          if [ "$src" -lt 150 ]; then
+            echo "::error::TypeScript project graph collapsed: only $src files under src/ were typechecked (expected >= 150). A tsconfig 'files'/'include'/'references' change has made the gate vacuous."
+            exit 1
+          fi
 
       - name: Run Vitest tests
         run: npx vitest run
