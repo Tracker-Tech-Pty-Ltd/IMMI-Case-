@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { caseIdOf, discoverCourt, parseAustliiListing } from "../discover";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { caseIdOf, discoverCourt, parseAustliiListing, runDiscoveryAndEnqueue } from "../discover";
+import { updatePipelineRun } from "../pipeline-db";
 import type { Env } from "../types";
 
 vi.mock("../pipeline-db", () => ({
   discoveryTargetTable: vi.fn(() => "immigration_cases_staging"),
   findExistingCases: vi.fn(async () => new Set<string>()),
+  isPipelineStopRequested: vi.fn(async () => false),
   updatePipelineRun: vi.fn(async () => undefined),
 }));
 
@@ -157,5 +159,92 @@ describe("discover", () => {
     expect(result.errors.join(" ")).toContain("firecrawl run credit cap exceeded");
     expect(calls.map((call) => call.url)).not.toContain("https://api.firecrawl.dev/v2/scrape");
     expect(env.PIPELINE_KV?.put).not.toHaveBeenCalled();
+  });
+});
+
+describe("discovery run status", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reports ok when one court fails but another produced listings", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith("https://www.austlii.edu.au/au/cases/cth/ARTA/2026/")) {
+        return new Response(`
+          <html><body>
+            <a href="/au/cases/cth/ARTA/2026/12.html">Example v Minister [2026] ARTA 12</a>
+          </body></html>
+        `, { status: 200 });
+      }
+      return new Response("boom", { status: 500 });
+    }));
+
+    const env = {
+      PIPELINE_DISCOVERY_LOOKBACK_YEARS: "1",
+      PIPELINE_PER_COURT_RATE_LIMIT_MS: "0",
+      SCRAPE_QUEUE: { sendBatch: vi.fn(async () => undefined) },
+    } as unknown as Env;
+
+    await runDiscoveryAndEnqueue(env, "run-partial", ["ARTA", "HCA"], Date.UTC(2026, 0, 1));
+
+    const patch = vi.mocked(updatePipelineRun).mock.calls.at(-1)?.[2];
+    expect(patch).toEqual(expect.objectContaining({ status: "ok" }));
+    expect((patch as { errors: number } | undefined)?.errors).toBeGreaterThan(0);
+  });
+
+  it("reports failed when every court errored", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("boom", { status: 500 })));
+
+    const env = {
+      PIPELINE_DISCOVERY_LOOKBACK_YEARS: "1",
+      PIPELINE_PER_COURT_RATE_LIMIT_MS: "0",
+      SCRAPE_QUEUE: { sendBatch: vi.fn(async () => undefined) },
+    } as unknown as Env;
+
+    await runDiscoveryAndEnqueue(env, "run-all-fail", ["ARTA", "HCA"], Date.UTC(2026, 0, 1));
+
+    const patch = vi.mocked(updatePipelineRun).mock.calls.at(-1)?.[2];
+    expect(patch).toEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  it("reports ok when one year is empty and another fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith("https://www.austlii.edu.au/au/cases/cth/ARTA/2026/")) {
+        return new Response("<html><body>No cases found this year.</body></html>", { status: 200 });
+      }
+      return new Response("boom", { status: 500 });
+    }));
+
+    const env = {
+      PIPELINE_DISCOVERY_LOOKBACK_YEARS: "2",
+      PIPELINE_PER_COURT_RATE_LIMIT_MS: "0",
+      SCRAPE_QUEUE: { sendBatch: vi.fn(async () => undefined) },
+    } as unknown as Env;
+
+    await runDiscoveryAndEnqueue(env, "run-empty-year", ["ARTA"], Date.UTC(2026, 0, 1));
+
+    const patch = vi.mocked(updatePipelineRun).mock.calls.at(-1)?.[2];
+    expect(patch).toEqual(expect.objectContaining({ status: "ok" }));
+    expect((patch as { errors: number } | undefined)?.errors).toBe(1);
+  });
+
+  it("counts a year that parses to zero cases as successful", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response("<html><body>No cases found this year.</body></html>", { status: 200 })));
+
+    const env = {
+      PIPELINE_PER_COURT_RATE_LIMIT_MS: "0",
+    } as unknown as Env;
+
+    const result = await discoverCourt(env, "ARTA", "run-x", Date.UTC(2026, 0, 1));
+
+    expect(result.attempted_years).toBeGreaterThan(0);
+    expect(result.successful_years).toBe(result.attempted_years);
   });
 });

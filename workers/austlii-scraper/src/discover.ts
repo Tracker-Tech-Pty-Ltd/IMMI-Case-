@@ -54,6 +54,12 @@ export interface DiscoveryResult {
   new_cases: DiscoveryCandidate[];
   skipped_reason?: "rate_anomaly" | "paused" | "court_disabled";
   errors: string[];
+  /** Court-years this run tried to fetch. */
+  attempted_years: number;
+  /** Court-years whose listing fetched AND parsed without throwing. A year
+   *  that parsed to zero cases counts as successful — an empty listing is a
+   *  real answer, not a failure. */
+  successful_years: number;
 }
 
 export async function caseIdOf(citation: string, url: string): Promise<string> {
@@ -118,6 +124,7 @@ export async function discoverCourt(
   );
   const errors: string[] = [];
   const candidates: DiscoveryCandidate[] = [];
+  let successfulYears = 0;
 
   for (const year of years) {
     try {
@@ -129,6 +136,7 @@ export async function discoverCourt(
           case_id: await caseIdOf(item.citation, item.url),
         });
       }
+      successfulYears += 1;
     } catch (err) {
       errors.push(`${court}/${year}: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -159,6 +167,8 @@ export async function discoverCourt(
       new_cases: [],
       skipped_reason: "rate_anomaly",
       errors,
+      attempted_years: years.length,
+      successful_years: successfulYears,
     };
   }
 
@@ -168,7 +178,21 @@ export async function discoverCourt(
     new_case_urls: newCases.map((candidate) => candidate.url),
     new_cases: newCases,
     errors,
+    attempted_years: years.length,
+    successful_years: successfulYears,
   };
+}
+
+/**
+ * A court counts as productive when it was not skipped and at least one of
+ * its court-years fetched and parsed. A year that parsed to zero cases is a
+ * success: an empty listing is a real answer. A run is only "failed" when no
+ * court in it was productive; a single transient court-year failure stays
+ * visible in errors/errorsJson without zeroing the operator dashboard.
+ */
+function courtWasProductive(result: DiscoveryResult): boolean {
+  if (result.skipped_reason) return false;
+  return result.successful_years > 0;
 }
 
 export async function runDiscoveryAndEnqueue(
@@ -179,6 +203,7 @@ export async function runDiscoveryAndEnqueue(
 ): Promise<void> {
   let discovered = 0;
   const errors: string[] = [];
+  let productiveCourts = 0;
 
   for (const court of courts) {
     if (await isPipelineStopRequested(env, runId)) {
@@ -188,6 +213,7 @@ export async function runDiscoveryAndEnqueue(
     const result = await discoverCourt(env, court, runId, scheduledTime);
     discovered += result.new_cases.length;
     errors.push(...result.errors);
+    if (courtWasProductive(result)) productiveCourts += 1;
 
     if (result.skipped_reason) {
       errors.push(`${court}: skipped (${result.skipped_reason})`);
@@ -228,7 +254,7 @@ export async function runDiscoveryAndEnqueue(
     discovered,
     errors: errors.length,
     errorsJson: errors.length ? errors : undefined,
-    status: errors.length ? "failed" : "ok",
+    status: courts.length === 0 || productiveCourts > 0 ? "ok" : "failed",
   });
 }
 
