@@ -224,7 +224,8 @@ export default {
         const error = err instanceof Error ? err.message : String(err);
         console.error(`Failed to process ${job.case_id}: ${error}`);
 
-        await putScrapeError(job, env, error, 0);
+        const statusCode = err instanceof RetryableScrapeError ? err.statusCode : 0;
+        await putScrapeError(job, env, error, statusCode);
         if (job.run_id) {
           await addPipelineRunMetrics(env, job.run_id, { errors: 1 }).catch(() => undefined);
         }
@@ -311,6 +312,21 @@ function nativePipelineReady(env: Env): boolean {
 
 // ─── Job Processor ────────────────────────────────────────────────────────────
 
+/**
+ * A scrape failure that is worth another delivery. The queue has
+ * max_retries = 3 and a dead-letter queue, so retryable failures have a
+ * bounded home; non-retryable ones (404, other 4xx) are recorded and acked.
+ */
+class RetryableScrapeError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = "RetryableScrapeError";
+    this.statusCode = statusCode;
+  }
+}
+
 async function processJob(
   job: ScrapeJob,
   env: Env,
@@ -327,14 +343,21 @@ async function processJob(
   });
 
   if (response.status === 429) {
-    // Rate limited — throw to trigger Queue retry
-    throw new Error(`Rate limited (429) for ${job.url}`);
+    throw new RetryableScrapeError(`Rate limited (429) for ${job.url}`, 429);
   }
 
   if (response.status === 404) {
     // Page not found — record as error, don't retry
     await putScrapeError(job, env, "Page not found", 404);
     return { success: false };
+  }
+
+  if (response.status >= 500) {
+    // Upstream outage — retry rather than dropping the case for this run.
+    throw new RetryableScrapeError(
+      `HTTP ${response.status}: ${response.statusText} for ${job.url}`,
+      response.status,
+    );
   }
 
   if (!response.ok) {
@@ -347,8 +370,8 @@ async function processJob(
   // Extract full text
   const fullText = extractFullText(html);
   if (!fullText || fullText.length < 50) {
-    await putScrapeError(job, env, "No content extracted from page", 0);
-    return { success: false };
+    // A truncated or challenge page is usually transient — retry it.
+    throw new RetryableScrapeError(`No content extracted from ${job.url}`, 0);
   }
 
   // extractFullText prefers the case content div (#page-main / #cases_doc /
@@ -462,10 +485,13 @@ async function rateLimitPipelineScrape(job: ScrapeJob, env: Env): Promise<void> 
   if (!Number.isFinite(delayMs) || delayMs <= 0) return;
 
   const key = `ratelimit:${job.court_code}`;
-  const now = Date.now();
-  const previous = Number(await env.PIPELINE_KV.get(key));
+  const raw = await env.PIPELINE_KV.get(key);
+  const previous = raw === null ? Number.NaN : Number.parseInt(raw, 10);
   if (Number.isFinite(previous)) {
-    const waitMs = previous + delayMs - now;
+    // Clamp to one delay window so a corrupt/future timestamp cannot stall
+    // the consumer. Correctness of the spacing depends on the scrape queue
+    // running at max_concurrency = 1 — see workers/austlii-scraper/wrangler.toml.
+    const waitMs = Math.min(previous + delayMs - Date.now(), delayMs);
     if (waitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }

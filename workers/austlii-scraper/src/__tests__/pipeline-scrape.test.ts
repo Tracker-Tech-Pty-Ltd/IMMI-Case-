@@ -69,6 +69,123 @@ describe("pipeline scrape queue", () => {
     expect(ack).toHaveBeenCalledOnce();
   });
 
+  it("retries a case when AustLII returns 5xx instead of dropping it", async () => {
+    const puts = new Map<string, string>();
+    const ack = vi.fn();
+    const retry = vi.fn();
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("boom", { status: 503, statusText: "Service Unavailable" })));
+
+    const env = {
+      PIPELINE_ENABLED: "true",
+      NATIVE_PIPELINE_ENABLED: "true",
+      CASE_RESULTS: {
+        head: vi.fn(async () => null),
+        put: vi.fn(async (key: string, value: string) => {
+          puts.set(key, value);
+          return null;
+        }),
+      },
+    } as unknown as Env;
+
+    const job: ScrapeJob = {
+      phase: "scrape",
+      run_id: "11111111-1111-4111-8111-111111111111",
+      case_id: "abcdef123456",
+      url: "https://www.austlii.edu.au/au/cases/cth/FCA/2026/42.html",
+      citation: "[2026] FCA 42",
+      court_code: "FCA",
+      title: "Applicant v Minister [2026] FCA 42",
+    };
+
+    await worker.queue({
+      queue: "austlii-scrape-queue",
+      messages: [{ body: job, ack, retry }],
+    } as never, env);
+
+    expect(retry).toHaveBeenCalledOnce();
+    expect(ack).not.toHaveBeenCalled();
+    const errorJson = puts.get("runs/11111111-1111-4111-8111-111111111111/FCA/abcdef123456.error.json");
+    expect(errorJson).toBeDefined();
+    expect(JSON.parse(errorJson as string)).toMatchObject({ error_code: 503 });
+  });
+
+  it("records and acks a 404 without retrying", async () => {
+    const puts = new Map<string, string>();
+    const ack = vi.fn();
+    const retry = vi.fn();
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("not found", { status: 404, statusText: "Not Found" })));
+
+    const env = {
+      PIPELINE_ENABLED: "true",
+      NATIVE_PIPELINE_ENABLED: "true",
+      CASE_RESULTS: {
+        head: vi.fn(async () => null),
+        put: vi.fn(async (key: string, value: string) => {
+          puts.set(key, value);
+          return null;
+        }),
+      },
+    } as unknown as Env;
+
+    const job: ScrapeJob = {
+      phase: "scrape",
+      run_id: "11111111-1111-4111-8111-111111111111",
+      case_id: "abcdef123456",
+      url: "https://www.austlii.edu.au/au/cases/cth/FCA/2026/42.html",
+      citation: "[2026] FCA 42",
+      court_code: "FCA",
+      title: "Applicant v Minister [2026] FCA 42",
+    };
+
+    await worker.queue({
+      queue: "austlii-scrape-queue",
+      messages: [{ body: job, ack, retry }],
+    } as never, env);
+
+    expect(ack).toHaveBeenCalledOnce();
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("retries a page that yields too little text", async () => {
+    const puts = new Map<string, string>();
+    const ack = vi.fn();
+    const retry = vi.fn();
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html><body>hi</body></html>", { status: 200 })));
+
+    const env = {
+      PIPELINE_ENABLED: "true",
+      NATIVE_PIPELINE_ENABLED: "true",
+      CASE_RESULTS: {
+        head: vi.fn(async () => null),
+        put: vi.fn(async (key: string, value: string) => {
+          puts.set(key, value);
+          return null;
+        }),
+      },
+    } as unknown as Env;
+
+    const job: ScrapeJob = {
+      phase: "scrape",
+      run_id: "11111111-1111-4111-8111-111111111111",
+      case_id: "abcdef123456",
+      url: "https://www.austlii.edu.au/au/cases/cth/FCA/2026/42.html",
+      citation: "[2026] FCA 42",
+      court_code: "FCA",
+      title: "Applicant v Minister [2026] FCA 42",
+    };
+
+    await worker.queue({
+      queue: "austlii-scrape-queue",
+      messages: [{ body: job, ack, retry }],
+    } as never, env);
+
+    expect(retry).toHaveBeenCalledOnce();
+    expect(ack).not.toHaveBeenCalled();
+  });
+
   it.each(["/enqueue", "/scrape", "/progress", "/list", "/batch-get"]) (
     "returns 404 for HTTP trigger endpoint %s (cron-triggered only)",
     async (path) => {
