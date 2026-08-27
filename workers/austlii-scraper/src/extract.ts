@@ -16,6 +16,8 @@ import type {
 } from "./types";
 
 const DEFAULT_CONTAINER_TIMEOUT_MS = 300_000;
+const DEFAULT_RUN_COST_CAP_USD = 5;
+const DEFAULT_MONTHLY_COST_CAP_USD = 10;
 
 export async function handleExtractBatch(
   batch: MessageBatch<ExtractJob>,
@@ -46,6 +48,11 @@ async function handleRunExtractMessages(
     retryAll(messages, "missing_extraction_shared_secret");
     return;
   }
+  if (!env.COST_CAP_DO) {
+    retryAll(messages, "missing_cost_cap_do");
+    await sendPipelineAlert(env, "cost cap binding missing", { run_id: runId });
+    return;
+  }
   if (env.NATIVE_PIPELINE_ENABLED === "true" && !env.NATIVE_CASE_QUEUE) {
     retryAll(messages, "missing_native_case_queue");
     return;
@@ -55,15 +62,22 @@ async function handleRunExtractMessages(
     return;
   }
 
-  const remaining = await getRemainingCostUsd(env, runId);
-  if (remaining <= 0) {
+  const budget = await checkCostBudget(env, runId);
+  if (budget.state === "unavailable") {
+    // A ledger we cannot read is an infrastructure fault, not a spent budget.
+    // Retry (max_retries then DLQ) so the work survives and an operator sees it.
+    retryAll(messages, "cost_ledger_unavailable");
+    await sendPipelineAlert(env, "cost ledger unavailable", { run_id: runId });
+    return;
+  }
+  if (budget.state === "exhausted") {
     await updatePipelineRun(env, runId, {
       status: "aborted",
       abortReason: "cost_cap_hit",
     }).catch(() => undefined);
     for (const message of messages) message.ack();
     console.warn(JSON.stringify({ event: "extract.aborted.cost_cap_hit", run_id: runId }));
-    await sendPipelineAlert(env, "cost cap hit", { run_id: runId, remaining_usd: remaining });
+    await sendPipelineAlert(env, "cost cap hit", { run_id: runId, remaining_usd: budget.remaining });
     return;
   }
 
@@ -82,7 +96,7 @@ async function handleRunExtractMessages(
   }
 
   const upserted = await enqueueNativeExtractedResults(env, runId, response.extracted);
-  await chargeCostUsd(env, runId, response.cost_usd);
+  await chargeCostUsd(env, budget.ledgers, runId, response.cost_usd);
   await addPipelineRunMetrics(env, runId, {
     extracted: response.extracted.length,
     upserted,
@@ -232,22 +246,108 @@ async function enqueueNativeExtractedResults(
   return count;
 }
 
-async function getRemainingCostUsd(env: Env, runId: string): Promise<number> {
-  if (!env.COST_CAP_DO) return Number.POSITIVE_INFINITY;
-  const cap = positiveNumber(env.PIPELINE_RUN_COST_CAP_USD, 5);
-  const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(`run:${runId}`));
-  const response = await stub.fetch(`https://cost/remaining?cap=${encodeURIComponent(String(cap))}`);
-  const body = await response.json<{ remaining_usd?: number }>();
-  return positiveNumber(body.remaining_usd, cap);
+/** Ledger names. `run:` is per pipeline run; `month:` accumulates across runs. */
+function costLedgerNames(runId: string, now: number = Date.now()): readonly [string, string] {
+  return [`run:${runId}`, `month:${new Date(now).toISOString().slice(0, 7)}`] as const;
 }
 
-async function chargeCostUsd(env: Env, runId: string, usd: number): Promise<void> {
+type LedgerState = "available" | "exhausted" | "unavailable";
+
+interface LedgerReading {
+  state: LedgerState;
+  remaining: number;
+}
+
+/**
+ * Read one ledger. Three outcomes, deliberately distinct:
+ *   available   — the ledger answered and has budget left
+ *   exhausted   — the ledger answered and the budget is gone
+ *   unavailable — the ledger did not answer, or answered with a body we
+ *                 cannot trust
+ * `unavailable` must NEVER be collapsed into `exhausted`: aborting a run and
+ * acking its messages on an infrastructure blip destroys work that a retry
+ * would have completed, and reports a false "budget spent" to the operator.
+ */
+async function readLedger(env: Env, ledger: string, cap: number): Promise<LedgerReading> {
+  if (!env.COST_CAP_DO) return { state: "unavailable", remaining: 0 };
+  try {
+    const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
+    const response = await stub.fetch(`https://cost/remaining?cap=${encodeURIComponent(String(cap))}`);
+    if (!response.ok) throw new Error(`ledger responded ${response.status}`);
+    const body = await response.json<{ remaining_usd?: number }>();
+    const remaining = Number(body?.remaining_usd);
+    if (!Number.isFinite(remaining) || remaining < 0) throw new Error("ledger returned a malformed remaining_usd");
+    return { state: remaining > 0 ? "available" : "exhausted", remaining };
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "extract.cost_cap.unavailable",
+      ledger,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    return { state: "unavailable", remaining: 0 };
+  }
+}
+
+interface CostBudget {
+  state: LedgerState;
+  remaining: number;
+  ledgers: readonly [string, string];
+}
+
+/**
+ * Check both ceilings. `unavailable` wins over `exhausted` wins over
+ * `available`, because the two failure modes need opposite handling and
+ * "we do not know" must never be reported as "we are out of money".
+ * The ledger names are returned so the caller charges exactly the ledgers it
+ * checked, even if the batch crosses a UTC month boundary mid-flight.
+ */
+async function checkCostBudget(env: Env, runId: string): Promise<CostBudget> {
+  const ledgers = costLedgerNames(runId);
+  const [runReading, monthReading] = await Promise.all([
+    readLedger(env, ledgers[0], positiveNumber(env.PIPELINE_RUN_COST_CAP_USD, DEFAULT_RUN_COST_CAP_USD)),
+    readLedger(env, ledgers[1], positiveNumber(env.PIPELINE_MONTHLY_HARD_CAP_USD, DEFAULT_MONTHLY_COST_CAP_USD)),
+  ]);
+  const readings = [runReading, monthReading];
+  const state: LedgerState = readings.some((reading) => reading.state === "unavailable")
+    ? "unavailable"
+    : readings.some((reading) => reading.state === "exhausted")
+      ? "exhausted"
+      : "available";
+  return { state, remaining: Math.min(runReading.remaining, monthReading.remaining), ledgers };
+}
+
+/**
+ * Charge both ledgers. A charge failure is loud but never triggers a retry:
+ * the money is already spent, so re-running the batch would spend more.
+ * Takes the ledger names the caller checked, so the check and the charge
+ * cannot land in different months.
+ */
+async function chargeCostUsd(
+  env: Env,
+  ledgers: readonly [string, string],
+  runId: string,
+  usd: number,
+): Promise<void> {
   if (!env.COST_CAP_DO || usd <= 0) return;
-  const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(`run:${runId}`));
-  await stub.fetch("https://cost/charge", {
-    method: "POST",
-    body: JSON.stringify({ usd }),
-  }).catch(() => undefined);
+  for (const ledger of ledgers) {
+    try {
+      const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
+      const response = await stub.fetch("https://cost/charge", {
+        method: "POST",
+        body: JSON.stringify({ usd }),
+      });
+      if (!response.ok) throw new Error(`charge rejected with ${response.status}`);
+    } catch (err) {
+      console.error(JSON.stringify({
+        event: "extract.cost_cap.charge_failed",
+        ledger,
+        run_id: runId,
+        usd,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      await sendPipelineAlert(env, "cost ledger charge failed", { run_id: runId, ledger, usd });
+    }
+  }
 }
 
 function groupByRun(messages: readonly Message<ExtractJob>[]): Map<string, Message<ExtractJob>[]> {
