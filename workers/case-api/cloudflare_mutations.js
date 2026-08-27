@@ -307,10 +307,10 @@ export async function dispatchCloudflareCaseMutation(request, path, env) {
     const stores = createCloudflareStores(env);
     const writer = await requireWriter(request, env, stores);
     if (writer instanceof Response) return writer;
-    if (isCreate) return handleCreate(request, env, stores);
-    if (isBatch) return handleBatch(request, env, stores);
-    if (isUpdate) return handleUpdate(idMatch[1], request, env, stores);
-    return handleDelete(idMatch[1], env, stores);
+    if (isCreate) return await handleCreate(request, env, stores);
+    if (isBatch) return await handleBatch(request, env, stores);
+    if (isUpdate) return await handleUpdate(idMatch[1], request, env, stores);
+    return await handleDelete(idMatch[1], env, stores);
   } catch (error) {
     if (error instanceof StorageBoundaryError) return errorResponse(error.message, error.status, error.code);
     if (clientError(error)) return errorResponse(error.message, error.status, error.code);

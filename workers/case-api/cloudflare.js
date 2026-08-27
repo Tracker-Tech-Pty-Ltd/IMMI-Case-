@@ -1057,39 +1057,39 @@ export async function dispatchCloudflareCaseRead(url, path, env) {
   try {
     const stores = createCloudflareStores(env);
     if (path.startsWith("/api/v1/judge-photo/") && url.pathname === path) {
-      return handleJudgePhoto(path, stores);
+      return await handleJudgePhoto(path, stores);
     }
-    if (path === "/api/v1/stats") return handleStats(url, stores);
-    if (path === "/api/v1/export/csv") return handleExport(url, stores, "csv");
-    if (path === "/api/v1/export/json") return handleExport(url, stores, "json");
-    if (path === "/api/v1/analytics/judge-bio") return handleJudgeBio(url, stores);
-    if (path === "/api/v1/filter-options") return handleFilterOptions(stores);
-    if (path === "/api/v1/stats/trends") return handleStatsTrends(url, stores);
-    if (path === "/api/v1/data-dictionary") return handleDataDictionary();
-    if (path === "/api/v1/visa-registry") return handleVisaRegistry();
-    if (path === "/api/v1/taxonomy/visa-lookup") return handleVisaLookup(url, stores);
-    if (path === "/api/v1/taxonomy/legal-concepts") return handleTaxonomyLegalConcepts(stores);
-    if (path === "/api/v1/taxonomy/countries") return handleCountries(url, stores);
-    if (path === "/api/v1/taxonomy/judges/autocomplete") return handleJudgeAutocomplete(url, stores);
-    if (path === "/api/v1/court-lineage") return handleCourtLineage(stores);
-    if (path === "/api/v1/analytics/outcomes") return handleAnalyticsOutcomes(stores);
-    if (path === "/api/v1/analytics/judges") return handleAnalyticsJudges(url, stores);
-    if (path === "/api/v1/analytics/legal-concepts") return handleAnalyticsLegalConcepts(url, stores);
-    if (path === "/api/v1/analytics/nature-outcome") return handleAnalyticsNatureOutcome(stores);
-    if (path === "/api/v1/analytics/visa-families") return handleAnalyticsVisaFamilies(stores);
-    if (path === "/api/v1/analytics/monthly-trends") return handleAnalyticsMonthlyTrends(stores);
-    if (path === "/api/v1/analytics/filter-options") return handleAnalyticsFilterOptions(url, stores);
-    if (path === "/api/v1/analytics/flow-matrix") return handleAnalyticsFlowMatrix(url, stores);
-    if (path === "/api/v1/analytics/success-rate") return handleAnalyticsSuccessRate(url, stores);
-    if (path === "/api/v1/analytics/concept-effectiveness") return handleAnalyticsConceptEffectiveness(url, stores);
-    if (path === "/api/v1/analytics/concept-cooccurrence") return handleAnalyticsConceptCooccurrence(url, stores);
-    if (path === "/api/v1/analytics/concept-trends") return handleAnalyticsConceptTrends(url, stores);
-    if (path === "/api/v1/analytics/judge-leaderboard") return handleAnalyticsJudgeLeaderboard(url, stores);
-    if (path === "/api/v1/analytics/judge-profile") return handleAnalyticsJudgeProfile(url, stores);
-    if (path === "/api/v1/analytics/judge-compare") return handleAnalyticsJudgeCompare(url, stores);
-    if (path === "/api/v1/legislations" || path === "/api/v1/legislations/") return handleLegislationsList(url);
-    if (path === "/api/v1/legislations/search") return handleLegislationsSearch(url);
-    if (path.startsWith("/api/v1/legislations/")) return handleLegislationDetail(path, stores);
+    if (path === "/api/v1/stats") return await handleStats(url, stores);
+    if (path === "/api/v1/export/csv") return await handleExport(url, stores, "csv");
+    if (path === "/api/v1/export/json") return await handleExport(url, stores, "json");
+    if (path === "/api/v1/analytics/judge-bio") return await handleJudgeBio(url, stores);
+    if (path === "/api/v1/filter-options") return await handleFilterOptions(stores);
+    if (path === "/api/v1/stats/trends") return await handleStatsTrends(url, stores);
+    if (path === "/api/v1/data-dictionary") return await handleDataDictionary();
+    if (path === "/api/v1/visa-registry") return await handleVisaRegistry();
+    if (path === "/api/v1/taxonomy/visa-lookup") return await handleVisaLookup(url, stores);
+    if (path === "/api/v1/taxonomy/legal-concepts") return await handleTaxonomyLegalConcepts(stores);
+    if (path === "/api/v1/taxonomy/countries") return await handleCountries(url, stores);
+    if (path === "/api/v1/taxonomy/judges/autocomplete") return await handleJudgeAutocomplete(url, stores);
+    if (path === "/api/v1/court-lineage") return await handleCourtLineage(stores);
+    if (path === "/api/v1/analytics/outcomes") return await handleAnalyticsOutcomes(stores);
+    if (path === "/api/v1/analytics/judges") return await handleAnalyticsJudges(url, stores);
+    if (path === "/api/v1/analytics/legal-concepts") return await handleAnalyticsLegalConcepts(url, stores);
+    if (path === "/api/v1/analytics/nature-outcome") return await handleAnalyticsNatureOutcome(stores);
+    if (path === "/api/v1/analytics/visa-families") return await handleAnalyticsVisaFamilies(stores);
+    if (path === "/api/v1/analytics/monthly-trends") return await handleAnalyticsMonthlyTrends(stores);
+    if (path === "/api/v1/analytics/filter-options") return await handleAnalyticsFilterOptions(url, stores);
+    if (path === "/api/v1/analytics/flow-matrix") return await handleAnalyticsFlowMatrix(url, stores);
+    if (path === "/api/v1/analytics/success-rate") return await handleAnalyticsSuccessRate(url, stores);
+    if (path === "/api/v1/analytics/concept-effectiveness") return await handleAnalyticsConceptEffectiveness(url, stores);
+    if (path === "/api/v1/analytics/concept-cooccurrence") return await handleAnalyticsConceptCooccurrence(url, stores);
+    if (path === "/api/v1/analytics/concept-trends") return await handleAnalyticsConceptTrends(url, stores);
+    if (path === "/api/v1/analytics/judge-leaderboard") return await handleAnalyticsJudgeLeaderboard(url, stores);
+    if (path === "/api/v1/analytics/judge-profile") return await handleAnalyticsJudgeProfile(url, stores);
+    if (path === "/api/v1/analytics/judge-compare") return await handleAnalyticsJudgeCompare(url, stores);
+    if (path === "/api/v1/legislations" || path === "/api/v1/legislations/") return await handleLegislationsList(url);
+    if (path === "/api/v1/legislations/search") return await handleLegislationsSearch(url);
+    if (path.startsWith("/api/v1/legislations/")) return await handleLegislationDetail(path, stores);
     if (path === "/api/v1/cases") {
       const response = await stores.caseStore.listPage({
         filters: requestFilters(url.searchParams),
@@ -1104,8 +1104,8 @@ export async function dispatchCloudflareCaseRead(url, path, env) {
     if (path === "/api/v1/cases/count") {
       return jsonOk({ total: await stores.caseStore.countCompat(requestFilters(url.searchParams)), count_mode: "exact" });
     }
-    if (path === "/api/v1/search") return handleSearch(url, stores);
-    if (path === "/api/v1/search/semantic") return handleSemanticSearch(url, stores);
+    if (path === "/api/v1/search") return await handleSearch(url, stores);
+    if (path === "/api/v1/search/semantic") return await handleSemanticSearch(url, stores);
     if (path === "/api/v1/cases/compare") {
       const ids = url.searchParams.getAll("ids").filter((id) => CASE_ID_RE.test(id));
       if (ids.length < 2) return jsonErr("At least 2 valid case IDs required");

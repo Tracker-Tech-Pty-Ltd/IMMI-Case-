@@ -406,18 +406,18 @@ async function handleHealth(request, env) {
 /** Return null only for an unknown route; standalone entrypoint then fails closed. */
 export async function dispatchCloudflareCouncil(request, env, path, method, ctx) {
   try {
-    if (path === "/api/v1/llm-council/health" && method === "GET") return handleHealth(request, env);
-    if (path === "/api/v1/llm-council/sessions" && method === "POST") return handleCreateSession(request, env);
-    if (path === "/api/v1/llm-council/sessions" && method === "GET") return handleListSessions(request, env);
-    if (path === "/api/v1/llm-council/run" && method === "POST") return handleLegacyRun(request, env);
-    if (path === "/api/v1/llm-council/stream" && method === "POST") return handleStream(request, env, ctx);
-    if (path === "/api/v1/llm-council/sessions/restore" && method === "POST") return handleRestoreByCode(request, env);
+    if (path === "/api/v1/llm-council/health" && method === "GET") return await handleHealth(request, env);
+    if (path === "/api/v1/llm-council/sessions" && method === "POST") return await handleCreateSession(request, env);
+    if (path === "/api/v1/llm-council/sessions" && method === "GET") return await handleListSessions(request, env);
+    if (path === "/api/v1/llm-council/run" && method === "POST") return await handleLegacyRun(request, env);
+    if (path === "/api/v1/llm-council/stream" && method === "POST") return await handleStream(request, env, ctx);
+    if (path === "/api/v1/llm-council/sessions/restore" && method === "POST") return await handleRestoreByCode(request, env);
     const turn = path.match(/^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})\/turns$/);
-    if (turn && method === "POST") return handleAddTurn(request, env, turn[1]);
-    if (turn && method === "GET") return handleGetTurns(request, env, turn[1]);
+    if (turn && method === "POST") return await handleAddTurn(request, env, turn[1]);
+    if (turn && method === "GET") return await handleGetTurns(request, env, turn[1]);
     const session = path.match(/^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})$/);
-    if (session && method === "GET") return handleGetSession(request, env, session[1]);
-    if (session && method === "DELETE") return handleDeleteSession(request, env, session[1]);
+    if (session && method === "GET") return await handleGetSession(request, env, session[1]);
+    if (session && method === "DELETE") return await handleDeleteSession(request, env, session[1]);
     return null;
   } catch (err) {
     if (err instanceof StorageBoundaryError) return errorResponse(err.message, err.status, err.code);
