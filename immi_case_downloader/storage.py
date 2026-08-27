@@ -48,6 +48,10 @@ CASE_FIELDS = [
     "legal_test_applied",
 ]
 
+# Dashboard shows the top N visa subclasses by case count.  Shared with
+# SqliteRepository.get_statistics() so the two backends cannot drift apart.
+TOP_VISA_SUBCLASS_LIMIT = 20
+
 
 def ensure_output_dirs(base_dir: str = OUTPUT_DIR):
     """Create output directory structure."""
@@ -349,8 +353,15 @@ def get_statistics(base_dir: str = OUTPUT_DIR) -> dict:
         if c.full_text_path:
             with_text += 1
 
-    # Sort visa subclasses by count descending, top 20
-    sorted_subclasses = dict(sorted(by_visa_subclass.items(), key=lambda x: x[1], reverse=True)[:20])
+    # (-count, subclass) rather than count-descending alone: Python's sort is
+    # stable, so ties used to be broken by first-seen order — an ordering SQL
+    # cannot reproduce. With 25 subclasses on the same count, "the top 20" was a
+    # different set of 20 on each backend, and a cross-backend contract test
+    # would pass or fail by luck. SqliteRepository.get_statistics() now orders
+    # identically.
+    sorted_subclasses = dict(
+        sorted(by_visa_subclass.items(), key=lambda x: (-x[1], x[0]))[:TOP_VISA_SUBCLASS_LIMIT]
+    )
 
     return {
         "total": len(cases),

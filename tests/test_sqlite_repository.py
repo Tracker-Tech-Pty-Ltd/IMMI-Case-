@@ -392,7 +392,10 @@ class TestStatistics:
     def test_statistics_keys(self, populated_repo):
         """get_statistics returns all expected keys."""
         stats = populated_repo.get_statistics()
-        expected_keys = {"total", "by_court", "by_year", "by_nature", "visa_types", "with_full_text", "sources"}
+        expected_keys = {
+            "total", "by_court", "by_year", "by_nature", "by_visa_subclass",
+            "by_source", "visa_types", "with_full_text", "sources",
+        }
         assert expected_keys == set(stats.keys())
 
     def test_statistics_total(self, populated_repo):
@@ -401,10 +404,11 @@ class TestStatistics:
         assert stats["total"] == 2
 
     def test_statistics_by_court(self, populated_repo):
-        """get_statistics breaks down by court correctly."""
+        """get_statistics breaks down by court correctly, keyed on court_code."""
         stats = populated_repo.get_statistics()
-        assert "Administrative Appeals Tribunal" in stats["by_court"]
-        assert "Federal Court of Australia" in stats["by_court"]
+        assert "AATA" in stats["by_court"]
+        assert "FCA" in stats["by_court"]
+        assert "Administrative Appeals Tribunal" not in stats["by_court"]
 
 
 class TestFilterOptions:
