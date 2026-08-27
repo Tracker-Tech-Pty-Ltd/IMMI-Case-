@@ -1526,8 +1526,17 @@ next executor to edit the yardstick instead of the code.
       form**: `grep -rn 'tsc --noEmit' Makefile .github/workflows/ci.yml`
       returns no matches.
 - [ ] `make typecheck` exits 0.
-- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'`
+- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep '/frontend/src/' | sort -u | wc -l`
       returns exactly `FE_SRC_BEFORE` (unchanged: this plan touches no `src` file).
+      **`sort -u` is required and is not cosmetic.** `tsc -b` prints each referenced project's file
+      list separately and concatenates them, so once Step 6 wires in `tsconfig.test.json`, every `src`
+      file reachable from BOTH `tsconfig.app.json` and `tsconfig.test.json` (via a `@/*` import in a
+      test) is printed twice. Measured on main after Step 6: raw `grep -c` = **294**, unique = **170**
+      = `FE_SRC_BEFORE`. A plain `grep -c` here would fail for a reason that has nothing to do with the
+      invariant this checkbox exists to protect. Do NOT "fix" a mismatch by removing a project
+      reference — that would re-empty the gate this whole plan exists to restore.
+      Note the CI assertions added in Steps 1 and 6 are unaffected: they use `-lt` floors (150 and 50),
+      not exact equality, and both still fail correctly if either reference is dropped.
 - [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/__tests__/'`
       returns at least `FE_TESTFILES_BEFORE` minus the one colocated file
       (`FE_TESTFILES_BEFORE` counts only `frontend/__tests__` at this point in

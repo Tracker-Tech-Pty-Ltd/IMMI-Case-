@@ -43,7 +43,7 @@ Nothing downstream is trustworthy until these land. 001 must be first.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [001](001-restore-the-frontend-compile-gate.md) | Make CI actually type-check and build the frontend | P1 | M | LOW | — | TODO |
+| [001](001-restore-the-frontend-compile-gate.md) | Make CI actually type-check and build the frontend | P1 | M | LOW | — | DONE — merged to main |
 | [002](002-fix-test-collection-and-install.md) | Collect every test that exists and make a fresh clone installable | P1 | M | LOW | 001 | TODO |
 | [003](003-lint-the-test-suite.md) | Lint `tests/` and fix the 43 violations hiding behind the narrowed path | P1 | S | LOW | 002 | TODO |
 
@@ -113,7 +113,7 @@ Real bugs, lower blast radius: the Flask app is not in production.
 | [026](026-fix-seek-pagination.md) | Make the seek pagination return the right rows on every page | P2 | M | MED | 027 | TODO |
 | [027](027-fix-csv-data-integrity.md) | Stop silently destroying rows and columns in the master CSV | P1 | L | MED | — | DONE — merged to main |
 | [028](028-fix-flask-analytics-fallback.md) | Stop returning empty analytics and calling it a timeout | P2 | M | MED | 027 | TODO |
-| [029](029-harden-scraper-and-extraction.md) | Checkpointing, honest failure reporting and safe result truncation | P2 | L | MED | — | TODO |
+| [029](029-harden-scraper-and-extraction.md) | Checkpointing, honest failure reporting and safe result truncation | P2 | L | MED | — | DONE — merged to main |
 
 ### Tier 7 — Tech debt
 
@@ -156,7 +156,7 @@ Actively-wrong docs are worse than missing ones.
 |------|-------|-----|-----|------|------------|--------|
 | [042](042-rewrite-the-agent-facing-docs.md) | Make AGENTS.md and CLAUDE.md describe the architecture that exists | P1 | M | LOW | 001 | TODO |
 | [043](043-correct-the-readme.md) | Fix the counts, the stack facts and the commands that do not work | P2 | M | LOW | 002 | TODO |
-| [044](044-retire-the-stale-planning-docs.md) | Archive the retired-stack docs and start an ADR trail | P3 | M | LOW | 040 | TODO |
+| [044](044-retire-the-stale-planning-docs.md) | Archive the retired-stack docs and start an ADR trail | P3 | M | LOW | 040 | DONE — merged to main |
 
 ### Tier 11 — Config & observability
 
