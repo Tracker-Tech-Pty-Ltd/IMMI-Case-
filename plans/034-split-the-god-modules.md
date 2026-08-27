@@ -13,14 +13,43 @@
 > `/Users/d/Developer/Active Projects/IMMI-Case-`. The directory name contains
 > a space and a trailing hyphen, so always quote it in shell commands.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff is blind to uncommitted,
+> staged and untracked work, so run **all four** commands below; a dirty tree
+> would otherwise hand you a false all-clear. Any in-scope path appearing in any
+> of them is a STOP condition, and you must **never** run an unconditional
+> `git checkout -- …`, `git restore …` or `git clean -f` to clear it — those
+> changes may be the operator's.
+>
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS='immi_case_downloader/web/routes/api.py
+> immi_case_downloader/web/routes/api_taxonomy.py
+> immi_case_downloader/web/routes/api_cases.py
+> immi_case_downloader/llm_council.py
+> immi_case_downloader/data/council_prompts.json
+> workers/llm-council/runner.js
+> workers/llm-council/prompts.js
+> workers/storage/cloudflare.js
+> tests/test_analytics_api.py
+> tests/test_taxonomy_countries_and_judges_api.py
+> tests/test_api_helpers.py'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
 > ```
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- immi_case_downloader/web/routes/api.py immi_case_downloader/web/routes/api_taxonomy.py immi_case_downloader/web/routes/api_cases.py immi_case_downloader/llm_council.py workers/llm-council/runner.js workers/storage/cloudflare.js tests/test_analytics_api.py tests/test_taxonomy_countries_and_judges_api.py tests/test_api_helpers.py
-> ```
-> If that prints nothing, the codebase has not drifted — proceed. If any
-> in-scope file changed since this plan was written, compare the "Current
-> state" excerpts against the live code before proceeding; on a mismatch,
-> treat it as a STOP condition.
+>
+> On a mismatch, compare the "Current state" excerpts against the live code; if
+> they differ, STOP.
+>
+> **Note for whoever sequences this batch**: this plan creates
+> `immi_case_downloader/data/council_prompts.json`.
+> `plans/033-single-source-the-domain-vocabulary.md` also writes into
+> `immi_case_downloader/data/` (it creates `visa_registry.json`). The two files
+> do not collide, and 033's drift check has been narrowed to the specific files
+> it owns, so either order works — but do not run them in parallel in the same
+> worktree.
 
 ## Status
 
@@ -364,21 +393,50 @@ helpers, not judge-name helpers. Moving it would create a new cycle.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | see baseline note below |
-| Worker tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers` | `Test Files 25 passed (25)`, `Tests 345 passed (345)` at baseline |
+| Python tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | see the **delta rule** below |
+| Worker tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers` | see the **delta rule** below |
 | Python lint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` | `All checks passed!`, exit 0 |
-| Single Python test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/<file>.py -q` | all pass |
+| Single Python test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/<file>.py -q` | all pass — per-file counts are stable across sibling plans, so prefer them |
 | Single Worker test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && npx vitest run --config workers/vitest.config.js __tests__/<file>.test.js` | all pass |
 | Import-cycle probe | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -c "import immi_case_downloader.web.routes.api_taxonomy"` | exit 0, no output |
 | Line count | `wc -l < <path>` | as stated per step |
 
-**`make test-py` baseline at `42826a3`: `1141 passed, 3 failed, 7 skipped`.**
-The 3 failures are all in `tests/test_backfill_judge_overrides_from_pdf.py` and
-are **environmental**, not repo bugs: Homebrew Python 3.14.7 has a
-`pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf` import. Do not try to
-fix them and do not treat them as a regression. **Before you start, run
-`make test-py` once and write down the exact three numbers you get** — that is
-your real baseline; everything below is expressed as a delta from it.
+**Delta rule (Step 0 — do this before anything else).** Sibling plans in this
+batch add and remove tests in these same suites, so absolute totals such as
+"350 passed" are not usable gates: they break the moment another plan merges,
+and an executor who edits the expected number has destroyed the gate. Record:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-workers 2>&1 | tail -4                            # → WORKER_FILES_BEFORE / WORKER_TESTS_BEFORE
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u      # → PY_FAIL_NAMES
+make test-py 2>&1 | tail -3                                  # → PY_PASS_BEFORE / PY_SKIP_BEFORE
+cp workers/storage/cloudflare.js /tmp/immi-cloudflare-storage-baseline.js
+```
+
+Every expectation below is a delta from those. This plan adds **7** Worker tests
+(Step 3) and **4 + 2** Python tests (Steps 3 and 9), and moves code without
+changing behaviour otherwise; so the required movement is
+`WORKER_TESTS_BEFORE + 7` across `WORKER_FILES_BEFORE + 1` files, and
+`PY_PASS_BEFORE + 6` with `PY_SKIP_BEFORE` unchanged. Count the tests you
+actually write and state both the baseline and the final numbers in your report.
+At `42826a3` the baseline happened to be 25/345 and 1141/7 — informational only.
+Prefer the **per-file** counts as your real gate, since they do not move when a
+sibling plan lands: `council-prompt-parity.test.js` → `7 passed`,
+`tests/test_council_prompt_source.py` → `4 passed`,
+`tests/test_cache_registry.py` → `2 passed`.
+
+**Whatever `PY_PASS_BEFORE` is, the Python failures must remain exactly the
+three named `pypdf` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`**
+(Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch — environmental, not
+repo code). On an interpreter with a working `pypdf` there are none; that is
+also fine. A failure with any *other* name means this plan cannot start.
+
+The `cp` in Step 0 is load-bearing, not a nicety: Steps 5–7 slice
+`workers/storage/cloudflare.js` by line range, and Step 4 has already deleted
+lines from it by then. **Every line range in Steps 5 and 6 refers to
+`/tmp/immi-cloudflare-storage-baseline.js`, the pristine snapshot — never to the
+live file.** See Step 4 for why.
 
 ## Scope
 
@@ -386,11 +444,15 @@ your real baseline; everything below is expressed as a delta from it.
 
 Council prompts (Steps 1–3):
 - `immi_case_downloader/data/council_prompts.json` — create
+- `scripts/generate_council_prompts.py` — create (the checked-in generator with
+  a `--check` staleness mode; the plan text's heredoc is its body, not a
+  substitute for it)
 - `immi_case_downloader/llm_council.py` — replace the four literal blocks with
-  a loader
-- `workers/llm-council/prompts.js` — create
+  a loader, and export `COUNCIL_PROMPTS_VERSION`
+- `workers/llm-council/prompts.js` — create (**generated**; never hand-edited)
 - `workers/llm-council/runner.js` — re-export from `prompts.js`; use the
-  grounded variant on the one native-tool path
+  grounded variant on the one native-tool path; add `prompts_version` to the
+  existing structured log line
 - `workers/__tests__/council-prompt-parity.test.js` — create
 - `tests/test_council_prompt_source.py` — create
 
@@ -565,10 +627,28 @@ and `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` → `All c
 Generate `workers/llm-council/prompts.js` from the JSON — again, do not
 transcribe:
 
+**This must be a checked-in generator, not a one-shot heredoc.** A heredoc that
+exists only in a plan document is unreproducible: the next person to edit a
+prompt has no way to regenerate `prompts.js`, and nothing detects a hand-edit
+that drifts from the JSON. Write the script below to
+**`scripts/generate_council_prompts.py`** and commit it, with a `--check` mode,
+exactly mirroring the generator convention `plans/033-single-source-the-domain-vocabulary.md`
+establishes for `scripts/generate_visa_registry.py`:
+
+- no arguments → regenerate `workers/llm-council/prompts.js`, print
+  `Wrote .../workers/llm-council/prompts.js`
+- `--check` → regenerate into memory, compare byte-for-byte with the file on
+  disk, print `OK: generated council prompts are up to date` and exit 0 on a
+  match, or print a unified diff and exit 1 on a mismatch
+
+The body it writes is:
+
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python - <<'PY'
-import json, pathlib
-p = json.loads(pathlib.Path("immi_case_downloader/data/council_prompts.json").read_text(encoding="utf-8"))
+import hashlib, json, pathlib
+raw = pathlib.Path("immi_case_downloader/data/council_prompts.json").read_bytes()
+p = json.loads(raw.decode("utf-8"))
+version = hashlib.sha256(raw).hexdigest()[:12]
 def lit(s): return json.dumps(s, ensure_ascii=False)
 body = f"""/**
  * Council system prompts for the Cloudflare Worker engine.
@@ -595,11 +675,21 @@ export const DEFAULT_ANTHROPIC_SYSTEM_PROMPT = {lit(p["base"]["anthropic"])};
 export const DEFAULT_MODERATOR_SYSTEM_PROMPT = {lit(p["base"]["moderator"])};
 
 export const ANTHROPIC_GROUNDED_SYSTEM_PROMPT = {lit(p["grounded"]["anthropic"])};
+
+/** sha256(council_prompts.json)[:12] — identifies the exact prompt set in logs. */
+export const COUNCIL_PROMPTS_VERSION = {lit(version)};
 """
 pathlib.Path("workers/llm-council/prompts.js").write_text(body, encoding="utf-8")
 print("wrote workers/llm-council/prompts.js")
 PY
 ```
+
+`COUNCIL_PROMPTS_VERSION` exists so a council answer can be traced back to the
+prompt text that produced it. Export the same value from the Python side as
+`COUNCIL_PROMPTS_VERSION` in `immi_case_downloader/llm_council.py`, computed the
+same way (`sha256` of the file's bytes, first 12 hex chars), and have the
+parity test in Step 3 assert the two agree — otherwise the version string is
+decoration.
 
 Now edit `workers/llm-council/runner.js`:
 
@@ -670,21 +760,49 @@ Leave every other call site alone. In particular `runStreamExpert("anthropic",
 that value is what gets recorded and logged for the turn, and the grounded
 substitution happens only at the wire.
 
+**Because of that substitution, the recorded value is no longer the value that
+was sent.** That is a reproducibility hole: the streaming payload records the
+model but not which prompt text actually reached the provider, so a council
+answer cannot be traced back to the prompt that produced it. Close the operator
+half of it here, in the existing structured-log line rather than in any
+persisted payload (payload shapes are out of this plan's scope — see "Out of
+scope"): wherever `runner.js` already emits
+`console.log(JSON.stringify({event, ...}))` for a council turn, add
+`prompts_version: COUNCIL_PROMPTS_VERSION` and, on the Anthropic native branch,
+`grounded: true`. Import `COUNCIL_PROMPTS_VERSION` alongside the other five
+names in the import block above.
+
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers
 ```
-→ `Test Files 25 passed (25)`, `Tests 345 passed (345)`
+→ `WORKER_TESTS_BEFORE` (Step 2 adds no tests; Step 3 is what adds them)
 
 and
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -c "google_search grounding enabled" workers/llm-council/prompts.js workers/llm-council/runner.js
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -c "google_search grounding enabled" workers/llm-council/prompts.js workers/llm-council/runner.js
+grep -c "prompts_version" workers/llm-council/runner.js
+.venv/bin/python scripts/generate_council_prompts.py --check; echo "check exit=$?"
 ```
-→ `workers/llm-council/prompts.js:0` and `workers/llm-council/runner.js:0`
+→ `workers/llm-council/prompts.js:0` and `workers/llm-council/runner.js:0`;
+`prompts_version` appears at least once; `OK: generated council prompts are up
+to date` with `check exit=0`.
+
+Then prove `--check` can fail: append a space to `workers/llm-council/prompts.js`,
+re-run it, confirm a diff and `check exit=1`, then regenerate.
 
 ### Step 3: Add the parity tests that make this drift impossible to land again
 
-Create `workers/__tests__/council-prompt-parity.test.js` with exactly five
+**Constant-equality is necessary but not sufficient.** Five tests that compare
+`DEFAULT_ANTHROPIC_SYSTEM_PROMPT` to `canonical.base.anthropic` prove the two
+*files* agree; they prove nothing about which string reaches a provider. The
+whole defect this plan exists to fix is that a model was told it had a tool it
+did not have — a **wire** property. So the file below has five constant tests
+*plus* two request-body tests, and it is the request-body tests that actually
+guard the fix.
+
+Create `workers/__tests__/council-prompt-parity.test.js` with **seven**
 tests. Model it on `workers/__tests__/cloudflare-storage-contracts.test.js`,
 which already reads files from disk with `node:fs` in this suite (line 1:
 `import { readdirSync, readFileSync } from "node:fs";`):
@@ -736,7 +854,46 @@ describe("council prompt parity with the canonical JSON", () => {
 });
 ```
 
-Create `tests/test_council_prompt_source.py` with exactly three tests:
+Then add the two **wire-level** tests, in the same file. Model their fetch stub
+on `workers/__tests__/llm-council-runner.test.js`, which already does
+`vi.spyOn(globalThis, "fetch")` for this module — read it and reuse its idiom
+rather than inventing one. The assertions are on the JSON body actually posted:
+
+```js
+describe("the grounded variant reaches only the path that sends a tool", () => {
+  it("streamAnthropicNative posts the grounded prompt AND a web_search tool block", async () => {
+    // Arrange: stub fetch, drive the anthropic branch of pickStreamGenerator.
+    // Assert on the captured request:
+    //   body.system     === ANTHROPIC_GROUNDED_SYSTEM_PROMPT
+    //   body.tools.some((t) => t.name === "web_search")
+    // Both must hold together — a grounded prompt with no tool block is the
+    // exact defect this plan removes, and so is a tool block with the base
+    // prompt.
+  });
+
+  it("the OpenAI-compat gateway path posts the BASE prompt and no tools", async () => {
+    // Drive gatewayChatCompletion / streamGatewayChatCompletion for each of
+    // openai, gemini_pro and anthropic. For every captured request:
+    //   the posted system message === the corresponding DEFAULT_* constant
+    //   body.tools is undefined  (the compat endpoint cannot expose one)
+    // The gemini_pro case is the regression that motivated this plan: before
+    // it, the compat path sent a prompt claiming google_search grounding.
+  });
+});
+```
+
+Write the bodies against the real module — do **not** stub `pickStreamGenerator`
+or the prompt constants themselves, or the tests degrade back into constant
+comparison. If a branch cannot be driven without a network binding, assert on
+the request object the code builds immediately before `fetch`, but never delete
+the test: a plan whose entire justification is "a model was told it had a tool
+it does not have" must have at least one test that reads the outgoing body.
+
+Prove both can fail: temporarily swap `ANTHROPIC_GROUNDED_SYSTEM_PROMPT` back to
+`DEFAULT_ANTHROPIC_SYSTEM_PROMPT` in `pickStreamGenerator`, confirm the first
+test goes red, and restore.
+
+Create `tests/test_council_prompt_source.py` with exactly **four** tests:
 
 ```python
 """The Python council engine must read its prompts from the canonical JSON."""
@@ -774,21 +931,76 @@ def test_base_prompts_claim_no_search_tool():
 def test_grounded_anthropic_variant_is_available_for_the_worker():
     payload = json.loads(_COUNCIL_PROMPTS_PATH.read_text(encoding="utf-8"))
     assert "web_search" in payload["grounded"]["anthropic"]
+
+
+def test_generated_worker_mirror_is_not_stale():
+    """`scripts/generate_council_prompts.py --check` must pass in-tree.
+
+    Without this, prompts.js can be hand-edited and nothing notices — the same
+    failure mode this whole step exists to remove. Run the generator as a
+    subprocess, exactly as tests/test_visa_registry_parity.py does for the visa
+    registry generator.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_council_prompts.py", "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 ```
+
+Also assert, in one of the tests above, that the Python and JavaScript
+`COUNCIL_PROMPTS_VERSION` values agree — read the JS constant out of
+`workers/llm-council/prompts.js` with a regex rather than importing it.
 
 **Verify**:
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers && .venv/bin/python -m pytest tests/test_council_prompt_source.py -q && make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-workers
+npx vitest run --config workers/vitest.config.js __tests__/council-prompt-parity.test.js
+.venv/bin/python -m pytest tests/test_council_prompt_source.py -q
+make lint
 ```
-→ `Test Files 26 passed (26)`, `Tests 350 passed (350)`; then `3 passed`; then
-`All checks passed!`
+→ `WORKER_FILES_BEFORE + 1` / `WORKER_TESTS_BEFORE + 7`; the single-file run
+reports `7 passed`; then `4 passed`; then `All checks passed!`.
+
+(If you wrote a different number of wire-level tests, use your number
+consistently and state it in your report — but never fewer than one test that
+inspects an outgoing request body.)
 
 Commit here: `refactor: make council_prompts.json the single prompt source`.
 
 ### Step 4: Extract the shared D1 helpers out of workers/storage/cloudflare.js
 
+> **Read this before Steps 4, 5 and 6 — the line ranges are snapshot-relative.**
+> Step 4 deletes 27 lines from `workers/storage/cloudflare.js` and adds one
+> import; Step 5 then removes over a thousand more. Any line number measured
+> against the *live* file after those edits is wrong, so an earlier draft that
+> said "move `cloudflare.js:246-1294`" in Step 5 and "`1295-1875`" in Step 6
+> would have sliced the wrong code.
+>
+> All ranges in Steps 4, 5 and 6 therefore refer to
+> **`/tmp/immi-cloudflare-storage-baseline.js`**, the untouched copy you made in
+> Step 0. Extract from the snapshot, delete from the live file by locating the
+> same symbols (not by line number), and verify the snapshot is genuinely
+> pristine first:
+>
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> diff <(git show 42826a3:workers/storage/cloudflare.js) /tmp/immi-cloudflare-storage-baseline.js \
+>   && echo "snapshot matches 42826a3"
+> wc -l < /tmp/immi-cloudflare-storage-baseline.js   # → 1905
+> ```
+>
+> If the `diff` is non-empty, the file drifted since `42826a3`; re-derive every
+> range by symbol boundary from your snapshot before proceeding, and say so in
+> your handoff.
+
 Create `workers/storage/cloudflare_shared.js` and move
-`workers/storage/cloudflare.js:36-62` into it verbatim — the four functions
+**snapshot lines 36-62** into it verbatim — the four functions
 `requireD1`, `rows`, `changeCount`, `bindAll` — adding `export` to each. Its
 import block is exactly:
 
@@ -806,16 +1018,18 @@ import { bindAll, changeCount, requireD1, rows } from "./cloudflare_shared.js";
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers
 ```
-→ `Tests 350 passed (350)`
+→ `WORKER_TESTS_BEFORE + 5` (the 5 added in Step 3), no failures
 
 ### Step 5: Move CloudflareObjectStore and CloudflareCaseStore into their own modules
 
-Create `workers/storage/object.js` containing, verbatim and in this order:
+All line ranges below are **snapshot** ranges — see the box at the top of
+Step 4. Create `workers/storage/object.js` containing, verbatim and in this
+order:
 
-- `cloudflare.js:32-34` — `MAX_COUNCIL_PAYLOAD_BYTES`, `JUDGE_PHOTO_EXTS`,
+- snapshot `32-34` — `MAX_COUNCIL_PAYLOAD_BYTES`, `JUDGE_PHOTO_EXTS`,
   `JUDGE_PHOTO_NAME_RE`
-- `cloudflare.js:178-184` — `contentKeyFor`
-- `cloudflare.js:246-433` — `export class CloudflareObjectStore`
+- snapshot `178-184` — `contentKeyFor`
+- snapshot `246-433` — `export class CloudflareObjectStore`
 
 Its imports:
 
@@ -834,10 +1048,10 @@ import { rows } from "./cloudflare_shared.js";
 
 Create `workers/storage/case.js` containing, verbatim and in this order:
 
-- `cloudflare.js:64-176` — `safeCaseFilters`, `LEGACY_CASE_PROJECTION`,
+- snapshot `64-176` — `safeCaseFilters`, `LEGACY_CASE_PROJECTION`,
   `COMPAT_SORT_COLUMNS`, `compatPageNumber`, `compatCaseFilters`
-- `cloudflare.js:220-244` — `normaliseRelationLabels`, `normaliseJsonObject`
-- `cloudflare.js:434-1294` — `export class CloudflareCaseStore`
+- snapshot `220-244` — `normaliseRelationLabels`, `normaliseJsonObject`
+- snapshot `434-1294` — `export class CloudflareCaseStore`
 
 Its imports:
 
@@ -856,22 +1070,38 @@ import {
 import { bindAll, changeCount, requireD1, rows } from "./cloudflare_shared.js";
 ```
 
-Delete all of that from `cloudflare.js` and re-export the two classes there:
+Delete all of that from `cloudflare.js` (locate the symbols; do **not** use the
+snapshot's line numbers against the live file) and re-export the two classes
+there.
+
+**Use the import-then-export form, never a bare `export … from`:**
 
 ```js
-export { CloudflareObjectStore } from "./object.js";
-export { CloudflareCaseStore } from "./case.js";
+import { CloudflareObjectStore } from "./object.js";
+import { CloudflareCaseStore } from "./case.js";
+
+export { CloudflareObjectStore, CloudflareCaseStore };
 ```
 
-…plus the plain `import { CloudflareObjectStore } from "./object.js";` /
-`import { CloudflareCaseStore } from "./case.js";` that `createCloudflareStores`
-needs locally.
+`export { X } from "./y.js"` is a *re-export*: it forwards the binding to
+importers **without creating a local `X`**. `createCloudflareStores` calls
+`new CloudflareCaseStore(env)` and `new CloudflareObjectStore(env)` in the same
+module (`cloudflare.js:1880-1885`), so the bare re-export form compiles and then
+throws `ReferenceError` at runtime — and the Worker suite mocks
+`../storage/cloudflare.js` in several files, so it may not even be the thing
+that catches it. Import first, then export the local bindings.
 
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers && wc -l < workers/storage/case.js
+node --input-type=module -e '
+import { createCloudflareStores } from "./workers/storage/cloudflare.js";
+console.log(typeof createCloudflareStores);
+'
 ```
-→ `Tests 350 passed (350)`, and `case.js` is roughly 1,000 lines
+→ `WORKER_TESTS_BEFORE + 5`; `case.js` is roughly 1,000 lines; the `node` probe
+prints `function` and does not throw. (The probe loads the real module graph
+with no mocks, which is exactly what the mocked test files cannot do.)
 
 Note that `case.js` is still over the project's 800-line guidance. That is
 expected and accepted here: `CloudflareCaseStore` is one class with 38 methods,
@@ -883,7 +1113,11 @@ move. See "Findings reconsidered".
 Create four more modules, each holding one class plus only its own private
 helpers, verbatim:
 
-| New file | Moves from `cloudflare.js` | `./contracts.js` imports | `./cloudflare_shared.js` imports |
+All ranges are **snapshot** ranges (`/tmp/immi-cloudflare-storage-baseline.js`),
+not live-file ranges — by this point the live file is over a thousand lines
+shorter.
+
+| New file | Moves from the snapshot | `./contracts.js` imports | `./cloudflare_shared.js` imports |
 |---|---|---|---|
 | `identity.js` | `186-218` (`assertTelegramId`, `asJwtTelegramId`, `refreshSessionError`, `refreshDraftValues`) + `1295-1522` (`CloudflareIdentityStore`) | `assertAuthContext, assertUuid, clampLimit, StorageBoundaryError, utcNow` | `changeCount, requireD1, rows` |
 | `council.js` | `1523-1620` (`CloudflareCouncilStore`) | `assertAuthContext, assertObjectPointer, StorageBoundaryError, utcNow` | `changeCount, requireD1, rows` |
@@ -894,27 +1128,66 @@ helpers, verbatim:
 isolation boundary for this stack. Move its body byte-for-byte; do not
 reformat, reorder or "tidy" a single line of it.
 
-Delete those blocks from `cloudflare.js` and re-export each class from it.
+Delete those blocks from `cloudflare.js` (by symbol, not by line number) and, as
+in Step 5, **import each class locally and then export the local binding** —
+never `export { X } from "./y.js"`. All four of these classes are `new`ed inside
+`createCloudflareStores` in the same module, so a bare re-export leaves the
+constructor undefined at runtime.
 
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers && .venv/bin/python -m pytest tests/ --ignore=tests/e2e -q 2>&1 | tail -2
+node --input-type=module -e '
+import * as m from "./workers/storage/cloudflare.js";
+for (const n of ["CloudflareCaseStore","CloudflareIdentityStore","CloudflareCouncilStore",
+                 "CloudflarePipelineStore","CloudflareSemanticIndex","CloudflareObjectStore"]) {
+  if (typeof m[n] !== "function") { console.error("MISSING EXPORT", n); process.exit(1); }
+}
+console.log("all six classes exported");
+'
 ```
-→ `Tests 350 passed (350)`, and the Python numbers equal your Step-0 baseline
-plus the 3 tests added in Step 3
+→ `WORKER_TESTS_BEFORE + 5`; the Python numbers equal `PY_PASS_BEFORE + 3`
+(the 3 added in Step 3, before Step 9 adds its own); the `node` probe prints
+`all six classes exported`
 
 ### Step 7: Reduce workers/storage/cloudflare.js to a barrel
 
 What must remain in `workers/storage/cloudflare.js`:
 
-- the module header comment (lines 1–8), updated to say it is now the public
-  entry point that re-exports the per-store modules
-- re-exports of all six classes
+- the module header comment (snapshot lines 1–8), updated to say it is now the
+  public entry point that re-exports the per-store modules
+- **local imports of all six classes, followed by a single `export { … }` of
+  those six local bindings.** Concretely:
+
+  ```js
+  import { CloudflareObjectStore } from "./object.js";
+  import { CloudflareCaseStore } from "./case.js";
+  import { CloudflareIdentityStore } from "./identity.js";
+  import { CloudflareCouncilStore } from "./council.js";
+  import { CloudflarePipelineStore } from "./pipeline.js";
+  import { CloudflareSemanticIndex } from "./semantic.js";
+
+  export {
+    CloudflareObjectStore,
+    CloudflareCaseStore,
+    CloudflareIdentityStore,
+    CloudflareCouncilStore,
+    CloudflarePipelineStore,
+    CloudflareSemanticIndex,
+  };
+  ```
+
+  **Not** `export { CloudflareIdentityStore } from "./identity.js";` and its
+  five siblings. That form re-exports the binding for importers but creates no
+  local variable, and `createCloudflareStores` `new`s all six in this file — the
+  result is a `ReferenceError` the first time a request builds the stores. This
+  is the single most likely way to get Steps 5–7 wrong.
 - `import { assertCloudflareBindings, assertCloudflareRuntimeMode } from "./contracts.js";`
   and `import { requireD1 } from "./cloudflare_shared.js";`
-- the three factory functions verbatim: `createCloudflareStores` (1876–1887),
-  `createCloudflareCaseStore` (1894–1898), `createCloudflareIdentityStore`
-  (1901–1905), with their existing doc comments
+- the three factory functions verbatim: `createCloudflareStores`
+  (snapshot 1876–1887), `createCloudflareCaseStore` (snapshot 1894–1898),
+  `createCloudflareIdentityStore` (snapshot 1901–1905), with their existing doc
+  comments
 
 Do **not** change any factory signature or body. Twenty-nine files import from
 this path — nine Worker source modules and twenty test files, several of which
@@ -928,9 +1201,28 @@ module.
 
 **Verify**:
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers && wc -l < workers/storage/cloudflare.js && grep -c "^export class" workers/storage/cloudflare.js
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-workers
+wc -l < workers/storage/cloudflare.js
+grep -c "^export class" workers/storage/cloudflare.js
+grep -c 'export {.*} from "' workers/storage/cloudflare.js
+node --input-type=module -e '
+import { createCloudflareStores } from "./workers/storage/cloudflare.js";
+try { createCloudflareStores({}); } catch (err) {
+  if (err instanceof ReferenceError) { console.error("BARE RE-EXPORT BUG:", err.message); process.exit(1); }
+  console.log("ok — rejected with", err.constructor.name);  // a binding/StorageBoundaryError is expected
+}
+'
 ```
-→ `Tests 350 passed (350)`; `cloudflare.js` is under 120 lines; `grep -c` prints `0`
+→ `WORKER_TESTS_BEFORE + 5`; `cloudflare.js` is under 140 lines; the first
+`grep -c` prints `0`; the second `grep -c` prints `0` (**no bare
+`export … from` survives — that is the Step 5/6/7 trap**); the `node` probe
+prints `ok — rejected with …` and **not** `BARE RE-EXPORT BUG`.
+
+That last probe is the point of this step: it calls the factory with an empty
+env, which must fail on a *binding* assertion (`assertCloudflareRuntimeMode` /
+`assertCloudflareBindings`), never on an undefined constructor. The mocked
+Worker tests cannot distinguish the two.
 
 Commit here: `refactor: split cloudflare storage into per-store modules`.
 
@@ -1228,45 +1520,75 @@ Commit here: `refactor: finish the cq-001 constant split and lift judge names ou
 
 New test files, and what each covers:
 
-- `workers/__tests__/council-prompt-parity.test.js` — 5 tests. Four assert the
+- `workers/__tests__/council-prompt-parity.test.js` — 7 tests. Four assert the
   JS mirror is byte-identical to `immi_case_downloader/data/council_prompts.json`
   (this is the regression gate: it fails the moment anyone edits one runtime's
   prompt without the other). The fifth asserts that no default prompt claims a
   `google_search` or `web_search` tool, and that the grounded Anthropic variant
-  does — that is the specific defect being fixed. Structural model:
-  `workers/__tests__/cloudflare-storage-contracts.test.js`, which already reads
-  repo files with `node:fs` inside this suite.
-- `tests/test_council_prompt_source.py` — 3 tests. Asserts the Python engine's
+  does. The **sixth and seventh are the ones that matter**: they inspect the
+  actual outgoing request body, asserting that `streamAnthropicNative` sends the
+  grounded prompt *together with* a `web_search` tool block, and that every
+  OpenAI-compat gateway request sends a base prompt and no tools. Constant
+  equality alone cannot detect the defect this plan fixes — a model being told
+  it has a tool it does not have is a property of the wire, not of a file.
+  Structural models: `workers/__tests__/cloudflare-storage-contracts.test.js`
+  for the `node:fs` reads, `workers/__tests__/llm-council-runner.test.js` for
+  the `vi.spyOn(globalThis, "fetch")` idiom.
+- `tests/test_council_prompt_source.py` — 4 tests. Asserts the Python engine's
   four constants come from the JSON (guards the loader against a typo'd key or
-  a missing file), and that no Python-side prompt claims a search tool, since
-  the Python engine attaches none (`llm_council.py:721`).
+  a missing file), that no Python-side prompt claims a search tool since the
+  Python engine attaches none (`llm_council.py:721`), that the grounded variant
+  exists for the Worker, and that
+  `scripts/generate_council_prompts.py --check` passes in-tree — the staleness
+  gate that makes `prompts.js` a *generated* file rather than a hand-maintained
+  second copy.
 - `tests/test_cache_registry.py` — 2 tests. Happy path for the registry, and
   the specific regression: `api_taxonomy`'s lineage cache is actually reached
   by `invalidate_registered_caches()` now that `api.py` no longer imports it
   directly. There is currently **no** test covering the deferred-import path
   this replaces, which is exactly why one is being added.
 
-No new tests for the Worker storage split and the constants move — both are
-byte-for-byte relocations whose entire acceptance criterion is that the 345
-existing Worker tests and the existing Python suite keep passing unchanged.
-Writing new tests for moved code would test the move, not the behaviour.
+No new *test files* for the Worker storage split and the constants move — both
+are byte-for-byte relocations whose acceptance criterion is that the existing
+Worker and Python suites keep passing unchanged. Writing new tests for moved
+code would test the move, not the behaviour. The split does get two non-pytest
+gates, because the mocked Worker tests are blind to the failure mode it risks:
+the `node --input-type=module` probes in Steps 5, 6 and 7, which load
+`workers/storage/cloudflare.js` unmocked and would surface a `ReferenceError`
+from a bare `export … from` barrel.
 
 Final verification:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers && make test-py 2>&1 | tail -3 && make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-workers
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u
+make test-py 2>&1 | tail -3
+make lint
+.venv/bin/python scripts/generate_council_prompts.py --check
 ```
 
-→ `Tests 350 passed (350)` across 26 files; Python at baseline + 5 passed with
-unchanged failure/skip counts; `All checks passed!`
+→ `WORKER_TESTS_BEFORE + 7` across `WORKER_FILES_BEFORE + 1` files; the failing
+Python test **names** identical to `PY_FAIL_NAMES`; passed `PY_PASS_BEFORE + 6`
+with `PY_SKIP_BEFORE` unchanged; `All checks passed!`; `OK: generated council
+prompts are up to date`.
 
 ## Done criteria
 
 ALL must hold:
 
-- [ ] `make test-workers` → `Test Files 26 passed (26)`, `Tests 350 passed (350)`
-- [ ] `make test-py` → passed count equals the Step-0 baseline + 5; failed and
-      skipped counts are unchanged from the Step-0 baseline
+- [ ] `make test-workers` → `WORKER_FILES_BEFORE + 1` files, `WORKER_TESTS_BEFORE + 7` tests
+- [ ] `npx vitest run --config workers/vitest.config.js __tests__/council-prompt-parity.test.js` → `7 passed`
+- [ ] `.venv/bin/pytest tests/test_council_prompt_source.py -q` → `4 passed`
+- [ ] `.venv/bin/pytest tests/test_cache_registry.py -q` → `2 passed`
+- [ ] `make test-py` → passed `= PY_PASS_BEFORE + 6`; skipped `= PY_SKIP_BEFORE`;
+      failing test **names** identical to `PY_FAIL_NAMES`
+- [ ] `.venv/bin/python scripts/generate_council_prompts.py --check` exits 0, and you
+      have demonstrated it exiting 1 on a hand-edited `prompts.js`
+- [ ] `grep -c 'export {.*} from "' workers/storage/cloudflare.js` → `0` (no bare
+      re-export; the barrel imports locally then exports)
+- [ ] The Step 7 `node --input-type=module` probe prints `ok — rejected with …`
+      and never `BARE RE-EXPORT BUG`
 - [ ] `make lint` → `All checks passed!`, exit 0
 - [ ] `.venv/bin/python -c "import immi_case_downloader.web.routes.api_taxonomy"` exits 0
 - [ ] `.venv/bin/python -c "import immi_case_downloader.web.routes.api_cases"` exits 0
@@ -1275,7 +1597,7 @@ ALL must hold:
 - [ ] `grep -rn "routes\.api\._load_judge_bios\|routes\.api\._load_judge_name_overrides" tests/`
       returns no matches
 - [ ] `grep -c "^export class" workers/storage/cloudflare.js` prints `0`
-- [ ] `wc -l < workers/storage/cloudflare.js` is under 120
+- [ ] `wc -l < workers/storage/cloudflare.js` is under 140
 - [ ] `wc -l < immi_case_downloader/web/routes/api.py` is under 2300
 - [ ] `grep -c "google_search grounding enabled" workers/llm-council/runner.js`
       prints `0`
@@ -1297,10 +1619,20 @@ Stop and report back (do not improvise) if:
 - Step 1's verify does not print exactly `793 868 851 1146`. Any other number
   means the JSON did not round-trip the text byte-for-byte, and a prompt whose
   bytes you cannot account for must not be shipped.
-- `make test-workers` drops below 345 pre-existing passing tests at any point
-  in Steps 4–7. Every one of those steps is a byte-for-byte move; a single
-  failure means something was transcribed, not moved. Do not "fix" the test —
-  revert the step and report.
+- `make test-workers` drops below `WORKER_TESTS_BEFORE + 7` at any point in
+  Steps 4–7, or any test fails. Every one of those steps is a byte-for-byte
+  move; a single failure means something was transcribed, not moved. Do not
+  "fix" the test — revert the step and report.
+- `/tmp/immi-cloudflare-storage-baseline.js` is missing, or differs from
+  `git show 42826a3:workers/storage/cloudflare.js`, when you reach Step 5.
+  Every line range in Steps 4–6 is relative to that snapshot; slicing the live
+  file by those numbers after Step 4's deletion cuts the wrong code. Re-take the
+  snapshot from a clean checkout, or re-derive every range by symbol boundary,
+  and say which you did.
+- Any of the six store classes is exported from `workers/storage/cloudflare.js`
+  with `export { X } from "./y.js"` rather than a local import plus
+  `export { X }`. That form compiles and then throws at runtime inside
+  `createCloudflareStores`, and the mocked Worker suite may not catch it.
 - Splitting `workers/storage/cloudflare.js` appears to need a change to any
   factory signature, or to `workers/storage/contracts.js`. Twenty-nine call
   sites depend on those signatures, twenty of them through `vi.mock`.
@@ -1328,10 +1660,22 @@ For whoever owns this code next:
 
 - **The prompt JSON is now load-bearing in two runtimes.** Editing
   `immi_case_downloader/data/council_prompts.json` changes production council
-  behaviour. After any edit, regenerate `workers/llm-council/prompts.js` with
-  the Step 2 script and re-run `make test-workers` — the parity test is the
-  only thing preventing the two runtimes from drifting apart again, and it only
-  works if the mirror is regenerated rather than hand-edited.
+  behaviour. After any edit, run
+  `.venv/bin/python scripts/generate_council_prompts.py` and re-run
+  `make test-workers`. `tests/test_council_prompt_source.py` runs the same
+  generator with `--check`, so a forgotten regenerate fails the suite rather
+  than silently shipping a stale mirror.
+- **Blocking follow-up: persist the effective prompt version with the council
+  result.** This plan records `prompts_version` in the Worker's structured log
+  only, because changing a persisted payload shape is out of its scope (see
+  "Out of scope"). That leaves a real gap: a stored council answer still cannot
+  be traced to the prompt text that produced it, and the Anthropic native path
+  now sends a *different* string from the one recorded for the turn. The fix is
+  a `prompts_version` (and `grounded`) field on the persisted turn payload plus
+  a migration for existing rows, owned by whoever owns
+  `workers/llm-council/cloudflare_handlers.js` and the council D1 schema. Do not
+  close this plan claiming prompt provenance is solved end-to-end; it is solved
+  for operators reading logs, not for readers of a stored answer.
 - **Grounding text belongs with the tool, not with the provider.** The rule
   this plan establishes: a prompt may claim a search tool only on a code path
   that literally sends a `tools:` block. If `streamGeminiNative` is ever
@@ -1383,6 +1727,36 @@ For whoever owns this code next:
   reconstructed and measured all four strings from both files; the full table
   is in "Current state". This matters because Step 1 asserts on the exact
   length before capturing the string as canonical.
+- **The Steps 5–7 barrel was specified with bare `export … from` — corrected.**
+  An earlier draft told Step 5 to add local imports for
+  `CloudflareObjectStore` / `CloudflareCaseStore` but told Steps 6 and 7 only to
+  "re-export each class". `export { X } from "./y.js"` forwards a binding to
+  importers without creating a local `X`, and `createCloudflareStores`
+  (`cloudflare.js:1880-1885`) constructs **all six** classes in that same
+  module — so four of them would have been `ReferenceError`s at first request.
+  Twenty of the twenty-nine importers `vi.mock` the module, so the Worker suite
+  might not have caught it either. Steps 5, 6 and 7 now specify import-then-export
+  for all six, with an unmocked `node --input-type=module` probe that fails on
+  exactly this mistake.
+- **The Steps 5–6 line ranges were measured against a file the plan had already
+  edited — corrected.** Step 4 deletes snapshot lines 36–62 and adds an import,
+  after which the live file's `246-1294` is no longer `CloudflareObjectStore` +
+  `CloudflareCaseStore`; Step 5 then removes over a thousand more lines, so
+  Step 6's `1295-1875` is off by more than the block it names. Every range is
+  now explicitly relative to `/tmp/immi-cloudflare-storage-baseline.js`, a
+  snapshot taken in Step 0 and diffed against `42826a3`.
+- **The prompt work had no maintainable generator and no wire-level proof —
+  corrected.** `prompts.js` was produced by a heredoc that existed only inside
+  this document (nothing to re-run, nothing to detect a hand-edit), and the
+  parity tests compared constants only, which cannot distinguish "the grounded
+  prompt is defined" from "the grounded prompt is sent on the path that
+  attaches the tool". Step 2 now writes a checked-in
+  `scripts/generate_council_prompts.py` with a `--check` staleness mode
+  (mirroring plan 033's generator convention), Step 3 adds two request-body
+  tests, and `COUNCIL_PROMPTS_VERSION` makes the effective prompt set
+  identifiable in logs. The persisted-payload half is recorded as a blocking
+  follow-up above rather than smuggled into a plan whose scope forbids response
+  shape changes.
 - **Splitting `CloudflareCaseStore`'s 38 methods into read/write halves** —
   raised in the DEBT-13 fix sketch as a possible follow-on. Not attempted here.
   The file split in Steps 4–7 is verifiable by `make test-workers` alone

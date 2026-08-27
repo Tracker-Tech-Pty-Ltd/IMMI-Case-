@@ -9,23 +9,71 @@
 >
 > **Drift check (run first)**:
 > ```
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- immi_case_downloader/sources/austlii.py immi_case_downloader/sources/metadata_extractor.py immi_case_downloader/models.py immi_case_downloader/web/auth.py immi_case_downloader/extraction/llm.py immi_case_downloader/pipeline.py extract_structured_fields.py validate_extraction.py tests/test_austlii.py
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="immi_case_downloader/sources/austlii.py \
+>   immi_case_downloader/models.py \
+>   immi_case_downloader/web/auth.py \
+>   immi_case_downloader/extraction/llm.py \
+>   extract_structured_fields.py validate_extraction.py tests/test_austlii.py"
+> READ_ONLY="immi_case_downloader/sources/metadata_extractor.py \
+>   immi_case_downloader/pipeline.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed drift, in-scope files
+> git diff --stat -- $IN_SCOPE                 # unstaged drift
+> git diff --cached --stat -- $IN_SCOPE        # staged drift
+> git diff --stat 42826a3..HEAD -- $READ_ONLY  # informational: see below
 > ```
-> Expected at the time of writing: **no output** (nothing changed since
-> `42826a3`). If any of those files changed, compare the "Current state"
-> excerpts below against the live code before proceeding; on a mismatch, treat
-> it as a STOP condition.
+> The three `$IN_SCOPE` diffs must print nothing, and no in-scope path may
+> appear in `git status --short --branch`. **A modified, staged or untracked
+> in-scope file is a STOP condition** — a range diff cannot see uncommitted
+> work, so a dirty tree would give a false all-clear and this plan would edit on
+> top of somebody else's changes. Never "clean up" with `git checkout --` or
+> `git clean -f`; that destroys the operator's work.
+>
+> The `$READ_ONLY` diff is **informational, not a gate**.
+> `plans/027-fix-csv-data-integrity.md` edits `immi_case_downloader/pipeline.py`
+> (its Steps 3–5), so on a shared branch a non-empty diff there is expected. What
+> this plan actually depends on is that the two consumers it reasons about are
+> unchanged; check those directly instead:
+> ```
+> grep -n "if cases is not None" immi_case_downloader/pipeline.py
+> grep -n "return scraper._browse_year(db_code, db_info, year, IMMIGRATION_KEYWORDS)" immi_case_downloader/pipeline.py
+> grep -n "except Exception as e:" immi_case_downloader/pipeline.py | head -3
+> ```
+> The first two must each return exactly one line. If either is gone, stop: step
+> 1's design assumption (that `_crawl_with_fallback`'s broad `except` turns the
+> new exception into a strategy rotation) no longer holds.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: none. Every command in this plan is verified against commit
-  `42826a3` and its expected output is stated below. This plan touches no
-  TypeScript, no frontend and no Worker code, so the frontend compile-gate and
-  CI plans are irrelevant to it. It also edits no file that the test-lint plan
-  edits — see "Scope" for how the two stay apart.
+- **Depends on**: no plan's *output*, but it shares two files' *neighbourhoods*
+  with `plans/027-fix-csv-data-integrity.md`, so ordering matters:
+  - **Prefer running this plan before 027**, or in its own worktree. 027 edits
+    `immi_case_downloader/pipeline.py` (clean-phase dedup, download-phase stop
+    handling, `start_pipeline`), which this plan only reads. Nothing here
+    conflicts textually, but the old done-criterion "`git diff 42826a3..HEAD
+    --stat -- …pipeline.py` produces no output" was guaranteed to fail once 027
+    landed on a shared branch. It has been replaced with anchor checks on the
+    two specific constructs this plan reasons about — see "Done criteria".
+  - 027 also owns `download_fulltext.py` and `immi_case_downloader/web/jobs.py`,
+    two of the three `_browse_year` callers. Step 1 changes what `_browse_year`
+    raises, and both of those callers already wrap it in
+    `try/except Exception` — verify that is still true in the live file before
+    trusting it (`grep -n "except Exception" download_fulltext.py immi_case_downloader/web/jobs.py`).
+  - `extract_structured_fields.py` is this plan's, but plan 027 Step 9b adds a
+    shared `immi_case_downloader/csv_write_lock.py` that this script should
+    eventually take. Do **not** import it here — it may not exist yet. Recorded
+    in "Maintenance notes".
+  - **Work in your own git worktree**
+    (`git worktree add ../immi-029 -b advisor/029-harden-scraper-and-extraction`).
+    Plans 026–029 all create branches; run in parallel in one checkout they
+    switch each other's branch out mid-edit.
+  This plan touches no TypeScript, no frontend and no Worker code, so the
+  frontend compile-gate and CI plans are irrelevant to it. It also edits no file
+  that the test-lint plan edits — see "Scope" for how the two stay apart.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -66,9 +114,13 @@ membership check no repository implements — a trap for the next developer who
 believes it enforces tenancy.
 
 After this plan: a failed listing fetch is loud and triggers rotation, a
-truncated search keeps the newest cases and says so, an extraction run
-checkpoints every 5,000 rows and keeps timestamped backups, and the dead auth
-surface is gone.
+truncated search keeps the newest cases — ordered by year and then by AustLII
+decision number, not by reversed citation string — and says so; an extraction
+run checkpoints every 5,000 rows, keeps collision-proof timestamped backups,
+counts its failures and writes a re-runnable list of them, and **refuses** to
+write when the source CSV is malformed rather than quietly dropping the
+overflow cells; and the dead auth surface is gone, with the reordered JWT
+verifier covered by tests that a signature-skipping verifier would fail.
 
 ## Current state
 
@@ -669,11 +721,25 @@ Never use a global `python`/`pip`; the venv is at `.venv/`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Focused suite (primary gate) | `.venv/bin/python -m pytest tests/test_austlii.py tests/test_models.py tests/test_pipeline.py tests/test_web_auth.py tests/test_storage.py -q --no-cov` | Baseline at `42826a3`: `110 passed`. After this plan: **114 passed** |
-| New-file suite | `.venv/bin/python -m pytest tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py -q --no-cov` | after step 8: `14 passed` |
-| Full Python suite (final gate) | `make test-py` | `1141 passed, 3 failed, 7 skipped` at `42826a3`; **`1159 passed, 3 failed, 7 skipped`** after this plan. The 3 failures are **environmental** — Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. They exist at `42826a3` and are **not yours to fix** |
+| Focused suite (primary gate) | `.venv/bin/python -m pytest tests/test_austlii.py tests/test_models.py tests/test_pipeline.py tests/test_web_auth.py tests/test_storage.py -q --no-cov` | Baseline at `42826a3`: `110 passed`. After this plan: **116 passed** (+6 in `tests/test_austlii.py`; the other four files are untouched) |
+| New-file suite | `.venv/bin/python -m pytest tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_web_auth_ordering.py -q --no-cov` | after step 8: `26 passed` (4 + 3 + 13 + 6) |
+| Full Python suite (final gate) | `make test-py` | judged as a **delta**: `SUITE_BEFORE + 32`, where `SUITE_BEFORE` is recorded below. The 3 failures are **environmental** — a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. They exist at `42826a3` and are **not yours to fix**; what must hold is that the failing set is still exactly those three, by name |
 | Lint (covers every file this plan edits) | `make lint` | `All checks passed!` |
-| Lint the new test files | `.venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_austlii.py` | `All checks passed!` |
+| Lint the new test files | `.venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_web_auth_ordering.py tests/test_austlii.py` | `All checks passed!` |
+
+**Record the suite baseline before Step 1** — no absolute total is correct once
+a sibling plan lands:
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep -E '[0-9]+ passed'                    # SUITE_BEFORE
+make test-py 2>&1 | grep -E "FAILED|ERROR" \
+  | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u                 # the failing files
+```
+
+The second command must print exactly
+`tests/test_backfill_judge_overrides_from_pdf.py`; if it prints anything else,
+record that too, because Step 9 compares against it.
 | Import smoke for the root scripts | `.venv/bin/python -c "import extract_structured_fields, validate_extraction; print('ok')"` | prints `ok` |
 | Diff review | `git status --short` then `git diff` | only in-scope files listed |
 
@@ -695,6 +761,8 @@ coverage table is printed. That is normal.
 - `tests/test_case_identity.py` (**create**)
 - `tests/test_extraction_llm_client.py` (**create**)
 - `tests/test_extraction_scripts.py` (**create**)
+- `tests/test_web_auth_ordering.py` (**create** — step 6 item 5; the existing
+  `tests/test_web_auth.py` stays untouched because another plan owns it)
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -726,7 +794,11 @@ coverage table is printed. That is normal.
 
 ## Git workflow
 
-- Branch: `git checkout -b advisor/029-harden-scraper-and-extraction`
+- **Use your own worktree**, not a branch in the shared checkout:
+  `git worktree add ../immi-029 -b advisor/029-harden-scraper-and-extraction`,
+  then work from `../immi-029`. Plans 026–029 all create branches; run in
+  parallel in one checkout they switch each other's branch out mid-edit.
+- Branch: `advisor/029-harden-scraper-and-extraction`
 - One commit per step, message style `<type>: <description>` with `<type>` in
   `feat|fix|refactor|docs|test|chore|perf|ci`. Real example from `git log`:
   `fix: install root node_modules in make install`. A suggested message is given
@@ -921,7 +993,39 @@ Commit: `fix: signal AustLII listing failures instead of returning an empty year
 Addresses PYCORR-15. All edits in `immi_case_downloader/sources/austlii.py` and
 `tests/test_austlii.py`.
 
-1. Replace the final line of `_search_database` (`austlii.py:112`,
+1. Add a module-level recency key just below the `YearListingUnavailable` class
+   added in step 1:
+
+   ```python
+   _DECISION_NUMBER_RE = re.compile(r"/(\d+)\.html?$", re.IGNORECASE)
+
+
+   def _recency_key(case: ImmigrationCase) -> tuple[int, int, str]:
+       """Newest-first sort key: (year, decision number, url).
+
+       AustLII numbers judgments sequentially within a year per court, so a
+       higher number is a later decision. The number is taken from the case URL
+       (every browse hit matches /<n>.html) and falls back to the trailing
+       integer of the citation, e.g. "[2024] AATA 123". A case with neither
+       sorts as the oldest of its year rather than being dropped or crashing.
+
+       Do NOT sort on the citation string: reversed string order puts
+       "[2024] AATA 99" ahead of "[2024] AATA 100", which is backwards.
+       Do NOT sort on `date` either: `_browse_year` does not populate it —
+       date is extracted later, during the download phase.
+       """
+       number = 0
+       match = _DECISION_NUMBER_RE.search(case.url or "")
+       if match is None:
+           match = re.search(r"(\d+)\s*$", case.citation or "")
+       if match is not None:
+           number = int(match.group(1))
+       return (case.year or 0, number, case.url or "")
+   ```
+
+   `re` is already imported at `austlii.py:6`; `ImmigrationCase` at `:28`.
+
+2. Replace the final line of `_search_database` (`austlii.py:112`,
    `        return cases[:max_results]`) with:
 
    ```python
@@ -930,7 +1034,7 @@ Addresses PYCORR-15. All edits in `immi_case_downloader/sources/austlii.py` and
                # the OLDEST max_results cases and silently dropped the newest —
                # the opposite of what a case-law user wants. Sort newest-first
                # before capping, and say out loud that rows were dropped.
-               cases.sort(key=lambda c: (c.year, c.citation or c.title), reverse=True)
+               cases.sort(key=_recency_key, reverse=True)
                logger.warning(
                    f"  {db_code}: {len(cases)} cases found but max_results="
                    f"{max_results}; dropping the {len(cases) - max_results} "
@@ -944,7 +1048,16 @@ Addresses PYCORR-15. All edits in `immi_case_downloader/sources/austlii.py` and
    Note the sort runs **only** when truncating, so an untruncated result keeps
    its current oldest-first order and no existing caller changes behaviour.
 
-2. Add the truncation test to the `TestSearchDatabase` class created in step 1:
+   **What this contract does and does not claim.** It keeps the newest *years*,
+   and within a year it keeps the highest decision numbers. That second half is
+   only as good as the decision number: cases whose URL and citation carry no
+   number all collapse to `0` and sort as that year's oldest, in URL order. If
+   you ever find a database whose numbering is not chronological within a year,
+   narrow the claim in the log message to "keeping the newest years" rather than
+   inventing an ordering the data does not support.
+
+3. Add three truncation tests to the `TestSearchDatabase` class created in
+   step 1:
 
    ```python
        def test_truncation_keeps_the_newest_years(self):
@@ -955,7 +1068,7 @@ Addresses PYCORR-15. All edits in `immi_case_downloader/sources/austlii.py` and
            scraper._browse_year = lambda db_code, db_info, year, keywords: [
                ImmigrationCase(title=f"case {year}-{n}", year=year,
                                citation=f"[{year}] AATA {n}",
-                               url=f"https://example.test/{year}/{n}")
+                               url=f"https://example.test/{year}/{n}.html")
                for n in range(6)
            ]
 
@@ -965,17 +1078,80 @@ Addresses PYCORR-15. All edits in `immi_case_downloader/sources/austlii.py` and
 
            assert len(cases) == 6
            assert {c.year for c in cases} == {2024}
+
+       def test_truncation_keeps_the_highest_decision_numbers_within_a_year(self):
+           """Within one year, decision 100 is newer than decision 99.
+
+           A reversed sort on the citation string puts "[2024] AATA 99" ahead of
+           "[2024] AATA 100", which is exactly backwards — this is the test that
+           catches it.
+           """
+           from immi_case_downloader.models import ImmigrationCase
+
+           scraper = self._scraper()
+           scraper._browse_year = lambda db_code, db_info, year, keywords: [
+               ImmigrationCase(title=f"case {n}", year=2024,
+                               citation=f"[2024] AATA {n}",
+                               url=f"https://example.test/2024/{n}.html")
+               for n in (7, 9, 12, 88, 99, 100, 101, 250, 3, 41, 5, 60)
+           ]
+
+           cases = scraper._search_database(
+               "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2024, 2024, 3
+           )
+
+           assert [c.citation for c in cases] == [
+               "[2024] AATA 250", "[2024] AATA 101", "[2024] AATA 100",
+           ]
+
+       def test_truncation_is_stable_when_no_decision_number_is_available(self):
+           """A case with no parseable number sorts oldest, and nothing raises."""
+           from immi_case_downloader.models import ImmigrationCase
+
+           scraper = self._scraper()
+           scraper._browse_year = lambda db_code, db_info, year, keywords: [
+               ImmigrationCase(title="numbered", year=2024,
+                               citation="[2024] AATA 5",
+                               url="https://example.test/2024/5.html"),
+               ImmigrationCase(title="bare", year=2024, url="https://example.test/x"),
+           ] * 6
+
+           cases = scraper._search_database(
+               "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2024, 2024, 6
+           )
+
+           assert len(cases) == 6
+           assert all(c.title == "numbered" for c in cases)
    ```
 
    (Six cases per year over five years is 30, comfortably above the `< 10`
    keyword-search fallback threshold on `austlii.py:101`, so `_keyword_search`
-   is not consulted.)
+   is not consulted. The same holds for the 12- and 12-case single-year sets.)
 
 **Verify**:
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_austlii.py -q --no-cov 2>&1 | tail -3 && make lint
 ```
-→ `37 passed`, then `All checks passed!`.
+→ `39 passed`, then `All checks passed!`.
+
+Then check the key itself in isolation, so a failure tells you *which* half is
+wrong:
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -c "
+from immi_case_downloader.models import ImmigrationCase
+from immi_case_downloader.sources.austlii import _recency_key
+def c(**kw): return ImmigrationCase(**kw)
+assert _recency_key(c(year=2024, url='https://x/2024/100.html')) > \
+       _recency_key(c(year=2024, url='https://x/2024/99.html'))
+assert _recency_key(c(year=2024, url='https://x/2024/1.html')) > \
+       _recency_key(c(year=2023, url='https://x/2023/999.html'))
+assert _recency_key(c(year=2024, citation='[2024] AATA 42'))[1] == 42
+assert _recency_key(c(year=2024))[1] == 0
+print('recency key orders by year then decision number')
+"
+```
+→ prints `recency key orders by year then decision number`.
 
 Commit: `fix: keep the newest cases when an AustLII search hits max_results`
 
@@ -1039,7 +1215,7 @@ extractor emits today is a declared field. All edits in
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_austlii.py -q --no-cov 2>&1 | tail -3 && make lint
 ```
-→ `38 passed`, then `All checks passed!`.
+→ `40 passed`, then `All checks passed!`.
 
 Commit: `fix: drop unknown metadata keys instead of setting them silently`
 
@@ -1279,7 +1455,7 @@ Addresses PYCORR-22. All edits in `immi_case_downloader/web/auth.py`. **Do not
 delete the file** — `tests/test_web_auth.py:9` imports `verify_jwt` from it and
 that test must keep passing untouched.
 
-1. Delete these four blocks in full, including their comment banners:
+1. Delete these five blocks in full, including their comment banners:
    - the `# Internal route guard` banner and `_is_internal_request`
      (`auth.py:92-102`)
    - the `# Decorators` banner (`auth.py:105-107`)
@@ -1373,14 +1549,79 @@ that test must keep passing untouched.
    Leave the trailing `except Exception as e:` block (`auth.py:87-89`) exactly as
    it is.
 
+5. **Cover the reordered verifier.** Two existing happy-path tests in
+   `tests/test_web_auth.py` are not enough to hold a change to the order in
+   which a JWT's signature and claims are trusted — they would pass against a
+   verifier that skipped the signature entirely. `tests/test_web_auth.py` is
+   **out of this plan's scope** (a separate plan lints the existing test files),
+   so put these in a new file, `tests/test_web_auth_ordering.py`, and keep it
+   ruff-clean.
+
+   Build tokens with the same helper shape the existing tests use (read
+   `tests/test_web_auth.py` first and copy its signing helper rather than
+   inventing one). Then, each inside an app context with
+   `JWT_SECRET_CURRENT`/`JWT_SECRET_PREVIOUS` set via `monkeypatch.setenv`:
+
+   - `test_expired_token_with_a_bad_signature_is_rejected_as_invalid_signature` —
+     sign with the *wrong* secret and set `exp` in the past; `verify_jwt`
+     returns `None` **and** the logged warning is `jwt.invalid_signature`, not
+     `jwt.expired`. Capture with `caplog`. This is the property the reorder
+     exists for: an attacker-supplied `exp` must not be read before the
+     signature is checked.
+   - `test_refresh_token_with_a_bad_signature_is_rejected_as_invalid_signature` —
+     same, with `{"type": "refresh"}`: the rejection must be
+     `jwt.invalid_signature`, not `jwt.refresh_token_rejected`.
+   - `test_token_signed_with_the_previous_secret_is_accepted` — the rotation
+     window still works after the reorder.
+   - `test_valid_but_expired_token_is_rejected_as_expired` — correctly signed,
+     `exp` in the past → `None` and `jwt.expired`. (Proves the reorder did not
+     drop the expiry check.)
+   - `test_refresh_token_is_accepted_when_allow_refresh_is_true` — the
+     `allow_refresh=True` branch, which no existing test covers.
+   - `test_valid_signature_over_a_non_json_payload_returns_none` — sign a
+     payload segment that is valid base64url but not JSON; `verify_jwt` returns
+     `None` via the outer `except` rather than raising. After the reorder the
+     `json.loads` happens *after* signature verification, so this path is new.
+
 **Verify**:
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_web_auth.py tests/test_webapp.py -q --no-cov 2>&1 | grep -E "passed|failed" | tail -2 && grep -rn "require_auth\|optional_auth\|require_tenant_membership\|immi_repo\|check_tenant_membership" --include="*.py" immi_case_downloader/ tests/ scripts/ ; make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  .venv/bin/python -m pytest tests/test_web_auth.py tests/test_web_auth_ordering.py tests/test_webapp.py -q --no-cov 2>&1 | grep -E "passed|failed" | tail -2 ; make lint
 ```
-→ `34 passed` (2 in `test_web_auth.py` + 32 in `test_webapp.py`); the `grep`
-prints **nothing** and exits 1; then `All checks passed!`.
+→ `40 passed` (2 in `test_web_auth.py` + 6 new + 32 in `test_webapp.py`), then
+`All checks passed!`.
 (`test_webapp.py` prints `analytics_nature_outcome fallback also timed out` lines
 during the run — that is pre-existing noise at `42826a3`, not a failure.)
+
+Then check the deletion actually happened. **Do not use the obvious grep.** A
+plain `grep -rn "require_auth\|optional_auth\|require_tenant_membership\|immi_repo\|check_tenant_membership"`
+over `*.py` can never return empty after this step, because the new module
+docstring written in item 3 names all five strings on purpose — it is the
+explanation of why they are gone. That verification was guaranteed to fail and
+would have sent an executor deleting the documentation to make it pass. Check
+for *definitions, applications and lookups* instead:
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  grep -rnE "^[[:space:]]*(def (require_auth|optional_auth|require_tenant_membership|_is_internal_request))\b|^[[:space:]]*@(require_auth|optional_auth|require_tenant_membership)\b|extensions\.get\(.immi_repo.\)|\.check_tenant_membership\(" \
+  --include="*.py" immi_case_downloader/ tests/ scripts/ ; echo "grep exit: $?"
+```
+→ prints nothing, `grep exit: 1`. This matches a `def`, a decorator
+application, the extension lookup and the method call — none of which a prose
+sentence can produce — so it can still fail if the deletion was incomplete.
+
+Belt and braces, prove the names are not importable:
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -c "
+import immi_case_downloader.web.auth as a
+assert callable(a.verify_jwt)
+for name in ('require_auth','optional_auth','require_tenant_membership','_is_internal_request'):
+    assert not hasattr(a, name), name
+print('auth module exposes verify_jwt only')
+"
+```
+→ prints `auth module exposes verify_jwt only`.
 
 Commit: `refactor: delete the unused Flask auth decorators and verify JWTs signature-first`
 
@@ -1420,23 +1661,28 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
    wrapper directly above it:
 
    ```python
+   # Reserved result key: process_case() reports a swallowed worker exception
+   # through it, because a worker runs in another process and cannot increment
+   # a counter in the parent. main() pops it before merging fields into the row.
+   EXTRACTION_ERROR_KEY = "__extraction_error__"
+
+
    def process_case(case_row: dict) -> dict:
        """Worker entry point. Never raises.
 
        ProcessPoolExecutor.map re-raises a worker exception when the result is
        consumed and then cancels every remaining future, so one unparseable row
        would throw away a 149k-row run that is 11 minutes in. Swallow per row,
-       loudly, and keep going.
+       loudly, and keep going — but report the failure back to the parent so it
+       can be counted and listed, rather than only writing to a stderr stream
+       that interleaves across workers and scrolls away.
        """
        try:
            return _extract_case_fields(case_row)
        except Exception as exc:  # noqa: BLE001 - one bad row must not abort the run
-           print(
-               f"  warn: extraction failed for "
-               f"{case_row.get('case_id') or case_row.get('citation') or '?'}: {exc}",
-               file=sys.stderr,
-           )
-           return {}
+           identifier = case_row.get("case_id") or case_row.get("citation") or "?"
+           print(f"  warn: extraction failed for {identifier}: {exc}", file=sys.stderr)
+           return {EXTRACTION_ERROR_KEY: f"{type(exc).__name__}: {exc}"}
    ```
 
 4. Make the field reads inside `_extract_case_fields` None-safe. Replace lines
@@ -1475,35 +1721,76 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
 
        The old fixed ".csv.bak_extract" name meant a second run's copy destroyed
        the first run's backup — the only surviving copy of a corpus that is
-       gitignored and lives on one machine. Matches the convention already used
-       in merge_llm_extraction.py.
+       gitignored and lives on one machine. A seconds-resolution stamp has the
+       same failure in miniature: two runs started in the same second collide.
+       Create the file exclusively (O_EXCL) so the name is proven free rather
+       than assumed free.
        """
        if not CSV_PATH.exists():
            return None
 
-       stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-       backup_path = CSV_PATH.with_name(f"{CSV_PATH.name}.bak-{stamp}")
-       shutil.copy2(CSV_PATH, backup_path)
-       print(f"Backup saved to {backup_path}")
-       return backup_path
+       stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+       for attempt in range(100):
+           suffix = f".{attempt}" if attempt else ""
+           backup_path = CSV_PATH.with_name(f"{CSV_PATH.name}.bak-{stamp}{suffix}")
+           try:
+               fd = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+           except FileExistsError:
+               continue
+           os.close(fd)
+           shutil.copy2(CSV_PATH, backup_path)
+           print(f"Backup saved to {backup_path}")
+           return backup_path
+       raise RuntimeError(f"could not find a free backup name for {CSV_PATH}")
 
 
    def _union_fieldnames(rows: list[dict]) -> list[str]:
        """Header covering every key any row carries, in first-seen order.
 
-       csv.DictReader parks a long row's overflow cells under the None restkey.
-       That is not a column name, so drop it rather than writing a literal
-       "None" header.
+       Raises if any row carries the csv.DictReader None restkey — see
+       _assert_no_overflow_cells for why that is a hard stop rather than a
+       dropped column.
        """
        names: list[str] = []
        seen: set = set()
        for row in rows:
            for key in row:
-               if key is None or key in seen:
+               if key is None:
+                   raise ValueError(
+                       "row carries csv.DictReader's None restkey (overflow "
+                       "cells); refusing to build a header that would discard it"
+                   )
+               if key in seen:
                    continue
                seen.add(key)
                names.append(key)
        return names
+
+
+   def _assert_no_overflow_cells(rows: list[dict]) -> None:
+       """Fail before writing if any row has more cells than the header.
+
+       csv.DictReader parks a long row's overflow cells under the None restkey.
+       Dropping that key and writing with extrasaction="ignore" would delete
+       those cells and then os.replace() the result over the master CSV — a
+       loud, recoverable "this CSV is malformed" turned into silent data loss
+       in a file that is gitignored and exists only on this machine. Refuse
+       instead, and name the rows so the operator can look at them.
+       """
+       bad = [
+           (index, row.get("case_id") or "?")
+           for index, row in enumerate(rows)
+           if None in row
+       ]
+       if not bad:
+           return
+       preview = ", ".join(f"row {i} (case_id={cid})" for i, cid in bad[:10])
+       raise ValueError(
+           f"{len(bad)} row(s) in {CSV_PATH} have more cells than the header — "
+           f"{preview}{' …' if len(bad) > 10 else ''}. The source CSV is "
+           f"malformed; nothing has been written. Fix or quarantine those rows "
+           f"before re-running."
+       )
 
 
    def save_csv(rows: list[dict]):
@@ -1516,11 +1803,15 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
        if not rows:
            return
 
+       _assert_no_overflow_cells(rows)
        fieldnames = _union_fieldnames(rows)
 
-       tmp_path = CSV_PATH.with_suffix(".csv.tmp")
+       # Per-process temp name: other writers of this file (storage.save_cases_csv,
+       # download_fulltext.py) use "<path>.tmp" too, and two writers sharing one
+       # temp path interleave into it before one of them replaces the master.
+       tmp_path = CSV_PATH.with_name(f"{CSV_PATH.name}.tmp.{os.getpid()}")
        with open(tmp_path, "w", encoding="utf-8-sig", newline="") as f:
-           writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+           writer = csv.DictWriter(f, fieldnames=fieldnames)
            writer.writeheader()
            writer.writerows(rows)
 
@@ -1528,9 +1819,20 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
        print(f"Saved {len(rows)} rows to {CSV_PATH}")
    ```
 
-   `extrasaction="ignore"` is required: without it, a row carrying the `None`
-   restkey would make `DictWriter.writerow` raise `ValueError` because `None` is
-   not in `fieldnames`.
+   **Why not `extrasaction="ignore"`.** With it, a row carrying the `None`
+   restkey writes cleanly *minus its overflow cells*, and the very next
+   `os.replace` makes that loss permanent. The whole point of this step is that
+   a long-running extraction stops throwing work away; silently discarding
+   columns from a malformed row would be the same failure wearing a different
+   hat. Without `extrasaction`, `DictWriter.writerow` raises `ValueError` on the
+   unknown key — but by then the temp file is half written, so
+   `_assert_no_overflow_cells` runs the check up front, before any file is
+   opened. Both guards are cheap and neither can be reached by a well-formed
+   CSV.
+
+   Call `_assert_no_overflow_cells(all_rows)` **once in `main`, immediately
+   after `load_csv()`**, as well. Discovering a malformed source file after 11
+   minutes of extraction is exactly the failure mode this step exists to remove.
 
 6. Take the backup once, before the loop. In `main`, immediately after the
    `if args.overwrite:` block that ends at line 1060 and before the
@@ -1541,7 +1843,45 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
            backup_csv()
    ```
 
-7. Checkpoint inside the loop. Replace lines 1074-1075:
+7. Count the failures and leave a re-runnable list. In `main`, before the
+   `with ProcessPoolExecutor(...)` block, add `failed_case_ids: list[str] = []`.
+   Then, at the top of the loop body — **before** the
+   `for field, value in extracted.items():` merge, so the marker never lands in
+   a row — insert:
+
+   ```python
+               error = extracted.pop(EXTRACTION_ERROR_KEY, "")
+               if error:
+                   failed_case_ids.append(row.get("case_id") or "?")
+                   stats["extraction_failures"] += 1
+   ```
+
+   and add a `_write_failure_manifest` helper next to `save_csv`:
+
+   ```python
+   def _write_failure_manifest(case_ids: list[str]) -> Path | None:
+       """List the rows whose extraction raised, so the run can be repeated.
+
+       Without this, a swallowed worker exception exists only as one line on an
+       interleaved stderr stream — which is not a record you can act on after a
+       12-minute run over 149k rows.
+       """
+       if not case_ids:
+           return None
+       path = CSV_PATH.with_name(f"{CSV_PATH.name}.extraction-failures.txt")
+       with open(path, "w", encoding="utf-8") as f:
+           f.write("\n".join(case_ids) + "\n")
+       print(f"{len(case_ids)} row(s) failed extraction; ids written to {path}")
+       return path
+   ```
+
+   Call it right after the final `save_csv(...)` in both branches, and print the
+   count in the run summary. A run that ends with a non-empty manifest is a
+   partially-failed run and must say so — "honest failure reporting" is this
+   plan's title, and a silent `{}` per bad row is the same lie in a smaller
+   font.
+
+8. Checkpoint inside the loop. Replace lines 1074-1075:
 
    ```python
                if (completed + 1) % 5000 == 0:
@@ -1559,10 +1899,11 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
                        # not copy), so writing all_rows persists everything the
                        # loop has mutated so far.
                        save_csv(all_rows)
+                       _write_failure_manifest(failed_case_ids)
                        print(f"  Checkpoint written at {completed + 1}/{total}")
    ```
 
-8. Make the fill-rate summary and the dry-run sample None-safe. Replace line
+9. Make the fill-rate summary and the dry-run sample None-safe. Replace line
    1095:
 
    ```python
@@ -1600,10 +1941,24 @@ Addresses PYCORR-18 and the coercion half of PYCORR-23. All edits in
 
 **Verify**:
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -c "import extract_structured_fields as e; print(e.CHECKPOINT_EVERY, callable(e.backup_csv), callable(e.process_case), e._union_fieldnames([{'a':1},{'b':2,None:['x']}]))" && grep -n "bak_extract" extract_structured_fields.py ; make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -c "
+import extract_structured_fields as e
+print(e.CHECKPOINT_EVERY, callable(e.backup_csv), callable(e.process_case))
+print(e._union_fieldnames([{'a': 1}, {'b': 2}]))
+try:
+    e._union_fieldnames([{'a': 1}, {'b': 2, None: ['x']}])
+except ValueError as exc:
+    print('restkey rejected:', str(exc)[:40])
+else:
+    raise SystemExit('FAIL: overflow cells were silently dropped')
+" && grep -n "bak_extract" extract_structured_fields.py ; make lint
 ```
-→ prints `5000 True True ['a', 'b']`; the `grep` prints **nothing** and exits 1;
-then `All checks passed!`.
+→ prints `5000 True True`, then `['a', 'b']`, then `restkey rejected: …`; the
+`grep` prints **nothing** and exits 1; then `All checks passed!`. Note the
+change of expectation: `_union_fieldnames` used to be verified by showing it
+*dropped* the `None` key. It must now refuse — silently discarding a malformed
+row's overflow cells and then replacing the master CSV with the result is data
+loss, not hardening.
 
 Commit: `fix: checkpoint the extraction run and stop overwriting its only backup`
 
@@ -1687,6 +2042,8 @@ file that covers both root scripts.
 
    import csv
 
+   import pytest
+
    import extract_structured_fields as extract_script
    import validate_extraction as validate_script
 
@@ -1710,7 +2067,11 @@ file that covers both root scripts.
 
        monkeypatch.setattr(extract_script, "_extract_case_fields", boom)
 
-       assert extract_script.process_case({"case_id": "abc123"}) == {}
+       result = extract_script.process_case({"case_id": "abc123"})
+
+       # No extracted fields — only the reserved error marker, which main()
+       # pops before merging anything into the row.
+       assert list(result) == [extract_script.EXTRACTION_ERROR_KEY]
        assert "abc123" in capsys.readouterr().err
 
 
@@ -1725,13 +2086,36 @@ file that covers both root scripts.
        assert all(isinstance(value, str) for value in result.values())
 
 
-   def test_union_fieldnames_covers_every_row_and_drops_the_restkey():
-       """A late row's extra column must reach the header; the None restkey must not."""
+   def test_union_fieldnames_covers_every_row():
+       """A late row's extra column must reach the header."""
        names = extract_script._union_fieldnames(
-           [{"a": "1"}, {"a": "2", "b": "3"}, {"c": "4", None: ["overflow"]}]
+           [{"a": "1"}, {"a": "2", "b": "3"}, {"c": "4"}]
        )
 
        assert names == ["a", "b", "c"]
+
+
+   def test_save_csv_refuses_to_drop_a_malformed_rows_overflow_cells(tmp_path, monkeypatch):
+       """A long CSV row must fail the write, not lose its extra cells.
+
+       csv.DictReader parks overflow cells under the None restkey. Dropping them
+       and then os.replace()-ing the result over the master CSV turns a loud
+       "this file is malformed" into permanent data loss.
+       """
+       csv_path = tmp_path / "immigration_cases.csv"
+       _write_csv(csv_path, [{"case_id": "a1", "title": "One"}], ["case_id", "title"])
+       monkeypatch.setattr(extract_script, "CSV_PATH", csv_path)
+       before = csv_path.read_text(encoding="utf-8-sig")
+
+       with pytest.raises(ValueError) as excinfo:
+           extract_script.save_csv(
+               [{"case_id": "a1", "title": "One"},
+                {"case_id": "a2", "title": "Two", None: ["overflow"]}]
+           )
+
+       assert "a2" in str(excinfo.value)
+       assert csv_path.read_text(encoding="utf-8-sig") == before
+       assert not list(tmp_path.glob("*.tmp*"))
 
 
    def test_backup_csv_is_timestamped_and_keeps_the_previous_snapshot(tmp_path, monkeypatch):
@@ -1741,12 +2125,151 @@ file that covers both root scripts.
        monkeypatch.setattr(extract_script, "CSV_PATH", csv_path)
 
        first = extract_script.backup_csv()
+       first_content = first.read_text(encoding="utf-8-sig")
+
+       # Change the master, then back up again in the same second.
+       _write_csv(csv_path, [{"case_id": "a2", "title": "Two"}], ["case_id", "title"])
        second = extract_script.backup_csv()
 
-       assert first is not None and first.exists()
-       assert second is not None and second.exists()
+       assert first is not None and second is not None
+       assert first != second, "two backups in the same second collided"
+       assert first.exists() and second.exists()
+       assert first.read_text(encoding="utf-8-sig") == first_content
        assert first.name.startswith("immigration_cases.csv.bak-")
-       assert len(list(tmp_path.glob("immigration_cases.csv.bak-*"))) >= 1
+       assert len(list(tmp_path.glob("immigration_cases.csv.bak-*"))) == 2
+
+
+   def test_process_case_reports_the_failure_to_the_parent(monkeypatch):
+       """A swallowed worker exception must come back as a countable marker.
+
+       A worker runs in another process, so stderr is the only channel it has —
+       and stderr interleaves and scrolls away. main() counts this key instead.
+       """
+       def boom(_row):
+           raise ValueError("synthetic parser explosion")
+
+       monkeypatch.setattr(extract_script, "_extract_case_fields", boom)
+
+       result = extract_script.process_case({"case_id": "abc123"})
+
+       assert extract_script.EXTRACTION_ERROR_KEY in result
+       assert "synthetic parser explosion" in result[extract_script.EXTRACTION_ERROR_KEY]
+
+
+   def test_write_failure_manifest_lists_the_failed_ids(tmp_path, monkeypatch):
+       """A partially-failed run must leave a re-runnable list behind."""
+       csv_path = tmp_path / "immigration_cases.csv"
+       _write_csv(csv_path, [{"case_id": "a1"}], ["case_id"])
+       monkeypatch.setattr(extract_script, "CSV_PATH", csv_path)
+
+       assert extract_script._write_failure_manifest([]) is None
+       path = extract_script._write_failure_manifest(["a1", "a2"])
+
+       assert path is not None
+       assert path.read_text(encoding="utf-8").split() == ["a1", "a2"]
+
+
+   # ── main() orchestration ──────────────────────────────────────────────
+   # The three tests above cover the helpers. These cover the loop that calls
+   # them, which is where the checkpointing this plan exists for actually lives.
+
+
+   def _run_main(monkeypatch, tmp_path, argv, rows, fieldnames):
+       """Drive extract_structured_fields.main() over a temp CSV.
+
+       ProcessPoolExecutor is replaced with an in-process stand-in: the real one
+       would need the module importable in a subprocess with the patched
+       CSV_PATH, which monkeypatch cannot provide.
+       """
+       import sys
+
+       csv_path = tmp_path / "immigration_cases.csv"
+       _write_csv(csv_path, rows, fieldnames)
+       monkeypatch.setattr(extract_script, "CSV_PATH", csv_path)
+       monkeypatch.setattr(sys, "argv", ["extract_structured_fields.py", *argv])
+
+       class _InlineExecutor:
+           def __init__(self, *a, **kw):
+               pass
+
+           def __enter__(self):
+               return self
+
+           def __exit__(self, *exc):
+               return False
+
+           def map(self, fn, iterable, chunksize=None):
+               return map(fn, list(iterable))
+
+       monkeypatch.setattr(extract_script, "ProcessPoolExecutor", _InlineExecutor)
+       extract_script.main()
+       return csv_path
+
+
+   def test_main_checkpoints_before_the_run_finishes(tmp_path, monkeypatch):
+       """The whole point of the plan: work reaches disk mid-run.
+
+       CHECKPOINT_EVERY is lowered to 2 and the loop is stopped after the first
+       checkpoint, so the assertion is that rows processed before the stop are
+       on disk — not that the final save happened.
+       """
+       monkeypatch.setattr(extract_script, "CHECKPOINT_EVERY", 2)
+       rows = [{"case_id": f"c{i}", "title": f"[2024] AATA {i} — the applicant",
+                "citation": "", "visa_subclass": "", "visa_type": "",
+                "full_text_path": "", "applicant_name": ""} for i in range(4)]
+       fieldnames = list(rows[0])
+
+       saves = []
+       real_save = extract_script.save_csv
+
+       def spy(payload):
+           saves.append(len(payload))
+           real_save(payload)
+
+       monkeypatch.setattr(extract_script, "save_csv", spy)
+       _run_main(monkeypatch, tmp_path, ["--workers", "1"], rows, fieldnames)
+
+       # At least one save happened before the final one: 4 rows at
+       # CHECKPOINT_EVERY=2 gives checkpoints at 2 and 4, plus the final save.
+       assert len(saves) >= 2, saves
+
+
+   def test_main_dry_run_never_writes(tmp_path, monkeypatch):
+       """--dry-run must not touch the CSV, take a backup, or checkpoint."""
+       monkeypatch.setattr(extract_script, "CHECKPOINT_EVERY", 1)
+       rows = [{"case_id": f"c{i}", "title": f"[2024] AATA {i} — the applicant",
+                "citation": "", "visa_subclass": "", "visa_type": "",
+                "full_text_path": "", "applicant_name": ""} for i in range(3)]
+       csv_path = _run_main(
+           monkeypatch, tmp_path,
+           ["--dry-run", "--workers", "1"], rows, list(rows[0]),
+       )
+       before = csv_path.read_text(encoding="utf-8-sig")
+
+       assert csv_path.read_text(encoding="utf-8-sig") == before
+       assert not list(tmp_path.glob("*.bak-*"))
+       assert not list(tmp_path.glob("*.tmp*"))
+
+
+   def test_main_counts_failures_and_writes_a_manifest(tmp_path, monkeypatch):
+       """One exploding row must not abort the run, and must be listed."""
+       def boom(row):
+           if row.get("case_id") == "c1":
+               raise ValueError("synthetic parser explosion")
+           return {}
+
+       monkeypatch.setattr(extract_script, "_extract_case_fields", boom)
+       rows = [{"case_id": f"c{i}", "title": "x", "citation": "",
+                "visa_subclass": "", "visa_type": "", "full_text_path": "",
+                "applicant_name": ""} for i in range(3)]
+
+       csv_path = _run_main(monkeypatch, tmp_path, ["--workers", "1"], rows, list(rows[0]))
+       manifest = csv_path.with_name(csv_path.name + ".extraction-failures.txt")
+
+       assert manifest.exists()
+       assert manifest.read_text(encoding="utf-8").split() == ["c1"]
+       with open(csv_path, encoding="utf-8-sig") as f:
+           assert len(list(csv.DictReader(f))) == 3
 
 
    def test_save_csv_writes_columns_that_only_later_rows_have(tmp_path, monkeypatch):
@@ -1783,9 +2306,10 @@ file that covers both root scripts.
 
 **Verify**:
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_extraction_scripts.py -q --no-cov 2>&1 | tail -3 && .venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_austlii.py && make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_extraction_scripts.py -q --no-cov 2>&1 | tail -3 && .venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_web_auth_ordering.py tests/test_austlii.py && make lint
 ```
-→ `7 passed`, then `All checks passed!` twice.
+→ `13 passed`, then `All checks passed!` twice. (A per-file count: stable no
+matter which sibling plans land.)
 
 Commit: `fix: stop validate_extraction crashing on an empty filtered result set`
 
@@ -1795,22 +2319,24 @@ No code changes. Confirm nothing outside this plan regressed.
 
 **Verify**:
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -6
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -E '[0-9]+ passed'
 ```
-→ `1159 passed, 3 failed, 7 skipped`. The 3 failures must be **exactly** the
+→ the passed count must equal `SUITE_BEFORE + 32`, where `SUITE_BEFORE` is the
+number you recorded before Step 1. **Do not assert an absolute total** —
+sibling plans in this batch add tests to the same suite, so a hard-coded figure
+is wrong the moment one of them lands. The failures must be **exactly** the
 three `ImportError` failures in `tests/test_backfill_judge_overrides_from_pdf.py`
 that exist at `42826a3` (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI
 mismatch: `Symbol not found: _XML_SetAllocTrackerActivationThreshold`, which
-breaks the `pypdf` import chain). Confirm with:
+breaks the `pypdf` import chain). Confirm by **name**, not by count:
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -cE "FAILED|ERROR"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u
 ```
-→ `3`. Then check they are the expected three:
-```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -E "FAILED|ERROR" | grep -cv "test_backfill_judge_overrides_from_pdf.py"
-```
-→ `0`. (Do not anchor the pattern with `^` — pytest emits ANSI colour codes
-before the word `FAILED` even when its output is piped.)
+→ prints exactly `tests/test_backfill_judge_overrides_from_pdf.py` and nothing
+else. (Do not anchor the pattern with `^` — pytest emits ANSI colour codes
+before the word `FAILED` even when its output is piped. A count of `3` is not
+enough on its own: three *different* failures also count to three.)
 
 Then:
 ```
@@ -1828,7 +2354,7 @@ Commit: nothing to commit — this step is verification only.
 
 New and changed tests, by file:
 
-**`tests/test_austlii.py`** (modify; 34 → 38)
+**`tests/test_austlii.py`** (modify; 34 → 40)
 - `TestBrowseYear::test_both_fail_raises_year_listing_unavailable` — replaces
   `test_both_fail_returns_empty`; both fetches 500 → `YearListingUnavailable`.
 - `TestBrowseYear::test_listing_without_matches_returns_empty_list` — a 200 with
@@ -1837,6 +2363,11 @@ New and changed tests, by file:
   2024 succeeds → only 2024's case is returned.
 - `TestSearchDatabase::test_truncation_keeps_the_newest_years` — 30 cases over
   2020–2024 with `max_results=6` → all six returned are from 2024.
+- `TestSearchDatabase::test_truncation_keeps_the_highest_decision_numbers_within_a_year`
+  — 12 cases in one year with `max_results=3` → 250, 101, 100. Catches the
+  reversed-string ordering that would put `AATA 99` ahead of `AATA 100`.
+- `TestSearchDatabase::test_truncation_is_stable_when_no_decision_number_is_available`
+  — a case with no parseable number sorts oldest and nothing raises.
 - `TestExtractMetadataGuard::test_unknown_metadata_key_is_dropped` — a stubbed
   extractor emitting `not_a_field` → the declared key lands, the unknown one
   does not.
@@ -1849,14 +2380,30 @@ New and changed tests, by file:
 - Non-UTF-8 body → `({}, 0.0)` and no raise; malformed JSON → `({}, 0.0)`;
   valid body → parsed values plus the `0.0004` cost from `_estimate_cost`.
 
-**`tests/test_extraction_scripts.py`** (create; 7 tests)
-- `process_case` returns `{}` and names the row on stderr when the inner
-  extractor raises; `process_case` yields only `str` values for an all-`None`
-  row; `_union_fieldnames` covers late columns and drops the `None` restkey;
-  `backup_csv` produces a timestamped name and a second call does not clobber
-  the first; `save_csv` writes a column only a later row has;
-  `print_fill_rates` prints "No rows match" instead of raising `IndexError`;
-  `print_fill_rates` tolerates a `None` cell.
+**`tests/test_extraction_scripts.py`** (create; 13 tests)
+- Helpers: `process_case` returns only the error marker and names the row on
+  stderr when the inner extractor raises, and reports that failure back to the
+  parent; `process_case` yields only `str` values for an all-`None` row;
+  `_union_fieldnames` covers late columns; `save_csv` **refuses** a row carrying
+  the `None` restkey and leaves the master file and temp files untouched;
+  `backup_csv` produces two *different* paths for two calls in the same second
+  and does not modify the first; `_write_failure_manifest` lists the failed ids;
+  `save_csv` writes a column only a later row has.
+- `main()` orchestration: a checkpoint is written before the run finishes;
+  `--dry-run` writes nothing at all (no CSV change, no backup, no temp file);
+  one exploding row is counted, listed in the manifest, and does not abort the
+  other rows. These three are the tests for the behaviour the plan is named
+  after — without them the helpers could all be correct while the loop that
+  calls them never checkpoints.
+
+**`tests/test_web_auth_ordering.py`** (create; 6 tests)
+- A tampered *expired* token is rejected as `jwt.invalid_signature`, not
+  `jwt.expired`; a tampered *refresh* token likewise; the previous-secret
+  rotation window still works; a correctly-signed expired token is still
+  rejected as expired; `allow_refresh=True` accepts a refresh token; a
+  correctly-signed non-JSON payload returns `None` instead of raising. Two
+  happy-path tests cannot hold a change to the order in which claims and
+  signatures are trusted.
 
 Structural pattern to follow: `tests/test_austlii.py` (class-per-behaviour,
 `responses.activate` for HTTP, descriptive test names with a one-line docstring
@@ -1877,27 +2424,39 @@ particular `test_process_case_tolerates_a_row_of_none_values` passes at
 `42826a3` (verified: an all-`None` row already returns a dict of empty strings),
 so do not expect it to go red first.
 
-Suite arithmetic: `42826a3` baseline is `1141 passed, 3 failed, 7 skipped`.
-This plan nets +4 in `tests/test_austlii.py` (5 tests added, 1 replaced in
-place: 34 → 38) plus 4 + 3 + 7 = 14 in the three new files, so **+18** →
-`1159 passed, 3 failed, 7 skipped`.
+Suite arithmetic, **as a delta, never as an absolute**: this plan nets +6 in
+`tests/test_austlii.py` (7 tests added, 1 replaced in place: 34 → 40) plus
+4 + 3 + 13 + 6 = 26 in the four new files, so **+32** against whatever
+`SUITE_BEFORE` you recorded. Do not write the resulting total into this plan:
+sibling plans in this batch add tests to the same suite, so any absolute figure
+is wrong the moment one of them lands, and chasing it teaches you to edit the
+yardstick instead of the code.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] `make test-py` reports `1159 passed, 3 failed, 7 skipped`
-- [ ] `make test-py 2>&1 | grep -E "FAILED|ERROR" | grep -cv "test_backfill_judge_overrides_from_pdf.py"` prints `0`
+- [ ] `make test-py` passed count equals `SUITE_BEFORE + 32` (the baseline you recorded before Step 1) — **never** an absolute total
+- [ ] `make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u` prints exactly `tests/test_backfill_judge_overrides_from_pdf.py` — still exactly those three environmental `pyexpat`/`pypdf` ImportErrors, by name
 - [ ] `make lint` exits 0 with `All checks passed!`
-- [ ] `.venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_austlii.py` exits 0
-- [ ] `grep -rn "require_auth\|optional_auth\|require_tenant_membership\|immi_repo\|check_tenant_membership" --include="*.py" immi_case_downloader/ tests/ scripts/` returns no matches (exit 1)
+- [ ] `.venv/bin/ruff check tests/test_case_identity.py tests/test_extraction_llm_client.py tests/test_extraction_scripts.py tests/test_web_auth_ordering.py tests/test_austlii.py` exits 0
+- [ ] The step 6 structural grep (definitions / decorator applications / `extensions.get('immi_repo')` / `.check_tenant_membership(`) returns no matches, **and** the `python -c` probe prints `auth module exposes verify_jwt only`. A plain text grep for those five names is **not** a valid check — the new module docstring names all five on purpose
 - [ ] `grep -n "bak_extract" extract_structured_fields.py` returns no matches (exit 1)
 - [ ] `grep -n "return cases\[:max_results\]" immi_case_downloader/sources/austlii.py` returns exactly one line, and it sits inside the `if len(cases) > max_results:` block
-- [ ] `grep -c "YearListingUnavailable" immi_case_downloader/sources/austlii.py` returns `4` (class definition, the `raise`, the docstring mention, the `except`)
+- [ ] `.venv/bin/python -m pytest tests/test_austlii.py -q --no-cov -k "raises_year_listing_unavailable or without_matches_returns_empty_list or failed_year_is_skipped"` → `3 passed` (this replaces `grep -c "YearListingUnavailable" … → 4`: a count cannot tell you the class, the raise and the except landed in the right places, and it breaks whenever a comment mentions the name)
+- [ ] `.venv/bin/python -m pytest tests/test_austlii.py -q --no-cov -k "truncation"` → `3 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_extraction_scripts.py -q --no-cov -k "main_"` → `3 passed` (the checkpoint / dry-run / failure-manifest orchestration tests)
 - [ ] `.venv/bin/python -c "import extract_structured_fields, validate_extraction; print('ok')"` prints `ok`
-- [ ] `git status --short` lists only the ten files named in "In scope", plus the
+- [ ] `git status --short` lists only the files named in "In scope", plus the
       pre-existing ` M .claude/STATE.md` and the untracked `plans/` entry
-- [ ] `git diff 42826a3..HEAD --stat -- immi_case_downloader/pipeline.py immi_case_downloader/sources/metadata_extractor.py immi_case_downloader/storage.py immi_case_downloader/web/internal_extract.py immi_case_downloader/web/jobs.py download_fulltext.py` produces no output
+- [ ] The read-only files this plan reasons about still contain the constructs it
+      depends on:
+      `grep -c "if cases is not None" immi_case_downloader/pipeline.py` → `1`,
+      `grep -c "return scraper._browse_year(db_code, db_info, year, IMMIGRATION_KEYWORDS)" immi_case_downloader/pipeline.py` → `1`,
+      `grep -c "except Exception" download_fulltext.py immi_case_downloader/web/jobs.py` → non-zero for both.
+      **Do not** assert `git diff 42826a3..HEAD -- …pipeline.py` is empty:
+      `plans/027-fix-csv-data-integrity.md` edits that file, so on a shared
+      branch that check fails for a reason that has nothing to do with this plan.
 
 ## STOP conditions
 
@@ -1907,10 +2466,20 @@ Stop and report back (do not improvise) if:
   state" excerpt does not match the live code byte for byte. The line numbers in
   `extract_structured_fields.py` in particular are load-bearing for step 7 —
   if `save_csv` is no longer at 986-1005, re-locate every anchor before editing.
-- **`make test-py` shows a different failure count than `3`, or a failure in any
-  file other than `tests/test_backfill_judge_overrides_from_pdf.py`.** Those
-  three are a known Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI problem, not
-  a code problem; anything else is yours and means a step regressed something.
+- **`make test-py`'s failing-file list gains any name beyond
+  `tests/test_backfill_judge_overrides_from_pdf.py`.** Those three are a known
+  Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI problem, not a code problem;
+  anything else is yours and means a step regressed something. Judge by the
+  names, not by the count — three *different* failures also count to three.
+- The drift check shows an in-scope file as modified, staged or untracked in
+  `git status --short --branch`. That is uncommitted work a range diff cannot
+  see. Do **not** `git checkout --` or `git clean` it — report and stop.
+- `grep -c "if cases is not None" immi_case_downloader/pipeline.py` returns
+  anything other than `1`. Step 1's whole design — raise, and let
+  `_crawl_with_fallback`'s broad `except Exception` turn that into a strategy
+  rotation — depends on that consumer being intact. A diff elsewhere in
+  `pipeline.py` is expected if `plans/027-fix-csv-data-integrity.md` landed
+  first and is **not** a reason to stop.
 - Step 1's raise breaks a test in `tests/test_pipeline.py`. That file mocks
   `_browse_year` at `tests/test_pipeline.py:200`
   (`mock_scraper._browse_year.return_value = [case]`) and should be unaffected
@@ -1922,9 +2491,17 @@ Stop and report back (do not improvise) if:
   feeding a real `0`/`False` through `from_dict` and relying on it being blanked
   — a behaviour question for the operator, not something to paper over. Report
   the failing assertion and stop.
-- Step 6's grep still finds `check_tenant_membership` or `immi_repo` after the
-  deletion, i.e. something outside `immi_case_downloader/web/auth.py` depends on
-  the decorators after all. Do not delete anything further; report.
+- Step 6's **structural** grep (the `-E` one matching `def …`, `@…`,
+  `extensions.get('immi_repo')` and `.check_tenant_membership(`) still finds a
+  hit after the deletion, i.e. something outside
+  `immi_case_downloader/web/auth.py` depends on the decorators after all. Do
+  not delete anything further; report. Note that a plain text search for those
+  five *names* will still match — the new module docstring names them
+  deliberately, to explain why they are gone. Do not delete that docstring to
+  make a grep pass.
+- Step 6's new `tests/test_web_auth_ordering.py` finds that a tampered token is
+  rejected as `jwt.expired` rather than `jwt.invalid_signature`. That means the
+  reorder did not take effect; fix the code, never the assertion.
 - Step 7's checkpoint would write to a real corpus. **Never run
   `python extract_structured_fields.py` against `downloaded_cases/` while
   testing** — the tests monkeypatch `CSV_PATH` to a `tmp_path` for exactly this
@@ -1960,7 +2537,24 @@ For whoever owns this code next:
   than raising `CHECKPOINT_EVERY`.
 - **Backups now accumulate.** `backup_csv()` writes one timestamped file per
   run and nothing prunes them. Add a retention sweep (or a `--no-backup` flag)
-  if `downloaded_cases/` starts filling up.
+  if `downloaded_cases/` starts filling up. The name carries microseconds and is
+  created with `O_EXCL`, so two runs in the same second cannot collide — do not
+  "simplify" it back to a seconds-resolution `strftime`.
+- **`save_csv` refuses malformed rows rather than trimming them.** A row
+  carrying `csv.DictReader`'s `None` restkey (more cells than the header) aborts
+  the write with a `ValueError` naming the rows. That is deliberate: the
+  alternative — `extrasaction="ignore"` plus dropping the key — deletes those
+  cells and then `os.replace()`s the result over a gitignored, single-copy
+  corpus. If malformed rows ever become routine, quarantine them to a sidecar
+  file; do not re-add `extrasaction="ignore"`.
+- **`extract_structured_fields.py` still takes no write lock.**
+  `plans/027-fix-csv-data-integrity.md` Step 9b adds
+  `immi_case_downloader/csv_write_lock.py` and routes `CsvRepository.save_many`,
+  the pipeline and `download_fulltext.py` through it. This script writes the
+  same master CSV and should adopt it once 027 has landed — it was left out here
+  only because the module does not exist yet on this plan's branch. Until then,
+  the per-PID temp filename prevents two writers interleaving into one temp
+  file, but not one overwriting the other's rows.
 - **Deliberately deferred out of this plan**, all outside its file territory:
   1. `immi_case_downloader/web/internal_extract.py:40` — the per-item loop body
      still has no `try/except`, so any exception escaping `extract_regex` or

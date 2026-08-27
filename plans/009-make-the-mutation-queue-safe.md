@@ -7,13 +7,21 @@
 > `plans/README.md` if that file exists; if it does not exist, do **not** create
 > it (a reviewer maintains the index).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands, because a committed-only
+> diff cannot see a dirty working tree:
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="workers/cloudflare-native.js workers/storage/cloudflare.js workers/__tests__/cloudflare-native-queue.test.js workers/__tests__/cloudflare-storage-contracts.test.js"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P     # landed since this plan was written
+> git diff --stat -- $P                   # unstaged
+> git diff --cached --stat -- $P          # staged
 > ```
-> git diff --stat 42826a3..HEAD -- workers/cloudflare-native.js workers/storage/cloudflare.js workers/__tests__/cloudflare-native-queue.test.js workers/__tests__/cloudflare-storage-contracts.test.js
-> ```
-> If any of those files changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> If any of those four in-scope paths appears in **any** of the three diffs, or
+> in `git status --short`, treat it as a STOP condition: compare the "Current
+> state" excerpts against the live code and report before editing. Do **not**
+> run `git checkout --` or `git clean` to "clean up" — the operator may have
+> work in progress there.
 >
 > Note: `plans/008-add-security-response-headers.md` also edits
 > `workers/cloudflare-native.js`, but only inside its `fetch()` / asset-response
@@ -33,6 +41,22 @@
   its expected output is stated below.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+### Integration order (this plan is FIRST in its lane)
+
+Five plans edit `workers/storage/cloudflare.js` and/or
+`workers/case-api/cloudflare.js`. They must be integrated **serially, in this
+order**, each rebased on the previous one's HEAD:
+
+```
+009 (this plan)  →  010  →  013  →  014  →  012
+```
+
+009 is first because it rewrites `rebuildAggregates()`, `updateCaseFields()` and
+`putImportedCase()` wholesale; every later plan in the chain re-locates its
+target symbols against the post-009 file rather than against `42826a3` line
+numbers. `plans/011-*.md` touches only `workers/austlii-scraper/**` plus
+`workers/extraction-container.js` and can run in parallel with all of them.
 
 ## Why this matters
 
@@ -63,9 +87,25 @@ reading tribunal statistics to decide how to argue their own case. A dashboard
 that confidently reports zero cases is worse than one that is briefly slow.
 
 After this plan: each message acks, retries or dead-letters on its own merits;
-an unknown `kind` is logged and reaches `immi-case-mutation-dlq`; a failed
-aggregate rebuild leaves the previous (stale but truthful) numbers in place; and
-a case import can no longer be observed with zero full-text search chunks.
+an unknown `kind` is logged and reaches `immi-case-mutation-dlq`; **no analytics
+table is ever observably empty** because its `DELETE` and its `INSERT`s ride one
+D1 transaction; and a case that *has* full text is never observable with zero
+full-text search chunks, because its chunk delete and all of its chunk inserts
+ride one D1 transaction too.
+
+**What this plan does NOT achieve — read this before you write the commit
+message.** Grouping per table makes each table individually atomic; it does
+**not** make the 17-table rebuild atomic as a whole. The 41 statements still
+span more than one `db.batch()` call, so a failure part-way through leaves a
+*mixed generation*: some tables refreshed, the rest carrying the previous
+rebuild's rows. That is strictly better than today (today the same failure
+publishes **empty** tables and a dashboard that reports zero cases), but it is
+not "the previous numbers are preserved". Cross-table skew between
+e.g. `catalog_summary.total_cases` and `aggregate_court_year_outcome` remains
+possible for the duration of the retry window. Step 2 adds a structured log so
+the skew is observable; a genuinely atomic rebuild needs shadow tables plus a
+generation pointer and is named as a required follow-up in "Maintenance notes".
+Do not claim full atomicity anywhere in your report.
 
 ## Current state
 
@@ -258,6 +298,26 @@ Line 1273 commits a delete of **every** full-text chunk for the case before any
 replacement exists. Between that commit and the first insert batch, the case is
 live in D1 with zero FTS chunks.
 
+**Sizing fact you need for Step 3b** (verified, do not re-derive): chunks are
+128 KiB each — `FTS_CHUNK_MAX_BYTES = 128 * 1024`
+(`workers/storage/contracts.js:15`) and `splitFtsChunks`
+(`workers/storage/pipeline_coordinator.js:38-68`) fills each chunk to that byte
+ceiling before starting the next. So a case needs >2.4 MB of canonical text
+before it produces 20 chunks; the overwhelming majority of AustLII judgments
+produce exactly one. That is what makes "delete + every insert in one batch"
+practical rather than aspirational — but it is a *typical* bound, not a
+guaranteed one, so Step 3b adds an explicit ceiling that fails loudly instead of
+silently splitting the transaction.
+
+**And a case with no full text legitimately has zero chunks.**
+`splitFtsChunks` throws `canonicalText is required` on empty input
+(`pipeline_coordinator.js:30-34`, reached from `:38`), so the only way
+`textChunks` is `[]` is `workers/case-api/cloudflare_mutations.js:206` / `:226`
+(`textChunks: text ? splitFtsChunks(text) : []`) — a case created or updated
+with no full text at all. Deleting its stale chunks with nothing to replace them
+is the *correct* end state, not a violated invariant. State the invariant
+precisely: **a case that has full text is never observable with zero chunks.**
+
 ### ⚠️ Constraint you must respect in Step 3
 
 `workers/__tests__/cloudflare-storage-contracts.test.js:202-203` (verbatim) is
@@ -301,15 +361,32 @@ delete with an extra bound parameter — move *when* it commits, not what it say
 
 ## Commands you will need
 
+**Record your own baseline first.** Absolute suite totals are not used anywhere
+in this plan: four sibling plans add tests to the same Worker suite, so any fixed
+number is wrong the moment one of them lands. Before you change anything, run
+and write down:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+BEFORE_WORKER=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+')
+echo "BEFORE_WORKER=$BEFORE_WORKER"
+BEFORE_QUEUE=$(npx vitest run __tests__/cloudflare-native-queue.test.js 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+')
+echo "BEFORE_QUEUE=$BEFORE_QUEUE"   # 6 at 42826a3
+```
+
+Every later check in this plan is expressed as a **delta** against those two
+numbers, or as a named-test assertion.
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0; **baseline before this plan: 25 files, 345 passed** |
-| One worker test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-native-queue.test.js` | exit 0, all pass |
+| Worker unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0, **zero failures**; final total must equal `BEFORE_WORKER + 14` |
+| One worker test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-native-queue.test.js` | exit 0; final total `BEFORE_QUEUE + 5` (i.e. `11 passed` if you started from the `42826a3` baseline of 6) |
+| New atomicity file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-storage-atomicity.test.js` | exit 0, `Tests 9 passed (9)` — a per-file count, stable regardless of sibling plans |
 | Worker bundle closure | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node scripts/check_cloudflare_native_bundle.mjs` | exit 0, prints `Cloudflare-native bundle closure passed (…bytes)` |
-| Native boundary gates | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_native_effective_references.py tests/test_native_pipeline_boundary.py -q` | `6 passed` |
-| Full Python suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | `1141 passed, 3 failed, 7 skipped` — the 3 failures are pre-existing and environmental (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`). They are **not** yours; the count must not get worse. |
+| Native boundary gates | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_native_effective_references.py tests/test_native_pipeline_boundary.py -q` | `6 passed` (per-file count, stable) |
+| Full Python suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | zero *new* failures. The only failures allowed are **exactly the three environmental ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`, by name** (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import). Confirm by name, not by count: `make test-py 2>&1 \| grep -E '^(FAILED\|ERROR)' \| sort -u` must list only paths inside that one file. |
 | Python lint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` | `All checks passed!` |
-| Scope check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only the four in-scope paths listed below |
+| Scope check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only the four in-scope paths listed below, plus anything that was already dirty before you started (record that list at Step 0) |
 
 There is no ESLint/tsc gate for `workers/` — `make lint` is Ruff over Python
 only, and `make typecheck` is the frontend. The bundle-closure script is your
@@ -455,10 +532,32 @@ Three details that matter:
   message is still claimed by `processCaseExtracted` first.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node scripts/check_cloudflare_native_bundle.mjs && cd workers && npx vitest run`
-→ bundle line printed, then `Test Files 25 passed (25)` / `Tests 345 passed (345)`.
-All six pre-existing queue tests must still pass unchanged.
+→ bundle line printed, then **zero failures and a total equal to
+`BEFORE_WORKER`** (this step adds no tests). All pre-existing queue tests in
+`__tests__/cloudflare-native-queue.test.js` must still pass unchanged; check
+that file on its own too:
+`npx vitest run __tests__/cloudflare-native-queue.test.js` → `BEFORE_QUEUE`
+passed, 0 failed.
 
 ### Step 2: Rebuild each aggregate table inside a single D1 transaction
+
+**Scope of the guarantee (say this out loud before you start).** This step buys
+*per-table* atomicity: no analytics table is ever observably empty. It does not
+buy *whole-rebuild* atomicity — see "Why this matters". Do not describe it as
+"the rebuild is now atomic" in the commit message or your report. The commit
+message stays `fix: rebuild each aggregate table inside one D1 transaction`.
+
+**Why not just put all 41 statements in one `batch()`?** Because nothing in this
+repo or in Cloudflare's published D1 limits establishes that a single
+transaction carrying 17 whole-corpus `DELETE`s plus 24 whole-corpus aggregating
+`INSERT ... SELECT`s over ~149K rows completes inside D1's per-query and
+per-transaction ceilings, and there is no environment reachable from this
+working copy in which that could be measured (the local Miniflare D1 is empty).
+Shipping an unverified single mega-transaction would trade a known,
+now-mitigated failure mode for an unknown one. The grouped design below is
+provably better than today and provably safe; the fully atomic design
+(shadow tables + a generation pointer) is a separate, larger plan, recorded in
+"Maintenance notes".
 
 In `workers/storage/cloudflare.js`:
 
@@ -533,6 +632,63 @@ Target shape:
   }
 ```
 
+**2c. Make a partial rebuild observable.** The packing loop above must carry the
+table names alongside the statements, because a real D1 `D1PreparedStatement`
+does **not** expose the SQL text — you cannot recover the table name from the
+statement object at runtime, only from the group you built it from. So track
+both in the accumulator:
+
+```js
+    const batches = [];
+    let current = { tables: [], statements: [] };
+    for (const [table, inserts] of groups) {
+      const group = [this.db.prepare(`DELETE FROM ${table}`), ...inserts];
+      if (current.statements.length > 0
+        && current.statements.length + group.length > D1_BATCH_STATEMENT_LIMIT) {
+        batches.push(current);
+        current = { tables: [], statements: [] };
+      }
+      current = {
+        tables: [...current.tables, table],
+        statements: [...current.statements, ...group],
+      };
+    }
+    if (current.statements.length > 0) batches.push(current);
+    // A rebuild spans more than one transaction, so a failure part-way through
+    // leaves a mixed generation: `committed_tables` names the tables that
+    // already hold the new rows. Log it so the skew is observable in Logpush
+    // instead of being inferred from a dashboard that looks slightly wrong.
+    const committed = [];
+    for (const [index, batch] of batches.entries()) {
+      try {
+        await this.db.batch(batch.statements);
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "cloudflare.aggregate_rebuild_partial",
+          batch_index: index,
+          batches: batches.length,
+          committed_tables: committed,
+          error: error?.message,
+        }));
+        throw error;
+      }
+      committed.push(...batch.tables);
+    }
+    return { rebuilt_at: now, rebuilt_tables: committed };
+```
+
+Two notes:
+
+- `rebuildAggregates()` gains a `rebuilt_tables` key. Verify nothing depends on
+  the old shape before you rely on that being additive:
+  `grep -rn "rebuildAggregates" workers/ | grep -v __tests__` → the only
+  production call sites are `handleCaseMutationQueue` and
+  `processAggregateRebuild` in `workers/cloudflare-native.js`, and neither reads
+  the return value. If that grep shows a third caller that *does* read it, stop.
+- `cloudflare.aggregate_rebuild_partial` is a third new event name (alongside the
+  two in Step 1) and is worth alerting on: it means analytics is internally
+  inconsistent until a retry succeeds.
+
 Invariants to preserve, and check by eye before running anything:
 
 - Exactly 17 groups and exactly 24 INSERT statements total: 15 tables with one
@@ -551,55 +707,167 @@ Invariants to preserve, and check by eye before running anything:
   group as its own batch rather than splitting it.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node scripts/check_cloudflare_native_bundle.mjs && cd workers && npx vitest run`
-→ bundle line printed, then `Tests 345 passed (345)`.
-(The existing suite barely exercises this method — Step 5 is the real gate for
-this change, and it is not optional.)
+→ bundle line printed, then zero failures and a total still equal to
+`BEFORE_WORKER`.
+(The existing suite barely exercises this method, and `node --check` / the bundle
+script only prove the file parses — neither can tell a correct regrouping from a
+wrong one. Step 5's failure-injection test is the real gate for this change, and
+it is not optional.)
 
 ### Step 3: Write a case row and its relations in one transaction
 
 Still in `workers/storage/cloudflare.js`.
 
-**3a. `updateCaseFields` (lines 878–934).** Build the `UPDATE` statement instead
-of running it, move the relation-statement construction (currently lines
-909–931, unchanged) *above* the write, then dispatch. Replace lines 903–908 and
-line 932 so the tail of the method reads:
+**3a. `updateCaseFields` (lines 878–934).** The statement count must become
+**fixed**, not "small in the common case". Today the method emits
+`1 UPDATE + (1 DELETE + 2×J INSERT) + (1 DELETE + 2×C INSERT)` statements, where
+J and C are the judge and concept label counts. `normaliseRelationLabels` caps
+each at 100 (`workers/storage/cloudflare.js:232`, verbatim:
+`return [...new Set(labels)].slice(0, 100);`), so the range is 1 … 403
+statements — and a mere **nine** labels total already produces
+`1 + 1 + 10 + 1 + 8 = 21`, i.e. past a 20-statement batch. A design that falls
+back to two-phase writes above a threshold therefore does not fix the defect for
+any realistic multi-judge edit; it just moves the cliff.
+
+Emit the labels as **JSON** and let SQLite expand them with `json_each`, so the
+statement count is 7 regardless of how many labels there are. SQLite's JSON1
+functions (`json_each`, `json_extract`) are built into D1 — the codebase already
+relies on `json_each` in `findByIds` (`workers/storage/cloudflare.js:817-827`)
+and on `json_valid()` in `migrations/d1/ops/0002_pipeline_control.sql:6`. Use
+`json_extract(value, '$.x')` rather than the `->>` operator, which needs SQLite
+3.38+ and is not exercised anywhere in this repo.
+
+Replace lines 903–933 (from `const result = await this.db.prepare(` through
+`if (relationStatements.length) await this.db.batch(relationStatements);`) so
+the tail of the method reads:
 
 ```js
     const caseUpdate = this.db.prepare(`
       UPDATE cases SET ${assignments.join(", ")} WHERE case_id = ?
     `).bind(...params);
+
+    // Relations are expanded inside SQLite from one JSON parameter each, so the
+    // whole edit is always 1–7 statements and always fits in one D1
+    // transaction — no matter how many labels the caller sent. The previous
+    // per-label statement loop reached 403 statements at the 100-label cap in
+    // normaliseRelationLabels().
     const relationStatements = [];
-    // …lines 910-931 move here verbatim: the judges block, then the
-    //   legal_concepts block. Both already use `now` and `id`, which are
-    //   defined above, so nothing else changes.
+    if (Object.prototype.hasOwnProperty.call(updates, "judges")) {
+      const labels = normaliseRelationLabels(updates.judges, "judge");
+      const entries = await Promise.all(labels.map(async (label) => ({
+        id: (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32),
+        label,
+      })));
+      relationStatements.push(this.db.prepare("DELETE FROM case_judges WHERE case_id = ?").bind(id));
+      if (entries.length > 0) {
+        const payload = JSON.stringify(entries);
+        relationStatements.push(
+          this.db.prepare(`
+            INSERT OR IGNORE INTO judges (judge_id, canonical_name, created_at, updated_at)
+            SELECT json_extract(value, '$.id'), json_extract(value, '$.label'), ?, ?
+            FROM json_each(?)
+          `).bind(now, now, payload),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO case_judges (case_id, judge_id)
+            SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+          `).bind(id, payload),
+        );
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "legal_concepts")) {
+      const labels = normaliseRelationLabels(updates.legal_concepts, "legal concept");
+      const entries = await Promise.all(labels.map(async (label) => ({
+        id: (await sha256Hex(`concept:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32),
+        label,
+      })));
+      relationStatements.push(this.db.prepare("DELETE FROM case_concepts WHERE case_id = ?").bind(id));
+      if (entries.length > 0) {
+        const payload = JSON.stringify(entries);
+        relationStatements.push(
+          this.db.prepare(`
+            INSERT OR IGNORE INTO concepts (concept_id, label)
+            SELECT json_extract(value, '$.id'), json_extract(value, '$.label') FROM json_each(?)
+          `).bind(payload),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO case_concepts (case_id, concept_id)
+            SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+          `).bind(id, payload),
+        );
+      }
+    }
+
     const statements = [caseUpdate, ...relationStatements];
-    // A normal edit is a handful of statements, so the row and its judges /
-    // concepts commit together. An edit carrying dozens of relation labels
-    // exceeds one D1 transaction and keeps the previous two-phase behaviour.
-    const oneTransaction = statements.length <= D1_BATCH_STATEMENT_LIMIT;
-    const result = oneTransaction
-      ? (await this.db.batch(statements))[0]
-      : await caseUpdate.run();
+    // At most 7 statements — assert it rather than branching on it, so a future
+    // edit that reintroduces a per-label loop fails loudly here instead of
+    // silently splitting the write across two transactions again.
+    if (statements.length > D1_BATCH_STATEMENT_LIMIT) {
+      throw new StorageBoundaryError("Case update exceeds one D1 transaction", {
+        code: "case_update_too_large",
+        status: 500,
+      });
+    }
+    const result = (await this.db.batch(statements))[0];
     if (changeCount(result) === 0) {
       throw new StorageBoundaryError("Case not found", { code: "case_not_found", status: 404 });
     }
-    if (!oneTransaction && relationStatements.length) await this.db.batch(relationStatements);
     return this.getCase(id);
 ```
 
-Behaviour notes: in the merged branch the relation deletes now execute before
-the `changeCount` check, so an update against a non-existent `case_id` will run
-`DELETE FROM case_judges WHERE case_id = ?` for that id — a no-op against a
-consistent database. The 404 `StorageBoundaryError` (code `case_not_found`,
-status 404) is still raised in both branches; that is asserted in Step 5.
+Four behaviour notes, all of which Step 5 asserts:
 
-**3b. `putImportedCase` (lines 1271–1282).** Put the chunk delete in the same
-batch as its replacement inserts. Replace those lines with:
+- **Semantics are unchanged.** `json_each` over an array yields one row per
+  element in array order; `INSERT OR IGNORE` still de-duplicates against existing
+  rows exactly as the per-label loop did. `normaliseRelationLabels` already
+  de-duplicated within the batch (`[...new Set(labels)]`), so no two elements
+  share an `id`.
+- **Bound-parameter budget is safe.** The largest new statement binds three
+  parameters (`now, now, payload`). The 100-parameter ceiling enforced by
+  `bindAll` / `D1_MAX_BOUND_PARAMETERS` (`workers/storage/contracts.js:13`) is
+  nowhere near. That is the whole point of the JSON payload: label count no
+  longer scales the parameter count.
+- **There is no longer a two-phase fallback**, so the "relation deletes execute
+  before the `changeCount` check" note still applies: an update against a
+  non-existent `case_id` runs `DELETE FROM case_judges WHERE case_id = ?` for
+  that id inside the same transaction, a no-op against a consistent database,
+  and the 404 `StorageBoundaryError` (code `case_not_found`, status 404) is then
+  raised — which rolls nothing back, because D1 already committed the batch.
+  That is acceptable and unchanged in kind from today (today the `UPDATE` also
+  commits before the 404 is raised); it is asserted in Step 5.
+- **`case_update_too_large` is a new error code.** It is unreachable by
+  construction — reaching it means someone reintroduced per-label statements —
+  so no caller needs to handle it beyond the existing `StorageBoundaryError`
+  path in `workers/case-api/cloudflare_mutations.js`.
+
+**3b. `putImportedCase` (lines 1271–1282).** Put the chunk delete and **every**
+replacement insert in **one** batch — not "the delete plus the first 19 inserts".
+Chunking the statements as the original plan draft did would still split a
+21-chunk case across two transactions, and a failure in the second one leaves the
+case holding only a prefix of its new text, which is a *worse* observable state
+than the stale-full-text one it replaced. Since the transaction is now
+unbounded-by-construction, add an explicit ceiling that refuses rather than
+splits.
+
+First add a second module-level constant next to `D1_BATCH_STATEMENT_LIMIT`
+(from Step 2a):
+
+```js
+/**
+ * Statement ceiling for the one-shot chunk write. A chunk holds up to
+ * FTS_CHUNK_MAX_BYTES (128 KiB, workers/storage/contracts.js:15), so 40
+ * statements is ~5 MB of canonical text — far past any AustLII judgment. Past
+ * this the import fails loudly instead of silently splitting the transaction
+ * and leaving a prefix of the new text behind.
+ */
+const D1_CHUNK_TRANSACTION_STATEMENT_LIMIT = 40;
+```
+
+Then replace lines 1271–1282 with:
 
 ```js
     // A repeatable import must remove stale tail chunks before adding the new
-    // canonical text. The delete rides the first batch with its replacement
-    // inserts, so the case is never observable with zero chunks. The FTS delete
+    // canonical text. The delete and ALL replacement inserts ride one D1
+    // transaction, so a case that has full text is never observable with zero
+    // chunks and never with only a prefix of the new text. The FTS delete
     // trigger keeps case_text_fts in lockstep.
     const chunkStatements = [this.db.prepare(`DELETE FROM case_text_chunks WHERE case_id = ?`).bind(caseId)];
     chunks.forEach((chunk, index) => {
@@ -610,25 +878,57 @@ batch as its replacement inserts. Replace those lines with:
           content=excluded.content, content_sha256=excluded.content_sha256, created_at=excluded.created_at
       `, [caseId, index, chunk.content, chunk.sha256, now]));
     });
-    for (let offset = 0; offset < chunkStatements.length; offset += D1_BATCH_STATEMENT_LIMIT) {
-      await this.db.batch(chunkStatements.slice(offset, offset + D1_BATCH_STATEMENT_LIMIT));
+    if (chunkStatements.length > D1_CHUNK_TRANSACTION_STATEMENT_LIMIT) {
+      throw new StorageBoundaryError("Canonical text produces too many chunks for one transaction", {
+        code: "fts_chunk_count_too_large",
+        status: 400,
+      });
     }
+    await this.db.batch(chunkStatements);
 ```
 
-The `chunk_index` value is now the flat `index`, which equals the old
-`offset + index` — the on-disk numbering is unchanged. The DELETE statement text
-and its single bound parameter are unchanged, which is what keeps
-`cloudflare-storage-contracts.test.js:202-203` passing.
+Three things this preserves and one it changes:
 
-**3c.** Replace the two remaining bare `20` literals in this file's batching
-loops with `D1_BATCH_STATEMENT_LIMIT` (the `rebuildAggregates` one is already
-gone after Step 2; the `putImportedCase` one is handled by 3b). Do not touch the
-unrelated `slice(0, 20)` at line 845 or any `LIMIT 20` in SQL.
+- The `chunk_index` value is now the flat `index`, which equals the old
+  `offset + index` — the on-disk numbering is unchanged.
+- The DELETE statement text and its single bound parameter are unchanged, which
+  is what keeps `cloudflare-storage-contracts.test.js:202-203` passing. Do **not**
+  turn it into a tail-only delete with an extra bound parameter: that test is out
+  of scope and pins `params` to `["0123456789ab"]`.
+- `textChunks: []` still produces a delete-only batch. That is **correct**, not a
+  regression: the only caller that passes `[]` is
+  `workers/case-api/cloudflare_mutations.js:206`/`:226`
+  (`textChunks: text ? splitFtsChunks(text) : []`), i.e. a case with no full
+  text, whose correct chunk count is zero. Step 5 asserts this explicitly so
+  nobody "fixes" it later.
+- **Changed**: a >40-chunk import now throws `fts_chunk_count_too_large` (400)
+  where it previously succeeded across three transactions. That path needs ~5 MB
+  of canonical text. `handleCreate`/`handleUpdate` already surface
+  `StorageBoundaryError` as a typed 4xx, and the queue path retries and then
+  dead-letters it — both loud, neither silent.
+
+**3c.** Replace any remaining bare `20` literal in this file's batching loops
+with the appropriate named constant (`rebuildAggregates`'s is gone after Step 2;
+`putImportedCase`'s loop is gone entirely after 3b). Do not touch the unrelated
+`slice(0, 20)` at line 845 or any `LIMIT 20` in SQL.
+
+**3d — NOT in this plan, and deliberately so.** `putImportedCase` still writes
+its judge batch, its concept batch and its chunk batch as three separate
+transactions, and its judge/concept batches still carry per-label statements
+(up to ~403 at the 100-label cap). The `json_each` shape from Step 3a would fix
+that too, but folding it in here would put three more SQL rewrites inside a plan
+whose changes are otherwise verifiable by the tests written in Step 5, on the
+one method whose statement text is pinned by an out-of-scope contract test. It
+is recorded as the top follow-up in "Maintenance notes" with the exact recipe.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node scripts/check_cloudflare_native_bundle.mjs && cd workers && npx vitest run`
-→ bundle line printed, then `Tests 345 passed (345)`. In particular
-`__tests__/cloudflare-storage-contracts.test.js › projects normalised judges and
-concepts back to the legacy case API shape` must still pass.
+→ bundle line printed, then zero failures and a total still equal to
+`BEFORE_WORKER`. In particular this named test must still pass:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-storage-contracts.test.js -t "projects normalised judges and concepts back to the legacy case API shape"
+```
+→ `Tests 1 passed`, `0 failed`.
 
 ### Step 4: Cover the poison, unknown-kind and DLQ-failure queue paths
 
@@ -678,13 +978,41 @@ message:
    Assert `retry` called with `{ delaySeconds: 30 }` and `ack` never called.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-native-queue.test.js`
-→ `Tests 11 passed (11)` (6 pre-existing + 5 new).
+→ zero failures and a total of `BEFORE_QUEUE + 5` (`11 passed` if you started
+from the `42826a3` baseline of 6). Also confirm each new test by name, so a typo
+in an `it(...)` title cannot be mistaken for a passing suite:
 
-### Step 5: Pin the D1 batch grouping for aggregate and case writes
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+for t in "isolates a poison message from the rest of its batch" \
+         "dead-letters a message whose kind no processor claims" \
+         "dead-letters a case.reindex event whose case_id is not a string" \
+         "keeps messages un-acked when the aggregate rebuild fails" \
+         "retries a dead-letter message when the DLQ recorder fails"; do
+  npx vitest run __tests__/cloudflare-native-queue.test.js -t "$t" 2>&1 | grep -E 'Tests +[0-9]+ passed|No test files|0 passed'
+done
+```
+→ each line reports `Tests 1 passed`; none reports `0 passed`.
+
+### Step 5: Pin the D1 batch grouping, and prove it under an injected failure
 
 Create `workers/__tests__/cloudflare-storage-atomicity.test.js`. This file must
 import the **real** `../storage/cloudflare.js` (no `vi.mock` of it) and drive it
 with a D1 mock that records how statements were grouped into `batch()` calls.
+
+**A recording mock alone is not enough** — it can show that statements were
+grouped, but it cannot show what a database would *contain* after a mid-rebuild
+failure, which is the property this plan actually claims. So the mock below
+also maintains a tiny transactional table-state map: `batch()` applies a whole
+group's `DELETE`/`INSERT` effects or none of them, exactly as D1 does. Tests 6–8
+then inject a failure into a chosen batch and read the resulting state back.
+
+This is a *model* of D1, not D1. It is honest about what it proves: that your
+statement **grouping** cannot leave a table empty or a case text truncated. It
+does not execute SQL, so it cannot catch a wrong `GROUP BY` or a misspelled
+column. `plans/038-test-the-production-sql-layer.md` builds a real-schema SQLite
+harness; when that lands, these three tests should be ported onto it. Do **not**
+add a dependency on 038 — this plan must be executable on its own.
 
 Scaffold:
 
@@ -696,12 +1024,30 @@ vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { VECTOR_DIMENSIONS } from "../storage/contracts.js";
 
-function d1({ changes = 1 } = {}) {
+/**
+ * A D1 stand-in that records batch grouping AND models D1's per-batch
+ * transaction: a batch either applies every statement's effect on `tables` or
+ * none of them. `failOnBatch` injects a rejection at a chosen 0-based index.
+ */
+function d1({ changes = 1, failOnBatch = null } = {}) {
   const batches = [];
   const ran = [];
+  // table name -> array of {sql, params} rows currently "in" that table.
+  const tables = new Map();
+  const seed = (table, rows) => tables.set(table, [...rows]);
+  const effectsOf = (statement) => {
+    const del = /^\s*DELETE FROM (\w+)\b/.exec(statement.sql || "");
+    if (del) return { table: del[1], kind: "delete" };
+    const ins = /INSERT (?:OR IGNORE )?INTO (\w+)\b/.exec(statement.sql || "");
+    if (ins) return { table: ins[1], kind: "insert" };
+    return null;
+  };
   return {
     batches,
     ran,
+    tables,
+    seed,
+    rowsIn: (table) => tables.get(table) || [],
     prepare(sql) {
       const statement = { sql, params: [] };
       statement.bind = (...params) => { statement.params = params; return statement; };
@@ -711,7 +1057,18 @@ function d1({ changes = 1 } = {}) {
       return statement;
     },
     batch: vi.fn(async (statements) => {
+      const index = batches.length;
       batches.push(statements);
+      if (failOnBatch !== null && index === failOnBatch) {
+        // Nothing is applied: this models D1 rolling the whole batch back.
+        throw new Error(`injected D1 batch failure at index ${index}`);
+      }
+      for (const statement of statements) {
+        const effect = effectsOf(statement);
+        if (!effect) continue;
+        if (effect.kind === "delete") tables.set(effect.table, []);
+        else tables.set(effect.table, [...(tables.get(effect.table) || []), { sql: statement.sql, params: statement.params }]);
+      }
       return statements.map(() => ({ meta: { changes } }));
     }),
   };
@@ -757,28 +1114,80 @@ Tests to write:
 2. **`truncates each aggregate table exactly once`** — collect every
    `DELETE FROM <table>` across all batches; assert there are 17 of them and
    that they are all distinct (`new Set(tables).size === 17`).
-3. **`never leaves an imported case without full-text chunks`** — call
+3. **`writes every chunk of an imported case in one transaction`** — call
    `stores.caseStore.putImportedCase({ case: { case_id: "0123456789ab", citation: "[2026] FCA 1", title: "Example v Minister", court_code: "FCA", year: 2026 }, sourcePointer: SOURCE_POINTER, textChunks: ["first chunk", "second chunk"] })`.
-   Assert: the batch containing `DELETE FROM case_text_chunks` also contains
-   `INSERT INTO case_text_chunks`; `catalog.ran` contains **no** statement whose
-   sql includes `DELETE FROM case_text_chunks` (proving it is no longer a
-   standalone `run()`); and the two chunk inserts carry `chunk_index` `0` and
-   `1` in their `params[1]`.
-4. **`writes a case row and its relations in one transaction`** — call
+   Assert: **exactly one** batch contains any `case_text_chunks` statement, and
+   it contains both the `DELETE FROM case_text_chunks` and both
+   `INSERT INTO case_text_chunks` statements; `catalog.ran` contains **no**
+   statement whose sql includes `DELETE FROM case_text_chunks` (proving it is no
+   longer a standalone `run()`); and the two chunk inserts carry `chunk_index`
+   `0` and `1` in their `params[1]`.
+4. **`stores no chunks for a case that has no full text`** — same call with
+   `textChunks: []`. Assert the chunk batch contains the `DELETE` and **no**
+   `INSERT INTO case_text_chunks`, and that `catalog.rowsIn("case_text_chunks")`
+   is `[]`. This pins the correct semantics for a text-less case so nobody
+   "restores" chunks that should not exist. (It is the counter-example to the
+   invariant: the guarantee is "a case that *has* text is never observable with
+   zero chunks", not "no case ever has zero chunks".)
+5. **`writes a case row and its relations in one transaction`** — call
    `stores.caseStore.updateCaseFields("0123456789ab", { title: "Updated", judges: ["Perram J"], legal_concepts: ["procedural fairness"] })`.
    Assert exactly one `batch()` call was made, and that this single batch
    contains a statement whose sql includes `UPDATE cases SET`, one including
    `DELETE FROM case_judges`, and one including `DELETE FROM case_concepts`.
-5. **`still reports a missing case as a 404`** — build the catalog with
+6. **`keeps a case edit in one transaction at the relation-label cap`** — the
+   regression guard for the defect the `json_each` rewrite fixes. Call
+   `updateCaseFields` with `judges: Array.from({ length: 100 }, (_, i) => \`Judge ${i}\`)`
+   and `legal_concepts: Array.from({ length: 100 }, (_, i) => \`Concept ${i}\`)`.
+   Assert `catalog.batch` was called exactly **once** and that the single batch
+   has **7** statements. On the pre-`json_each` code this batch would have had
+   403 statements, or been split — either way this test fails.
+7. **`leaves no aggregate table empty when a later rebuild batch fails`** — build
+   the catalog with `d1({ failOnBatch: 1 })`, seed every one of the 17 aggregate
+   tables with one placeholder row via `catalog.seed(table, [{ sql: "seed", params: [] }])`,
+   then
+   `await expect(stores.caseStore.rebuildAggregates()).rejects.toThrow(/injected D1 batch failure/)`.
+   Then assert, for **all 17** table names: `catalog.rowsIn(table).length > 0`.
+   This is the property the plan claims — no table is ever observably empty —
+   and it fails on today's code, where batch 0 is 20 `DELETE`s and would leave
+   20 tables at zero rows. Also assert that the tables named in the
+   `cloudflare.aggregate_rebuild_partial` log line (spy on `console.error` and
+   parse the JSON) are exactly the tables whose rows changed from the seeded
+   placeholder, i.e. that the log does not over- or under-report what committed.
+8. **`leaves the previous chunks intact when the chunk transaction fails`** —
+   build the catalog with `failOnBatch` set to the index of the chunk batch
+   (find it by running the same import once against a non-failing binding and
+   recording `batches.findIndex((statements) => statements.some((s) => s.sql.includes("case_text_chunks")))`),
+   seed `case_text_chunks` with two placeholder rows, and assert the import
+   rejects and `catalog.rowsIn("case_text_chunks")` still has those two rows.
+9. **`still reports a missing case as a 404`** — build the catalog with
    `d1({ changes: 0 })` and assert
    `await expect(stores.caseStore.updateCaseFields("0123456789ab", { title: "Updated" })).rejects.toMatchObject({ code: "case_not_found", status: 404 })`.
 
+That is **9** tests in this file (the two originally-planned grouping tests, the
+chunk tests, the two relation tests, the two failure-injection tests, and the
+404). If you write fewer, say which and why in your report.
+
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-storage-atomicity.test.js`
-→ `Test Files 1 passed (1)`, `Tests 5 passed (5)`.
+→ `Test Files 1 passed (1)`, `Tests 9 passed (9)`. A per-file count is used here
+deliberately: it is stable no matter what the sibling plans do to the suite
+total.
+
+**Prove tests 6 and 7 are real regression guards, not tautologies.** Both must
+fail against the pre-change code:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git stash push -- workers/storage/cloudflare.js
+cd workers && npx vitest run __tests__/cloudflare-storage-atomicity.test.js -t "leaves no aggregate table empty when a later rebuild batch fails"
+npx vitest run __tests__/cloudflare-storage-atomicity.test.js -t "keeps a case edit in one transaction at the relation-label cap"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git stash pop
+```
+→ both runs report `1 failed` while stashed, and pass again after `stash pop`.
+If either **passes** while stashed, the test is not testing what it claims —
+fix the test, do not proceed.
 
 Then the whole suite:
 `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
-→ `Test Files 26 passed (26)`, `Tests 355 passed (355)` (345 baseline + 5 + 5).
+→ zero failures, total equal to `BEFORE_WORKER + 14` (5 queue tests + 9 here).
 
 ## Test plan
 
@@ -794,32 +1203,65 @@ New tests, all under `workers/__tests__/`:
   - `rebuildAggregates` rejection leaves contributing messages un-acked;
   - dead-letter recorder rejection retries instead of acking (the untested DLQ
     failure path).
-- `cloudflare-storage-atomicity.test.js` (new file, +5): aggregate
-  DELETE/INSERT co-location, one truncation per table, chunk-delete co-location
-  and flat `chunk_index`, single-transaction case edit, preserved 404.
+- `cloudflare-storage-atomicity.test.js` (new file, +9): aggregate
+  DELETE/INSERT co-location, one truncation per table, single-transaction chunk
+  write and flat `chunk_index`, the zero-chunk-for-text-less-case case,
+  single-transaction case edit, the 100+100-label edit staying at 7 statements,
+  **the two failure-injection tests** (no aggregate table left empty; previous
+  chunks intact), and the preserved 404.
 
 Structural pattern for the new file's D1 mock: `workers/__tests__/cloudflare-storage-contracts.test.js:22-60`
 (its `d1()` / `env()` helpers) — the version in this plan extends that idea with
-per-`batch()` recording.
+per-`batch()` recording **and** a transactional table-state model, which is what
+lets tests 7 and 8 assert on resulting state rather than on grouping alone.
 
-Regression safety net: the full Worker suite (345 pre-existing assertions) plus
+Regression safety net: the full Worker suite (record `BEFORE_WORKER` first; it
+must end at `BEFORE_WORKER + 14` with zero failures) plus
 `node scripts/check_cloudflare_native_bundle.mjs`, plus the two Python boundary
 tests that read `workers/cloudflare-native.js`.
+
+**Known gap, stated rather than papered over**: no test in this repo executes any
+of this SQL against a schema, so nothing here can catch a wrong column list or a
+broken `json_each` projection. The `json_each` statements in Step 3a are the
+riskiest text in this plan for exactly that reason. Before reporting done, run
+them once by hand against a scratch SQLite to prove the projection works:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && python3 - <<'PY'
+import sqlite3, json
+c = sqlite3.connect(":memory:")
+c.executescript(open("migrations/d1/catalog/0001_catalog.sql").read())
+payload = json.dumps([{"id": "a"*32, "label": "Perram J"}, {"id": "b"*32, "label": "Mortimer CJ"}])
+c.execute("""INSERT OR IGNORE INTO judges (judge_id, canonical_name, created_at, updated_at)
+             SELECT json_extract(value,'$.id'), json_extract(value,'$.label'), ?, ? FROM json_each(?)""",
+          ("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", payload))
+print(sorted(r[1] for r in c.execute("SELECT judge_id, canonical_name FROM judges")))
+PY
+```
+→ prints `['Mortimer CJ', 'Perram J']`. If it errors, the SQL in Step 3a is wrong
+and must be fixed before you commit — a green Vitest run would not have told you.
 
 ## Done criteria
 
 ALL must hold:
 
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node scripts/check_cloudflare_native_bundle.mjs` exits 0
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with `Test Files 26 passed (26)` and `Tests 355 passed (355)`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with **zero failures**, and its `Tests … passed` total equals `BEFORE_WORKER + 14`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-storage-atomicity.test.js` reports `Tests 9 passed (9)`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-native-queue.test.js` reports `BEFORE_QUEUE + 5` passed, 0 failed
+- [ ] The five named queue tests and the nine named atomicity tests each report `Tests 1 passed` when run with `-t "<title>"` (no `0 passed`, no `No test files`)
+- [ ] The stash check in Step 5 showed both regression guards **failing** against the unmodified `workers/storage/cloudflare.js`
+- [ ] The hand-run `json_each` SQLite probe in "Test plan" printed `['Mortimer CJ', 'Perram J']`
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_native_effective_references.py tests/test_native_pipeline_boundary.py -q` reports `6 passed`
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` reports `1141 passed, 3 failed, 7 skipped` (no new failures)
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` shows failures **only** in `tests/test_backfill_judge_overrides_from_pdf.py`, and they are still exactly the three `pyexpat`/`pypdf` ImportErrors, by name: `make test-py 2>&1 | grep -E '^(FAILED|ERROR)' | sort -u` lists nothing outside that file
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` prints `All checks passed!`
 - [ ] `grep -n "for (const message of messages) if (typeof message?.ack === \"function\") message.ack();" workers/cloudflare-native.js` returns **no match** (the unconditional whole-batch ack is gone)
 - [ ] `grep -c "cloudflare.queue.unhandled_message" workers/cloudflare-native.js` returns `1`
-- [ ] `grep -c "D1_BATCH_STATEMENT_LIMIT" workers/storage/cloudflare.js` returns `4` or more (declaration + rebuildAggregates + updateCaseFields + putImportedCase)
+- [ ] `grep -c "cloudflare.aggregate_rebuild_partial" workers/storage/cloudflare.js` returns `1`
+- [ ] `grep -c "D1_BATCH_STATEMENT_LIMIT" workers/storage/cloudflare.js` returns `3` or more (declaration + the `rebuildAggregates` packer + the `updateCaseFields` assertion), and `grep -c "D1_CHUNK_TRANSACTION_STATEMENT_LIMIT" workers/storage/cloudflare.js` returns `2`
 - [ ] `grep -n "await this.db.prepare(\`DELETE FROM case_text_chunks WHERE case_id = ?\`).bind(caseId).run()" workers/storage/cloudflare.js` returns **no match**
-- [ ] `git status --short` lists only: `workers/cloudflare-native.js`, `workers/storage/cloudflare.js`, `workers/__tests__/cloudflare-native-queue.test.js`, `workers/__tests__/cloudflare-storage-atomicity.test.js`, and this plan file if you updated its status row
+- [ ] `grep -c "json_each" workers/storage/cloudflare.js` returns `5` (the pre-existing `findByIds` use plus the four new relation statements)
+- [ ] `git status --short` lists only: `workers/cloudflare-native.js`, `workers/storage/cloudflare.js`, `workers/__tests__/cloudflare-native-queue.test.js`, `workers/__tests__/cloudflare-storage-atomicity.test.js`, this plan file if you updated its status row, and anything you recorded as already-dirty at Step 0
 - [ ] Nothing was pushed and no PR was opened
 
 ## STOP conditions
@@ -846,8 +1288,15 @@ Stop and report back (do not improvise) if:
   data bindings inside the storage boundary` fails — you referenced an
   `env.IMMI_*` / `env.CASE_VECTORS` / `env.AI` binding from outside
   `workers/storage/`.
-- The worker suite count drops below the 345 baseline at any point, or a
-  step's verification fails twice after a reasonable fix attempt.
+- The worker suite total drops below `BEFORE_WORKER` at any point (that means a
+  pre-existing test was deleted or skipped — report the delta, do not adjust the
+  expectation), or a step's verification fails twice after a reasonable fix
+  attempt.
+- The `json_each` SQLite probe in "Test plan" errors. Do not guess at the SQL
+  dialect; report the error.
+- Either stash check in Step 5 shows a "regression guard" passing against the
+  unmodified source. The test is then proving nothing and must be fixed before
+  the step counts as done.
 - You conclude the fix needs `wrangler.toml`, `workers/case-api/cloudflare_mutations.js`
   or `workers/storage/pipeline_coordinator.js`. It does not; those are
   deliberately out of scope.
@@ -862,13 +1311,39 @@ For whoever owns this code next:
   `updateCaseFields` still throws `case_not_found` in *both* the merged and the
   fallback branch; (c) that no message can now be acked without either being
   processed or surviving a successful `rebuildAggregates()`.
-- **Deliberately deferred**: a fully transactional per-case write. `putImportedCase`
-  still issues the case upsert, the judge batch, the concept batch and the chunk
-  batches as separate D1 transactions. `normaliseRelationLabels` caps at 100
-  labels (`workers/storage/cloudflare.js:232`), so judge + concept statements can
-  reach ~400 — far past what one D1 batch should carry — and collapsing them
-  needs a chunked-with-repair design, not a bigger batch. The exposure is
-  bounded today: the queue path self-heals because
+- **Required follow-up #1 — a genuinely atomic aggregate rebuild.** This plan
+  gives per-table atomicity only; a failure between batches still leaves a mixed
+  generation across the 17 tables. The design that fixes it properly:
+  (a) add a `generation` INTEGER column to each aggregate table, or write into
+  shadow tables named `<table>__next`; (b) populate the new generation without
+  touching the live rows; (c) flip a single `catalog_summary` pointer row (or
+  `ALTER TABLE ... RENAME`) in one final small transaction; (d) delete the
+  superseded generation lazily. That needs a catalog migration, a change to every
+  aggregate reader in `workers/case-api/cloudflare.js`, and a backfill — i.e. its
+  own plan, not a step here. Until it exists, treat
+  `cloudflare.aggregate_rebuild_partial` in Logpush as the signal that analytics
+  is internally inconsistent, and re-drive a `catalog.rebuild` message to repair
+  it.
+- **Required follow-up #2 — bound the rebuild itself.** `rebuildAggregates()`
+  still re-derives all 17 tables from full corpus scans on **every** changed
+  queue batch (`max_batch_size = 20`), so a bulk import of 10,000 cases triggers
+  ~500 whole-corpus rebuilds. Coalescing them needs a durable dirty flag plus a
+  debounce (a cron trigger or a delayed queue message), retention for the
+  aggregate history, and a rollback path. `plans/014-*.md` carries a partial
+  recipe in its Maintenance notes; neither that recipe nor this note is an
+  executable plan, and one should be written.
+- **Required follow-up #3 — `putImportedCase` relation batching.** It still
+  issues the case upsert, the judge batch, the concept batch and the chunk batch
+  as four separate D1 transactions, and the judge/concept batches still emit
+  per-label statements up to ~403 at the `normaliseRelationLabels` cap of 100
+  (`workers/storage/cloudflare.js:232`). The fix is mechanical now that Step 3a
+  exists: replace both loops with the same `json_each` shape (4 statements
+  instead of up to 402), then fold the case upsert, both relation groups and the
+  chunk group into one `db.batch()` — at most `1 + 3 + 3 + 1 + chunks.length`
+  statements, which the Step 3b ceiling already covers. It was left out of this
+  plan only because it is the one method whose statement text is pinned by an
+  out-of-scope contract test. The exposure is bounded today: the queue path
+  self-heals because
   `coordinateExtractedCase` only calls `completeEvent` at the very end
   (`workers/storage/pipeline_coordinator.js:178`), so a retry re-runs the whole
   upsert; and the synchronous HTTP path is fail-closed
@@ -880,8 +1355,14 @@ For whoever owns this code next:
   a processor to `processMutationMessage` — forget it and the new kind now
   dead-letters loudly (which is the point) instead of vanishing. Adding a new
   aggregate table means adding a group to `rebuildAggregates`, and the Step 5
-  test `truncates each aggregate table exactly once` will need its expected
+  tests `truncates each aggregate table exactly once` and `leaves no aggregate
+  table empty when a later rebuild batch fails` will both need their expected
   count of 17 bumped.
+- **The Step 5 D1 fake is a model, not a database.** It proves grouping and
+  transaction boundaries; it executes no SQL. When
+  `plans/038-test-the-production-sql-layer.md` lands its real-schema SQLite
+  harness, port tests 1, 2, 7 and 8 onto it — they are the ones whose value
+  would go up an order of magnitude with a real engine underneath.
 - **Log names**: `cloudflare.case_reindex_error` is retained despite covering
   all four kinds, for continuity with any existing Logpush alert. Two new event
   names ship here: `cloudflare.queue.unhandled_message` and
@@ -927,3 +1408,42 @@ AI embedding on every retry. Step 1 is still worth doing — it is what stops on
 poison message from dragging 19 healthy ones toward the DLQ with it — but the
 sharper defects it fixes are the silent ack (JSCORR-23) and the un-retried
 rebuild.
+
+## Review points not applied
+
+One sub-claim from the review was checked against the code and does not hold.
+Everything else the reviewer raised about this plan is applied above.
+
+- **"`textChunks=[]` is still delete-only, so the 'never zero chunks' guarantee
+  does not hold."** The observation is factually right and the *wording* of the
+  guarantee was indeed sloppy (fixed above), but the behaviour is not a defect
+  and must not be "fixed". `splitFtsChunks` refuses empty input —
+  `workers/storage/pipeline_coordinator.js:38` calls
+  `requiredText(text, "canonicalText")`, which throws
+  `canonicalText is required` at `:30-34` — so the pipeline path can never
+  deliver `[]`. The only producers of `[]` are
+  `workers/case-api/cloudflare_mutations.js:206` and `:226`, both of which read
+  `textChunks: text ? splitFtsChunks(text) : []`: a case created or updated with
+  no full text at all. For such a case, zero rows in `case_text_chunks` is the
+  correct end state, and deleting stale rows with nothing to replace them is the
+  intended behaviour. Making the delete conditional on a non-empty chunk list
+  would instead strand a previous import's chunks under a case that no longer
+  has that text — a real correctness bug introduced to satisfy a mis-stated
+  invariant. The plan now states the invariant precisely ("a case that *has*
+  full text is never observable with zero chunks") and Step 5 test 4 pins the
+  empty case so the distinction survives.
+
+- **Partially applied, recorded for honesty**: the reviewer's preferred remedies
+  for the rebuild ("confirm 41 statements fit one D1 batch, else shadow
+  tables/generations") and for the chunks ("versioned chunks, or upsert-all then
+  delete the stale tail") are both rejected *as steps of this plan*, with
+  reasons stated inline: the first cannot be verified from this working copy
+  (empty local D1, no published D1 statement-count limit) and shipping an
+  unverified mega-transaction trades a known failure mode for an unknown one;
+  the second is blocked by `workers/__tests__/cloudflare-storage-contracts.test.js:202-203`,
+  which pins `DELETE FROM case_text_chunks WHERE case_id = ?` to exactly one
+  bound parameter and is out of scope for this plan. The underlying concerns are
+  addressed differently — per-table atomicity plus a partial-rebuild log for the
+  first, a single unbounded-then-ceilinged chunk transaction for the second —
+  and the reviewer's designs are carried into "Maintenance notes" as required
+  follow-ups rather than dropped.

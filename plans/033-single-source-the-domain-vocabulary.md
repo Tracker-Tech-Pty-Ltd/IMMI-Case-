@@ -7,22 +7,52 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. Two corrections to an earlier form of this block,
+> both of which produced false results:
+>
+> 1. It watched the whole of `immi_case_downloader/data/` and the whole of
+>    `scripts/`. Those are shared directories: `plans/034-split-the-god-modules.md`
+>    creates `immi_case_downloader/data/council_prompts.json` and
+>    `plans/032-consolidate-the-extraction-scripts.md` creates
+>    `scripts/README.md`. Either landing first would have tripped a **false**
+>    STOP here. The list below names only the files this plan actually owns.
+> 2. A `42826a3..HEAD` diff cannot see uncommitted, staged or untracked work, so
+>    all four commands are required.
 >
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   immi_case_downloader/visa_registry.py \
->   immi_case_downloader/sources/metadata_extractor.py \
->   immi_case_downloader/data/ \
->   workers/case-api/static.js \
->   workers/case-api/cloudflare.js \
->   workers/austlii-scraper/src/parser.ts \
->   scripts/ CLAUDE.md AGENTS.md
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS='immi_case_downloader/visa_registry.py
+> immi_case_downloader/sources/metadata_extractor.py
+> immi_case_downloader/data/visa_registry.json
+> immi_case_downloader/data/README.md
+> scripts/generate_visa_registry.py
+> scripts/generate_extractor_corpus.py
+> workers/case-api/static.js
+> workers/case-api/cloudflare.js
+> workers/case-api/visa_registry.generated.js
+> workers/austlii-scraper/src/parser.ts
+> tests/fixtures/extractor_parity
+> tests/test_visa_registry_parity.py
+> tests/test_extractor_parity.py
+> workers/__tests__/visa-registry-parity.test.js
+> CLAUDE.md AGENTS.md'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
 > ```
 >
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: **no in-scope path in any of the four**. On a mismatch, compare the
+> "Current state" excerpts against the live code; if they differ, STOP.
+>
+> **Never** run an unconditional `git checkout -- …`, `git restore …` or
+> `git clean -f` to clear a dirty tree — those changes may be the operator's.
+>
+> **Ordering note.** This plan and `plans/031-delete-dead-frontend-modules.md`
+> both edit `CLAUDE.md` and `AGENTS.md`. This plan touches lines 91-92, which sit
+> *above* 031's lines 116/125, so **033 must run first** on a shared branch. Do
+> not run them in parallel in the same worktree.
 
 ## Status
 
@@ -126,6 +156,32 @@ Three independent reasons, all checkable in the repo:
   (`517e9e6`, 2026-02-22 vs `7fdf99c`, 2026-08-19), and in `static.js` the `408`
   entry was moved up next to `407 Training` while being flattened into a dense
   two-entries-per-line array — the shape of a copy-paste slip.
+
+**Provenance gap you must close before Step 1 — this is a required step, not a
+caveat.** All three reasons above are *internal consistency* arguments: they
+show the repository disagrees with itself and which side is self-consistent.
+None of them is an authoritative statement about how the Australian visa system
+classifies subclass 408 (Temporary Activity), and this value changes a
+production analytics bucket for real cases. Before you write the JSON, do one of
+these two and record which:
+
+- **(a) Cite a primary source.** Find the Department of Home Affairs listing for
+  subclass 408 and record its URL and the retrieval date in the commit message
+  for `fix: bucket visa subclass 408 as a Visitor visa in both runtimes`, and in
+  a one-line comment in `immi_case_downloader/data/visa_registry.json`'s header
+  block (the JSON schema you create in Step 1 must therefore allow a
+  `"_provenance"` string field — add it there, not as a JSON comment, which is
+  not legal JSON).
+- **(b) Get an owner sign-off.** If no primary source is reachable, ask the
+  repository owner to confirm the intended bucketing, and record their decision
+  and the date in the same two places.
+
+If you can do **neither**, do not silently pick a side: land every other part of
+this plan, leave `408` at its current Python value (`Visitor`) so the generator
+is still a faithful dump, and **state in your handoff that the 408 direction is
+unverified against any authority outside this repository**. The families table
+is a domain classification, not a code fact, and this plan is not entitled to
+invent one.
 
 ### `workers/case-api/static.js:1-19` (the region you will replace)
 
@@ -351,12 +407,13 @@ Use the repo venv — never global pip.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python tests (full) | `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` | `1141 passed` → `1152 passed` after this plan, plus the 3 pre-existing environmental failures and 7 skips (see below) |
+| Python tests (full) | `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` | **delta**: `PY_PASS_BEFORE + 11`; skips unchanged; failing test **names** unchanged (see below) |
 | Python tests (fast subset) | `.venv/bin/python -m pytest tests/test_visa_registry_parity.py tests/test_extractor_parity.py tests/test_scraper_protocol.py tests/test_visa_lookup_api.py -q -p no:cacheprovider --no-cov` | all pass |
+| Per-file gate (stable) | `.venv/bin/pytest tests/test_visa_registry_parity.py -q` → `5 passed`; `.venv/bin/pytest tests/test_extractor_parity.py -q` → `6 passed` | per-file counts do not move when a sibling plan lands |
 | Python lint | `make lint` | `All checks passed!` |
-| Test-suite lint | `.venv/bin/ruff check tests/` | 43 errors at `42826a3` — **must not increase** |
-| Main Worker tests | `cd workers && npx vitest run` | `Test Files 25 passed` / `Tests 345 passed` at `42826a3` |
-| Scraper Worker tests | `cd workers/austlii-scraper && npm test` | `Test Files 7 passed (7)` / `Tests 28 passed (28)` at `42826a3` |
+| Test-suite lint | `.venv/bin/ruff check tests/` | **must not increase** against `RUFF_TESTS_BEFORE`, the count you record in Step 0 (43 at `42826a3`, 0 after plan 003) |
+| Main Worker tests | `cd workers && npx vitest run` | **delta**: `WORKER_FILES_BEFORE + 1` / `WORKER_TESTS_BEFORE + 4` |
+| Scraper Worker tests | `cd workers/austlii-scraper && npm test` | **delta**: `PIPE_FILES_BEFORE + 1` / `PIPE_TESTS_BEFORE + 6` |
 | Scraper Worker typecheck | `cd workers/austlii-scraper && npm run typecheck` | exit 0, no output |
 | Worker bundle gate | `node scripts/check_cloudflare_native_bundle.mjs` | `Cloudflare-native bundle closure passed (…)`, exit 0 |
 | Regenerate visa registry | `.venv/bin/python scripts/generate_visa_registry.py` | `Wrote …/workers/case-api/visa_registry.generated.js` |
@@ -364,11 +421,28 @@ Use the repo venv — never global pip.
 | Regenerate extractor corpus | `.venv/bin/python scripts/generate_extractor_corpus.py` | `Wrote …/extractor-parity-corpus.ts` |
 | Check extractor corpus staleness | `.venv/bin/python scripts/generate_extractor_corpus.py --check` | `OK: generated extractor corpus is up to date`, exit 0 |
 
-**Known-good baseline, do not try to fix:** `make test-py` at `42826a3` reports
-`1141 passed, 3 failed, 7 skipped`. The 3 failures are all in
-`tests/test_backfill_judge_overrides_from_pdf.py` and are environmental — a
-Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf`
-import. They are not caused by repo code and are not this plan's problem.
+**Step 0 — record your own baseline before touching anything.** Sibling plans in
+this batch add and remove tests in these same suites, so absolute totals such as
+"1152 passed" are not usable gates: they break the moment another plan merges,
+and an executor who edits the expected number has destroyed the gate. Run:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u   # → PY_FAIL_NAMES
+make test-py 2>&1 | tail -3                                # → PY_PASS_BEFORE / PY_SKIP_BEFORE
+.venv/bin/ruff check tests/ 2>&1 | tail -1                 # → RUFF_TESTS_BEFORE
+(cd workers && npx vitest run 2>&1 | tail -3)              # → WORKER_FILES_BEFORE / WORKER_TESTS_BEFORE
+(cd workers/austlii-scraper && npm test 2>&1 | tail -3)    # → PIPE_FILES_BEFORE / PIPE_TESTS_BEFORE
+```
+
+**Known-good baseline, do not try to fix:** whatever `PY_PASS_BEFORE` is, the
+failures must be **exactly the three named `pypdf` ImportErrors in
+`tests/test_backfill_judge_overrides_from_pdf.py`** — a Homebrew Python 3.14.7
+`pyexpat`/`libexpat` ABI mismatch, not repo code, and not this plan's problem.
+(On an interpreter with a working `pypdf` there are none; that is also fine.) A
+failing test with any *other* name means this plan cannot start.
+At `42826a3` the numbers happened to be 1141 / 7 / `Found 43 errors.` / 25-345 /
+7-28 — informational only.
 
 ## Suggested executor toolkit
 
@@ -487,6 +561,11 @@ registry = dict(VISA_REGISTRY)
 registry["408"] = ("Temporary Activity", "Visitor")
 
 doc = {
+    # Where the 408 direction came from. Replace the placeholder with the URL
+    # + retrieval date, or the owner + sign-off date, per the "Provenance gap"
+    # in Current state. If neither was obtainable, delete the "408 ..." clause
+    # and say so in the handoff instead of leaving a claim you cannot support.
+    "_provenance": "subclass 408 family = Visitor, per <SOURCE>, retrieved <YYYY-MM-DD>",
     "families": VISA_FAMILIES,
     "entries": [
         {"subclass": s, "name": registry[s][0], "family": registry[s][1]}
@@ -515,6 +594,7 @@ print('entries', len(d['entries']))
 print('families', len(d['families']))
 print('408', [e for e in d['entries'] if e['subclass'] == '408'])
 print('first', d['entries'][0]['subclass'], 'last', d['entries'][-1]['subclass'])
+print('provenance placeholder left in?', '<SOURCE>' in d.get('_provenance', ''))
 "
 ```
 
@@ -524,7 +604,26 @@ entries 80
 families 9
 408 [{'subclass': '408', 'name': 'Temporary Activity', 'family': 'Visitor'}]
 first 010 last 893
+provenance placeholder left in? False
 ```
+
+The last line is a real gate: `False` means you filled in the source or the
+sign-off. If it prints `True` you have shipped an unfilled template, which is
+worse than no provenance at all — it looks verified.
+
+Every consumer of this file (`visa_registry.py` in Step 2, both generators, both
+parity tests) must ignore keys beginning with `_`, so `_provenance` never leaks
+into an API response or into the generated Worker module. Add that as an extra
+**assertion inside** the existing "`get_registry_for_api()` entries are
+canonically sorted and families match" test — not as a new test, so the file's
+count stays at `5 passed`:
+
+```python
+    assert set(get_registry_for_api()) == {"entries", "families"}
+```
+
+and, in the Worker-side parity test, assert
+`!/_provenance/.test(generatedSource)`.
 
 ### Step 2: Make `visa_registry.py` read the JSON instead of holding the table
 
@@ -827,8 +926,8 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 ```
 
 → `Cloudflare-native bundle closure passed (…)`, then **no output** from the
-`git diff --name-only` (proving `cloudflare.js` is untouched), then
-`Test Files 25 passed (25)` / `Tests 345 passed (345)`.
+`git diff --name-only` (proving `cloudflare.js` is untouched), then exactly
+`WORKER_FILES_BEFORE` / `WORKER_TESTS_BEFORE` — this step adds no tests.
 
 ### Step 5: Add the Python parity + staleness test
 
@@ -995,9 +1094,46 @@ asserting an engine detail.
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -3
 ```
 
-→ `Test Files 26 passed (26)` / `Tests 349 passed (349)`.
+→ `WORKER_FILES_BEFORE + 1` / `WORKER_TESTS_BEFORE + 4`. The sharper,
+sibling-plan-proof gate is the single-file run:
+`npx vitest run --config vitest.config.js __tests__/visa-registry-parity.test.js`
+→ `4 passed`.
 
 ### Step 7: Align the TypeScript judge extraction with the Python extractor
+
+**Scope of the fix — read this before claiming the leaderboard defect is
+solved.** Changing `parser.ts` only affects cases the scraper Worker ingests
+**from now on**. Every case already stored with a title-stripped judge string
+(`A Nguyen` where the Python path would have written `Justice A Nguyen`) keeps
+that value, so the duplicate leaderboard rows this plan's "Why this matters"
+section describes **remain in the data after this step**. The correct claim is
+"new ingest can no longer create these duplicates", not "the analytics defect is
+fixed".
+
+Because of that, this step has a mandatory data-audit deliverable alongside the
+code change. Do **not** write a migration here — that is out of this plan's
+territory and touches 149,016 rows — but do produce the evidence the next owner
+needs:
+
+1. **Measure the blast radius.** Against a read-only copy of the catalog (the
+   local `downloaded_cases/cases.db` or a `SELECT` against the catalog D1 —
+   never a write), count judge strings that differ only by a stripped honorific:
+   group by the name with `^(Justice|Deputy President|Senior Member|Member|Judge)\s+`
+   removed, and report every group with more than one distinct raw value, with
+   row counts. Save the result to `/tmp/immi-judge-title-audit.txt` and paste
+   the summary (number of affected groups, number of affected rows) into your
+   handoff.
+2. **Name the remediation path** in the handoff: which script would backfill it
+   (`scripts/reextract_judges.py` is the existing repair tool), what its
+   `--apply` flag does, and the rollback posture. `docs/JUDGE_DATA_QUALITY.md`
+   documents a prior judge-data incident and the mandatory
+   `ADD COLUMN <col>_backup` / dry-run-on-`LIMIT 100` / eyeball-against-ground-truth
+   procedure — cite it, and note that Supabase Free-tier restores are
+   Dashboard-only.
+3. **Do not run any backfill.** Read-only audit only.
+
+If the audit cannot be run (no local catalog, no read access), say so plainly in
+the handoff. Do not describe the parser fix as having repaired existing records.
 
 In `workers/austlii-scraper/src/parser.ts`, replace the docstring at lines
 243–246 and the two judge regexes at lines 260–261.
@@ -1071,9 +1207,9 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && \
   npm run typecheck && npm test 2>&1 | tail -3
 ```
 
-→ typecheck exits 0 with no output; tests report
-`Test Files 7 passed (7)` / `Tests 28 passed (28)` (unchanged — no existing
-scraper test asserts on `judges`).
+→ typecheck exits 0 with no output; tests report exactly
+`PIPE_FILES_BEFORE` / `PIPE_TESTS_BEFORE` (unchanged at this point — no existing
+scraper test asserts on `judges`; Step 8 is what adds coverage).
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
@@ -1436,7 +1572,8 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && \
 ```
 
 → typecheck exits 0 with no output; tests report
-`Test Files 8 passed (8)` / `Tests 34 passed (34)`.
+`PIPE_FILES_BEFORE + 1` / `PIPE_TESTS_BEFORE + 6`. The per-file gate is
+`npx vitest run src/__tests__/extractor-parity.test.ts` → `6 passed`.
 
 Finally, prove the TypeScript side would have failed **before** Step 7, by
 temporarily reverting just the regex:
@@ -1450,7 +1587,7 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && \
 ```
 
 → the first run fails 5 tests in `extractor-parity.test.ts`; after the restore,
-`Test Files 8 passed (8)` / `Tests 34 passed (34)`. If the `sed` does not
+`PIPE_FILES_BEFORE + 1` / `PIPE_TESTS_BEFORE + 6`. If the `sed` does not
 change the file (check with `git diff --stat src/parser.ts` — it must show
 `1 file changed`), skip this optional demonstration rather than hand-editing;
 it is a confidence check, not a gate.
@@ -1514,11 +1651,16 @@ New tests, by file:
   (4 parametrised over the generated corpus + the `BEFORE: Justice …` and prose
   `MEMBER:` regressions).
 
-Arithmetic to self-check against: **+11 Python tests** (5 + 6), so
-`1141 → 1152 passed`; **+4 main-Worker tests**, so `345 → 349` across
-`25 → 26` files; **+6 scraper-Worker tests**, so `28 → 34` across `7 → 8`
-files. If your counts differ, you added or dropped a test — reconcile before
-moving on.
+Arithmetic to self-check, expressed as deltas against your Step 0 baseline:
+**+11 Python tests** (5 + 6), **+4 main-Worker tests** across **+1** file, and
+**+6 scraper-Worker tests** across **+1** file. Per-file counts, which do not
+move when a sibling plan lands, are the sharper gate:
+`tests/test_visa_registry_parity.py` → `5 passed`,
+`tests/test_extractor_parity.py` → `6 passed`,
+`workers/__tests__/visa-registry-parity.test.js` → `4 passed`,
+`workers/austlii-scraper/src/__tests__/extractor-parity.test.ts` → `6 passed`.
+If your deltas differ, you added or dropped a test — reconcile before moving on,
+and do not adjust the expected delta to match.
 
 Structural patterns to model on: `tests/test_scraper_protocol.py` for the
 Python extractor tests; `workers/__tests__/cloudflare-native-entry.test.js` for
@@ -1537,10 +1679,10 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   node scripts/check_cloudflare_native_bundle.mjs
 ```
 
-→ `All checks passed!`; Python `1152 passed, 3 failed, 7 skipped` (the 3 are the
-pre-existing `pypdf`/`libexpat` environmental failures, unchanged); Worker
-`Test Files 26 passed (26)` / `Tests 349 passed (349)`; scraper Worker
-`Test Files 8 passed (8)` / `Tests 34 passed (34)`; bundle gate passes.
+→ `All checks passed!`; Python passed `= PY_PASS_BEFORE + 11`, skipped
+`= PY_SKIP_BEFORE`, failing test **names** identical to `PY_FAIL_NAMES`; Worker
+`WORKER_FILES_BEFORE + 1` / `WORKER_TESTS_BEFORE + 4`; scraper Worker
+`PIPE_FILES_BEFORE + 1` / `PIPE_TESTS_BEFORE + 6`; bundle gate passes.
 
 ## Done criteria
 
@@ -1549,11 +1691,16 @@ Machine-checkable. ALL must hold (run from the repo root):
 - [ ] `.venv/bin/python scripts/generate_visa_registry.py --check` exits 0
 - [ ] `.venv/bin/python scripts/generate_extractor_corpus.py --check` exits 0
 - [ ] `make lint` prints `All checks passed!`
-- [ ] `.venv/bin/ruff check tests/ 2>&1 | tail -1` still reports `Found 43 errors.` (no increase)
-- [ ] `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q 2>&1 | tail -1` reports `1152 passed, 3 failed, 7 skipped`
-- [ ] `cd workers && npx vitest run 2>&1 | grep -q "Tests  349 passed (349)"`
+- [ ] `.venv/bin/ruff check tests/ 2>&1 | tail -1` is unchanged from `RUFF_TESTS_BEFORE` (no increase)
+- [ ] `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q 2>&1 | tail -1` reports passed `= PY_PASS_BEFORE + 11`, skipped `= PY_SKIP_BEFORE`, and the failing test names are identical to `PY_FAIL_NAMES`
+- [ ] `.venv/bin/pytest tests/test_visa_registry_parity.py -q` → `5 passed`
+- [ ] `.venv/bin/pytest tests/test_extractor_parity.py -q` → `6 passed`
+- [ ] `cd workers && npx vitest run` reports `WORKER_FILES_BEFORE + 1` / `WORKER_TESTS_BEFORE + 4`
+- [ ] `npx vitest run --config workers/vitest.config.js __tests__/visa-registry-parity.test.js` → `4 passed`
 - [ ] `cd workers/austlii-scraper && npm run typecheck` exits 0
-- [ ] `cd workers/austlii-scraper && npm test 2>&1 | grep -q "Tests  34 passed (34)"`
+- [ ] `cd workers/austlii-scraper && npm test` reports `PIPE_FILES_BEFORE + 1` / `PIPE_TESTS_BEFORE + 6`
+- [ ] The 408 provenance is recorded: `grep -c '_provenance' immi_case_downloader/data/visa_registry.json` → `1`, **or** the handoff explicitly states the direction is unverified against any external authority
+- [ ] The judge-title data audit ran (Step 7): `/tmp/immi-judge-title-audit.txt` exists and its summary is in the handoff, **or** the handoff states why it could not run
 - [ ] `node scripts/check_cloudflare_native_bundle.mjs` exits 0
 - [ ] `grep -c '\["408", "Temporary Activity", "Visitor"\]' workers/case-api/visa_registry.generated.js` returns `1`
 - [ ] `grep -rn '"408"' immi_case_downloader/visa_registry.py workers/case-api/static.js` returns **no matches** (both tables now come from the JSON)
@@ -1601,10 +1748,13 @@ Stop and report back (do not improvise) if:
   cause is a Node builtin import in the new `.ts` test — that tsconfig has no
   Node types. Do not "fix" it by editing `workers/austlii-scraper/tsconfig.json`;
   plan 011 owns that file.
-- **`.venv/bin/ruff check tests/` reports more than 43 errors.** Plan 003 owns
-  that count and expects exactly 43; your new test files must be clean.
-- **The Python full suite reports anything other than 3 failures**, or the
-  failures are outside `tests/test_backfill_judge_overrides_from_pdf.py`.
+- **`.venv/bin/ruff check tests/` reports more than `RUFF_TESTS_BEFORE`.** Plan
+  003 owns that count; your new test files must be clean.
+- **The Python full suite reports a failing test whose name was not in
+  `PY_FAIL_NAMES`.**
+- **You cannot establish the 408 direction from a source outside this
+  repository, and you flip it anyway.** See the provenance gap in "Current
+  state": land the rest of the plan and declare the gap instead.
 - **You conclude that `Skilled`, not `Visitor`, is the correct family for
   subclass 408.** The three reasons in "Current state" are the whole basis for
   the direction of this fix; if you find a fourth source that contradicts them,
@@ -1628,6 +1778,15 @@ For whoever owns this code next:
   change (408 `Skilled` → `Visitor`); (2) that
   `workers/case-api/cloudflare.js` is untouched, since it is the only
   production consumer.
+- **The judge-name defect is only half fixed by this plan, on purpose.** Step 7
+  stops *new* ingest from stripping honorifics; it does not repair the rows
+  already stored that way, so duplicate leaderboard entries persist until
+  somebody backfills. Step 7's audit deliverable
+  (`/tmp/immi-judge-title-audit.txt`) sizes that job. The remediation belongs to
+  whoever owns `scripts/reextract_judges.py`, and must follow the
+  backup-column / dry-run / eyeball procedure in `docs/JUDGE_DATA_QUALITY.md` —
+  a pattern-shape rule on judge strings had a 10-15% false-positive rate in the
+  2026-05-02 incident recorded there.
 - **User-visible effect of the 408 fix**: any analytics grouping that reads
   `visaFamily()` in the Worker moves subclass-408 cases from the `Skilled`
   bucket to the `Visitor` bucket. This is intentional — it makes production

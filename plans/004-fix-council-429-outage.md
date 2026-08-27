@@ -7,22 +7,33 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands, in order. The first sees
+> committed history; the last three see the working tree, which committed
+> history cannot show. An executor who starts from a dirty tree gets a false
+> all-clear from the first command alone.
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   workers/llm-council/cloudflare_handlers.js \
->   workers/llm-council/auth.js \
->   workers/__tests__/cloudflare-council-handlers.test.js \
->   workers/__tests__/llm-council-auth.test.js \
->   wrangler.toml \
->   config/wrangler-cloudflare-native.toml.example \
->   scripts/check_cloudflare_native_target.py \
->   tests/test_cloudflare_native_target.py
+> PATHS="workers/llm-council/cloudflare_handlers.js
+>   workers/llm-council/auth.js
+>   workers/__tests__/cloudflare-council-handlers.test.js
+>   workers/__tests__/llm-council-auth.test.js
+>   wrangler.toml
+>   config/wrangler-cloudflare-native.toml.example
+>   scripts/check_cloudflare_native_target.py
+>   tests/test_cloudflare_native_target.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS   # committed since the plan was written
+> git diff --stat -- $PATHS                 # unstaged working-tree edits
+> git diff --cached --stat -- $PATHS        # staged but uncommitted edits
 > ```
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts below against the live code
-> before proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three commands print nothing, and `git status --short`
+> lists no in-scope path. If any in-scope file appears in **any** of them,
+> that is a STOP condition — compare the "Current state" excerpts below
+> against the live code and report before proceeding.
+>
+> **Never** run `git checkout --`, `git restore` or `git clean` to "clear" a
+> dirty tree. Those edits may be the operator's uncommitted work. Report and
+> stop instead.
 
 ## Status
 
@@ -30,6 +41,8 @@
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: none
+- **Runs before**: `plans/005-*.md` (both edit
+  `workers/llm-council/cloudflare_handlers.js`; see "Sequencing" below)
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -38,6 +51,20 @@ verification commands (`cd workers && npx vitest run`, `make test-py`,
 `make lint`) all work correctly at commit `42826a3` and touch no TypeScript,
 so it does not need the verification-gate plans (001–003) to land first. If
 one of those plans lands before you start, re-run the drift check above.
+
+### Sequencing (cross-plan)
+
+`plans/005-*.md` edits the same file — `workers/llm-council/cloudflare_handlers.js`
+— in its Steps 2, 4 and 5 (the dispatcher `await`s, the stream persist guard,
+and the retrieve-code collision predicate). **This plan lands first**: it is the
+outage hotfix and its edits (`applyRateLimit`, `rateLimitFailure`, the six call
+sites, `handleDeleteSession`, `handleHealth`) are disjoint from 005's at the
+hunk level but overlap the file. Plan 005 rebases onto this plan's result and
+integrates hunk by hunk; whichever runs second must re-run its own drift check
+and expect this plan's changes to be present rather than treating them as
+unexplained drift.
+
+Do **not** run 004 and 005 concurrently against the same working tree.
 
 ## Why this matters
 
@@ -60,10 +87,14 @@ again shortly", which reads like normal throttling. Every existing Worker test
 passes a mock limiter into `env`, so no test ever exercises the unbound path.
 
 After this plan: the binding is declared, the deploy gate refuses to ship a
-config without it, a misconfigured deploy returns a distinguishable
+config without it (and refuses a nonsensical limit such as `0`, a negative
+number or a boolean), a misconfigured deploy returns a distinguishable
 `503 rate_limiter_unconfigured` instead of a misleading 429, session deletion
-gains the rate limit it was missing, and the vestigial Council session-token
-credential stops sharing raw key material with the CSRF signing key.
+and the credit-spending `GET /llm-council/health?live=1` probe gain the rate
+limit they were missing, the vestigial Council session-token credential stops
+handing browsers an HMAC computed directly under the CSRF signing key, and the
+operator has an explicit, verified path to update their private config and
+confirm in production that Council POSTs succeed again.
 
 ## Current state
 
@@ -253,9 +284,22 @@ raw key material:
   const signature = await crypto.subtle.sign("HMAC", await importHmacKey(env.CSRF_SECRET), new TextEncoder().encode(payload));
 ```
 
-Two unrelated protocols, one raw key. Not exploitable today, but rotation and
-compromise are coupled, and the Council token is handed to browsers, which
-makes it an HMAC oracle under the CSRF signing key.
+Two unrelated protocols, one raw key. Not exploitable today, but the Council
+token is handed to browsers, which makes it an **HMAC oracle under the CSRF
+signing key**: a caller who can choose `sessionId` gets back
+`HMAC(CSRF_SECRET, chosen_message)`.
+
+**Be precise about what Step 6 does and does not fix.** The HMAC-as-KDF change
+in Step 6 removes the oracle — after it, a browser never sees an HMAC computed
+directly under `CSRF_SECRET`. It does **not** decouple compromise or rotation:
+both keys are still derived from the one root secret, so leaking `CSRF_SECRET`
+still compromises both, and rotating it still rotates both. Genuinely
+decoupling them needs a second, independently rotatable
+`COUNCIL_TOKEN_SECRET`, which needs an operator action and a
+`scripts/preflight_secrets.sh` change. That is deliberately **not** done here
+(see "Findings reconsidered"), and the residual is recorded in
+"Maintenance notes". Do not describe Step 6 as fixing rotation coupling in the
+commit message or the PR.
 
 ### The Council session token is verified nowhere
 
@@ -333,22 +377,48 @@ Run all of these from `/Users/d/Developer/Active Projects/IMMI-Case-`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker tests (all) | `cd workers && npx vitest run` | exit 0, `25 passed (25)` files, 0 failed |
+| Worker tests (all) | `cd workers && npx vitest run` | exit 0, **0 failed** — see "Baselines, not absolutes" below |
 | Worker tests (one file) | `npx vitest run --config workers/vitest.config.js workers/__tests__/<file>` | exit 0, 0 failed |
-| Python tests (all) | `make test-py` | `1143 passed, 3 failed, 7 skipped` — the 3 failures are pre-existing and environmental (see note below) |
-| Python tests (one file) | `.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q` | `8 passed` |
+| Worker test by name | `npx vitest run --config workers/vitest.config.js workers/__tests__/<file> -t "<test name>"` | exit 0, that test passes |
+| Python tests (all) | `make test-py` | 0 failures **other than** the 3 named environmental ones below |
+| Python tests (one file) | `.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q` | `11 passed` after Step 4 (a per-file count; stable regardless of sibling plans) |
 | Python lint | `make lint` | `All checks passed!` |
 | Ruff on in-scope files | `.venv/bin/ruff check tests/test_cloudflare_native_target.py scripts/check_cloudflare_native_target.py` | `All checks passed!` |
 | Deploy gate (checked-in config) | `.venv/bin/python scripts/check_cloudflare_native_target.py` | exit 1 with exactly 6 placeholder errors — see note below |
 | Parse `wrangler.toml` | `.venv/bin/python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('wrangler.toml').read_text())['ratelimits'])"` | prints the ratelimits list |
 
-**Note on the 3 Python failures**: at commit `42826a3`, `make test-py` reports
-`1141 passed, 3 failed, 7 skipped`. All 3 failures are in
-`tests/test_backfill_judge_overrides_from_pdf.py` and are caused by a Homebrew
-Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf` import.
-They are environmental, are **not** caused by repo code, and are **not** this
-plan's problem. Do not attempt to fix them. Your target after this plan is
-`1143 passed, 3 failed, 7 skipped` (+2 from Step 4).
+### Baselines, not absolutes
+
+**Do not assert a whole-suite total anywhere.** Other plans in `plans/` add
+tests to the same suites, so `Tests 345 passed (345)` is true only until a
+sibling plan lands, and an executor who "fixes" a mismatched total is editing
+the yardstick instead of the code. Record your own baseline in Step 0 and
+assert a **delta** against it:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+WORKER_BEFORE=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+')
+echo "WORKER_BEFORE=$WORKER_BEFORE"   # write this number down
+```
+
+At the end of this plan the same command must report exactly
+`WORKER_BEFORE - 5` passing tests, with **0 failed**. That is the net of
+Step 5 (+3), Step 6 (−13 deleted `verifyToken` tests, +2 new), and Step 7 (+3).
+Per-file counts stated in individual steps are stable and may be asserted as
+absolutes.
+
+**Note on the 3 Python failures**: `make test-py` reports 3 failures that are
+environmental — a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch
+breaks the `pypdf` import. After this plan they must still be **exactly those
+3, by name**:
+
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_clean_line_does_not_destroy_words`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_extract_judiciary_names_filters_non_judicial_judging`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_merge_treats_postnominal_variant_as_equivalent`
+
+They are **not** caused by repo code and are **not** this plan's problem. Do
+not attempt to fix them. Any fourth failure, or any failure with a different
+name, is yours.
 
 **Note on the deploy gate**: `scripts/check_cloudflare_native_target.py` is
 **expected to exit 1** against the checked-in configs. At commit `42826a3` it
@@ -376,10 +446,13 @@ must be satisfied by the block you add in Step 1, not add a seventh line.
 - `config/wrangler-cloudflare-native.toml.example` — same block, so an operator
   copying the template produces a config the gate accepts (Step 1)
 - `workers/llm-council/cloudflare_handlers.js` — distinguish
-  unconfigured-vs-throttled; rate-limit `handleDeleteSession` (Steps 2–3)
-- `scripts/check_cloudflare_native_target.py` — assert the binding (Step 4)
-- `tests/test_cloudflare_native_target.py` — fixture + 2 new tests (Step 4)
-- `workers/__tests__/cloudflare-council-handlers.test.js` — 3 new tests (Step 5)
+  unconfigured-vs-throttled; rate-limit `handleDeleteSession` and the live
+  health probe (Steps 2–3, 7)
+- `scripts/check_cloudflare_native_target.py` — assert the binding and a sane
+  limit (Step 4)
+- `tests/test_cloudflare_native_target.py` — fixture + 4 new tests (Step 4)
+- `workers/__tests__/cloudflare-council-handlers.test.js` — 6 new tests
+  (3 in Step 5, 3 in Step 7)
 - `workers/llm-council/auth.js` — purpose-separated key; delete dead verifier
   (Step 6)
 - `workers/__tests__/llm-council-auth.test.js` — drop tests for the deleted
@@ -423,11 +496,37 @@ they cannot be separated from those edits.
   - Step 4: `ci: make the native config gate require the Council rate limiter`
   - Step 5: `test: cover the unbound Council rate-limiter path`
   - Step 6: `refactor: derive the Council session-token key separately from CSRF`
+  - Step 7: `fix: rate-limit the credit-spending Council live health probe`
+  - Step 8: no commit — it is operator handoff text for the PR description.
 - No AI attribution / co-author lines.
 - Do **NOT** push, do **NOT** open a PR, do **NOT** merge. The operator commits
   and ships.
 
 ## Steps
+
+### Step 0: Record your baselines
+
+Nothing to change here — this step exists so every later "delta" assertion has
+something to compare against, and so a dirty tree is caught before you edit.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git status --short --branch                       # must list no in-scope path
+cd workers && npx vitest run 2>&1 | tail -5       # note "Tests N passed"
+```
+
+Write down `WORKER_BEFORE=N`. Also record the current per-file counts you will
+change:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js 2>&1 | grep 'Tests '
+npx vitest run --config workers/vitest.config.js workers/__tests__/llm-council-auth.test.js 2>&1 | grep 'Tests '
+.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q 2>&1 | tail -1
+```
+
+At the time of writing these were 8, 23 and 6 respectively. If any differs,
+the file drifted — re-read it before trusting the line numbers below.
 
 ### Step 1: Declare the `RL_COUNCIL_TURN` rate-limiter binding
 
@@ -539,7 +638,8 @@ grep -c 'return rateLimitFailure(limited);' workers/llm-council/cloudflare_handl
 ```bash
 cd workers && npx vitest run
 ```
-→ exit 0, `Test Files 25 passed (25)`, `Tests 345 passed (345)`
+→ exit 0, **0 failed**, and `Tests N passed` where `N == WORKER_BEFORE`
+(this step adds no tests).
 
 ### Step 3: Rate-limit session deletion
 
@@ -572,7 +672,7 @@ grep -c 'return rateLimitFailure(limited);' workers/llm-council/cloudflare_handl
 ```bash
 cd workers && npx vitest run
 ```
-→ exit 0, `Test Files 25 passed (25)`, `Tests 345 passed (345)`
+→ exit 0, **0 failed**, `Tests N passed` where `N == WORKER_BEFORE`.
 
 ### Step 4: Make the deploy gate require the binding
 
@@ -595,16 +695,38 @@ loop:
         if _is_placeholder(council_limiter.get("namespace_id")):
             errors.append("ratelimits[RL_COUNCIL_TURN].namespace_id is missing or still a placeholder")
         simple = council_limiter.get("simple")
+        limit = simple.get("limit") if isinstance(simple, dict) else None
+        # `type(limit) is int` rather than isinstance(): bool is a subclass of
+        # int in Python, so isinstance(True, int) is True and `limit = true`
+        # in the operator's TOML would sail through as "1 request/minute".
+        # A limit of 0 or a negative number would pass an isinstance check too
+        # and would throttle every Council POST to zero — i.e. reproduce this
+        # very outage while reporting a healthy config.
         if (
             not isinstance(simple, dict)
-            or not isinstance(simple.get("limit"), int)
+            or type(limit) is not int
+            or limit < 1
             or simple.get("period") not in (10, 60)
         ):
             errors.append(
-                "ratelimits[RL_COUNCIL_TURN].simple must set an integer limit "
-                "and a period of 10 or 60"
+                "ratelimits[RL_COUNCIL_TURN].simple must set a positive integer "
+                "limit (not a boolean) and a period of 10 or 60"
+            )
+        elif limit != 30:
+            # 30/min/IP is the figure this plan decided on (see "Current
+            # state"). A different value is not necessarily wrong, but it must
+            # be a deliberate operator choice, not a typo — so warn loudly in
+            # the error stream rather than silently accepting it.
+            errors.append(
+                f"ratelimits[RL_COUNCIL_TURN].simple.limit is {limit}, not the "
+                "expected 30 — change this line in the gate if that is intentional"
             )
 ```
+
+Note the last branch makes the gate assert the **exact** agreed limit, so an
+operator who fat-fingers `limit = 3` is told, rather than silently shipping a
+10× tighter throttle. If a future operator genuinely wants a different number,
+they change the gate and the plan together.
 
 Then update `tests/test_cloudflare_native_target.py`:
 
@@ -619,7 +741,7 @@ namespace_id = "1001"
 simple = { limit = 30, period = 60 }
 ```
 
-2. Add two new tests at the end of the file, modelled on the existing
+2. Add four new tests at the end of the file, modelled on the existing
    `test_operator_gate_requires_runtime_bindings_and_queue_dlq` (lines
    148–157), which writes a mutated `_valid_main()` into `tmp_path` and asserts
    the resulting error list:
@@ -631,6 +753,17 @@ simple = { limit = 30, period = 60 }
 - `test_operator_gate_rejects_invalid_council_rate_limit_window` — write
   `_valid_main().replace("period = 60", "period = 30")`; assert some error
   contains `"period of 10 or 60"`.
+- `test_operator_gate_rejects_a_non_positive_council_rate_limit` — a
+  `pytest.mark.parametrize` over `["limit = 0", "limit = -1"]`, each written
+  via `_valid_main().replace("limit = 30", case)`; assert some error contains
+  `"positive integer"`. Rationale: `limit = 0` throttles every Council POST to
+  zero, which is the outage this plan exists to fix, dressed up as a healthy
+  config.
+- `test_operator_gate_rejects_a_boolean_council_rate_limit` — write
+  `_valid_main().replace("limit = 30", "limit = true")`; assert some error
+  contains `"positive integer"`. Rationale: TOML `true` parses to Python
+  `True`, and `isinstance(True, int)` is `True`, so a plain `isinstance` check
+  would accept it as "1 request per minute".
 
 Read lines 148–157 of that file first and copy its exact call/assert mechanics
 (how it invokes `MODULE`, how it collects `errors`) rather than inventing a new
@@ -641,7 +774,10 @@ harness.
 ```bash
 .venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q 2>&1 | tail -1
 ```
-→ `8 passed` (was 6)
+→ `11 passed` (6 baseline + 5 new cases: three plain tests plus the
+two-case parametrize). This is a **per-file** count, so it stays true
+regardless of what other plans land. If your baseline in Step 0 was not 6,
+assert `baseline + 5` instead.
 
 **Verify (b)** — the assertion really fires when the binding is removed:
 
@@ -728,11 +864,17 @@ and re-run to green. Do not commit the temporary revert.
 ```bash
 cd workers && npx vitest run
 ```
-→ exit 0, `Test Files 25 passed (25)`, `Tests 348 passed (348)`
+→ exit 0, **0 failed**, `Tests N passed` where `N == WORKER_BEFORE + 3`.
 
 ### Step 6: Separate the Council token key from CSRF, and delete the dead verifier
 
 In `workers/llm-council/auth.js`:
+
+**What this step is and is not.** It removes the HMAC oracle (browsers stop
+receiving `HMAC(CSRF_SECRET, sessionId)` directly). It does **not** decouple
+compromise or rotation — one root secret still feeds both protocols. Write the
+commit message accordingly (`refactor: derive the Council session-token key
+separately from CSRF`), and do not claim rotation independence in the PR.
 
 1. **Add** a purpose-separated key derivation. HMAC-as-KDF with a fixed label
    means no new operator secret is required. Place it where `importHmacKey`
@@ -859,7 +1001,143 @@ npx vitest run --config workers/vitest.config.js workers/__tests__/llm-council-a
 ```bash
 cd workers && npx vitest run
 ```
-→ exit 0, `Test Files 25 passed (25)`, `Tests 337 passed (337)`
+→ exit 0, **0 failed**, `Tests N passed` where `N == WORKER_BEFORE - 8`
+(+3 from Step 5, −13 deleted, +2 added here).
+
+### Step 7: Rate-limit the credit-spending live health probe
+
+`handleHealth` (`workers/llm-council/cloudflare_handlers.js`) has two modes.
+The default is a static config echo and costs nothing. But
+`GET /api/v1/llm-council/health?live=1` requires auth and then calls
+`runExpert({ ... modelRaw: "openai/gpt-5-mini-2025-08-07" ... })` — a **real
+paid CF AI Gateway call** — on every request. Verified verbatim in the current
+file: the `live` branch runs `requireAuth(...)` and then `await runExpert(...)`.
+
+So it is a billing-drain vector reachable by *any* authenticated user, and it
+is the one credit-spending Council route this plan's Steps 2–3 did not cover.
+It is in this plan's file territory, so close it here.
+
+In `handleHealth`, insert the rate-limit check **inside** the `live` branch,
+immediately after the `requireAuth` result is checked and **before** the
+`if (!live || !env.CF_AIG_TOKEN)` early return:
+
+```js
+  if (live) {
+    const authResult = await requireAuth(request, env, verifyJwt);
+    if (authResult instanceof Response) return authResult;
+    // A live probe is a paid CF AI Gateway call. Same limiter, same
+    // fail-closed contract as every other credit-spending Council route.
+    const limited = await applyRateLimit(request, env);
+    if (!limited.success) return rateLimitFailure(limited);
+  }
+```
+
+Do **not** rate-limit the non-live branch — it is a static config echo used by
+uptime monitors and costs nothing.
+
+Add three tests to `workers/__tests__/cloudflare-council-handlers.test.js`.
+The file already declares `mockRunExpert` and mocks `../llm-council/runner.js`
+with it (verified at the top of that file), so no new mock plumbing is needed.
+**Every one of these three must set `CF_AIG_TOKEN: "fake-token"` in `env`** —
+without it `handleHealth` returns the static echo before it would ever reach
+`runExpert`, and assertion 3 would pass vacuously.
+
+1. **`does not rate-limit the static health echo`** — `GET /health` (no `live`
+   param) with `env = { IMMI_STORAGE_MODE: "cloudflare", CF_AIG_TOKEN: "fake-token" }`
+   and **no** `RL_COUNCIL_TURN` binding returns `200`, proving the plain probe
+   used by uptime monitors stays reachable when the limiter is unbound.
+2. **`fails closed on a live health probe when the limiter binding is absent`**
+   — `GET /health?live=1`, same env, still no `RL_COUNCIL_TURN`: returns `503`
+   and `code === "rate_limiter_unconfigured"`.
+3. **`consults the limiter before spending AI credit on a live probe`** —
+   `GET /health?live=1` with `CF_AIG_TOKEN: "fake-token"` and
+   `RL_COUNCIL_TURN: { limit: vi.fn(async () => ({ success: false })) }`:
+   returns `429` / `code === "rate_limited"`, **and** the mocked `runExpert`
+   was never called (`expect(mockRunExpert).not.toHaveBeenCalled()`). That last
+   assertion is the one that actually proves no credit was spent; a status-code
+   assertion alone would pass even if the order were wrong.
+
+**Verify (a)**:
+
+```bash
+npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js 2>&1 | grep 'Tests '
+```
+→ `Tests  14 passed (14)` (8 baseline + 3 from Step 5 + 3 here).
+
+**Verify (b)** — the assertion can actually fail. Temporarily move the
+`applyRateLimit` call to *after* the `runExpert` call, re-run, and confirm
+test 3 fails on the `not.toHaveBeenCalled()` assertion. Restore, re-run green,
+do not commit the temporary move.
+
+**Verify (c)**:
+
+```bash
+cd workers && npx vitest run
+```
+→ exit 0, **0 failed**, `Tests N passed` where `N == WORKER_BEFORE - 5`.
+
+### Step 8: Operator handoff and production closure
+
+Steps 1–7 are code. **The outage is not over until the operator's private
+config carries the binding and a real Council POST succeeds in production.**
+This step is executed by the operator, not by you; your job is to produce the
+handoff and to record the evidence when they run it.
+
+You cannot run these yourself — the private config and the production
+credentials are not in this repository, and you must not attempt to obtain
+them. Write the following into the PR description verbatim, then stop.
+
+**8a. Operator config update (blocking — the deploy will fail without it).**
+The gate in `.github/workflows/deploy-worker.yml:70-73` validates
+`$RUNNER_TEMP/immi-native-main.toml`, decoded from the operator secret
+`IMMI_NATIVE_MAIN_WRANGLER_TOML_B64`. After Step 4 that config must contain the
+same `[[ratelimits]]` block added in Step 1, or **every deploy is blocked**.
+The operator must:
+
+1. Decode the current secret to a local file, add the `[[ratelimits]]` block
+   (copy it verbatim from `config/wrangler-cloudflare-native.toml.example`),
+   re-encode, and update the secret.
+2. Before pushing the secret, dry-run the gate against the edited file:
+   `.venv/bin/python scripts/check_cloudflare_native_target.py --main-config <edited.toml> --pipeline-config <pipeline.toml>`
+   → must print **no** error mentioning `RL_COUNCIL_TURN`.
+3. Confirm the Cloudflare account has a rate-limiting binding available on the
+   plan in use; `[[ratelimits]]` is not available on every account tier.
+
+**8b. Post-deploy production smoke (the actual proof the outage is fixed).**
+After `wrangler deploy`, with a valid session:
+
+| Probe | Expected |
+|---|---|
+| `POST /api/v1/llm-council/sessions` (1st request, valid JWT + `{"message":"smoke"}`) | `200` with a `session_id` — **not** 429, **not** 503 |
+| 31 such POSTs from one IP inside 60s | the 31st returns `429` with `code: "rate_limited"` |
+| `GET /api/v1/llm-council/health` (no `live`) | `200` |
+| `GET /api/v1/llm-council/health?live=1` unauthenticated | `401` (unchanged) |
+
+Record the first row's response status and `code` field in the PR. **If the
+first POST still returns 429, the private config was not updated — go back to
+8a; do not "fix" it by reverting to fail-open.**
+
+**8c. Binding-removal check (proves the new 503 is reachable, not theoretical).**
+On a staging Worker only, deploy once with the `[[ratelimits]]` block removed
+and confirm `POST /sessions` returns `503` with
+`code: "rate_limiter_unconfigured"` rather than `429`. Never do this against
+production. If no staging Worker exists, say so in the PR and rely on the
+Step 5 unit tests instead — do not skip silently.
+
+**8d. Rollback.** If Council traffic breaks after this deploy:
+1. Redeploy the previous Worker version (`wrangler rollback` or redeploy the
+   prior git tag). The Worker code and the config are separate rollbacks —
+   the previous Worker build does not require the `[[ratelimits]]` block, so
+   rolling back the Worker alone is sufficient and safe.
+2. Do **not** roll back only the config: an older config without the block,
+   paired with the new Worker, reproduces the outage as a 503 instead of a 429.
+3. The gate change in `scripts/check_cloudflare_native_target.py` is inert at
+   runtime; it only blocks future deploys. Leave it in place.
+
+**Verify**: this step has no machine-checkable verification you can run. Its
+Done criterion is that 8a–8d appear verbatim in the PR description and that the
+operator has reported the 8b results back. Do not mark this plan DONE on unit
+tests alone — the production symptom is what this plan exists to remove.
 
 ## Test plan
 
@@ -873,6 +1151,13 @@ existing `test_operator_gate_requires_runtime_bindings_and_queue_dlq`, lines
   check that would have caught the original omission at deploy time.
 - `test_operator_gate_rejects_invalid_council_rate_limit_window` — `period = 30`
   (illegal per the wrangler schema, which allows only 10 or 60) is blocked.
+- `test_operator_gate_rejects_a_non_positive_council_rate_limit` —
+  parametrized over `limit = 0` and `limit = -1`. `limit = 0` is the important
+  one: it would pass a naive `isinstance(..., int)` check and would throttle
+  every Council POST to zero, reproducing this outage behind a "valid" config.
+- `test_operator_gate_rejects_a_boolean_council_rate_limit` — `limit = true`
+  is blocked. TOML `true` becomes Python `True`, and `isinstance(True, int)` is
+  `True`, so this is the case a plain type check silently accepts as "1/min".
 
 Also required: `_valid_main()` gains the `[[ratelimits]]` block so
 `test_operator_configs_pass_when_complete` keeps passing — treat a failure
@@ -888,6 +1173,11 @@ objects inline):
   the direct regression test for the production symptom.
 - Configured limiter that rejects → `429` + `code: "rate_limited"`.
 - `DELETE /sessions/{id}` consults the limiter at all (it did not before).
+- `GET /health` (no `live`) stays reachable with the limiter unbound.
+- `GET /health?live=1` with the limiter unbound → `503`
+  `rate_limiter_unconfigured`.
+- `GET /health?live=1` with a rejecting limiter → `429` **and** `runExpert`
+  never called — the assertion that actually proves no AI credit was spent.
 
 **New tests — `workers/__tests__/llm-council-auth.test.js`**:
 
@@ -900,17 +1190,20 @@ objects inline):
 handler tests, the 3 `nanoid21` and 7 `mintToken` tests, and the other 6
 gate-contract tests.
 
-**Full-suite verification**:
+**Full-suite verification** (deltas, not absolutes — see "Baselines, not
+absolutes"):
 
 ```bash
-cd workers && npx vitest run     # 25 files, 337 tests, exit 0
-make test-py                     # 1143 passed, 3 failed (environmental), 7 skipped
+cd workers && npx vitest run     # 0 failed; Tests == WORKER_BEFORE - 5
+make test-py                     # 0 failures except the 3 named pyexpat ones
 make lint                        # All checks passed!
 ```
 
-No frontend files change, so `cd frontend && npx vitest run` (490 passed) and
+No frontend files change, so `cd frontend && npx vitest run` and
 `cd frontend && npx tsc -b --noEmit` (exit 0) should be unaffected. Run them
-once at the end as a sanity check.
+once at the end as a sanity check: assert **0 failed** and that the frontend
+passing count is unchanged from the number you recorded in Step 0 — do not
+assert a hard-coded frontend total, since sibling plans add frontend tests.
 
 ## Done criteria
 
@@ -925,23 +1218,33 @@ Machine-checkable. ALL must hold:
 - [ ] `grep -c 'verifyToken' workers/llm-council/auth.js` returns `0`
 - [ ] `grep -rn 'verifyToken' workers/ frontend/src --include=*.js --include=*.ts --include=*.tsx | grep -v node_modules` returns no output
 - [ ] `grep -c 'importCouncilTokenKey' workers/llm-council/auth.js` returns `2` or more
-- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js` reports `11 passed`
-- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/llm-council-auth.test.js` reports `12 passed`
-- [ ] `cd workers && npx vitest run` exits 0 with `Test Files 25 passed (25)` and `Tests 337 passed (337)`
-- [ ] `.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q` reports `8 passed`
-- [ ] `make test-py` reports `1143 passed, 3 failed, 7 skipped` — and the 3 failures are all in `tests/test_backfill_judge_overrides_from_pdf.py`
+- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js` reports `14 passed` (per-file count: 8 baseline + 3 + 3)
+- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/llm-council-auth.test.js` reports `12 passed` (per-file count)
+- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js -t "consults the limiter before spending AI credit on a live probe"` passes
+- [ ] `npx vitest run --config workers/vitest.config.js workers/__tests__/cloudflare-council-handlers.test.js -t "fails closed with 503 rate_limiter_unconfigured"` passes
+- [ ] `cd workers && npx vitest run` exits 0 with **0 failed** and `Tests` equal to `WORKER_BEFORE - 5` (the baseline recorded in Step 0)
+- [ ] `.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q` reports `11 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_cloudflare_native_target.py -q -k "boolean or non_positive"` reports `3 passed`
+- [ ] `make test-py` reports **0 failures other than exactly these 3, by name**: `test_clean_line_does_not_destroy_words`, `test_extract_judiciary_names_filters_non_judicial_judging`, `test_merge_treats_postnominal_variant_as_equivalent`, all in `tests/test_backfill_judge_overrides_from_pdf.py`
 - [ ] `make lint` prints `All checks passed!`
-- [ ] `cd frontend && npx vitest run` reports `490 passed` and `cd frontend && npx tsc -b --noEmit` exits 0
+- [ ] `cd frontend && npx vitest run` reports **0 failed** with the same passing count recorded in Step 0, and `cd frontend && npx tsc -b --noEmit` exits 0
 - [ ] `git status --short` lists only files from the "In scope" list
+- [ ] Steps 8a–8d are reproduced verbatim in the PR description, and the operator has reported the 8b smoke results (specifically: the first Council POST returned 200, not 429)
 - [ ] Nothing was pushed and no PR was opened (`git log origin/main..HEAD` shows your commits are local only)
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
 
-- **The drift check is non-empty.** Any of the eight in-scope files changed
-  since `42826a3`; the line numbers and excerpts in "Current state" are then
-  unreliable.
+- **Any of the four drift-check commands reports an in-scope path** — committed
+  since `42826a3`, unstaged, staged, or listed by `git status --short`. The
+  line numbers and excerpts in "Current state" are then unreliable. Report and
+  stop; never `git checkout --` or `git clean` your way out of it.
+- **`plans/005-*.md` has already landed** and
+  `workers/llm-council/cloudflare_handlers.js` contains `return await handle…(`
+  dispatch lines or a `council.stream.skipped_persist` log. This plan is
+  supposed to land first (see "Sequencing"). Report the ordering inversion; the
+  edits are still compatible but the line numbers in "Current state" are not.
 - **`applyRateLimit` at `workers/llm-council/cloudflare_handlers.js:40-45` is
   not byte-identical to the excerpt in "Current state"** — in particular, if it
   already returns `{ success: true }` when the binding is absent, someone has
@@ -957,10 +1260,12 @@ Stop and report back (do not improvise) if:
   seventh error line after Step 1 or Step 4**, or the wording of the existing
   six changes. That means the new assertion or the new TOML block is wrong,
   not that the config is.
-- **`make test-py` shows more than 3 failures, or a failure outside
-  `tests/test_backfill_judge_overrides_from_pdf.py`.** The 3 known failures are
-  a Homebrew `pyexpat`/`libexpat` ABI problem, unrelated to this work; anything
-  else is yours.
+- **`make test-py` shows any failure that is not one of the three named
+  `tests/test_backfill_judge_overrides_from_pdf.py` tests listed in "Baselines,
+  not absolutes".** Those three are a Homebrew `pyexpat`/`libexpat` ABI
+  problem, unrelated to this work; anything else is yours. Judge by test
+  **name**, not by count — a count can coincidentally still be 3 while a
+  different test broke.
 - **Any verification fails twice after a reasonable fix attempt.**
 - **The fix appears to require editing a file on the "Out of scope" list** —
   especially `workers/auth/csrf.js` or anything under `frontend/`.
@@ -979,8 +1284,18 @@ For the human/agent who owns this code after the change lands:
   secret — **not** the checked-in `wrangler.toml`. After Step 4, that private
   config must also contain the `[[ratelimits]] RL_COUNCIL_TURN` block or the
   deploy will be blocked. That is the intended fail-closed behaviour, but the
-  operator must be told before they next run the workflow. Flag this
-  explicitly in the PR description.
+  operator must be told before they next run the workflow. **Step 8 now makes
+  this a numbered step with its own Done criterion** rather than only a note —
+  it was previously buried here, which is how a config-gap outage becomes a
+  second config-gap outage.
+- **Residual: rotation and compromise are still coupled.** Step 6 removes the
+  HMAC oracle but both the CSRF token and the Council session token still
+  derive from the single `CSRF_SECRET`. Fully decoupling them needs a separate,
+  independently rotatable `COUNCIL_TOKEN_SECRET` plus a
+  `scripts/preflight_secrets.sh` entry and an operator action. Worth doing only
+  if the Council token ever becomes a real credential; today it is an opaque
+  handle the Worker never reads, so a second secret buys operational cost with
+  no security gain. Do not describe the current state as "decoupled".
 - **`namespace_id = "1001"`** is a Worker-local integer label chosen by the
   developer, unique within this Worker. It is not an account resource ID and
   not a secret. If a second rate limiter is ever added, give it a different
@@ -1107,3 +1422,25 @@ For the human/agent who owns this code after the change lands:
   **not** safe: `frontend/src/lib/api-llm-council.ts` persists it and `addTurn`
   throws client-side without it. So `mintToken` and `session_token` stay;
   only the never-called verifier and its now-inaccurate docstring go.
+
+## Review points not applied
+
+- **"Atomically remove the frontend's fake-token dependency and `mintToken`,
+  rather than deriving a Council key from `CSRF_SECRET`" — not applied.** The
+  premise (the Worker never verifies the token) is correct and this plan
+  already says so. The proposed remedy cannot be executed by this plan: the
+  removal is not Worker-side. `frontend/src/lib/api-llm-council.ts:232` and
+  `:259` call `persistToken(result.session_id, result.session_token)`, and its
+  request helpers at `:285`, `:300` and `:353` build an `X-Session-Token`
+  header from `localStorage` via `TOKEN_KEY` (`:93`), with the read path at
+  `:105` and a client-side throw when the token is missing (documented at
+  `:267`). Deleting `mintToken` without changing those five call sites breaks
+  every Council turn in the SPA between deploys. `frontend/` is on this plan's
+  "Out of scope" list precisely because a coordinated two-runtime change must
+  ship atomically, which a Worker-only plan cannot do. The half that *is*
+  Worker-side and *is* atomic — deleting the never-called `verifyToken` and
+  removing the HMAC oracle — is done in Step 6. The rest is recorded as a
+  deferred follow-up in "Maintenance notes", with the exact five frontend line
+  references above so the follow-up does not have to rediscover them.
+  Accepting the reviewer's version as written would have produced a broken
+  Council feature, not a smaller attack surface.

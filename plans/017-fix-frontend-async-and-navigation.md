@@ -3,29 +3,52 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index, or the file does not exist (in which case skip it).
+> report — do not improvise. When done, report the new status for this plan's
+> row in `plans/README.md`. That file **does** exist, and all four of plans
+> 015–018 touch adjacent rows of the same table, so **do not edit it yourself
+> when running in parallel** — report your row and let the integration
+> coordinator write it.
 >
 > **Drift check (run first)**:
 >
+> `git diff 42826a3..HEAD` cannot see uncommitted, staged or untracked work, so
+> on a dirty tree it gives a false all-clear. Run all four commands, and note
+> that the scope is split into two lists with **different** failure policies:
+>
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   frontend/src/pages/CasesPage.tsx \
->   frontend/src/pages/CollectionDetailPage.tsx \
->   frontend/src/lib/saved-searches.ts \
->   frontend/src/lib/router.ts \
->   frontend/src/components/shared/GlobalSearch.tsx \
->   frontend/src/components/llm-council/StreamingCouncilView.tsx \
->   frontend/src/hooks/use-cases.ts \
->   frontend/src/components/taxonomy/JudgeAutocomplete.tsx
+> # Files this plan WRITES. Any change here is a STOP condition.
+> OWNED='frontend/src/pages/CasesPage.tsx
+> frontend/src/pages/CollectionDetailPage.tsx
+> frontend/src/lib/saved-searches.ts
+> frontend/src/components/shared/GlobalSearch.tsx
+> frontend/src/components/llm-council/StreamingCouncilView.tsx'
+> # Files this plan only READS. A change here means RE-VERIFY the excerpt, not stop.
+> REFERENCED='frontend/src/lib/router.ts
+> frontend/src/hooks/use-cases.ts
+> frontend/src/components/taxonomy/JudgeAutocomplete.tsx'
+>
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $OWNED $REFERENCED   # committed drift
+> git diff --stat -- $OWNED $REFERENCED                 # unstaged drift
+> git diff --cached --stat -- $OWNED $REFERENCED        # staged drift
+> git status --porcelain=v1 -uall > /tmp/immi-017-baseline-status.txt
 > ```
 >
-> Expected: **empty output** (no file quoted below has changed since this plan
-> was written). If any file is listed, compare the "Current state" excerpts
-> against the live code before proceeding; on a mismatch, treat it as a STOP
-> condition.
+> - Any file from **`$OWNED`** appearing in any of those four → **STOP** and
+>   report. Two owners on one region is not resolvable by a merge tool.
+> - Any file from **`$REFERENCED`** appearing → **do not stop.** Re-read the
+>   "Current state" excerpt for that file against the live code and continue if
+>   it still supports the step that quotes it. This matters concretely:
+>   `plans/016-fix-query-cache-correctness.md` Step 5 adds one line
+>   (`placeholderData: keepPreviousData`) to `frontend/src/hooks/use-cases.ts`.
+>   That change does not affect anything this plan does — the earlier draft
+>   listed it as a hard stop and would have blocked this plan for no reason the
+>   moment 016 committed.
+>
+> **Never run `git checkout --` or `git clean -f`** to make the tree "clean";
+> that destroys the operator's or a parallel agent's uncommitted work.
+> Keep `/tmp/immi-017-baseline-status.txt` — Step 12 diffs against it.
 
 ## Status
 
@@ -43,6 +66,25 @@ need the verification-gate plans (001–003) to land first. Note that
 `plans/001-restore-the-frontend-compile-gate.md`, if it lands first, creates a
 `frontend/tsconfig.test.json` that type-checks `frontend/__tests__/` — the four
 test files this plan creates are written to be type-clean so they survive that.
+
+### Sequencing — read before dispatching this plan in parallel
+
+- **`frontend/src/components/llm-council/StreamingCouncilView.tsx` has exactly
+  one owner at a time.** Steps 7–9 here rewrite `RecallCodeCard`, the `finally`
+  arm of `start()`, and the unmount effect.
+  `plans/015-surface-frontend-errors.md` Step 2 rewrites the **`catch` arm of
+  the same `try/catch/finally`** and the same unmount effect. Those are not
+  separable by a merge tool. **Run Steps 7–9 of this plan first, then 015's
+  Step 2**, or hand both regions to one agent. 015 has been revised to expect
+  this plan's unmount-cleanup change and to work whether or not it is already
+  present; Step 8 below is written the same way.
+- **`frontend/src/hooks/use-cases.ts` is written by `plans/016` Step 5.** This
+  plan only reads it. See the drift check — a change there is a re-verify, not a
+  stop.
+- **`plans/018-complete-the-i18n-catalogue.md` runs after this plan.** Step 7
+  below keeps the `aria-label="Copy recall code"` literal, which 018's ratchet
+  already allowlists. Do not change that string without telling 018.
+- **Do not edit `plans/README.md`** while running in parallel.
 
 ## Why this matters
 
@@ -501,10 +543,12 @@ unless stated otherwise.
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Type-check (the real one) | `npx tsc -b --noEmit` | exit 0, no output |
-| Frontend unit tests | `npx vitest run` | `Test Files 55 passed`, `Tests 490 passed` **before** this plan; `59 passed` / `509 passed` after |
-| One test file | `npx vitest run __tests__/download-blob.test.ts` | all pass |
-| Lint | `npx eslint .` | exit 0, `0 errors` (25 pre-existing warnings are expected and must not increase) |
-| Confirm scope | `git status --short` (from repo root) | only the files in "In scope" listed |
+| Frontend unit tests | `npx vitest run` | **0 failed**; record `BEFORE_TESTS`/`BEFORE_FILES` and assert a delta of +23 tests / +4 files. Never assert an absolute total — three sibling plans add tests to this suite |
+| One test file | `npx vitest run __tests__/download-blob.test.ts` | the per-file count named in that step. **Per-file counts are the stable unit** |
+| One test by name | `npx vitest run <path> -t "<test name>"` | exit 0, `1 passed` |
+| Lint | `npx eslint .` | exit 0, `0 errors`, warnings ≤ the recorded `BEFORE_WARNINGS` |
+| **Production build** | `npm run build:cloudflare` | exit 0 — writes `frontend/dist`, which `wrangler.toml:15` serves. `npm run build` writes the Flask surface instead and is not the gate |
+| Confirm scope | `git status --porcelain=v1 -uall`, diffed against the drift-check baseline | only additions, all in "In scope" |
 
 **Do not** use `npx tsc --noEmit` (no `-b`). `frontend/tsconfig.json` is a
 solution-style project (`"files": []` plus `references`), so the bare form
@@ -534,10 +578,11 @@ anything.
 **Out of scope** (do NOT touch, even though they look related):
 
 - `frontend/src/pages/CaseDetailPage.tsx` — has the same unawaited clipboard
-  bug at line 81 and a pointless dynamic re-import at line 422. Both are real;
-  both are outside this plan's file territory and are recorded under
-  "Maintenance notes" and "Findings reconsidered". Editing it here risks a
-  merge conflict with a parallel plan.
+  bug at line 81 and a pointless dynamic re-import at line 422. **The clipboard
+  half is now owned by `plans/015-surface-frontend-errors.md` Step 1b**, which
+  already modifies this file and reproduces the exact shape Step 7 establishes
+  here; do not fix it in this plan or the two will conflict. The dynamic
+  re-import is cosmetic — see "Findings reconsidered".
 - `frontend/src/pages/DesignTokensPage.tsx` — same clipboard bug at line 387,
   same blob idiom at line 2490. Same reason. It is a 2 500-line file; leave it.
 - `frontend/src/components/cases/CaseTextViewer.tsx:296-304` — a **fourth**
@@ -833,8 +878,35 @@ In `frontend/src/components/shared/GlobalSearch.tsx`:
      }, []);
    ```
 
-   Leave `cases`, `hasResults`, `isExpanded` and `clampedActiveIdx` (current
-   lines 30–37) exactly as they are.
+   Then replace `cases`, `hasResults` and `isExpanded` (current lines 30–32).
+   **A debounce on its own introduces a new lie**: for the 300 ms after a
+   keystroke, `query` is the new text while `data` still holds the **previous**
+   query's results. Those rows stay clickable, `aria-activedescendant` still
+   points at one of them, and — worst — the `Enter` handler at
+   `GlobalSearch.tsx:81-87` reads `cases[clampedActiveIdx]` and calls
+   `navigate(\`/cases/${selectedCase.case_id}\`)`. Type `smith`, wait for
+   results, type `jones`, press Enter within 300 ms, and you are navigated to a
+   Smith case. Gate the results on the two queries agreeing:
+
+   ```tsx
+     // True while the user has typed something the hook has not been asked for
+     // yet. Results on screen belong to `debouncedQuery`, not to `query`.
+     const resultsAreStale = query.trim() !== debouncedQuery;
+     const cases = resultsAreStale ? [] : (data?.cases ?? []);
+     const hasResults = cases.length > 0;
+     const isExpanded = hasResults && query.length > 0;
+   ```
+
+   Deriving `cases` as `[]` closes all three holes at once with no change to the
+   keyboard handler, the list, or `clampedActiveIdx`: `hasResults` goes false so
+   `onKeyDown` returns early on **every** key including `Enter`, the results
+   `<ul>` (guarded by `cases.length > 0` at line 100) unmounts, and
+   `aria-activedescendant` becomes `undefined`. Leave `clampedActiveIdx`
+   (current lines 34–37) exactly as it is.
+
+   Note `query.trim()` on the left: `handleQueryChange` stores the **trimmed**
+   value into `debouncedQuery`, so comparing the raw `query` would leave the
+   results permanently stale whenever the user types a trailing space.
 
 4. Replace the `onChange` handler (current lines 65–68) with:
 
@@ -962,11 +1034,95 @@ describe("GlobalSearch debounce", () => {
 
     expect(screen.getByText("common.no_results")).toBeTruthy();
   });
+
+  it("does not navigate to a previous query's result during the debounce", () => {
+    // The regression this guards: type "smith", let it resolve, type "jones",
+    // press Enter inside the 300ms window. Without the staleness gate the
+    // Enter handler reads cases[clampedActiveIdx] — still a Smith case — and
+    // navigates there.
+    const navigate = vi.fn();
+    navigateMock.mockReturnValue(navigate);
+    mockUseSearchCases.mockReturnValue({
+      data: {
+        cases: [
+          {
+            case_id: "smithcase01",
+            title: "Smith v Minister",
+            citation: "[2024] FCA 1",
+            court_code: "FCA",
+            date: "2024-01-01",
+          },
+        ],
+      },
+    });
+
+    render(<GlobalSearch open onClose={() => {}} />);
+    typeAll(["smith"]);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    // The result is on screen and selectable for the settled query.
+    expect(screen.getByText("Smith v Minister")).toBeTruthy();
+
+    // Now type a different query and hit Enter before the debounce elapses.
+    typeAll(["jones"]);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.queryByText("Smith v Minister")).toBeNull();
+  });
+
+  it("does not let a click land on a previous query's result either", () => {
+    const navigate = vi.fn();
+    navigateMock.mockReturnValue(navigate);
+    mockUseSearchCases.mockReturnValue({
+      data: {
+        cases: [
+          {
+            case_id: "smithcase01",
+            title: "Smith v Minister",
+            citation: "[2024] FCA 1",
+            court_code: "FCA",
+            date: "2024-01-01",
+          },
+        ],
+      },
+    });
+
+    render(<GlobalSearch open onClose={() => {}} />);
+    typeAll(["smith"]);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    typeAll(["jones"]);
+
+    // The row must be gone, not merely non-navigating.
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });
 ```
 
+Change the `react-router-dom` mock at the top of the file so the navigate
+function is observable — replace `useNavigate: () => vi.fn()` with:
+
+```tsx
+const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
+vi.mock("react-router-dom", () => ({ useNavigate: () => navigateMock() }));
+```
+
+and give it a default in `beforeEach`: `navigateMock.mockReturnValue(vi.fn());`.
+
 **Verify**: `cd frontend && npx vitest run __tests__/global-search-debounce.test.tsx`
-→ `Test Files 1 passed`, `Tests 4 passed`.
+→ `Test Files 1 passed`, `Tests 6 passed`.
+
+Confirm the two new cases genuinely bite before you accept them:
+```bash
+cd frontend && npx vitest run __tests__/global-search-debounce.test.tsx \
+  -t "does not navigate to a previous query's result during the debounce"
+```
+→ `1 passed` after Step 5; it must **fail** if you temporarily revert the
+`resultsAreStale` line to `const cases = data?.cases ?? [];`.
 
 ### Step 7: Make the recall-code copy tell the truth
 
@@ -1100,10 +1256,47 @@ In the same file, replace the `finally` block at lines 362–366 with:
 `clearInterval(watchdog)` stays **outside** the guard — a superseded run must
 still stop its own interval.
 
-Change nothing else in `start()`, `abort()`, `reset()`, or the unmount effect.
+**The guard alone is not sufficient: unmount must also be handled.** There are
+three producers of the rejection that reaches this `finally` —
+a superseding `start()` (`:194`), the watchdog (`:226`), and the **unmount
+cleanup** (`:371-376`, `return () => { controllerRef.current?.abort(); }`). Only
+the first bumps `genRef`. On unmount `myGen === genRef.current` still holds, so
+the new guard lets the teardown through and it calls `setIsStreaming(false)` on
+an unmounted component. Bump the generation in the cleanup, **before** aborting,
+so every `myGen`-gated block in the hook — this `finally`, `update()`, and the
+watchdog interval — becomes a no-op together:
 
-**Verify**: `cd frontend && npx tsc -b --noEmit && npx eslint src/components/llm-council/StreamingCouncilView.tsx`
-→ both exit 0 with no errors.
+```tsx
+  // Cleanup on unmount. Bump the generation FIRST: the abort below makes the
+  // in-flight fetch reject on a later microtask, and every state-touching block
+  // in start() is gated on `myGen === genRef.current`.
+  useEffect(() => {
+    return () => {
+      genRef.current += 1;
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, []);
+```
+
+> If `plans/015-surface-frontend-errors.md` Step 2 has already landed, this
+> effect will already contain the `genRef.current += 1;` line — 015 needs the
+> same bump so its watchdog-timeout branch does not fire on unmount. In that
+> case leave it as it is and only confirm the ordering is bump-then-abort.
+
+Change nothing else in `start()`, `abort()` or `reset()`.
+
+**Verify**:
+```bash
+cd frontend && npx tsc -b --noEmit \
+  && npx eslint src/components/llm-council/StreamingCouncilView.tsx \
+  && grep -c "genRef.current += 1" src/components/llm-council/StreamingCouncilView.tsx
+```
+→ `tsc` and `eslint` exit 0 with no errors, and the grep prints exactly `1` —
+the unmount bump. (`start()`'s existing `const myGen = ++genRef.current;` uses a
+different form and does not match this pattern.) If it prints `2` you have
+duplicated the bump, most likely because 015 landed first and you added it
+again; delete yours.
 
 ### Step 9: Cover the clipboard states and the stream re-entrancy
 
@@ -1203,10 +1396,18 @@ describe("useCouncilStream re-entrancy", () => {
       "fetch",
       vi.fn((_input: unknown, init: { signal: AbortSignal }) => {
         signals.push(init.signal);
-        // Never settles on its own — the test drives the rejection, exactly
-        // as the browser does when an in-flight fetch is aborted.
+        // The mock MUST honour the signal. A promise that only ever settles
+        // when the test calls rejecters[i] does not model the browser: an
+        // abort the test never explicitly rejects (an unmount, a second
+        // start() the test does not tear down) would leave the promise
+        // pending forever, so the hook's finally/catch never runs, the
+        // watchdog interval is never cleared, and the "assertion" passes
+        // because the code under test never executed. Reject on abort.
         return new Promise((_resolve, reject) => {
           rejecters.push(reject);
+          init.signal.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
         });
       }),
     );
@@ -1214,6 +1415,7 @@ describe("useCouncilStream re-entrancy", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   async function flush() {
@@ -1231,43 +1433,55 @@ describe("useCouncilStream re-entrancy", () => {
     await act(async () => {
       void hook.result.current.start({ message: "second" });
     });
-    // The browser rejects the aborted request on a later microtask, after
-    // the successor has already installed its own controller.
-    await act(async () => {
-      rejecters[0](new DOMException("aborted", "AbortError"));
-      await Promise.resolve();
-    });
+    // The abort listener above already rejected run A's promise; flush the
+    // microtasks so its catch/finally runs after the successor installed its
+    // own controller. (rejecters[0] is left in place as a belt-and-braces
+    // escape hatch; calling it a second time is a no-op on a settled promise.)
     await flush();
     return hook;
   }
 
+  /**
+   * Every test in this block MUST settle its runs before finishing. A hook
+   * left mid-stream keeps a 5s watchdog interval alive into the next test.
+   * Use this in place of a bare `unmount()`.
+   */
+  async function unmountAndSettle(hook: { unmount: () => void }) {
+    hook.unmount();
+    await flush();
+  }
+
   it("aborts the previous run and opens a second request", async () => {
-    await startTwoRuns();
+    const hook = await startTwoRuns();
     expect(signals).toHaveLength(2);
     expect(signals[0].aborted).toBe(true);
     expect(signals[1].aborted).toBe(false);
+    await unmountAndSettle(hook);
   });
 
   it("keeps isStreaming true when the superseded run tears down", async () => {
-    const { result } = await startTwoRuns();
-    expect(result.current.isStreaming).toBe(true);
+    const hook = await startTwoRuns();
+    expect(hook.result.current.isStreaming).toBe(true);
+    await unmountAndSettle(hook);
   });
 
   it("leaves the successor's AbortController reachable by abort()", async () => {
-    const { result } = await startTwoRuns();
+    const hook = await startTwoRuns();
 
     await act(async () => {
-      result.current.abort();
+      hook.result.current.abort();
     });
+    await flush();
 
     expect(signals[1].aborted).toBe(true);
-    expect(result.current.isStreaming).toBe(false);
+    expect(hook.result.current.isStreaming).toBe(false);
+    await unmountAndSettle(hook);
   });
 
   it("still clears isStreaming when the only run fails", async () => {
-    const { result } = renderHook(() => useCouncilStream());
+    const hook = renderHook(() => useCouncilStream());
     await act(async () => {
-      void result.current.start({ message: "only" });
+      void hook.result.current.start({ message: "only" });
     });
     await act(async () => {
       rejecters[0](new Error("boom"));
@@ -1275,17 +1489,58 @@ describe("useCouncilStream re-entrancy", () => {
     });
     await flush();
 
-    expect(result.current.isStreaming).toBe(false);
-    expect(result.current.state.council.status).toBe("error");
+    expect(hook.result.current.isStreaming).toBe(false);
+    expect(hook.result.current.state.council.status).toBe("error");
+    await unmountAndSettle(hook);
+  });
+
+  it("touches no state when the component unmounts mid-stream", async () => {
+    // The guard added in Step 8 is gen-based, and unmount does not bump the
+    // generation on its own — hence the cleanup change. Without it, React
+    // logs a setState-after-unmount warning here and the hook's teardown runs
+    // against a dead component.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const hook = renderHook(() => useCouncilStream());
+    await act(async () => {
+      void hook.result.current.start({ message: "only" });
+    });
+    expect(hook.result.current.isStreaming).toBe(true);
+
+    await unmountAndSettle(hook);
+
+    // The abort listener in the fetch mock has rejected by now; if the hook
+    // did not bump genRef, its finally/catch ran against the unmounted tree.
+    const messages = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(messages).not.toMatch(/unmounted|not wrapped in act/i);
+    errorSpy.mockRestore();
+  });
+
+  it("leaves no live watchdog interval behind after unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      const hook = renderHook(() => useCouncilStream());
+      await act(async () => {
+        void hook.result.current.start({ message: "only" });
+      });
+      const during = vi.getTimerCount();
+      await unmountAndSettle(hook);
+      // Compare against the count while the run was live — an absolute
+      // "0 timers" assertion is not safe under jsdom, but the delta is.
+      expect(vi.getTimerCount()).toBeLessThan(during);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 ```
 
-The last case is the regression guard for Step 8: it proves the new `myGen`
-guard did not break the ordinary single-run teardown.
+The fourth case is the regression guard for Step 8's guard itself: it proves the
+new `myGen` check did not break the ordinary single-run teardown. The fifth and
+sixth are the regression guards for the unmount half — they are the ones that
+fail if you add the `finally` guard without the `genRef` bump in the cleanup.
 
 **Verify**: `cd frontend && npx vitest run __tests__/streaming-council-view.test.tsx`
-→ `Test Files 1 passed`, `Tests 7 passed`.
+→ `Test Files 1 passed`, `Tests 9 passed`.
 
 ### Step 10: Make share links basename-aware
 
@@ -1377,32 +1632,58 @@ describe("generateShareableUrl", () => {
 
 ### Step 12: Run the full gate
 
+Record the baseline **before** your first edit (or read it off the run you did
+during the drift check):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run 2>&1 | tail -6   # BEFORE_TESTS, BEFORE_FILES
+npx eslint . 2>&1 | tail -3     # BEFORE_WARNINGS
+```
+
+Then:
+
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npx tsc -b --noEmit
 npx vitest run
 npx eslint .
+npm run build:cloudflare
 ```
 
 **Verify**:
 
 - `npx tsc -b --noEmit` → exit 0, no output.
-- `npx vitest run` → `Test Files 59 passed (59)`, `Tests 509 passed (509)`.
-  (Baseline at commit `42826a3` is 55 files / 490 tests; this plan adds 4 files
-  and 19 tests. If another plan landed first and moved the baseline, the
-  requirement is: exit 0, and the four new files contribute 4 + 4 + 7 + 4 = 19
-  passing tests.)
-- `npx eslint .` → exit 0, `0 errors`, and **no more than 25 warnings** (25 is
-  the pre-existing count at `42826a3`).
+- `npx vitest run` → **0 failed**, `AFTER_FILES == BEFORE_FILES + 4`, and
+  `AFTER_TESTS == BEFORE_TESTS + 23`. **Do not assert an absolute suite total** —
+  plans 015, 016 and 018 add tests to the same suite, so an absolute number
+  would make parallel execution impossible and train the next executor to edit
+  the yardstick. The binding per-file counts are 4 + 6 + 9 + 4 = 23:
+  ```bash
+  npx vitest run __tests__/download-blob.test.ts             # 4 passed
+  npx vitest run __tests__/global-search-debounce.test.tsx   # 6 passed
+  npx vitest run __tests__/streaming-council-view.test.tsx   # 9 passed
+  npx vitest run __tests__/saved-search-share-url.test.ts    # 4 passed
+  ```
+- `npx eslint .` → exit 0, `0 errors`, and no more warnings than
+  `BEFORE_WARNINGS` (this plan introduces none).
+- `npm run build:cloudflare` → exit 0. **This is the binding build**, not
+  `npm run build`: `npm run build` writes
+  `../immi_case_downloader/static/react` (`frontend/vite.config.ts:34`, the
+  local-dev Flask surface), while `build:cloudflare` writes `frontend/dist`,
+  which is what `wrangler.toml:15` (`[assets] directory = "./frontend/dist"`)
+  actually serves in production.
 
-Then, from the repo root, confirm scope:
+Then, from the repo root, confirm scope against the baseline you saved:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain=v1 -uall > /tmp/immi-017-final-status.txt
+diff /tmp/immi-017-baseline-status.txt /tmp/immi-017-final-status.txt
 ```
 
-→ lists only the ten files named in "In scope" (five `M`, five `??`/`A`) plus
-`plans/README.md` if you updated it.
+→ only **added** lines, and every one of them is one of the ten files named in
+"In scope" (five `M`, five `??`). Pre-existing dirt must be unchanged, and you
+must not remove it.
 
 ## Test plan
 
@@ -1415,8 +1696,8 @@ invent.
 | File | Tests | Covers |
 |---|---|---|
 | `download-blob.test.ts` | 4 | anchor attached before click; anchor detached after; revoke deferred past the click task; detach + revoke still happen when `click()` throws |
-| `global-search-debounce.test.tsx` | 4 | intermediate prefixes never reach the hook; exactly one query for the final value after 300 ms; a 1-character query is never sent; no "no results" panel while the debounce is pending |
-| `streaming-council-view.test.tsx` | 7 | copy confirmed only after `writeText` resolves; failure shown on rejection; failure shown when `navigator.clipboard` is absent; second `start()` aborts the first; `isStreaming` survives the superseded teardown; the successor's controller stays reachable by `abort()`; a lone failing run still clears `isStreaming` |
+| `global-search-debounce.test.tsx` | 6 | intermediate prefixes never reach the hook; exactly one query for the final value after 300 ms; a 1-character query is never sent; no "no results" panel while the debounce is pending; **Enter during the debounce does not navigate to the previous query's result**; **the previous query's rows are not on screen to be clicked** |
+| `streaming-council-view.test.tsx` | 9 | copy confirmed only after `writeText` resolves; failure shown on rejection; failure shown when `navigator.clipboard` is absent; second `start()` aborts the first; `isStreaming` survives the superseded teardown; the successor's controller stays reachable by `abort()`; a lone failing run still clears `isStreaming`; **unmount mid-stream touches no state**; **unmount leaves no live watchdog interval** |
 | `saved-search-share-url.test.ts` | 4 | root basename; `/app` basename; basename derived from `window.location`; `page=1` always pinned |
 
 Each of the four files fails against the code as it exists at `42826a3` and
@@ -1430,23 +1711,41 @@ is out of scope.
 Machine-checkable. ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0 with no output
-- [ ] `cd frontend && npx vitest run` exits 0; the four new files report
-      4 + 4 + 7 + 4 = 19 passing tests
-- [ ] `cd frontend && npx eslint .` exits 0 with `0 errors` and ≤ 25 warnings
+- [ ] `cd frontend && npx vitest run` reports **0 failed**, with
+      `AFTER_FILES == BEFORE_FILES + 4` and `AFTER_TESTS == BEFORE_TESTS + 23`
+      against the baseline recorded in Step 12 (never an absolute total)
+- [ ] Each new file hits its own count: `download-blob.test.ts` → 4;
+      `global-search-debounce.test.tsx` → 6;
+      `streaming-council-view.test.tsx` → 9;
+      `saved-search-share-url.test.ts` → 4
+- [ ] The two staleness cases pass **by name**:
+      `npx vitest run __tests__/global-search-debounce.test.tsx -t "does not navigate to a previous query's result during the debounce"`
+      and `-t "touches no state when the component unmounts mid-stream"` on
+      `__tests__/streaming-council-view.test.tsx`
+- [ ] `cd frontend && npx eslint .` exits 0 with `0 errors` and no more warnings
+      than the recorded baseline
+- [ ] `cd frontend && npm run build:cloudflare` exits 0 (the artifact
+      `wrangler.toml:15` actually serves)
 - [ ] `cd frontend && grep -rn "URL.createObjectURL" src/pages/CasesPage.tsx src/pages/CollectionDetailPage.tsx`
       returns no matches
 - [ ] `cd frontend && grep -c "downloadBlob" src/pages/CasesPage.tsx src/pages/CollectionDetailPage.tsx`
       prints `2` for each file (the import and the call)
 - [ ] `cd frontend && grep -n "await navigator.clipboard.writeText" src/components/llm-council/StreamingCouncilView.tsx`
       returns exactly one line
-- [ ] `cd frontend && grep -n "if (myGen === genRef.current)" src/components/llm-council/StreamingCouncilView.tsx`
-      returns exactly one line
+- [ ] `cd frontend && grep -c "if (myGen === genRef.current)" src/components/llm-council/StreamingCouncilView.tsx`
+      returns `1`
+- [ ] `cd frontend && grep -c "genRef.current += 1" src/components/llm-council/StreamingCouncilView.tsx`
+      returns `1` (the unmount bump)
 - [ ] `cd frontend && grep -n "useSearchCases(debouncedQuery, 8)" src/components/shared/GlobalSearch.tsx`
       returns exactly one line
+- [ ] `cd frontend && grep -c "resultsAreStale" src/components/shared/GlobalSearch.tsx`
+      returns `2` (the declaration and its use)
 - [ ] `cd frontend && grep -n "resolveRouterBasename" src/lib/saved-searches.ts`
       returns exactly two lines (the import and the default argument)
-- [ ] `git status --short` (repo root) lists no file outside the "In scope" list
-- [ ] `plans/README.md` status row updated (skip if the file does not exist)
+- [ ] `diff /tmp/immi-017-baseline-status.txt /tmp/immi-017-final-status.txt`
+      shows only added lines, all of them in the "In scope" list
+- [ ] The new status for this plan's `plans/README.md` row is **reported**; the
+      row is edited only if you are running this plan alone (see Sequencing)
 
 ## STOP conditions
 
@@ -1466,15 +1765,20 @@ Stop and report back (do not improvise) if:
   `@radix-ui/react-dialog` mock. Report the error; do not start disabling fake
   timers or reaching for `waitFor` loops, which would make the test
   non-deterministic.
-- `npx eslint .` reports more than 25 warnings or any error. In particular a
-  `react-hooks/exhaustive-deps` error on the new `useCallback`s means the
-  dependency arrays in Steps 5 or 7 were transcribed wrong — fix the array,
-  never silence the rule.
-- Fixing something appears to require editing `frontend/src/hooks/use-cases.ts`,
+- `npx eslint .` reports more warnings than the baseline you recorded, or any
+  error. In particular a `react-hooks/exhaustive-deps` error on the new
+  `useCallback`s means the dependency arrays in Steps 5 or 7 were transcribed
+  wrong — fix the array, never silence the rule.
+- Fixing something appears to require editing
   `frontend/src/components/saved-searches/SavedSearchCard.tsx`,
   `frontend/src/pages/CaseDetailPage.tsx`, or
-  `frontend/src/pages/DesignTokensPage.tsx`. All four are explicitly out of
-  scope and are owned by, or deferred to, other work.
+  `frontend/src/pages/DesignTokensPage.tsx`. All three are explicitly out of
+  scope and are owned by, or deferred to, other work
+  (`CaseDetailPage.tsx` is owned by `plans/015` Step 1b).
+- **`frontend/src/hooks/use-cases.ts` is the exception**: if it has changed
+  since `42826a3`, that is expected — `plans/016` Step 5 adds one line to it.
+  Re-read the `useSearchCases` excerpt and continue. Do not stop, and do not
+  edit the file.
 - You discover that `StreamingCouncilView.tsx` has grown an i18n or `toast`
   dependency since this plan was written. The Step 7 design assumes it has
   neither; re-check before choosing how to surface the failure.
@@ -1492,12 +1796,14 @@ For the human or agent who owns this code next:
   watchdog interval; confirm `clearInterval(watchdog)` is still **outside**
   the guard.
 
-- **Two more unawaited clipboard writes remain**, both outside this plan's
-  file territory and both still lying to the user:
+- **Two more unawaited clipboard writes existed at `42826a3`; one is now
+  claimed:**
   - `frontend/src/pages/CaseDetailPage.tsx:79-84` — no `await`, no `catch` at
     all, and a 2 s `setTimeout` that is never cleared on unmount or re-copy.
+    **Now fixed by `plans/015-surface-frontend-errors.md` Step 1b**, which
+    already owns that file. Not a leftover.
   - `frontend/src/pages/DesignTokensPage.tsx:386-389` — fires the write, then
-    `toast.success` unconditionally.
+    `toast.success` unconditionally. **Still open**; no plan owns that file.
 
   The correct shape for both is
   `frontend/src/components/saved-searches/SavedSearchCard.tsx:78-86`.
@@ -1594,10 +1900,41 @@ For the human or agent who owns this code next:
   uncaught floating promise) in a file this plan does not own. Recorded here so
   it is not re-audited as a defect.
 
-- **Clipboard sites outside this plan's territory — deferred, not dropped.**
+- **Clipboard sites outside this plan's territory — reassigned, not dropped.**
   `frontend/src/pages/CaseDetailPage.tsx:81` and
   `frontend/src/pages/DesignTokensPage.tsx:387` have the same unawaited-write
-  bug as Step 7 and are genuinely broken. They are not fixed here only because
-  both files are outside this plan's declared file territory and editing them
-  would risk a merge conflict with parallel work. They are listed with exact
-  line numbers and the correct fix shape under "Maintenance notes".
+  bug as Step 7 and are genuinely broken. `CaseDetailPage.tsx` is now fixed by
+  `plans/015-surface-frontend-errors.md` Step 1b — 015 already modifies that
+  file, so it is the natural owner and the "two behaviours after the abstraction
+  lands" objection does not apply to it. `DesignTokensPage.tsx` remains open;
+  it is listed with exact line numbers and the correct fix shape under
+  "Maintenance notes".
+
+- **The debounce introduced a second lie, now fixed in the same step
+  (revised 2026-08-28).** Adding a 300 ms debounce without gating the results
+  leaves a window where `query` is the new text while `data` still holds the
+  previous query's results. Verified against the live code:
+  `GlobalSearch.tsx:81-87`'s `Enter` handler reads `cases[clampedActiveIdx]` and
+  calls `navigate(\`/cases/${selectedCase.case_id}\`)`, and the `<li>` buttons at
+  `:107-113` do the same on click — so the debounce alone would let a user
+  navigate to a *Smith* case while the input reads *jones*. Step 5 now derives
+  `cases` from a `resultsAreStale` check so the rows, the keyboard selection and
+  `aria-activedescendant` all disappear together, and Step 6 tests both the
+  Enter path and the click path.
+
+## Review points not applied
+
+One point from the 2026-08-28 cross-plan review was checked and **not** turned
+into work here, with the evidence:
+
+- **"Migrate `CaseTextViewer`'s blob download to the new helper too, otherwise
+  two behaviours survive the abstraction."** The observation is correct —
+  `frontend/src/components/cases/CaseTextViewer.tsx:296-304` is a fourth copy of
+  the idiom — but the file is **already claimed by another plan**:
+  `plans/020-fix-render-performance.md` lists
+  `frontend/src/components/cases/CaseTextViewer.tsx` in its **In scope** block.
+  Taking it here would put two plans on one file, which is exactly the failure
+  mode the file-territory partition exists to prevent, and this plan is P3 while
+  020 is not. It stays in "Maintenance notes" with the exact line range and the
+  `grep -rn "createObjectURL" frontend/src` completion check, so 020 (or whoever
+  follows) can finish the migration in one move.

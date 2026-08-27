@@ -7,14 +7,30 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 42826a3..HEAD -- AGENTS.md CLAUDE.md Makefile`
-> If any of those three files changed since this plan was written, compare the
-> "Current state" excerpts below against the live files before proceeding. Line
-> numbers in this plan are from commit `42826a3`; if plans 001 or 002 have
-> already run, the `Makefile` line numbers **will** have shifted. Match on the
-> quoted text, not on the line number. If a quoted excerpt is nowhere to be
-> found in the live file, treat it as a STOP condition.
+> **Drift check (run first)** — all four commands. `42826a3..HEAD` cannot see a
+> dirty working tree, so on its own it gives a false all-clear:
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- AGENTS.md CLAUDE.md Makefile
+> git diff --stat -- AGENTS.md CLAUDE.md Makefile
+> git diff --cached --stat -- AGENTS.md CLAUDE.md Makefile
+> ```
+> If `AGENTS.md` or `CLAUDE.md` appears in the **unstaged or staged** diff, stop:
+> that is someone's uncommitted work and this plan rewrites one of those files
+> wholesale. Never `git checkout --` or `git clean -f` to clear it.
+>
+> `Makefile` **is expected** to differ once plans 001 and 002 have landed — they
+> are this plan's declared dependencies. This plan no longer edits the `Makefile`
+> at all (see Step 7), so its drift is informational.
+>
+> Line numbers in this plan are from commit `42826a3` and will have shifted.
+> Match on the quoted text, never on the line number. If a quoted excerpt is
+> nowhere to be found in the live file, treat it as a STOP condition.
+>
+> **Parallel execution**: this plan rewrites `AGENTS.md` wholesale and asserts on
+> `git status --short`. Run it in its own worktree or clone if anything else is
+> in flight.
 
 ## Status
 
@@ -22,12 +38,17 @@
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: `plans/001-restore-the-frontend-compile-gate.md`,
-  `plans/002-fix-test-collection-and-install.md` — ordering only. Both edit
-  `Makefile`; 001 rewrites the `typecheck`/`lint` targets and their help lines
-  (help lines 32/34/35), 002 rewrites the `PYTHON` resolution and the
-  `audit-rls-guards` target. This plan touches only the `make test` help line
-  and adds a `make test-workers` help line, so the edits do not collide — but
-  running after them avoids reconciling shifted line numbers by hand.
+  `plans/002-fix-test-collection-and-install.md` (hard), and **after**
+  `plans/038`, `plans/039`, `plans/040` and `plans/041` — those four change what
+  the test-suite paragraph in `CLAUDE.md` (Step 5) must say, and rewriting it
+  before they land guarantees it is wrong on arrival. Run this plan late.
+  - Plan 002 Step 10 rewrites the entire `make help` block, including the
+    `make test` line, and **adds `make test-workers` and `make test-pipeline`
+    help lines** — the exact edits Step 7 of this plan used to make. Step 7 is
+    therefore now a **verification-only** step and this plan **no longer edits
+    the `Makefile`**. See Step 7.
+  - Plan 002 Step 3 also changes `make test` itself from three suites to four
+    (`test: test-py test-fe test-workers test-pipeline`). Step 5 reflects that.
 - **Category**: docs
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -70,7 +91,9 @@ the two can never mechanically diverge again.
 - `CLAUDE.md` — 444 lines. Architecture sections are current; the Commands
   block, Architecture tree, Gotchas list and Important Notes are stale.
   Ends with the same machine-managed GitNexus block.
-- `Makefile` — 115 lines. Only the `help:` target's `@echo` lines are in scope.
+- `Makefile` — 115 lines at `42826a3`. **Read-only for this plan.** Its help
+  block is rewritten by `plans/002` Step 10; Step 7 here only verifies the
+  result.
 
 ### Ground truth verified at `42826a3` (I ran each of these)
 
@@ -437,7 +460,7 @@ per-request client to construct"):
 - **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,857 tests — 1,107 Python unit (71 files) + 260 Playwright E2E (25 files, all of `tests/e2e/` — `tests/e2e/react/` (236 tests/21 files) + `tests/e2e/playwright/` + root-level `test_smoke.py`/`test_export.py`/`test_credentialed_auth_smoke.py`) + 490 frontend unit (55 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
 ```
 
-### Verbatim excerpt to be changed — `Makefile`
+### Verbatim excerpt for reference only — `Makefile` (NOT edited by this plan)
 
 `Makefile:28` (help text), while `Makefile:62` actually runs three suites and
 `Makefile:70-71` defines the third:
@@ -455,7 +478,9 @@ test-workers:
 
 `test-workers` is already declared `.PHONY` at `Makefile:4`. Commit `be67616`
 ("docs: make test also runs the Worker suite") updated the agent docs and left
-this `@echo` behind.
+this `@echo` behind. **Plan 002 Step 10 fixes it**, along with adding
+`make test-workers` and `make test-pipeline` help lines; this plan verifies
+rather than duplicates that work.
 
 ### Repo conventions that must survive this edit
 
@@ -487,23 +512,36 @@ the rewrite — do not delete them while trimming:
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `git diff --stat 42826a3..HEAD -- AGENTS.md CLAUDE.md Makefile` | empty, or changes you have reconciled |
+| Drift check | the four commands above | see the drift-check block |
 | Makefile help | `make help` | prints the target list; exit 0 |
-| Worker tests | `make test-workers` | `Test Files 25 passed (25)`, `Tests 345 passed (345)` |
-| Python lint | `make lint` | `All checks passed!` |
-| Python tests | `make test-py` | 1,141 passed / 3 failed / 7 skipped — see note below |
-| Frontend tests | `cd frontend && npx vitest run` | `Test Files 55 passed`, `Tests 490 passed` |
+| Worker tests | `make test-workers` | exit 0; count unchanged (this plan adds none) |
+| Python lint | `make lint-py` (`make lint` before plan 001) | `All checks passed!` |
+| Python tests | `make test-py` | exit status and the **set of failing files** unchanged — see note |
+| Frontend tests | `cd frontend && npx vitest run` | exit 0; count unchanged |
 | GitNexus block hash (macOS) | `sed -n '/<!-- gitnexus:start -->/,/<!-- gitnexus:end -->/p' AGENTS.md \| md5` | `5b42ede6f90290a95c990201c12d2dc6` |
 | GitNexus block hash (Linux) | `sed -n '/<!-- gitnexus:start -->/,/<!-- gitnexus:end -->/p' AGENTS.md \| md5sum` | `5b42ede6f90290a95c990201c12d2dc6  -` |
-| Changed-file check | `git status --short` | only `AGENTS.md`, `CLAUDE.md`, `Makefile`, `plans/042-*.md` |
+| Changed-file check | `git status --short` | only `AGENTS.md`, `CLAUDE.md`, `plans/042-*.md` |
 
-**Note on `make test-py`**: at `42826a3` this reports **3 failures** caused by a
-Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf`
-import in `tests/test_backfill_judge_overrides_from_pdf.py`. That is an
-environment problem, not repo code, and **not** this plan's problem. This plan
-changes only Markdown and Makefile `@echo` lines, so it cannot change any test
-result. Running the suites is a cheap regression guard, not a gate you must
-turn green.
+**Step 0 — record the baseline.** This plan asserts no absolute suite totals:
+plans 038, 039, 040 and 041 all move them, and a docs plan that pins one would
+go red for reasons that have nothing to do with docs.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py > /tmp/immi-042-py-before.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-042-py-before.txt | sort > /tmp/immi-042-pyfail-before.txt
+cat /tmp/immi-042-pyfail-before.txt
+make test-workers > /tmp/immi-042-workers-before.txt 2>&1; echo "workers exit=$?"; tail -3 /tmp/immi-042-workers-before.txt
+```
+
+**Note on `make test-py`**: on the planning machine
+`/tmp/immi-042-pyfail-before.txt` holds exactly 3 lines, all in
+`tests/test_backfill_judge_overrides_from_pdf.py`, all `ImportError` from a
+Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks `pypdf`.
+That is an environment problem, not repo code, and **not** this plan's problem.
+This plan changes only Markdown, so it cannot change any test result — the
+suites are a cheap regression guard. Compare the failing **set by name** at the
+end, not a count.
 
 The Python virtualenv is at `.venv/`. Use `.venv/bin/python`, `.venv/bin/pytest`
 and `.venv/bin/ruff` — never global `pip`. The `Makefile` already resolves
@@ -516,7 +554,11 @@ and `.venv/bin/ruff` — never global `pip`. The `Makefile` already resolves
 - `AGENTS.md` — replaced wholesale (except its GitNexus block, preserved
   byte-for-byte)
 - `CLAUDE.md` — targeted edits only
-- `Makefile` — **only** the `@echo` lines inside the `help:` target
+
+**`Makefile` was in scope in an earlier draft and is now out.** Plan 002 Step 10
+makes exactly the same two help-line changes (and more), so this plan's Step 7
+would either conflict or find its anchor strings already gone. Step 7 is now a
+read-only verification that 002's help lines are present.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -529,12 +571,13 @@ and `.venv/bin/ruff` — never global `pip`. The `Makefile` already resolves
   here would collide with them. After this plan, `README.md` will still say
   "24 pages" and "React 18" while `CLAUDE.md` says 27 and React 19 — that is
   expected and is those plans' job.
-- `Makefile` recipes, the `.PHONY` line, `typecheck:`, `lint:`, `migrate:`,
-  `audit-rls-guards:`. `typecheck`/`lint` belong to plan 001; the `PYTHON`
-  resolution and `audit-rls-guards` belong to plan 002; retargeting
-  `migrate:` (today `supabase db push`, while the production schema lives in
-  `migrations/d1/{account,catalog,ops}/`) is a separate decision that is not
-  this plan's to make.
+- The whole `Makefile`, recipes and help lines alike. `typecheck`/`lint` belong
+  to plan 001; the `PYTHON` resolution, `audit-rls-guards` and the entire `help:`
+  block belong to plan 002. Retargeting or fail-closing `migrate:` (today
+  `supabase db push`, while the production schema lives in
+  `migrations/d1/{account,catalog,ops}/`) is a real safety fix that this plan
+  cannot make — it is escalated with a concrete patch under "Maintenance notes"
+  → OPEN SAFETY GAP.
 - `docs/ARCHITECTURE.md` — its reconciliation table at lines 236–246 lists
   `README.md`, `CLAUDE.md` and three `.omc/plans/*` but not `AGENTS.md`. Adding
   a row is unnecessary once `AGENTS.md` no longer contains architecture prose to
@@ -826,8 +869,22 @@ nothing left to fall through to. An unhandled `/api/*` route is a genuine
 with:
 
 ```
-- **🛑 Production data cleanup rule (D1)** — the production corpus lives in D1 `IMMI_CATALOG_DB` (149,016 cases) plus R2 `IMMI_CONTENT`, and **this repo documents no D1 backup or restore procedure** — `grep -rn "wrangler d1 export\|Time Travel" .` finds nothing. Treat any bulk UPDATE/DELETE as irreversible. Before running one: (1) take and verify your own snapshot first — there is no `_backup` column trick and no dashboard restore to fall back on; (2) dry-run on a `LIMIT 100` sample and **eyeball** matches against ground truth (local `case_texts/*.txt`) — pattern-shape "garbage" rules had a ~10–15% false-positive rate on legitimate names like `Michael Cooke (NSW)` / `general member cosgrave`; (3) remember writes are fail-closed behind `IMMI_CASE_MUTATIONS_ENABLED` (default `"false"`) — if you had to flip it, flip it back. `docs/JUDGE_DATA_QUALITY.md` is the 2026-05-02 post-mortem; it describes the **Supabase-era** incident and its Postgres-specific remedies no longer apply, but the false-positive analysis still does.
+- **🛑 Production data cleanup rule (D1)** — the production corpus lives in D1 `IMMI_CATALOG_DB` (~150K cases) plus R2 `IMMI_CONTENT`. **Distinguish two paths.** The Worker API is fail-closed behind `IMMI_CASE_MUTATIONS_ENABLED` (checked-in default `"false"`; enforced at `workers/case-api/cloudflare_mutations.js:302`) — but that flag gates **only** the Worker. An operator running `wrangler d1 execute --remote --command "UPDATE …"` bypasses it entirely, and that is how bulk cleanups actually get run. Before ANY bulk UPDATE/DELETE by either path: (1) **take and verify a snapshot** — `wrangler d1 export <BINDING> --remote --output=…`, then prove the dump restores by importing it into a scratch local D1 and comparing row counts; a dump you have not restored is not a backup; (2) **rehearse on a clone**, not on production — import that dump into a scratch database and run the statement there first; (3) **dry-run on `LIMIT 100`** and **eyeball** matches against ground truth (local `case_texts/*.txt`) — pattern-shape "garbage" rules had a ~10–15% false-positive rate on legitimate names like `Michael Cooke (NSW)` / `general member cosgrave`; (4) **give yourself an in-database undo**: D1 is SQLite, so `ALTER TABLE … ADD COLUMN <col>_backup TEXT; UPDATE … SET <col>_backup = <col>;` works, as does a shadow table (`CREATE TABLE <t>_backup AS SELECT * FROM <t>`) when several columns change — pick per table and check the row-size and statement limits before doing it on the largest ones; (5) **know your rollback and its cost before you start**: confirm the restore command for your Wrangler version (`npx wrangler d1 --help`, `npx wrangler d1 time-travel --help`) and write down the RTO and the maximum acceptable data loss — a whole-database point-in-time restore also discards every case the weekly VPS crawler ingested since that point. Full procedure: `docs/ops/d1-migrations.md`. `docs/JUDGE_DATA_QUALITY.md` is the 2026-05-02 post-mortem; it describes the **Supabase-era** incident and its Postgres-specific remedies no longer apply, but the false-positive analysis still does.
 ```
+
+Three claims from an earlier draft of this rule were wrong and must not be
+reinstated:
+
+- **"there is no `_backup` column trick"** — false. D1 is SQLite and supports
+  `ALTER TABLE … ADD COLUMN`; the checked-in migrations use SQLite DDL
+  throughout. Whether a backup column or a shadow table is the right shape is a
+  per-table judgement (row-size limits, index count), not a blanket "impossible".
+- **"writes are fail-closed behind `IMMI_CASE_MUTATIONS_ENABLED`"** as a general
+  safety net — false for the path that matters. That flag is checked inside
+  `dispatchCloudflareCaseMutation` only; a `wrangler d1 execute` is not gated by
+  anything.
+- **"take your own snapshot"** with no procedure — not actionable. A backup step
+  with no verify step and no restore command is a sentence, not a safeguard.
 
 **Verify**:
 
@@ -852,44 +909,57 @@ the wrong occurrence — restore and redo.
 
 ### Step 5: Fix the `CLAUDE.md` test-suite bullet
 
+**Do not write test counts into this block.** Plans 038, 039, 040 and 041 each
+add tests, and plan 002 changes which suites `make test` runs. Any number typed
+here is stale within days — that is precisely the class of drift this plan
+exists to remove, and re-introducing it one paragraph lower would be
+self-defeating. Name the command and the regeneration recipe instead.
+
 Replace `CLAUDE.md:386` (one long line) with this block:
 
 ```
-- **Test suite** — four independently runnable suites. Counts are source-counted
-  at commit `42826a3` (`grep -c "def test_"` for Python; `it(`/`test(` call sites
-  for Vitest); `@pytest.mark.parametrize` expansion makes the pytest *collected*
-  count higher than the source count.
-  - `make test-py` — 1,106 tests in 70 files (`tests/`, excluding `tests/e2e/`)
-  - `make test-fe` — 490 tests in 55 files (`frontend/__tests__/`, flat directory)
-  - `make test-workers` — 345 tests in 25 files (`workers/__tests__/`). Covers the
-    whole production request path (auth, mutations, Council, the
+- **Test suite** — five independently runnable suites. **Counts are deliberately
+  not written here**; they drift with every test added. Run the command, or
+  regenerate a source count with the recipe next to it.
+  - `make test-py` — Python unit tests (`tests/`, excluding `tests/e2e/` and
+    `tests/integration/`).
+    Source count: `grep -rn "def test_" tests/ --include="*.py" | grep -v "/e2e/" | wc -l`
+  - `make test-fe` — frontend Vitest (`frontend/__tests__/`, a flat directory
+    plus one `auth/` subdirectory).
+    File count: `find frontend/__tests__ -name '*.test.*' | wc -l`
+  - `make test-workers` — main Cloudflare Worker Vitest (`workers/__tests__/`).
+    Covers the whole production request path (auth, mutations, Council, the
     `cloudflare-native.js` bundle) and is a CI gate: `.github/workflows/ci.yml`
     runs `npm run test:workers`.
-  - `make test-e2e` — 260 Playwright tests in 25 files (all of `tests/e2e/`:
-    `tests/e2e/react/`, `tests/e2e/playwright/`, and root-level `test_smoke.py` /
-    `test_export.py` / `test_credentialed_auth_smoke.py`). Requires a running server.
-  `make test` runs the first three. Re-verify file counts with
-  `find tests -name 'test_*.py' -not -path '*/e2e/*' | wc -l`,
-  `find frontend/__tests__ -name '*.test.*' | wc -l`,
-  `find workers/__tests__ -name '*.test.*' | wc -l`.
+    File count: `find workers/__tests__ -name '*.test.*' | wc -l`
+  - `make test-pipeline` — the austlii-scraper (pipeline Worker) Vitest suite
+    (`workers/austlii-scraper/src/**/*.test.ts`).
+  - `make test-e2e` — Playwright E2E (`tests/e2e/`). The pytest fixture
+    **launches its own seeded Flask server** in a daemon thread
+    (`tests/e2e/conftest.py:232-274`); setting `E2E_BASE_URL` is what switches it
+    to an external server (`conftest.py:229`, `:278-282`). Needs the extra deps
+    in `requirements-e2e.txt` — `make install-e2e` first.
+  `make test` runs the first four (`test-py test-fe test-workers test-pipeline`).
+  `@pytest.mark.parametrize` expansion makes the pytest *collected* count higher
+  than any `grep "def test_"` source count, so the two never agree — prefer the
+  command's own output.
 ```
 
 **Verify**:
 
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+# The stale figures are gone:
+grep -n "71 files\|1,107 Python\|1,857 tests\|490 frontend unit\|345 tests in" CLAUDE.md; echo "stale-count grep exit=$? (want 1)"
+grep -c "make test-workers" CLAUDE.md      # -> 2 (Commands block + here)
+grep -c "make test-pipeline" CLAUDE.md     # -> 1
+# The claim about make test must match the Makefile, not this plan's memory:
+grep -E '^test:' Makefile
 ```
-grep -n "71 files\|1,107 Python\|1,857 tests" CLAUDE.md
-```
-→ no matches (exit 1)
-
-```
-grep -c "make test-workers" CLAUDE.md
-```
-→ `2` (one in the Commands block from Step 1, one here)
-
-```
-find workers/__tests__ -name '*.test.*' | wc -l
-```
-→ `25`
+→ the stale-count grep prints nothing (`exit=1`); `2`; `1`; and the `^test:`
+line must list exactly the four suites the block names. If the `Makefile` says
+something else, **write what the `Makefile` says** and report the discrepancy —
+do not copy this plan's wording.
 
 ### Step 6: Replace `AGENTS.md` with a pointer file
 
@@ -967,17 +1037,29 @@ document, comment or plan suggests otherwise:
 
 ```bash
 make install      # Install all Python + Node dependencies
+make install-e2e  # Extra deps for the E2E suite (pytest-playwright + chromium)
 make api          # Flask API only, local dev (http://localhost:8080)
 make ui           # Vite dev server only (http://localhost:5173, HMR)
 make build        # Build React frontend → immi_case_downloader/static/react/
-make test         # Python unit + frontend Vitest + Worker Vitest
-make test-py      # Python unit tests only (excludes E2E)
+make test         # Python unit + frontend + both Worker suites
+make test-py      # Python unit tests only (no E2E, no integration)
 make test-fe      # Frontend Vitest tests only
-make test-workers # Worker Vitest tests only (workers/__tests__)
-make test-e2e     # Playwright E2E (requires a running server)
-make lint         # Ruff lint Python source
+make test-workers # Main Cloudflare Worker Vitest suite
+make test-pipeline # austlii-scraper (pipeline Worker) Vitest suite
+make test-e2e     # Playwright E2E — starts its own seeded Flask fixture server;
+                  # set E2E_BASE_URL only if you want an external target
+make lint         # Ruff (Python) + ESLint (frontend)
+make lint-py      # Ruff lint Python source only
 make typecheck    # TypeScript type check
 ```
+
+Before writing this block, run `make help` and copy what it actually prints —
+plan 002 owns those help lines and this list must agree with them, not with this
+plan's snapshot. **Do not** describe `make test-e2e` as "requires a running
+server": `tests/e2e/conftest.py:232-274` launches Flask itself with 10 seeded
+cases, and `E2E_BASE_URL` is the opt-in switch to an external server
+(`conftest.py:229`, `:278-282`). That sentence is one of the errors this plan
+exists to remove.
 
 Python work uses the repo virtualenv at `.venv/` (`.venv/bin/python`,
 `.venv/bin/pytest`, `.venv/bin/ruff`) — never a global `pip`. The full command
@@ -1048,56 +1130,40 @@ grep -c "CLAUDE.md" AGENTS.md
 ```
 → `6` or more
 
-### Step 7: Fix the `Makefile` help text
+### Step 7: Verify the `Makefile` help text — do not edit it
 
-Two edits, both inside the `help:` target, both `@echo` lines. Do not touch any
-recipe.
+**This step edits nothing.** An earlier draft made two `@echo` edits inside the
+`help:` target. Plan 002 Step 10 replaces that whole block, including the
+`make test` line and *adding* `make test-workers` and `make test-pipeline` help
+lines — the same edits. Doing them here would either conflict with 002 or fail
+to find its anchor strings, because after 002 the line
+`@echo "  make test         All tests (Python unit + frontend Vitest)"` no
+longer exists.
 
-**7a.** Replace the `make test` help line:
+Instead, confirm 002's help lines are in place and that `AGENTS.md` and
+`CLAUDE.md` agree with them:
 
-```make
-	@echo "  make test         All tests (Python unit + frontend Vitest)"
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make help > /tmp/immi-042-help.txt; echo "make help exit=$?"
+grep -E "make test( |-)" /tmp/immi-042-help.txt
+for t in test-workers test-pipeline; do
+  grep -q "make $t" /tmp/immi-042-help.txt || echo "MISSING from make help: $t"
+  grep -q "make $t" AGENTS.md            || echo "MISSING from AGENTS.md: $t"
+done
+grep -E '^test:' Makefile
+git diff --stat -- Makefile; git diff --cached --stat -- Makefile
 ```
 
-with:
+**Verify**: `make help exit=0`; no `MISSING …` line is printed; the `^test:`
+recipe lists the same suites the help text and both docs claim; and **both
+`git diff` commands on `Makefile` print nothing** — this plan must leave that
+file untouched.
 
-```make
-	@echo "  make test         All tests (Python unit + frontend Vitest + Worker Vitest)"
-```
-
-**7b.** Insert a `make test-workers` row immediately after the `make test-fe`
-row. Replace:
-
-```make
-	@echo "  make test-fe      Frontend Vitest tests only"
-```
-
-with:
-
-```make
-	@echo "  make test-fe      Frontend Vitest tests only"
-	@echo "  make test-workers Worker Vitest tests only (workers/__tests__)"
-```
-
-If plans 001 or 002 have already run, the surrounding help lines will differ
-from the excerpts above; match on the two quoted `@echo` strings only.
-
-**Verify**:
-
-```
-make help | grep "make test "
-```
-→ `  make test         All tests (Python unit + frontend Vitest + Worker Vitest)`
-
-```
-make help | grep -c "make test-workers"
-```
-→ `1`
-
-```
-make test-workers
-```
-→ `Test Files  25 passed (25)`, `Tests  345 passed (345)`
+If a `MISSING` line appears, plan 002 has not landed. That is a STOP condition:
+this plan is meant to run after it, and writing `make test-pipeline` into
+`AGENTS.md` while no such target exists would be exactly the kind of false
+instruction this plan removes.
 
 ### Step 8: Final consistency sweep
 
@@ -1122,45 +1188,59 @@ grep -n "workers/proxy\.js\|getSqlAsUser\|Hyperdrive → Supabase\|X-Internal-Ro
 Every match must be a sentence saying the thing is **gone or forbidden**, never
 a sentence describing it as current. Read each match before accepting it.
 
-```
+```bash
 git status --short
+git diff --stat -- Makefile; git diff --cached --stat -- Makefile
 ```
-→ exactly `M AGENTS.md`, `M CLAUDE.md`, `M Makefile` (plus this plan file and
-any pre-existing untracked entries such as `.claude/STATE.md` and `plans/`).
-No other file may appear as modified.
+→ exactly `M AGENTS.md` and `M CLAUDE.md` (plus this plan file and any
+pre-existing untracked entries such as `.claude/STATE.md` and `plans/`). **No
+other file may appear as modified, `Makefile` included** — both `git diff`
+commands on it must print nothing.
 
+```bash
+make lint-py; echo "lint-py exit=$?"       # `make lint` before plan 001 lands
+make test-workers > /tmp/immi-042-workers-after.txt 2>&1; echo "workers exit=$?"
+diff <(tail -3 /tmp/immi-042-workers-before.txt) <(tail -3 /tmp/immi-042-workers-after.txt); echo "workers unchanged=$?"
+make test-py > /tmp/immi-042-py-after.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-042-py-after.txt | sort > /tmp/immi-042-pyfail-after.txt
+diff /tmp/immi-042-pyfail-before.txt /tmp/immi-042-pyfail-after.txt; echo "pyfail set unchanged=$?"
 ```
-make lint
-```
-→ `All checks passed!`
-
-```
-make test-workers
-```
-→ `Test Files  25 passed (25)`, `Tests  345 passed (345)`
+→ `lint-py exit=0` with `All checks passed!`; `workers unchanged=0`;
+`pyfail set unchanged=0` — the same test files fail **by name** as in Step 0
+(on the planning machine, still exactly the 3 pyexpat/pypdf `ImportError`s in
+`tests/test_backfill_judge_overrides_from_pdf.py`). A docs-only change that
+moves either result means you edited source.
 
 ## Test plan
 
-This plan changes only Markdown prose and three `Makefile` `@echo` lines. There
-is no code path to test and **no new tests are required or wanted** — adding a
-test that asserts doc contents would create the same drift problem one layer
-down.
+This plan changes only Markdown prose — two files, `AGENTS.md` and `CLAUDE.md`.
+It touches no `Makefile` line (see Step 7). There is no code path to test and
+**no new tests are required or wanted** — a test asserting doc contents would
+recreate the same drift problem one layer down.
 
 The suites are run purely as regression guards, to prove nothing was touched by
-accident:
+accident. All are **delta / identity** checks against the Step 0 baseline; no
+absolute total is asserted, because plans 038–041 move every one of them:
 
-- `make test-workers` → 345 passed in 25 files. Must be identical before and
-  after; this suite has no dependency on any file in scope.
-- `make lint` → `All checks passed!`.
-- `cd frontend && npx vitest run` → 490 passed, 55 files (optional; slower).
-- `make test-py` → 1,141 passed / 3 failed / 7 skipped. The 3 failures are the
-  pre-existing Homebrew-Python `pyexpat`/`libexpat` ABI problem breaking `pypdf`
-  in `tests/test_backfill_judge_overrides_from_pdf.py`. If you see a **different**
-  count of failures, or failures in a different file, STOP — something outside
-  this plan changed.
+- `make test-workers` → exit 0, and the last three summary lines identical
+  before and after. This suite has no dependency on any file in scope.
+- `make lint-py` → `All checks passed!` (`make lint` before plan 001 lands).
+- `cd frontend && npx vitest run` → exit 0, count unchanged (optional; slower).
+- `make test-py` → the **set of failing files unchanged by name** vs.
+  `/tmp/immi-042-pyfail-before.txt`. On the planning machine that set is the 3
+  pre-existing Homebrew-Python `pyexpat`/`libexpat` `ImportError`s breaking
+  `pypdf` in `tests/test_backfill_judge_overrides_from_pdf.py`. If a *different*
+  file appears in that set, STOP — something outside this plan changed. Compare
+  the set, not the count: a count check passes when one new real failure
+  replaces one environmental one.
 
 The real verification for this plan is the grep set in each step's **Verify**
-block plus Step 8's sweep.
+block plus Step 8's sweep. Note that a `grep` for an absent string is a weak
+check — it passes for a document that is empty, truncated, or that never
+contained the string in the first place. That is why Step 8 requires you to
+*read* the six allowed matches rather than only counting them, and why the
+counts of positive strings (`31 fields`, `make test-workers`) are asserted
+alongside the negatives.
 
 ## Done criteria
 
@@ -1175,14 +1255,21 @@ Machine-checkable. ALL must hold:
 - [ ] `grep -n "falls back to Flask\|ALTER TABLE\|public.immigration_cases\|PITR not enabled\|71 files\|1,107 Python\|1,857 tests\|src/__tests__\|the deleted Supabase-era" CLAUDE.md` → no matches (exit 1)
 - [ ] `grep -c "getSql(env)" CLAUDE.md` → `1`, and its line number is greater than that of `grep -n "HISTORICAL, Hyperdrive-era" CLAUDE.md`
 - [ ] `grep -c "31 fields" CLAUDE.md` → `1`
-- [ ] `grep -c "make test-workers" CLAUDE.md` → `2`
+- [ ] `grep -c "make test-workers" CLAUDE.md` → `2`; `grep -c "make test-pipeline" CLAUDE.md` → `1`
+- [ ] `grep -n "requires a running server" CLAUDE.md AGENTS.md` → no matches
+      (the E2E fixture starts its own server; `conftest.py:232-274`)
+- [ ] No test count is written into `CLAUDE.md`'s test-suite block:
+      `grep -nE "(1,1[0-9]{2}|1,857|490 (frontend|tests)|345 tests|260 Playwright)" CLAUDE.md` → no matches
 - [ ] `sed -n '/<!-- gitnexus:start -->/,/<!-- gitnexus:end -->/p' CLAUDE.md | md5` → `5b42ede6f90290a95c990201c12d2dc6` (unchanged)
-- [ ] `make help | grep -c "make test-workers"` → `1`
-- [ ] `make help | grep -q "Python unit + frontend Vitest + Worker Vitest"` → exit 0
-- [ ] `make test-workers` → `Test Files  25 passed (25)`, `Tests  345 passed (345)`
-- [ ] `make lint` → `All checks passed!`
-- [ ] `git status --short` shows no modified file other than `AGENTS.md`, `CLAUDE.md`, `Makefile`
-- [ ] `git diff --stat` shows zero lines changed in any `Makefile` recipe (only `@echo` lines inside `help:`)
+- [ ] `make help` lists `make test-workers` **and** `make test-pipeline`, and
+      `grep -E '^test:' Makefile` lists the same suites the docs claim
+- [ ] `make test-workers` exits 0 with the same last three summary lines as the
+      Step 0 baseline (`diff` of the two tails is empty)
+- [ ] `make lint-py` → `All checks passed!`
+- [ ] `git status --short` shows no modified file other than `AGENTS.md` and `CLAUDE.md`
+- [ ] `git diff --stat -- Makefile` and `git diff --cached --stat -- Makefile`
+      are both empty — this plan no longer edits the `Makefile` at all
+- [ ] `diff /tmp/immi-042-pyfail-before.txt /tmp/immi-042-pyfail-after.txt` is empty
 - [ ] `plans/README.md` status row updated, if that file exists
 
 ## STOP conditions
@@ -1207,8 +1294,10 @@ Stop and report back (do not improvise) if:
   If it now returns files, a D1 backup procedure has been documented since this
   plan was written. Stop and report — the new 🛑 rule must describe that
   procedure instead of saying none exists.
-- **A `Makefile` recipe line appears in `git diff`.** You are only allowed to
-  change `@echo` lines inside `help:`. Revert and redo.
+- **`Makefile` appears in `git diff` at all.** This plan no longer edits it —
+  plan 002 Step 10 owns the help block. Revert your `Makefile` change and redo.
+- **Step 7 prints a `MISSING` line.** Plan 002 has not landed. Stop rather than
+  writing `make test-pipeline` into `AGENTS.md` when no such target exists.
 - **You cannot find one of the quoted excerpts** in the live file after checking
   both the exact text and a shortened distinctive substring of it.
 - **A step's verification fails twice** after a reasonable fix attempt.
@@ -1236,13 +1325,26 @@ For whoever owns these docs next:
   (`git ls-files | grep -i prettier` → nothing). Owned by plans 002 and 037.
   After both land, cross-check that `README.md` and `CLAUDE.md` agree on the
   page count and the React/Vite versions — they currently do not.
-- **Deliberately not done**: retargeting `make migrate`. `Makefile:107-108` runs
-  `supabase db push`, but the production schema lives in
-  `migrations/d1/{account,catalog,ops}/*.sql` and nothing in CI applies it.
-  `supabase/migrations/` still holds 18 files for the local-dev Supabase
-  backend. Deciding whether the target should be renamed
-  (`migrate-supabase-legacy`) or retargeted at D1 is a separate call; this plan
-  only owns help text.
+- **OPEN SAFETY GAP — `make migrate` still runs `supabase db push`.** This is
+  not merely "deliberately not done"; it is a live footgun that documentation
+  alone cannot close, and it needs an owner. `Makefile:107-108` defines a target
+  named `migrate` — the generic name an agent or a new contributor will reach
+  for — that pushes migrations to the **retired** Supabase project and has no
+  effect on production D1. `plans/044` documents the correct D1 procedure in
+  `docs/ops/d1-migrations.md` and warns against `make migrate`; both are prose,
+  and prose does not stop a command from running.
+  **Required follow-up, owned by whichever plan owns the `Makefile` (001/002):**
+  rename the target to `migrate-supabase-legacy`, and either delete `migrate` or
+  make it fail closed —
+  ```make
+  migrate:
+  	@echo "make migrate is retired. Production schema lives in migrations/d1/;"
+  	@echo "see docs/ops/d1-migrations.md. For the legacy Supabase ETL project"
+  	@echo "use: make migrate-supabase-legacy"
+  	@exit 1
+  ```
+  Until that lands, `CLAUDE.md`, `AGENTS.md` and `make help` all still advertise
+  a production-sounding command that touches a retired database.
 - **Known dead target**: `audit-rls-guards` (`Makefile:75-81`) greps
   `workers/**/*.js` for `set_config(` calls. That grep now returns nothing —
   there is no Postgres left — so the target always passes vacuously. Left alone
@@ -1284,5 +1386,3 @@ reasoning, rather than being dropped silently:
   there is nothing left to diff. A diff check would also be actively wrong after
   Step 6, since the two files are now intentionally different documents. If a
   future change reintroduces a full copy, revisit.
-</content>
-</invoke>

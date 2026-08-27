@@ -8,10 +8,39 @@
 > maintain the index, or `plans/README.md` does not exist (it does not exist
 > at the time of writing; if it is still absent, skip that update silently).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff is blind to uncommitted,
+> staged and untracked work, so run **all four** commands below over the same
+> path list; a dirty tree would otherwise hand you a false all-clear. Any
+> in-scope path appearing in any of them is a STOP condition. **Never** run an
+> unconditional `git checkout -- …`, `git restore …` or `git clean -f` to tidy
+> the tree — those changes may be the operator's.
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS='Dockerfile Dockerfile.extractor entrypoint.sh
+> extract_llm_fields.py extract_llm_structured.py extract_with_llm.py
+> extract_structured_fields.py extract_structured_fields_llm.py extract_container.py
+> merge_llm_results.py merge_llm_structured.py merge_llm_extraction.py
+> fill_country_gemini.py fill_outcomes_gemini.py
+> immi_case_downloader/extraction immi_case_downloader/web/internal_extract.py
+> immi_case_downloader/cli.py scripts/fetch_judge_photos.py scripts/README.md archive
+> tests/test_extraction_container_boundary.py tests/test_internal_extract.py
+> tests/test_cli_extended.py'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
+> ```
+>
+> **Expected drift you should NOT stop for**: `extract_structured_fields.py`,
+> `immi_case_downloader/extraction/regex.py` and `tests/` changes are expected
+> if `plans/041-cover-the-extraction-scripts.md` has landed — it is a hard
+> prerequisite of this plan (see Status). Anything else is a STOP.
+>
+> <details><summary>Original (insufficient) form, kept for reference</summary>
+>
+> ```bash
 > git diff --stat 42826a3..HEAD -- \
 >   Dockerfile Dockerfile.extractor entrypoint.sh \
 >   extract_llm_fields.py extract_llm_structured.py extract_with_llm.py \
@@ -24,19 +53,33 @@
 >   tests/test_extraction_container_boundary.py tests/test_internal_extract.py \
 >   tests/test_cli_extended.py
 > ```
->
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> </details>
 
 ## Status
 
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: `plans/003-lint-the-test-suite.md`
+- **Depends on**: `plans/041-cover-the-extraction-scripts.md` (**hard**),
+  `plans/003-lint-the-test-suite.md`
+- **Must run BEFORE**: `plans/036-bound-the-python-dependencies.md`
 - **Category**: tech-debt
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+**Why 041 is a hard prerequisite.** Step 5 of this plan moves lines 32–874 of
+`extract_structured_fields.py` — 843 lines of hand-tuned regex that decide eight
+fields across 149,016 catalog rows — into a new package module. At `42826a3`
+exactly one test asserts anything about any of it. A "verbatim move" that
+silently drops or reorders one pattern would not be caught by any gate this plan
+can run. `plans/041-cover-the-extraction-scripts.md` adds the characterization
+tests that make the move detectable; run it first, on the same branch. If 041
+has not landed, do **not** start Step 5.
+
+**Why this plan must precede 036.** Step 1 deletes `Dockerfile.extractor`.
+`plans/036-bound-the-python-dependencies.md` edits that file and lists it in its
+own Done criteria. Running 036 first, or in parallel, guarantees one of the two
+fails. Order is 032 → 036; 036's own text has been corrected to expect only the
+surviving `Dockerfile`.
 
 ## Why this matters
 
@@ -552,14 +595,60 @@ All commands run from `/Users/d/Developer/Active Projects/IMMI-Case-`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python unit tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` at baseline. The **3 failures are environmental** (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`). They are not caused by repo code. After this plan the pass count changes; the 3 failures must still be exactly those. |
-| One test file | `.venv/bin/pytest tests/test_internal_extract.py -q` | `N passed` |
+| Python unit tests | `make test-py` | see the **delta rule** below. Whatever the pass count, the failures must remain **exactly the 3 named `pypdf`/`pyexpat` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`** (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch — environmental, not repo code). On an interpreter with a working `pypdf` there are 0; that is also fine. |
+| One test file | `.venv/bin/pytest tests/test_internal_extract.py -q` | `N passed` — a per-file count, stable across sibling plans |
 | Python lint | `make lint` | `All checks passed!` |
 | Lint one file | `.venv/bin/ruff check --no-fix <path>` | `All checks passed!` |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed`, 55 files (unchanged by this plan) |
-| Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files (unchanged by this plan) |
+| Frontend tests | `cd frontend && npx vitest run` | untouched by this plan — identical to your Step 0 record |
+| Worker tests | `cd workers && npx vitest run` | untouched by this plan — identical to your Step 0 record |
 | Container-shaped import probe | see Step 5 | `import-ok` |
+| Container build + live request | see Step 10 | `health-ok` then `extract-ok` |
 | What changed | `git status --short` | only in-scope paths |
+
+**Delta rule (read before quoting any number).** Sibling plans in this batch add
+and remove tests in the same suites, so absolute totals like "1141 passed" are
+not usable gates — they break the moment another plan merges, and an executor
+who edits the expected number has destroyed the gate.
+
+**Step 0 (do this before anything else)** — record your own baseline:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u   # → PY_FAIL_NAMES
+make test-py 2>&1 | tail -3                                # → PY_PASS_BEFORE, PY_SKIP_BEFORE
+.venv/bin/pytest tests/test_internal_extract.py tests/test_cli_extended.py \
+                 tests/test_extraction_container_boundary.py -q | tail -2
+(cd frontend && npx vitest run 2>&1 | tail -3)             # → FE_BEFORE
+(cd workers  && npx vitest run 2>&1 | tail -3)             # → WORKER_BEFORE
+```
+
+`PY_FAIL_NAMES` must be exactly the three
+`tests/test_backfill_judge_overrides_from_pdf.py` entries (or empty). Anything
+else and this plan cannot start.
+
+| Suite | Required movement |
+|---|---|
+| Python | passed `PY_PASS_BEFORE + N_NEW`, skipped unchanged, failing **names** unchanged |
+| Frontend / Worker | unchanged from `FE_BEFORE` / `WORKER_BEFORE` |
+
+`N_NEW` is the net number of Python tests this plan adds. Do not copy a number
+from this document — **count the tests you actually write** and state both the
+baseline and the final figure in your completion report. The contributions are:
+Step 5 `tests/test_package_import_boundary.py` (+1), Step 6
+`tests/test_batch_runner.py` (at least 8), Step 8's new cases in
+`tests/test_internal_extract.py` and the whole of
+`tests/test_extract_container_app.py`, and Step 9's replacement of
+`test_search_all_sources` with two tests plus a `--sources` default assertion
+(net +2). The per-file counts are the sharper gate, because they do not move
+when a sibling plan lands:
+
+```bash
+.venv/bin/pytest tests/test_batch_runner.py -q
+.venv/bin/pytest tests/test_package_import_boundary.py -q     # → 1 passed
+.venv/bin/pytest tests/test_internal_extract.py -q
+.venv/bin/pytest tests/test_extract_container_app.py -q
+.venv/bin/pytest tests/test_extraction_container_boundary.py -q   # → 3 passed
+```
 
 Do **not** run `make typecheck` as a gate for this plan: the target runs
 `npx tsc --noEmit`, which in this repo loads zero files because
@@ -595,6 +684,8 @@ TypeScript.
 - `tests/test_cli_extended.py` (edit — only the `test_search_all_sources` method)
 - `tests/test_batch_runner.py` (create)
 - `tests/test_package_import_boundary.py` (create)
+- `tests/test_extract_container_app.py` (create — the container adapter's own
+  HTTP-level tests; see Step 8 sub-step 5)
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -1042,21 +1133,85 @@ For each of `extract_llm_fields.py`, `merge_llm_results.py`,
    )
    ```
 
-2. Replace the body of `save_csv` with a single `atomic_write_rows(...)` call,
-   preserving each script's existing backup behaviour exactly:
+2. Replace each `save_csv` with **exactly** the body below. Do not paraphrase:
+   an earlier draft said "replace the body with a single helper call" while also
+   saying "keep the existing `print(f"Backup saved to {backup_path}")` line",
+   which is self-contradictory — `backup_path` would be undefined. These four
+   replacements are the resolution. Each preserves that script's original backup
+   behaviour and its original prints.
 
-   | Script | `job_name` | backup args |
+   `extract_llm_fields.py` — replaces lines 49-59:
+
+   ```python
+   def save_csv(rows):
+       atomic_write_rows(Path(CSV_PATH), rows, job_name="llm_fields")
+   ```
+
+   `merge_llm_results.py` — replaces lines 22-31:
+
+   ```python
+   def save_csv(rows):
+       atomic_write_rows(Path(CSV_PATH), rows, job_name="merge_llm_results")
+   ```
+
+   `extract_structured_fields.py` — replaces lines 986-1005. The backup path is
+   recomputed locally so the print stays truthful, and the empty-rows guard
+   stays *before* the print so an empty run does not claim a backup it never
+   made:
+
+   ```python
+   def save_csv(rows: list[dict]):
+       """Save updated rows back to CSV with atomic write."""
+       if not rows:
+           return
+
+       backup_path = CSV_PATH.with_suffix(".csv.bak_extract")
+       atomic_write_rows(
+           CSV_PATH,
+           rows,
+           job_name="structured_fields",
+           backup_suffix=".csv.bak_extract",
+       )
+       print(f"Backup saved to {backup_path}")
+       print(f"Saved {len(rows)} rows to {CSV_PATH}")
+   ```
+
+   `extract_structured_fields_llm.py` — replaces lines 122-134:
+
+   ```python
+   def save_csv(rows: list[dict]):
+       atomic_write_rows(
+           CSV_PATH,
+           rows,
+           job_name="structured_fields_llm",
+           backup_suffix=".csv.bak_llm_structured",
+           backup_once=True,
+       )
+   ```
+
+   `extract_llm_fields.py` and `merge_llm_results.py` hold `CSV_PATH` as a
+   `str`, so those two wrap it — `Path(CSV_PATH)` — at the call site rather than
+   changing the module constant, and both need `from pathlib import Path` if
+   they do not already import it (check before adding: an unused import is an
+   F401 and `make lint` will fail).
+
+2b. **Delete the imports these replacements orphan.** Ruff's default rule set
+   includes `F401`, so a leftover unused import fails `make lint`. Verified at
+   `42826a3`, per file:
+
+   | File | Delete | Keep, still used |
    |---|---|---|
-   | `extract_llm_fields.py` | `"llm_fields"` | none |
-   | `merge_llm_results.py` | `"merge_llm_results"` | none |
-   | `extract_structured_fields.py` | `"structured_fields"` | `backup_suffix=".csv.bak_extract"` (unconditional copy, as today) |
-   | `extract_structured_fields_llm.py` | `"structured_fields_llm"` | `backup_suffix=".csv.bak_llm_structured"`, `backup_once=True` |
+   | `extract_llm_fields.py` | `import os` (line 10 — its only use was `os.replace` at line 59) | `csv` (line 46), `json`, `time`, `threading`, `datetime`, `anthropic` |
+   | `merge_llm_results.py` | *nothing* — `os` survives via `os.path.join` at line 40 | `csv` (line 19), `os`, `json`, `glob` |
+   | `extract_structured_fields.py` | `import shutil` (line 21 — its only use was `shutil.copy2` at line 993) | `os` (line 889), `csv` (line 982), `argparse`, `re`, `sys`, `Counter`, `ProcessPoolExecutor`, `Path` |
+   | `extract_structured_fields_llm.py` | `import shutil` (line 25 — only use was line 128) **and** `from dotenv import load_dotenv` (line 34, orphaned by sub-step 4) | `os` (lines 139, 200), `csv` (line 119), the rest |
+   | `fill_country_gemini.py` | `from dotenv import load_dotenv` (line 33) | `os` (line 149), the rest |
+   | `fill_outcomes_gemini.py` | `from dotenv import load_dotenv` (line 35) | `os` (line 177), the rest |
 
-   `extract_llm_fields.py` and `merge_llm_results.py` currently hold `CSV_PATH`
-   as a `str`; wrap it — `Path(CSV_PATH)` — at the call site rather than
-   changing the module constant, so nothing else in those files shifts. Keep the
-   existing `print(f"Backup saved to ...")` / `print(f"Saved {len(rows)} rows ...")`
-   lines in `extract_structured_fields.py` where they are.
+   Re-derive this table on your tree rather than trusting the line numbers —
+   `plans/041-cover-the-extraction-scripts.md` lands first and may shift them.
+   The reliable check is per file: after editing, run
+   `.venv/bin/ruff check --no-fix <file>` and delete exactly what F401 names.
 
 3. Wrap each script's `main()` body in the lock, so a second copy of any of them
    refuses to start instead of racing:
@@ -1093,11 +1248,41 @@ For each of `extract_llm_fields.py`, `merge_llm_results.py`,
 grep -n 'CSV_PATH + "\.tmp"\|with_suffix(".csv.tmp")' extract_llm_fields.py merge_llm_results.py extract_structured_fields.py extract_structured_fields_llm.py; \
 grep -rn "_find_and_load_env" extract_structured_fields_llm.py fill_country_gemini.py fill_outcomes_gemini.py; \
 for f in extract_llm_fields.py merge_llm_results.py extract_structured_fields.py extract_structured_fields_llm.py fill_country_gemini.py fill_outcomes_gemini.py; do \
-  .venv/bin/python -c "import ast,sys; ast.parse(open('$f').read()); print('parse-ok $f')"; done; \
+  .venv/bin/ruff check --no-fix "$f" || echo "LINT FAILED $f"; done; \
 make lint
 ```
 
-→ both greps print nothing and exit 1; six `parse-ok` lines; `All checks passed!`.
+→ both greps print nothing and exit 1; every per-file ruff run prints
+`All checks passed!` and no `LINT FAILED` line appears; `make lint` prints
+`All checks passed!`.
+
+The per-file `ruff check` replaces the earlier `ast.parse(...)` "parse-ok" loop.
+`ast.parse` only proves the file is syntactically valid Python — it cannot see
+an undefined `backup_path`, an orphaned `import shutil`, or any of the failure
+modes this step actually risks. Ruff's default `F` rules catch all three.
+
+Then prove the atomic writer is really the only writer left, and that the four
+`save_csv` functions still behave. Run this against a **throwaway** CSV — never
+against `downloaded_cases/`:
+
+```bash
+.venv/bin/python - <<'PY'
+import csv, sys, tempfile, pathlib
+sys.path.insert(0, ".")
+from immi_case_downloader.extraction.batch_runner import atomic_write_rows
+tmp = pathlib.Path(tempfile.mkdtemp()) / "cat.csv"
+tmp.write_text("a,b\n1,2\n", encoding="utf-8-sig")
+atomic_write_rows(tmp, [{"a": "9", "b": "8"}], job_name="probe",
+                  backup_suffix=".csv.bak_probe")
+with open(tmp, encoding="utf-8-sig", newline="") as fh:
+    print("rows:", list(csv.DictReader(fh)))
+print("backup exists:", tmp.with_suffix(".csv.bak_probe").exists())
+print("leftover tmp files:", sorted(p.name for p in tmp.parent.glob("*.tmp")))
+PY
+```
+
+→ `rows: [{'a': '9', 'b': '8'}]`, `backup exists: True`,
+`leftover tmp files: []`.
 
 Then confirm the scripts still import cleanly without executing (they call
 `load_project_env()` at module scope, which is safe, but `anthropic` /
@@ -1150,9 +1335,31 @@ for m in ('extract_llm_fields','merge_llm_results','extract_structured_fields','
      `X-Extraction-Token` header with `secrets.compare_digest` — missing secret
      **or** mismatch → `({"error": "Forbidden", "code": "invalid_extraction_token"}, 403)`.
      Guard `compare_digest` against a `None` header by coercing to `""` first.
-   - `def validate_payload(payload: dict) -> tuple[str, list] | tuple[dict, int]`
-     — or simpler, `def bad_payload(run_id, batch) -> bool`, returning true when
-     `not run_id or not isinstance(batch, list) or len(batch) > MAX_BATCH_SIZE`.
+   - `def parse_payload(raw: object) -> tuple[str, list] | None` — the **whole**
+     payload validation, and it must not assume anything about the JSON it is
+     handed. `request.get_json(silent=True)` returns whatever the client sent:
+     a list, a string, a number, or `None`. The old
+     `payload = request.get_json(silent=True) or {}` followed by `payload.get(...)`
+     raises `AttributeError` → **500** for a JSON array or string body, which is
+     an unauthenticated crash surface. Validate in this order, returning `None`
+     (meaning "reject with `400 bad_payload`") at the first failure:
+
+     1. `isinstance(raw, dict)` — a top-level list/str/int/None is rejected here
+     2. `run_id = text(raw.get("run_id"))` is non-empty
+     3. `batch = raw.get("batch")` and `isinstance(batch, list)`
+     4. `len(batch) <= MAX_BATCH_SIZE`
+     5. every element satisfies `isinstance(item, dict)`
+     6. for every element, `item.get("base")` is either absent/`None` or a
+        `dict` — never a list or string, because `run_batch` does
+        `dict(item.get("base") or {})` and `dict("abc")` raises
+
+     Return `(run_id, batch)` on success. Keep the error body exactly
+     `{"error": "Invalid payload", "code": "bad_payload"}` with status `400` at
+     both call sites, so the Worker's existing expectations do not move.
+
+   - `def bad_payload(...)` is **not** sufficient on its own and must not be the
+     only guard: it was specified against already-extracted `run_id` / `batch`
+     values, i.e. after the crash has already happened.
    - `def run_batch(run_id: str, batch: list, env: Mapping[str, str]) -> dict`
      — the loop currently duplicated at `extract_container.py:40-80` and
      `immi_case_downloader/web/internal_extract.py:30-106`, verbatim in
@@ -1167,16 +1374,18 @@ for m in ('extract_llm_fields','merge_llm_results','extract_structured_fields','
 
 2. Reduce `extract_container.py`'s `internal_extract()` to: call
    `service.authorize(request.headers.get, os.environ)`; if it returns a pair,
-   `return jsonify(body), status`. Then parse the payload, apply
-   `service.bad_payload`, and return `jsonify(service.run_batch(...))`. Keep
-   `/health`, `app`, and the `__main__` block. The local `text()` / `number()`
-   helpers move into `service.py`; delete whichever become unused so ruff stays
-   clean.
+   `return jsonify(body), status`. Then
+   `parsed = service.parse_payload(request.get_json(silent=True))`; if it is
+   `None`, return `jsonify({"error": "Invalid payload", "code": "bad_payload"}), 400`.
+   Otherwise `run_id, batch = parsed` and return
+   `jsonify(service.run_batch(run_id, batch, os.environ))`. Keep `/health`,
+   `app`, and the `__main__` block. The local `text()` / `number()` helpers move
+   into `service.py`; delete whichever become unused so ruff stays clean.
 
 3. Reduce `immi_case_downloader/web/internal_extract.py` to the same shape,
    keeping the blueprint object, the route decorator and the
    `csrf.exempt(internal_extract_bp)` call at line 109. It now enforces the
-   shared secret and the batch cap.
+   shared secret, the batch cap **and** the payload-shape checks.
 
 4. Update `tests/test_internal_extract.py`:
    - `_app()` gains an `EXTRACTION_SHARED_SECRET` value in its
@@ -1194,17 +1403,52 @@ for m in ('extract_llm_fields','merge_llm_results','extract_structured_fields','
      unchanged.
    - Add `test_internal_extract_rejects_oversized_batch`: 21 well-formed items,
      all headers correct → `400` with `body["code"] == "bad_payload"`.
+   - Add `test_internal_extract_rejects_non_object_payloads`, parametrised over
+     `[1, 2]`, `"hello"`, `7` and `None` sent with `json=` and all headers
+     correct → every one is `400` / `bad_payload`, and **none is a 5xx**. This
+     is the crash case: before the fix these raised `AttributeError` inside the
+     handler.
+   - Add `test_internal_extract_rejects_bad_item_shapes`, covering
+     `{"run_id": "r", "batch": ["not-a-dict"]}` and
+     `{"run_id": "r", "batch": [{"base": "not-a-mapping"}]}` → both `400` /
+     `bad_payload`, neither a 5xx.
+   - Add `test_internal_extract_rejects_mixed_valid_and_invalid_items`: a batch
+     whose first item is well-formed and whose second is `[]` → `400`, and
+     assert **nothing was extracted** (the whole request is rejected, not
+     partially processed).
+
+5. **Test both adapters, not just the shared service.** The whole point of this
+   step is that two Flask entry points now bind to one implementation, so a test
+   that only exercises `service.py` would not notice one adapter forgetting to
+   call `parse_payload`. Add a second test module,
+   `tests/test_extract_container_app.py`, that imports the container app
+   directly (`from extract_container import app`) and re-runs the same four
+   rejection cases plus the authenticated `200` case against
+   `app.test_client()`. `tests/test_internal_extract.py` keeps covering the
+   blueprint adapter through `create_app()`.
+
+   If importing `extract_container` at collection time is awkward (it defines a
+   module-level `app`), import it inside the test function rather than moving
+   code around in `extract_container.py`.
 
 **Verify**:
 
 ```bash
-.venv/bin/pytest tests/test_internal_extract.py tests/test_extraction_container_boundary.py tests/test_extraction_regex.py -q; \
+.venv/bin/pytest tests/test_internal_extract.py tests/test_extract_container_app.py \
+                 tests/test_extraction_container_boundary.py tests/test_extraction_regex.py -q; \
 grep -c "extract_llm(" extract_container.py immi_case_downloader/web/internal_extract.py; \
+grep -c "parse_payload" extract_container.py immi_case_downloader/web/internal_extract.py; \
 make lint
 ```
 
-→ pytest passes with at least 4 tests in `test_internal_extract.py`; both greps
-print `0` (the LLM loop now lives only in `service.py`); `All checks passed!`.
+→ pytest passes; the first grep prints `0` for both files (the LLM loop now
+lives only in `service.py`); the second prints `1` for both (**both** adapters
+validate); `All checks passed!`.
+
+Then prove the new tests can fail: temporarily make `parse_payload` return
+`("x", [])` unconditionally, re-run
+`.venv/bin/pytest tests/test_internal_extract.py tests/test_extract_container_app.py -q`,
+confirm red, and restore.
 
 Then re-run the container-shaped import probe from Step 5 — it must still print
 `import-ok`, proving `service.py` did not drag a non-`flask` dependency into the
@@ -1223,33 +1467,60 @@ rm -rf /tmp/immi-pkg-check/immi_case_downloader/extraction/__pycache__
 
 ### Step 9: Stop running the dead Federal Court scraper by default
 
+**The failure mode this step must avoid.** An earlier draft made an explicit
+`--sources fedcourt` print a message and then fall through to a normal, empty,
+**exit-0** run. That is worse than the defect it replaces: a cron job or CI step
+that asks for `fedcourt` would record "search succeeded, 0 cases" forever. A
+requested source that cannot be served must fail loudly. `main()` ignores the
+return value of `args.func(args)` (`cli.py:311`), so the only way to signal
+failure is to raise `SystemExit`.
+
 1. In `immi_case_downloader/cli.py`, replace lines 58–72 (the
    `# Search Federal Court` block shown in "Current state") with:
 
    ```python
     # Federal Court direct search is unavailable: search2.fedcourt.gov.au does
-    # not resolve. FCA judgments are collected through AustLII instead, so
-    # "all" no longer includes this source and an explicit request says why
-    # rather than failing through the HTTP retry path.
+    # not resolve (see CLAUDE.md, "Federal Court DNS"). FCA judgments are
+    # collected through AustLII instead. An explicit --sources fedcourt is a
+    # hard error rather than a silent empty success, so automation notices.
     if "fedcourt" in args.sources:
-        print(
+        raise SystemExit(
             "Source 'fedcourt' is unavailable: search2.fedcourt.gov.au does not "
             "resolve. Federal Court judgments are available via AustLII — use "
-            "--sources austlii --databases FCA. Skipping."
+            "--sources austlii --databases FCA."
         )
    ```
+
+   Note the ordering consequence: this check must sit **after** the AustLII
+   block, so `--sources austlii fedcourt` still collects the AustLII results
+   before exiting non-zero. Place it exactly where the old block was.
 
    Leave the `from .sources.federal_court import FederalCourtScraper` import at
    line 9 in place: `cmd_download` still uses it at line 140.
 
-2. Update the `--sources` help text at line 251 so the default is accurate:
+2. Change the `--sources` **default** so the documented default no longer
+   promises a source that cannot be served. At `cli.py:247-252`:
 
    ```python
-        help="Sources to search (default: all — AustLII only; 'fedcourt' is unavailable)",
+       search_parser.add_argument(
+           "--sources",
+           nargs="+",
+           default=["austlii"],
+           choices=["all", "austlii", "fedcourt"],
+           help="Sources to search (default: austlii). 'all' means AustLII only — "
+                "'fedcourt' is unavailable (search2.fedcourt.gov.au does not resolve).",
+       )
    ```
 
-   Leave `choices` and `default` as they are, so an existing
-   `--sources fedcourt` invocation still parses and gets the explanation.
+   Two deliberate decisions here, both of which you must state in your handoff
+   because they are **user-visible behaviour changes**:
+
+   - The default moves `["all"]` → `["austlii"]`. Behaviourally identical after
+     step 1 (both search AustLII only), but it stops the help text and the
+     `--sources all` semantics from silently disagreeing with each other.
+   - `"all"` is kept as a valid choice and now means "every source that works",
+     i.e. AustLII. It does **not** trigger the `fedcourt` error, because
+     `"fedcourt" in args.sources` is a membership test on the literal string.
 
 3. Update `cmd_list_databases` lines 193–196:
 
@@ -1291,30 +1562,131 @@ rm -rf /tmp/immi-pkg-check/immi_case_downloader/extraction/__pycache__
 
     @patch("immi_case_downloader.cli.FederalCourtScraper")
     @patch("immi_case_downloader.cli.AustLIIScraper")
-    def test_search_explicit_fedcourt_reports_unavailable(
-        self, mock_austlii_cls, mock_fc_cls, tmp_path, capsys
+    def test_search_explicit_fedcourt_exits_non_zero(
+        self, mock_austlii_cls, mock_fc_cls, tmp_path
     ):
-        """--sources fedcourt explains the outage instead of retrying a dead host."""
+        """--sources fedcourt fails loudly instead of succeeding with 0 cases."""
         ensure_output_dirs(str(tmp_path))
         save_cases_csv([], str(tmp_path))
 
         args = self._make_args(tmp_path, sources=["fedcourt"], databases=["AATA"])
-        cmd_search(args)
+        with pytest.raises(SystemExit) as excinfo:
+            cmd_search(args)
 
         mock_fc_cls.assert_not_called()
-        assert "unavailable" in capsys.readouterr().out
+        assert "unavailable" in str(excinfo.value)
+        # A bare `raise SystemExit("msg")` exits 1, not 0 — that is the point.
+        assert excinfo.value.code != 0
+
+    def test_search_default_sources_is_austlii(self):
+        """The declared default no longer promises a source that cannot be served."""
+        from immi_case_downloader.cli import main  # noqa: F401  (parser lives in main)
+        import argparse
+        import immi_case_downloader.cli as cli_mod
+
+        parser = argparse.ArgumentParser()
+        # Re-parse through the real CLI rather than asserting on a literal:
+        with patch.object(cli_mod.sys, "argv", ["run.py", "search"]):
+            ...
    ```
+
+   For that last test, prefer whatever idiom `tests/test_cli.py` already uses to
+   reach the parser (read it first). If the file has no parser-level test,
+   assert on the declared default instead — `--sources` must default to
+   `["austlii"]` — using the same `_make_args` helper style as its neighbours.
+   Do **not** invent a new harness for it; a one-line assertion in an existing
+   style is worth more than a clever one.
 
 **Verify**:
 
 ```bash
 .venv/bin/pytest tests/test_cli.py tests/test_cli_extended.py -q; \
 grep -n 'or "all" in args.sources' immi_case_downloader/cli.py; \
+grep -n 'default=\["austlii"\]' immi_case_downloader/cli.py; \
+.venv/bin/python run.py search --sources fedcourt --databases AATA >/tmp/immi-fedcourt.txt 2>&1; \
+  echo "fedcourt exit=$?"; \
 make lint
 ```
 
-→ pytest passes; the grep prints exactly **one** line (`cli.py:37`, the AustLII
-branch) and nothing for a fedcourt branch; `All checks passed!`.
+→ pytest passes; the first grep prints exactly **one** line (`cli.py:37`, the
+AustLII branch) and nothing for a fedcourt branch; the second prints one line;
+`fedcourt exit=1` with `unavailable` in `/tmp/immi-fedcourt.txt`; `All checks
+passed!`.
+
+That real CLI invocation is safe: with `sources=["fedcourt"]` the AustLII branch
+never runs, so `cmd_search` raises before any HTTP request and before
+`save_cases_csv` is reached. (`ensure_output_dirs` runs first and only mkdirs
+paths that already exist.) Confirm the catalog is untouched by comparing its
+mtime around the run — `downloaded_cases/` is gitignored, so `git status` can
+never tell you anything about it:
+
+```bash
+stat -f %m downloaded_cases/immigration_cases.csv   # before and after; must match
+```
+
+Do **not** run `run.py search` without `--sources fedcourt` — that one really
+would scrape AustLII and rewrite the catalog.
+
+### Step 10: Build and run the container image once, end to end
+
+This plan changes the `Dockerfile` `COPY` graph (Step 5), the package import
+boundary (Step 5), and the container's request handler (Step 8) — and until now
+nothing in it ever built or ran the image. The `/tmp/immi-pkg-check` probe
+proves the *import* closure; it does not prove the image builds, that `CMD
+["python", "extract_container.py"]` still starts, or that the two adapters agree
+at the HTTP layer. Do that once, here.
+
+Pick whichever container runtime is on this machine (`docker`, `podman` and
+`nerdctl` all accept these arguments — substitute the binary name):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+docker build -f Dockerfile -t immi-extract-probe .
+docker run --rm -d --name immi-extract-probe -p 18080:8080 \
+  -e EXTRACTION_SHARED_SECRET=test-extraction-token immi-extract-probe
+sleep 3
+
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/health   # → 200
+echo health-ok
+
+curl -sS -X POST http://127.0.0.1:18080/internal/extract \
+  -H 'X-Internal-Route: worker' \
+  -H 'X-Internal-Route-Subtype: cron-extract' \
+  -H 'X-Extraction-Token: test-extraction-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"run_id":"probe-1","batch":[{"case_id":"abc123","text":"TRIBUNAL MEMBER: A Smith"}]}'
+echo extract-ok
+
+# the crash case Step 8 fixed — a JSON array body must be 400, never 5xx
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18080/internal/extract \
+  -H 'X-Internal-Route: worker' -H 'X-Internal-Route-Subtype: cron-extract' \
+  -H 'X-Extraction-Token: test-extraction-token' \
+  -H 'Content-Type: application/json' -d '[1,2]'                          # → 400
+
+# and the unauthenticated case
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18080/internal/extract \
+  -H 'Content-Type: application/json' -d '{"run_id":"x","batch":[]}'      # → 403
+
+docker stop immi-extract-probe
+docker rmi immi-extract-probe
+```
+
+`test-extraction-token` is a throwaway literal for this probe, not a credential;
+never put a real `EXTRACTION_SHARED_SECRET` on a command line.
+
+**Verify**: `200`, `health-ok`, a JSON body with the keys `run_id`, `extracted`,
+`llm_calls` and `cost_usd` (the LLM call itself may fail without a gateway
+binding — a `source: "timeout"` or error envelope is acceptable; a **5xx or a
+traceback is not**), `extract-ok`, then `400` and `403`.
+
+**If no container runtime is available on this machine**: do not skip this step
+silently and do not claim the container is verified. Run the same four requests
+against the container entry point *locally* —
+`EXTRACTION_SHARED_SECRET=test-extraction-token .venv/bin/python extract_container.py`
+in one shell, the four `curl`s against `http://127.0.0.1:8080` in another — which
+still exercises `extract_container.py`'s real Flask app and both guards, then
+**state explicitly in your handoff that the image build itself was not
+verified**. That gap is a real one: the `COPY` line changed in Step 5.
 
 ## Test plan
 
@@ -1332,13 +1704,27 @@ New tests, all in new or already-in-scope files:
   module name. This is the regression guard for DEBT-11; it replaces the
   `pyproject.toml` the audit suggested (see "Findings reconsidered").
 - `tests/test_internal_extract.py` (edited) — third assertion flips to 403; new
-  authenticated 200 case; new `test_internal_extract_rejects_oversized_batch`
-  (21 items → 400 `bad_payload`).
+  authenticated 200 case; `test_internal_extract_rejects_oversized_batch`
+  (21 items → 400 `bad_payload`); `test_internal_extract_rejects_non_object_payloads`
+  (list / string / number / null bodies → 400, never 5xx);
+  `test_internal_extract_rejects_bad_item_shapes`;
+  `test_internal_extract_rejects_mixed_valid_and_invalid_items`.
+- `tests/test_extract_container_app.py` (new) — the **container** adapter,
+  `extract_container.app`, gets the same rejection cases plus the authenticated
+  200. Without this file the suite would only prove `service.py` is correct, not
+  that both Flask entry points call into it.
 - `tests/test_cli_extended.py` (edited) —
-  `test_search_all_sources_skips_the_dead_federal_court` and
-  `test_search_explicit_fedcourt_reports_unavailable`.
+  `test_search_all_sources_skips_the_dead_federal_court`,
+  `test_search_explicit_fedcourt_exits_non_zero` (asserts `SystemExit` with a
+  non-zero code — the silent-success failure mode), and a default-value
+  assertion for `--sources`.
 - `tests/test_extraction_container_boundary.py` (edited) — line 12 tuple loses
-  `"Dockerfile.extractor"`; its three tests keep passing.
+  `"Dockerfile.extractor"`; its **three** tests keep passing (`3 passed`, not 2:
+  the file defines `test_extraction_image_and_source_have_no_database_runtime_markers`,
+  `test_extraction_service_has_no_durable_storage_binding` and
+  `test_container_bridge_has_no_legacy_storage_terms`).
+- Step 10 (not a pytest file) — one real container build plus four live HTTP
+  requests against the built image.
 
 Regression coverage that must keep passing untouched:
 `tests/test_extraction_regex.py` (the nine moved symbols still behave the same
@@ -1348,27 +1734,24 @@ through the package), `tests/test_cli.py`, `tests/test_webapp.py`,
 Full-suite verification:
 
 ```bash
-make test-py
-```
-
-→ `3 failed` and those three must be exactly the `pypdf`-import failures in
-`tests/test_backfill_judge_overrides_from_pdf.py` (Homebrew Python 3.14.7
-`pyexpat`/`libexpat` ABI mismatch — an environment defect, not repo code).
-Passed count must be **≥ 1141 + (new tests you added)**; skipped stays `7`.
-Confirm the failure identity with:
-
-```bash
 make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u
+make test-py 2>&1 | tail -3
 ```
 
-→ every line names `tests/test_backfill_judge_overrides_from_pdf.py`.
+→ the failing test **names** are identical to the `PY_FAIL_NAMES` you recorded
+in Step 0 — exactly the `pypdf`-import failures in
+`tests/test_backfill_judge_overrides_from_pdf.py` (Homebrew Python 3.14.7
+`pyexpat`/`libexpat` ABI mismatch — an environment defect, not repo code), or
+none at all on an interpreter with a working `pypdf`. Passed must equal
+`PY_PASS_BEFORE + N_NEW`; skipped must equal `PY_SKIP_BEFORE`. Do not quote an
+absolute total — another plan may have moved it.
 
 Frontend and Worker suites are untouched by this plan; run them once at the end
 to prove it:
 
 ```bash
-cd frontend && npx vitest run    # 490 passed, 55 files
-cd ../workers && npx vitest run  # 345 passed, 25 files
+cd frontend && npx vitest run    # identical to FE_BEFORE
+cd ../workers && npx vitest run  # identical to WORKER_BEFORE
 ```
 
 ## Done criteria
@@ -1384,15 +1767,23 @@ Machine-checkable. ALL must hold, run from the repo root:
 - [ ] `grep -rn "from extract_structured_fields import" immi_case_downloader/` → no matches (exit 1)
 - [ ] `grep -n "extract_structured_fields.py" Dockerfile` → no matches (exit 1)
 - [ ] `grep -n 'or "all" in args.sources' immi_case_downloader/cli.py` → exactly one line, and it is the AustLII branch
+- [ ] `grep -c 'default=\["austlii"\]' immi_case_downloader/cli.py` → `1`
+- [ ] `.venv/bin/python run.py search --sources fedcourt --databases AATA; echo $?` → non-zero, with `unavailable` on stderr
+- [ ] `grep -c "parse_payload" extract_container.py immi_case_downloader/web/internal_extract.py` → `1` for **both**
 - [ ] The Step 5 container-shaped import probe prints `import-ok`
 - [ ] The Step 8 service probe prints `import-ok 20`
+- [ ] Step 10 ran: the image built, `/health` returned `200`, an authenticated
+      `/internal/extract` returned a `run_id`/`extracted`/`llm_calls`/`cost_usd`
+      envelope, a JSON-array body returned `400`, and an unauthenticated request
+      returned `403`. If no container runtime was available, the local-app
+      fallback ran **and** the handoff says the image build was not verified.
 - [ ] `make lint` → `All checks passed!`
-- [ ] `.venv/bin/pytest tests/test_batch_runner.py tests/test_package_import_boundary.py tests/test_internal_extract.py tests/test_cli_extended.py tests/test_extraction_container_boundary.py tests/test_extraction_regex.py -q` → all pass
-- [ ] `make test-py` → skipped `7`; failures exactly the three
-      `tests/test_backfill_judge_overrides_from_pdf.py` `pypdf` failures; passed
-      count ≥ 1141 plus the tests you added
-- [ ] `cd frontend && npx vitest run` → `490 passed`
-- [ ] `cd workers && npx vitest run` → `345 passed`
+- [ ] `.venv/bin/ruff check --no-fix extract_llm_fields.py merge_llm_results.py extract_structured_fields.py extract_structured_fields_llm.py fill_country_gemini.py fill_outcomes_gemini.py` → `All checks passed!` (no orphaned `os` / `shutil` / `load_dotenv` import survives)
+- [ ] `.venv/bin/pytest tests/test_batch_runner.py tests/test_package_import_boundary.py tests/test_internal_extract.py tests/test_extract_container_app.py tests/test_cli_extended.py tests/test_extraction_container_boundary.py tests/test_extraction_regex.py -q` → all pass
+- [ ] `.venv/bin/pytest tests/test_extraction_container_boundary.py -q` → `3 passed`
+- [ ] `make test-py` → skipped `= PY_SKIP_BEFORE`; failing test **names** identical to `PY_FAIL_NAMES`; passed `= PY_PASS_BEFORE + N_NEW`
+- [ ] `cd frontend && npx vitest run` → identical to `FE_BEFORE`
+- [ ] `cd workers && npx vitest run` → identical to `WORKER_BEFORE`
 - [ ] `git status --short` lists only paths from the "In scope" list
 - [ ] `plans/README.md` status row updated **if that file exists**
 
@@ -1421,9 +1812,14 @@ Stop and report back (do not improvise) if:
   referenced.** Re-run the grep before moving:
   `grep -rn "extract_llm_structured\|merge_llm_structured\|extract_with_llm\|merge_llm_extraction" . --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=plans --exclude-dir=archive`
   must return only self-references from inside those four files' own docstrings.
-- **`make test-py` reports a failure outside
-  `tests/test_backfill_judge_overrides_from_pdf.py`**, or the skipped count moves
-  off `7`.
+- **`make test-py` reports a failing test whose name was not in `PY_FAIL_NAMES`**,
+  or the skipped count moves off `PY_SKIP_BEFORE`.
+- **`plans/041-cover-the-extraction-scripts.md` has not landed and you are about
+  to start Step 5.** The 843-line verbatim move has no characterization coverage
+  behind it without 041. Stop and run 041 first.
+- **Step 10 cannot be run in either form** (no container runtime *and* the local
+  app will not start). Report it as an unverified change rather than declaring
+  the plan done — Steps 5 and 8 both altered what the container serves.
 - **`tests/test_cli_extended.py` no longer contains a method named
   `test_search_all_sources`** — plan 003 may have landed and reflowed the file.
   Re-locate by method name, never by the line numbers in this plan, and if the
@@ -1479,8 +1875,47 @@ For whoever owns this code next:
 
 ## Findings reconsidered
 
-Nothing was dropped. Five pieces of the audit's evidence or fix sketches were
-corrected, with reasons:
+Nothing was dropped. The following pieces of the audit's evidence, and of this
+plan's own earlier drafts, were corrected — with reasons:
+
+- **Step 7's instructions were self-contradictory — resolved with four verbatim
+  replacements.** The draft said "replace the body of `save_csv` with a single
+  `atomic_write_rows(...)` call" *and* "keep the existing
+  `print(f"Backup saved to {backup_path}")` line". Following both produces a
+  `NameError` on `backup_path`, or — worse — an executor who keeps the print
+  above an empty-rows early return and reports a backup that was never taken.
+  Step 7 now spells out all four function bodies.
+- **Step 7 orphaned imports that `make lint` would then reject.** `F401` is in
+  ruff's default `F` set, and after the rewrite `os` in `extract_llm_fields.py`
+  (its only use was `os.replace`), `shutil` in `extract_structured_fields.py`
+  and in `extract_structured_fields_llm.py` (only `shutil.copy2`), and
+  `load_dotenv` in three files all become unused. `merge_llm_results.py` keeps
+  `os` because `os.path.join` survives at line 40. Step 7 now lists them.
+- **Step 7's `ast.parse` "parse-ok" loop could not fail for any reason this step
+  risks.** It proves syntax, not names or imports. Replaced with per-file
+  `ruff check --no-fix`.
+- **Step 8's payload hardening only covered `len(batch)`.** A JSON array, string
+  or number body still reached `payload.get(...)` and raised `AttributeError`
+  → 500, and a non-mapping `item["base"]` still blew up in
+  `dict(item.get("base") or {})`. Both are unauthenticated-reachable crash
+  surfaces once the token is known. `parse_payload` now validates the top-level
+  type, the batch type, the cap, every item's type and every `base`'s type, and
+  both adapters get their own tests.
+- **Step 9 traded a bad default for a worse explicit path.** Printing "Skipping."
+  and returning normally means `--sources fedcourt` exits **0** with zero cases
+  — automation would read that as success forever. `cmd_search`'s return value
+  is discarded (`cli.py:311` is a bare `args.func(args)`), so the only way to
+  signal failure is `raise SystemExit`. The default also moves to
+  `["austlii"]` so the declared default no longer names a source that cannot be
+  served.
+- **The plan changed the Dockerfile `COPY` graph, the package import boundary,
+  the container `CMD` payload and two Flask adapters without ever building or
+  running the image.** The `/tmp/immi-pkg-check` probe proves the import
+  closure only. Step 10 now builds the image and issues four live requests, with
+  an explicit, *declared* fallback when no container runtime exists — not a
+  silent skip.
+
+Five pieces of the original audit's evidence were also corrected:
 
 - **DEBT-09 said "five scripts" share the temp path — it is six.**
   `extract_structured_fields.py:998` also builds

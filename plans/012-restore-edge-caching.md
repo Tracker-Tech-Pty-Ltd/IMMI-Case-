@@ -7,23 +7,67 @@
 > in `plans/README.md` if that file exists; if it does not exist, do not
 > create it.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff sees
+> only what is committed, so on a dirty tree it gives a false all-clear:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- workers/case-api/cloudflare.js workers/cloudflare-native.js workers/__tests__/
+> P="workers/case-api/cloudflare.js workers/cloudflare-native.js workers/__tests__/"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P     # landed since this plan was written
+> git diff --stat -- $P                   # unstaged
+> git diff --cached --stat -- $P          # staged
 > ```
-> If any of those files changed since this plan was written, compare the
-> "Current state" excerpts below against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **This plan runs LAST in its lane** (see "Integration order" below), so
+> `git diff --stat 42826a3..HEAD` is *expected* to list all three paths. That is
+> not drift; it is the four plans you are rebasing onto. What you must do instead
+> of a blanket comparison: re-read every verbatim excerpt in "Current state"
+> against the live file and **re-derive every line number in this plan** before
+> editing. A mismatch in the specific excerpts is a STOP condition.
+> Anything appearing in the **unstaged** or **staged** diffs is a STOP condition
+> regardless — that is someone's uncommitted work. Never run `git checkout --`
+> or `git clean` to tidy it away.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: `plans/009-*.md`, `plans/010-*.md`, `plans/013-*.md`,
+  `plans/014-*.md` — **all four, and this is not merely a merge-order
+  preference.** An edge cache freezes whatever the handlers return for up to the
+  declared TTL, so caching a response that is still wrong is worse than not
+  caching it:
+  - **010** fixes `/api/v1/analytics/monthly-trends` returning an inflated win
+    rate, and adds the `truncated` flags. Cache this endpoint before 010 lands
+    and a self-representing applicant is served a wrong success rate from the
+    edge for 600 s at a time, with no way for a fix to reach them until the
+    entry expires.
+  - **009** stops a failed aggregate rebuild from publishing empty analytics
+    tables. Cache before that and a transient rebuild failure gets pinned at the
+    edge — a dashboard confidently reporting zero cases, held for 600 s.
+  - **013** changes `/api/v1/cases`' `total` semantics and adds the indexes that
+    make the uncached path affordable in the first place.
+  - **014** changes what `/api/v1/analytics/judge-leaderboard` reads.
+  Land all four first, then this.
 - **Category**: perf
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+### Integration order
+
+```
+009  →  010  →  013  →  014  →  012 (this plan)
+```
+
+Five plans edit `workers/storage/cloudflare.js` and/or
+`workers/case-api/cloudflare.js`; integrate serially in that order, each rebased
+on the previous one's HEAD. Because this plan is last, **every line number below
+is stale by construction** — re-derive them all from the live file.
+`plans/011-*.md` is independent and may run in parallel.
+
+Note also that `plans/010-*.md` modifies
+`workers/__tests__/case-api-cloudflare.test.js` (its store mock). This plan's
+requirement that the file stay unmodified means "unmodified **by you**, relative
+to the branch you start from" — not "identical to `42826a3`".
 
 ## Why this matters
 
@@ -50,6 +94,41 @@ a colo are served from cache instead of D1. The change is deliberately keyed off
 headers the handlers *already* set: no handler's caching contract is altered,
 nothing that says `no-cache` or `no-store` starts being cached, and an operator
 can kill the whole layer with one environment variable and no redeploy.
+
+### Why this ships DISABLED by default
+
+The layer is opt-in (`IMMI_EDGE_CACHE_ENABLED="true"`), and that is not
+timidity — three things must be true before a **shared** cache in front of this
+data is safe, and only the first is true today:
+
+1. ✅ **Read responses cannot vary per user.** Verified structurally: the router
+   takes no `Request`. See Verified fact 4.
+2. ❌ **The corpus is not being written behind the cache.** It is. The original
+   version of this plan argued the corpus is "near-static in production because
+   `IMMI_CASE_MUTATIONS_ENABLED` defaults to `\"false\"`". That flag gates only
+   the **HTTP** mutation routes (`workers/case-api/cloudflare_mutations.js:302`
+   returns 503 before anything else runs). The AustLII scraper Worker is a
+   *producer* on the very same queue the main Worker consumes:
+   `config/wrangler-austlii-native.toml.example:38-40` binds
+   `NATIVE_CASE_QUEUE` to `queue = "immi-case-mutation-queue"`, and
+   `workers/austlii-scraper/src/extract.ts:227` sends to it. Every such message
+   lands in `handleCaseMutationQueue`, which calls `rebuildAggregates()` — so
+   cases and all 17 analytics tables change without the flag being touched.
+3. ❌ **There is a way to purge what the cache holds.** There is not.
+   `handleCacheInvalidate` (`workers/case-api/cloudflare_actions.js:80-85`)
+   returns a hardcoded `{ invalidated: true }` and purges nothing, and even a
+   real `caches.default.delete()` only affects the colo that served the request
+   — Cloudflare's Cache API is per-colo, so one delete cannot clear the other
+   hundreds, nor every query-string variant of an endpoint.
+
+This plan therefore ships the **mechanism** plus the two things point 3 needs to
+become achievable: a version-namespaced cache key (`__v`, driven by
+`IMMI_EDGE_CACHE_VERSION`), which gives a global, cross-colo purge lever that a
+per-colo `delete()` cannot; and an off-by-default switch so nothing changes for
+users until an operator decides. The remaining work before flipping it on is
+listed under "Maintenance notes → Before enabling this in production", and
+includes an end-to-end mutation → invalidate → fresh-read test that this plan
+cannot write, because it needs a deployed Worker and a real queue.
 
 ## Current state
 
@@ -203,8 +282,15 @@ async function dispatchAuth(request, env, path, method) {
   if (env.AUTH_ENABLED === "false") return null;
 ```
 
-Use exactly this shape for the new `IMMI_EDGE_CACHE_ENABLED` switch so an
-unset variable means "on" and no `wrangler.toml` change is required.
+That is the shape used for a kill switch on a feature that is **on by default**.
+This plan deliberately uses the **inverse** — `env?.IMMI_EDGE_CACHE_ENABLED !== "true"`
+— so an unset variable means **off**. The reason is in "Why this ships
+disabled": with no working cross-colo invalidation and a corpus that the scraper
+Worker actively writes to, a default-on shared cache would pin stale (or wrong)
+analytics in front of users for up to 600 s with no lever to clear it. Opting in
+is also what lets this land, and be tested, without an operator decision
+attached to the merge. Do not "align it with the `AUTH_ENABLED` convention" —
+the conventions differ because the defaults differ.
 
 **Structured logs are one-line JSON via `console.error`.** From
 `workers/case-api/cloudflare.js:1165` (verbatim):
@@ -256,14 +342,25 @@ one of `feat|fix|refactor|docs|test|chore|perf|ci`. Real example:
 
 ## Commands you will need
 
+**Record your baselines first (Step 0).** This plan lands after four siblings
+that all add tests to the same suite, so an absolute total is guaranteed wrong:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+BEFORE_WORKER=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_WORKER=$BEFORE_WORKER"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+BEFORE_FE=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_FE=$BEFORE_FE"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short > /tmp/immi-012-dirty-before.txt
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | `Test Files 26 passed (26)`, `Tests 353 passed (353)` after Step 3 (baseline at `42826a3` is 25 files / 345 tests) |
-| Worker tests (this plan only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/case-api-edge-cache.test.js` | 8 tests pass |
+| Worker tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | zero failures; total equals `BEFORE_WORKER + 10` after Step 3 |
+| Worker tests (this plan only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/case-api-edge-cache.test.js` | `Tests 10 passed (10)` — a per-file count, stable regardless of siblings |
 | Worker tests (regression file) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/case-api-cloudflare.test.js __tests__/cloudflare-native-entry.test.js` | all pass, 0 failed |
-| Node syntax check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node --check workers/case-api/cloudflare.js && node --check workers/cloudflare-native.js` | exit 0, no output |
-| Frontend tests (unaffected; run once at the end) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | `490 passed`, 55 files |
-| Files changed | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | exactly the three in-scope files |
+| Node syntax check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && node --check workers/case-api/cloudflare.js && node --check workers/cloudflare-native.js` | exit 0, no output. **Parse check only** — it cannot tell a correct refactor from a wrong one; the two regression test files above are what prove behaviour was preserved. |
+| Frontend tests (unaffected; run once at the end) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | zero failures, total equal to `BEFORE_FE` |
+| Files changed | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` and `git diff --stat` and `git diff --cached --stat` | exactly the three in-scope files, plus whatever `/tmp/immi-012-dirty-before.txt` already listed |
 
 Do **not** run `make test` for this plan. It also runs the Python suite, which
 has 3 pre-existing environment-only failures at this commit (a Homebrew Python
@@ -324,25 +421,49 @@ immediately after the `jsonErr` function (i.e. after line 80, before
 
 ```js
 // --- Edge cache (Cloudflare Cache API) ---------------------------------------
-// Safe because the read path is header-blind: dispatchCloudflareCaseRead takes
-// (url, path, env) and never a Request, so no read response can vary by cookie,
-// Authorization header or tenant. Only 200 responses that ALREADY declare
-// `Cache-Control: public, ...` are stored, so every `no-cache` / `no-store`
-// handler keeps its current behaviour. Set IMMI_EDGE_CACHE_ENABLED="false" to
-// disable the layer without a redeploy.
+// Safe to SHARE across viewers because the read path is header-blind:
+// dispatchCloudflareCaseRead takes (url, path, env) and never a Request, so no
+// read response can vary by cookie, Authorization header or tenant. Only 200
+// responses that ALREADY declare `Cache-Control: public, ...` are stored, so
+// every `no-cache` / `no-store` handler keeps its current behaviour.
+//
+// OPT-IN, not opt-out. Set IMMI_EDGE_CACHE_ENABLED="true" to turn the layer on;
+// anything else (including unset) leaves it off. See "Why this ships disabled"
+// in the plan: there is no working cross-colo invalidation, and the case corpus
+// is NOT static — the AustLII scraper Worker writes cases straight into
+// immi-case-mutation-queue via its NATIVE_CASE_QUEUE producer binding
+// (config/wrangler-austlii-native.toml.example:38-40), which bypasses the
+// IMMI_CASE_MUTATIONS_ENABLED flag entirely.
+//
+// IMMI_EDGE_CACHE_VERSION is the global purge lever: every cache key is
+// namespaced by it, so bumping the variable makes every previously stored entry
+// unreachable in every colo at once. caches.default.delete() cannot do that —
+// it only affects the colo that served the delete.
 const EDGE_CACHEABLE_CONTROL_RE = /^\s*public\s*,/i;
 
 function edgeCache(env) {
-  if (env?.IMMI_EDGE_CACHE_ENABLED === "false") return null;
+  if (env?.IMMI_EDGE_CACHE_ENABLED !== "true") return null;
   return typeof caches !== "undefined" && caches?.default ? caches.default : null;
 }
 
-function edgeCacheKey(url) {
-  // Canonicalise query-parameter order so ?a=1&b=2 and ?b=2&a=1 share one entry.
-  const key = new URL(url.toString());
-  const params = [...key.searchParams.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+function edgeCacheKey(url, env) {
+  // Canonicalise so ?a=1&b=2 and ?b=2&a=1 share one entry.
+  //
+  // Sort by parameter NAME ONLY. Array.prototype.sort is stable (ES2019+), so
+  // repeated parameters keep their original relative order. Sorting by
+  // [name, value] would be a correctness bug: the handlers read repeated
+  // parameters with searchParams.get(), which returns the FIRST value
+  // (see requestFilters, workers/case-api/cloudflare.js:110-122), so
+  // ?court=FCA&court=AATA and ?court=AATA&court=FCA produce DIFFERENT responses
+  // — and a value-sorting key would collapse them onto one entry and serve the
+  // wrong one.
+  const source = new URL(url.toString());
+  const params = [...source.searchParams.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]));
+  const key = new URL(source.toString());
   key.search = "";
+  // Namespace by version so an operator can invalidate everything at once.
+  key.searchParams.append("__v", String(env?.IMMI_EDGE_CACHE_VERSION || "1"));
   for (const [name, value] of params) key.searchParams.append(name, value);
   return new Request(key.toString(), { method: "GET" });
 }
@@ -354,6 +475,21 @@ function isEdgeCacheable(response) {
     && EDGE_CACHEABLE_CONTROL_RE.test(response.headers.get("Cache-Control") || "");
 }
 ```
+
+Three notes on the key:
+
+- `__v` is prepended before the caller's parameters and is a reserved name. No
+  handler reads it — confirm with
+  `grep -n '"__v"' workers/case-api/cloudflare.js` → no matches — and it never
+  reaches a handler anyway, because the key is only ever used as a `cache.match`
+  / `cache.put` argument; the real `url` is what is passed to
+  `resolveCloudflareCaseRead`.
+- Sorting by name only is what makes the key **behaviour-preserving**. If you
+  find yourself wanting to sort values too "for a better hit rate", re-read the
+  comment: the hit rate improvement would come from serving wrong answers.
+- The version namespace is a *lever*, not automatic invalidation. Bumping it is
+  an operator action; nothing bumps it on a case write. That is why the layer
+  ships off — see below.
 
 **1b.** Replace exactly these two lines at `workers/case-api/cloudflare.js:1029-1030`:
 
@@ -369,7 +505,7 @@ export async function dispatchCloudflareCaseRead(url, path, env, ctx = undefined
   if (getStorageMode(env) !== "cloudflare") return null;
   const cache = edgeCache(env);
   if (!cache) return resolveCloudflareCaseRead(url, path, env);
-  const cacheKey = edgeCacheKey(url);
+  const cacheKey = edgeCacheKey(url, env);
   try {
     const hit = await cache.match(cacheKey);
     if (hit) return hit;
@@ -465,7 +601,8 @@ vi.mock("../storage/cloudflare.js", () => ({
 
 import { dispatchCloudflareCaseRead } from "../case-api/cloudflare.js";
 
-const ENV = { IMMI_STORAGE_MODE: "cloudflare" };
+// The layer is opt-in, so every test that expects caching must enable it.
+const ENV = { IMMI_STORAGE_MODE: "cloudflare", IMMI_EDGE_CACHE_ENABLED: "true" };
 
 /** Minimal stand-in for Cloudflare's per-colo `caches.default`. */
 class FakeCache {
@@ -575,13 +712,56 @@ describe("dispatchCloudflareCaseRead edge cache", () => {
     expect(cache.putCalls).toBe(1);
   });
 
-  it("is disabled by IMMI_EDGE_CACHE_ENABLED=false", async () => {
-    const env = { ...ENV, IMMI_EDGE_CACHE_ENABLED: "false" };
+  it("is OFF unless IMMI_EDGE_CACHE_ENABLED is exactly \"true\"", async () => {
+    // The default: the variable is not set at all.
+    const off = { IMMI_STORAGE_MODE: "cloudflare" };
 
-    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", env);
-    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", env);
+    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", off);
+    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", off);
 
     expect(cache.putCalls).toBe(0);
+    expect(mockCreateStores).toHaveBeenCalledTimes(2);
+
+    // And an explicit "false", and any other truthy-looking string.
+    for (const value of ["false", "1", "yes", "TRUE"]) {
+      vi.clearAllMocks();
+      cache = new FakeCache();
+      globalThis.caches = { default: cache };
+      const env = { IMMI_STORAGE_MODE: "cloudflare", IMMI_EDGE_CACHE_ENABLED: value };
+      await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", env);
+      await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", env);
+      expect(cache.putCalls, `IMMI_EDGE_CACHE_ENABLED=${value} must not enable the cache`).toBe(0);
+    }
+  });
+
+  it("keeps repeated query parameters in their original order", async () => {
+    // requestFilters uses searchParams.get(), which returns the FIRST value, so
+    // these two URLs produce different responses and must NOT share a key.
+    await dispatchCloudflareCaseRead(
+      url("/api/v1/data-dictionary?court=FCA&court=AATA"), "/api/v1/data-dictionary", ENV,
+    );
+    await dispatchCloudflareCaseRead(
+      url("/api/v1/data-dictionary?court=AATA&court=FCA"), "/api/v1/data-dictionary", ENV,
+    );
+
+    expect(cache.store.size).toBe(2);
+    expect(mockCreateStores).toHaveBeenCalledTimes(2);
+  });
+
+  it("namespaces entries by IMMI_EDGE_CACHE_VERSION", async () => {
+    const v1 = { ...ENV, IMMI_EDGE_CACHE_VERSION: "1" };
+    const v2 = { ...ENV, IMMI_EDGE_CACHE_VERSION: "2" };
+
+    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", v1);
+    expect(mockCreateStores).toHaveBeenCalledTimes(1);
+
+    // Same URL, bumped version: the old entry is unreachable, so the handler runs.
+    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", v2);
+    expect(mockCreateStores).toHaveBeenCalledTimes(2);
+    expect(cache.store.size).toBe(2);
+
+    // Back to v1: served from cache, handler not re-run.
+    await dispatchCloudflareCaseRead(url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", v1);
     expect(mockCreateStores).toHaveBeenCalledTimes(2);
   });
 
@@ -616,7 +796,18 @@ describe("dispatchCloudflareCaseRead edge cache", () => {
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/case-api-edge-cache.test.js
 ```
-→ `Test Files 1 passed (1)`, `Tests 8 passed (8)`
+→ `Test Files 1 passed (1)`, `Tests 10 passed (10)`
+
+Prove the repeated-parameter test is a real guard, not a tautology. Temporarily
+change `edgeCacheKey`'s comparator back to the buggy
+`left[0].localeCompare(right[0]) || left[1].localeCompare(right[1])`, re-run just
+that test, and confirm it **fails** with `cache.store.size` equal to `1` instead
+of `2`. Restore the name-only comparator immediately and re-run to confirm it
+passes:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/case-api-edge-cache.test.js -t "keeps repeated query parameters in their original order"
+```
 
 ### Step 4: Full Worker suite regression
 
@@ -624,28 +815,29 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __t
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -6
 ```
-→ `Test Files  26 passed (26)` and `Tests  353 passed (353)`
-(baseline at commit `42826a3` was 25 files / 345 tests; +1 file / +8 tests)
+→ zero failures, and the `Tests … passed` total equals `BEFORE_WORKER + 10`
+(+1 file / +10 tests). Do not assert an absolute number.
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short && git diff --stat && git diff --cached --stat
 ```
-→ your three files, plus the two entries that were **already present in the
-working tree before you started** and which you must leave untouched
-(` M .claude/STATE.md` and `?? plans/`):
+→ your three files:
 ```
- M .claude/STATE.md
  M workers/case-api/cloudflare.js
  M workers/cloudflare-native.js
-?? plans/
 ?? workers/__tests__/case-api-edge-cache.test.js
 ```
-Nothing else may appear. If a file you did not edit shows up, stop.
+plus exactly whatever `/tmp/immi-012-dirty-before.txt` recorded before you
+started (on the machine this plan was written on that was ` M .claude/STATE.md`
+and `?? plans/`, but do not hard-code that — compare against your own file).
+Leave every pre-existing entry exactly as you found it; do not stage, revert or
+edit it. If a file you did not edit and did not record shows up, stop.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -4
 ```
-→ `Tests  490 passed (490)` — unchanged; this plan touches no frontend code.
+→ zero failures and a total equal to `BEFORE_FE` — unchanged; this plan touches
+no frontend code.
 
 ## Test plan
 
@@ -653,7 +845,8 @@ New file `workers/__tests__/case-api-edge-cache.test.js`, modelled structurally
 on `workers/__tests__/case-api-cloudflare.test.js` (same
 `vi.mock("../storage/cloudflare.js", …)` boundary, same
 `new URL("https://immi.example…")` helper, same
-`{ IMMI_STORAGE_MODE: "cloudflare" }` env object). Eight cases:
+`{ IMMI_STORAGE_MODE: "cloudflare", IMMI_EDGE_CACHE_ENABLED: "true" }` env
+object — the flag is required now that the layer is opt-in). Ten cases:
 
 1. **Happy path / store** — `/api/v1/data-dictionary` declares
    `public, max-age=86400`, so exactly one `cache.put` happens and the returned
@@ -666,52 +859,76 @@ on `workers/__tests__/case-api-cloudflare.test.js` (same
 4. **Key canonicalisation** — `?b=2&a=1` and `?a=1&b=2` collapse to one entry.
 5. **`ctx.waitUntil`** — when a ctx is passed the write is deferred, not
    awaited inline, and still completes.
-6. **Kill switch** — `IMMI_EDGE_CACHE_ENABLED="false"` bypasses the layer
-   entirely and both requests reach the handler.
+6. **Off by default** — with the variable unset, and with `"false"`, `"1"`,
+   `"yes"` and `"TRUE"`, the layer is bypassed entirely and both requests reach
+   the handler. Only the exact string `"true"` enables it.
 7. **Cache backend failure** — a `caches.default` whose `match`/`put` throw must
    degrade to a normal uncached response, never a 500.
 8. **Unknown route** — `null` passes through untouched so the entrypoint's
    fall-through to `unavailable(...)` / `env.ASSETS.fetch` still works.
 
+9. **Repeated parameters keep their order** — `?court=FCA&court=AATA` and
+   `?court=AATA&court=FCA` must produce **two** entries, because the handlers
+   read the first value and therefore return different bodies. This is the guard
+   against a "tidier" cache key that collapses them.
+10. **Version namespace** — bumping `IMMI_EDGE_CACHE_VERSION` orphans the old
+    entry (handler re-runs), and reverting the version finds the original entry
+    again. This is the cross-colo purge lever, so it needs a test.
+
 The two existing files `case-api-cloudflare.test.js` (45 calls to
 `dispatchCloudflareCaseRead`) and `cloudflare-native-entry.test.js` must pass
-**unmodified**. They never set `globalThis.caches`, so they run the
-no-cache-available path and are the proof that the Step 1 refactor preserved
-behaviour.
+**unmodified by you** — note `plans/010-*.md` legitimately edits the store mock
+in the first of those before you start, so "unmodified" means relative to the
+branch you branch from, not to `42826a3`. They never set `globalThis.caches`,
+and they never set `IMMI_EDGE_CACHE_ENABLED`, so they run the cache-disabled
+path twice over and are the proof that the Step 1 refactor preserved behaviour.
 
 ## Done criteria
 
 ALL must hold:
 
-- [ ] `node --check workers/case-api/cloudflare.js` exits 0
-- [ ] `node --check workers/cloudflare-native.js` exits 0
-- [ ] `cd workers && npx vitest run` reports `26 passed (26)` files and
-      `353 passed (353)` tests, `0 failed`
+- [ ] `node --check workers/case-api/cloudflare.js` exits 0 (parse check)
+- [ ] `node --check workers/cloudflare-native.js` exits 0 (parse check)
+- [ ] `cd workers && npx vitest run` reports `0 failed` and a total equal to
+      `BEFORE_WORKER + 10`
 - [ ] `cd workers && npx vitest run __tests__/case-api-edge-cache.test.js`
-      reports `8 passed (8)`
-- [ ] `grep -c 'caches' workers/case-api/cloudflare.js` returns ≥ 1
-      (was 0 at commit `42826a3`)
+      reports `Tests 10 passed (10)`
+- [ ] Each of the ten tests reports `Tests 1 passed` when run with `-t "<title>"`
+      (none reports `0 passed` or `No test files`)
+- [ ] The Step 3 comparator check showed
+      `keeps repeated query parameters in their original order` **failing** with
+      the value-sorting comparator restored, and passing again afterwards
+- [ ] The cache is off by default. This is asserted by a test rather than a grep
+      (a grep for `IMMI_EDGE_CACHE_ENABLED` matches the comment too):
+      `cd workers && npx vitest run __tests__/case-api-edge-cache.test.js -t 'is OFF unless'`
+      → `Tests 1 passed`
+- [ ] `grep -c 'caches\.default' workers/case-api/cloudflare.js` returns `1`
+      (the single accessor inside `edgeCache`; a bare `grep -c 'caches'` would
+      also match the explanatory comment block and prove nothing)
 - [ ] `grep -n 'dispatchCloudflareCaseRead(url, path, env, ctx)' workers/cloudflare-native.js`
       returns exactly one match
 - [ ] `grep -c 'resolveCloudflareCaseRead' workers/case-api/cloudflare.js`
       returns `3` (one wrapper call in the `!cache` branch, one in the main
       path, one function declaration)
-- [ ] No `Cache-Control` string changed. Run (works whether or not you have
-      committed yet, because it diffs the working tree against the base commit):
-      `git diff 42826a3 -- workers/case-api/cloudflare.js | grep -c '^[-+].*max-age'`
+- [ ] No `Cache-Control` string changed. Diff against **the commit you branched
+      from**, not `42826a3` — four sibling plans have landed in between and one
+      of them may legitimately have touched this file:
+      `BASE=$(git merge-base HEAD main); git diff "$BASE" -- workers/case-api/cloudflare.js | grep -c '^[-+].*max-age'`
       returns `0`
-- [ ] No file outside this plan's scope changed. Run:
+- [ ] No file outside this plan's scope changed. Same base:
       ```bash
-      git diff --name-only 42826a3 | grep -v -E '^(workers/case-api/cloudflare\.js|workers/cloudflare-native\.js|workers/__tests__/case-api-edge-cache\.test\.js|plans/012-restore-edge-caching\.md|\.claude/STATE\.md)$'
+      BASE=$(git merge-base HEAD main)
+      git diff --name-only "$BASE" | grep -v -E '^(workers/case-api/cloudflare\.js|workers/cloudflare-native\.js|workers/__tests__/case-api-edge-cache\.test\.js|plans/012-restore-edge-caching\.md)$'
       ```
-      → prints nothing (grep exiting 1 with no output is the success signal).
-      `.claude/STATE.md` is in the exclusion list because it was **already
-      modified in the working tree at commit `42826a3`** before you started —
-      leave it exactly as you found it; do not stage, revert, or edit it.
+      → prints nothing except entries you recorded in
+      `/tmp/immi-012-dirty-before.txt`. Leave those exactly as you found them.
 - [ ] `workers/__tests__/case-api-edge-cache.test.js` exists:
       `test -f workers/__tests__/case-api-edge-cache.test.js && echo NEW_TEST_PRESENT`
       → prints `NEW_TEST_PRESENT`
-- [ ] `cd frontend && npx vitest run` still reports `490 passed`
+- [ ] `cd frontend && npx vitest run` reports `0 failed` and a total equal to
+      `BEFORE_FE`
+- [ ] Your completion report states explicitly that the layer ships **disabled**,
+      and lists the "Before enabling this in production" checklist as outstanding
 
 ## STOP conditions
 
@@ -738,9 +955,13 @@ Stop and report back (do not improvise) if:
   behavioural product decision about data freshness for a self-representing
   applicant reading tribunal outcomes — it is not yours to make inside a perf
   refactor. Report which endpoint and why.
-- The full Worker suite reports a count other than 353 tests. Fewer than 345
-  pre-existing tests means you deleted or skipped something; report the delta
-  rather than adjusting the expectation.
+- The full Worker suite total is anything other than `BEFORE_WORKER + 10`, or
+  reports any failure. A total below `BEFORE_WORKER` means you deleted or
+  skipped something; report the delta rather than adjusting the expectation.
+- You are tempted to make the cache on by default, or to widen the cache key by
+  sorting repeated parameter values. Both are the specific mistakes this
+  revision exists to prevent: read "Why this ships disabled" and the comment in
+  `edgeCacheKey` before arguing with either.
 - Any verification fails twice after one reasonable fix attempt.
 
 ## Maintenance notes
@@ -757,29 +978,60 @@ For whoever owns this code next:
 
 - **The real trade-off this introduces.** Before this change, a
   `public, max-age=600` analytics response was cached only in the requesting
-  viewer's browser. Now it is shared across every viewer hitting the same
-  Cloudflare colo. The staleness *window* is unchanged (it is still the
-  handler's own declared `max-age`), but the *blast radius* is not: after a case
-  mutation, viewer B can see up-to-600s-old analytics where previously they
-  would have seen fresh data on their first request. This is acceptable today
-  only because `IMMI_CASE_MUTATIONS_ENABLED` defaults to `"false"` in the
-  checked-in `wrangler.toml`, so the corpus is near-static in production. **If
-  case mutations are ever enabled for interactive users, the invalidation
-  follow-up below stops being optional.**
+  viewer's browser. With the layer **enabled**, it is shared across every viewer
+  hitting the same Cloudflare colo. The staleness *window* is unchanged (it is
+  still the handler's own declared `max-age`), but the *blast radius* is not:
+  after a case write, viewer B can see up-to-600s-old analytics where previously
+  they would have seen fresh data on their first request.
+  **Do not repeat the claim that the corpus is near-static because
+  `IMMI_CASE_MUTATIONS_ENABLED` is `"false"`.** That was wrong and is corrected
+  in "Why this ships disabled": the flag gates only the HTTP mutation routes
+  (`workers/case-api/cloudflare_mutations.js:302`), while the AustLII scraper
+  Worker produces directly into `immi-case-mutation-queue` through its
+  `NATIVE_CASE_QUEUE` binding (`config/wrangler-austlii-native.toml.example:38-40`,
+  sent at `workers/austlii-scraper/src/extract.ts:227`), which triggers
+  `rebuildAggregates()` on the consumer side. Cases and analytics do change in
+  production with that flag off. This is why the layer ships disabled.
+
+- **Before enabling this in production** — the checklist that must be completed
+  first, none of which this plan can do from a working copy:
+  1. Make `/api/v1/cache/invalidate` honest (follow-up A below) **or** wire
+     `IMMI_EDGE_CACHE_VERSION` into the deploy so every deploy bumps it.
+  2. Decide how a *scraper-driven* case write invalidates. A per-colo
+     `caches.default.delete()` cannot do it; the realistic options are
+     (a) bumping `IMMI_EDGE_CACHE_VERSION` from the queue consumer after a
+     rebuild — which means the variable has to live somewhere writable, e.g. a
+     `catalog_summary` row read per request, not a Worker var; or (b) accepting
+     the `max-age` window as the invalidation SLA and shortening the analytics
+     TTLs to match how fresh the data must be. Option (b) is a product decision
+     about a self-representing applicant reading tribunal statistics, not a
+     perf decision.
+  3. Run the end-to-end test this plan cannot: with the layer on, read an
+     analytics endpoint, push one case through the mutation queue, invalidate,
+     read again, and confirm the second read reflects the new case. Until that
+     has passed once against a deployed Worker, the layer stays off.
+  4. Confirm on a **multi-colo** basis, not from one location — a single-colo
+     test cannot detect that `delete()` did not propagate.
 
 - **Instant rollback.** `wrangler secret`/vars: set
-  `IMMI_EDGE_CACHE_ENABLED="false"` on the Worker. No code change, no redeploy
-  of the bundle. Every read reverts to hitting D1 directly.
+  `IMMI_EDGE_CACHE_ENABLED` to anything other than `"true"` (or delete the
+  variable). No code change, no redeploy of the bundle. Every read reverts to
+  hitting D1 directly. A softer lever, if entries are stale but the layer should
+  stay on: bump `IMMI_EDGE_CACHE_VERSION`, which orphans every stored entry in
+  every colo at once.
 
 - **Deferred follow-up A — make `/api/v1/cache/invalidate` honest.**
-  `handleCacheInvalidate` in `workers/case-api/cloudflare_actions.js:81-86`
+  `handleCacheInvalidate` in `workers/case-api/cloudflare_actions.js:80-85`
   currently returns a hardcoded `{ invalidated: true }` and purges nothing. With
   an edge cache actually in place, that response is now actively misleading to an
-  operator. The fix is small: export an `invalidateCachedReads(origin, paths)`
-  from `workers/case-api/cloudflare.js` that calls `caches.default.delete()` for
-  each canonical URL, and have `handleCacheInvalidate` call it and return the
-  real count. It was excluded here only because `cloudflare_actions.js` is owned
-  by another in-flight plan and a concurrent edit would conflict. Do this next.
+  operator. Note the honest version is **not** just "call `caches.default.delete()`
+  for each canonical URL": that only clears the colo that served the invalidate
+  request, and only the exact query-string variants you enumerate. A correct
+  implementation bumps the cache-key version instead (see item 2 above), or uses
+  Cloudflare's zone-level purge API with a real token. It was excluded here
+  partly because `cloudflare_actions.js` is owned by another in-flight plan, and
+  partly because it is a larger design question than a two-line edit. Do this
+  before enabling the layer, not after.
 
 - **Deferred follow-up B — a cron pre-warm is NOT a straight re-add.** See
   "Findings reconsidered" for why the 2026-05-era cron does not transfer to this
@@ -826,12 +1078,30 @@ reasons below — recorded so nobody re-audits them from scratch.
 
 - **`/api/v1/cache/invalidate` purge — deferred, not rejected.** The finding is
   correct: `handleCacheInvalidate` at
-  `workers/case-api/cloudflare_actions.js:81-86` returns
+  `workers/case-api/cloudflare_actions.js:80-85` returns
   `{ invalidated: true, timestamp: … }` and touches nothing. Verified verbatim.
-  It is excluded from this plan purely on file-territory grounds —
-  `cloudflare_actions.js` is owned by a concurrently-executing plan, and a
-  drive-by edit here would produce a merge conflict. The exact follow-up is
-  written up under "Maintenance notes → Deferred follow-up A".
+  It is excluded from this plan on two grounds: `cloudflare_actions.js` is owned
+  by a concurrently-executing plan, and — the more important one — the obvious
+  implementation (`caches.default.delete()` per URL) would still not work, being
+  per-colo and per-query-string-variant. That is why this plan ships a
+  version-namespaced key instead, which *does* give a cross-colo lever, and why
+  the layer is off until the invalidation story is finished. See "Maintenance
+  notes → Before enabling this in production".
+
+- **Evidence correction — the "corpus is near-static" premise was wrong.** The
+  first draft of this plan justified a default-on shared cache with
+  "`IMMI_CASE_MUTATIONS_ENABLED` defaults to `\"false\"`, so the corpus is
+  near-static in production". Re-checked and refuted:
+  `workers/case-api/cloudflare_mutations.js:302` shows that flag guarding only
+  the HTTP mutation routes, and the flag check sits *before* the
+  `CRAWLER_WRITE_TOKEN` writer check at `:308`, so it is not even the
+  crawler's path. The actual production write path is the scraper Worker's
+  queue producer: `config/wrangler-austlii-native.toml.example:38-40` binds
+  `NATIVE_CASE_QUEUE` to `queue = "immi-case-mutation-queue"` — the same queue
+  `wrangler.toml:73` consumes — and `workers/austlii-scraper/src/extract.ts:227`
+  sends to it. That consumer calls `rebuildAggregates()`. Cases and all 17
+  analytics tables therefore change with the mutations flag off, the safety
+  argument for default-on does not hold, and the plan now ships opt-in.
 
 - **Evidence correction (line references).** The audit cited "12 handlers" still
   emitting `public, max-age=…` at lines 357, 361, 403, 413, 553, 697, 790, 836,

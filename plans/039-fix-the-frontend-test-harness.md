@@ -7,41 +7,71 @@
 > `plans/README.md` **only if that file already exists**; if it does not, skip
 > that — do not create it (it is outside this plan's file territory).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff cannot
+> see uncommitted, staged or untracked changes, so on a dirty tree it gives a
+> false all-clear:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   frontend/__tests__/legislations-setup.ts \
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="frontend/__tests__/legislations-setup.ts \
 >   frontend/__tests__/i18n-hardcoded.test.ts \
 >   frontend/__tests__/route-guards.test.tsx \
 >   frontend/__tests__/no-as-any.test.tsx \
->   frontend/__tests__/hooks
+>   frontend/__tests__/hooks \
+>   frontend/src/contexts/AuthContext.tsx \
+>   frontend/src/hooks/use-theme-preset.ts frontend/src/hooks/use-keyboard.ts \
+>   frontend/vitest.config.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
+> git diff --stat -- $IN_SCOPE                 # unstaged
+> git diff --cached --stat -- $IN_SCOPE        # staged
 > ```
-> Empty output = no drift, proceed. If any in-scope file changed since this plan
-> was written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> The last three must print nothing. **Expected exception**: `frontend/vitest.config.ts`
+> *will* appear once `plans/002-fix-test-collection-and-install.md` has landed —
+> that is this plan's declared dependency, not drift. Anything else appearing in
+> any of the three diffs is a STOP condition: compare the "Current state"
+> excerpts against the live code before proceeding.
+>
+> Never run `git checkout --` or `git clean -f` to "clear" drift — that destroys
+> the operator's or a parallel plan's work. Report and stop.
+>
+> **Parallel execution**: run this plan in its own `git worktree` or clone if
+> anything else is running. It asserts on `git status --short`, which a shared
+> checkout makes meaningless.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: `plans/002-fix-test-collection-and-install.md` (hard —
+  ordering), and transitively `plans/001-restore-the-frontend-compile-gate.md`
+  because 002 depends on it. **Run 002 first.**
 - **Category**: tests
 - **Planned at**: commit `42826a3`, 2026-08-27
 
-Note on dependencies: plan 001 repairs the frontend compile gate. This plan does
-**not** require it. Files under `frontend/__tests__/` are not included by any
+Why the 002 dependency is hard, not advisory: plan 002 Step 1 widens the Vitest
+`include` glob in `frontend/vitest.config.ts` so that
+`frontend/src/lib/__tests__/saved-searches.test.ts` (28 tests) is collected for
+the first time. That file calls
+`Object.defineProperty(window, "localStorage", ...)` at its line 31 — the same
+property this plan's Step 1 redefines in the shared setup file. Running this
+plan first would make plan 002's own "Cannot redefine property" analysis stale,
+and every count in this plan would be measured against a suite that is about to
+grow. Run 002, then this.
+
+Note on plan 001: it repairs the frontend compile gate. This plan does **not**
+require it directly — files under `frontend/__tests__/` are not included by any
 tsconfig today (`frontend/tsconfig.app.json` has `include: ["src"]`), so
-`tsc -b` never sees them; this plan's gates are `vitest` and `eslint`, both of
-which work at HEAD as-is. See "Maintenance notes" for what changes if plan 001
-later pulls `__tests__/` into a tsconfig.
+`tsc -b` never sees them, and this plan's gates are `vitest` and `eslint`. It is
+pulled in transitively through 002. See "Maintenance notes" for what changes if
+plan 001 later pulls `__tests__/` into a tsconfig.
 
 ## Why this matters
 
 Four things in the frontend test harness look like coverage and are not. The
 global `localStorage` mock has no failure path at all, so every
 `try { localStorage... } catch {}` block the project mandates is **unreachable
-in every one of the 490 collected tests** — delete one and CI stays green while
+in every one of the collected tests (490 of them at `42826a3`)** — delete one and CI stays green while
 the SPA breaks for private-window users. That same mock is never cleared between
 tests, so keys written by one test leak into the next within a file. Separately,
 three test files assert on the *source text* of components rather than their
@@ -449,21 +479,35 @@ redirect (its test 7 at lines 261-268 settles for
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Working dir | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"` | — |
-| Full frontend suite | `npx vitest run` | `497 passed`, `57` files, exit 0 |
-| One file | `npx vitest run __tests__/route-guards.test.tsx` | all pass, exit 0 |
-| Hook tests only | `npx vitest run __tests__/hooks/` | 11 passed, 3 files |
+| Full frontend suite | `npx vitest run` | exit 0; count checked as a **delta** against the Step 0 baseline |
+| One file | `npx vitest run __tests__/route-guards.test.tsx` | `Tests  4 passed (4)`, exit 0 |
+| Hook tests only | `npx vitest run __tests__/hooks/` | `Test Files  3 passed (3)` / `Tests  11 passed (11)` |
 | Lint | `npx eslint .` | exit 0, **0 errors** (warnings are pre-existing and allowed) |
-| List collected tests | `npx vitest list \| wc -l` | `497` |
 | Changed files | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only in-scope paths |
 
-Baseline at commit `42826a3`, measured before this plan: `npx vitest run` →
-**490 passed, 55 files**. The three files this plan edits or deletes contribute
-12 tests today (`no-as-any` 1, `route-guards` 4, `i18n-hardcoded` 7).
+**Step 0 — record the baseline before touching anything.** Do not copy a total
+out of this plan into a check: sibling plans move it, and a pinned total trains
+you to edit the yardstick instead of the code.
 
-Arithmetic for the target of 497:
-`490 − 1 (delete no-as-any) − 3 (delete the three deps tests) + 4 (theme) + 3 (keyboard) + 4 (auth) = 497`.
-`route-guards` is rewritten but keeps 4 tests, so it contributes no delta.
-File count: `55 − 1 (deleted) + 3 (new under __tests__/hooks/) = 57`.
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+set -o pipefail
+npx vitest run 2>&1 | tee /tmp/immi-039-before.txt | tail -5; echo "exit=$?"
+BEFORE_FILES=$(grep -oE 'Test Files +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-039-before.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+BEFORE_TESTS=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-039-before.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "BEFORE_FILES=$BEFORE_FILES BEFORE_TESTS=$BEFORE_TESTS"
+```
+
+Record both numbers in your handoff. For reference only: `55 / 490` at
+`42826a3`, and `56 / 518` once plan 002 has landed — this plan expects the
+latter, but uses **your** measured values, not these.
+
+Per-file contributions this plan changes (these are stable and *are* asserted
+directly): `no-as-any` 1 (deleted), `route-guards` 4 → 4 (rewritten, no delta),
+`i18n-hardcoded` 7 → 4, plus three new files at 4 / 3 / 4.
+
+Expected deltas: `AFTER_TESTS == BEFORE_TESTS + 7`
+(`−1 −3 +4 +3 +4`), `AFTER_FILES == BEFORE_FILES + 2` (`−1 deleted, +3 new`).
 
 ## Scope
 
@@ -621,10 +665,11 @@ the temporal dead zone until evaluated — that is fine here, because the
 Do not reorder the file to "fix" this.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run`
-→ `490 passed`, 55 files, exit 0. The count must be **unchanged** at this step —
-you have not added or removed any test yet. If any test now fails, it was
-relying on localStorage leaking between tests; that is the exact defect being
-fixed, but per STOP conditions report it rather than editing another test file.
+→ exit 0, and both counts **exactly equal** `BEFORE_FILES` / `BEFORE_TESTS` from
+Step 0. You have not added or removed any test yet, so any movement at all is a
+signal. If a test now fails, it was relying on localStorage leaking between
+tests; that is the exact defect being fixed, but per STOP conditions report it
+rather than editing another test file.
 
 ### Step 2: Delete `no-as-any.test.tsx`
 
@@ -807,15 +852,39 @@ describe("Route parameter guards", () => {
 });
 ```
 
-Sanity-check your work before running: temporarily comment out the `if (!id)`
-block in `frontend/src/pages/CaseDetailPage.tsx` and confirm test 1 **fails**,
-then restore the file exactly. A test that passes with the guard removed is
-worthless. Use `git diff` to confirm you restored it — `git status --short`
-must show no change under `frontend/src/` when you are done.
+**Discriminating power without mutating the app.** Tests 1 and 2 are a matched
+pair, and that pairing is what makes them meaningful: nothing renders the
+sentinel route except a real `<Navigate to="/cases">`, so deleting the
+`if (!id)` guard fails test 1 (no sentinel) while test 2 still passes. You do
+not need to break the source to establish that.
 
-**Verify**: `npx vitest run __tests__/route-guards.test.tsx` → `4 passed`, exit 0.
-Then `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short`
-→ no entries under `frontend/src/`.
+**Do not** comment out the `if (!id)` block in
+`frontend/src/pages/CaseDetailPage.tsx` to "prove" it. That file is explicitly
+out of this plan's scope; a parallel agent may be reading or building it, an
+interrupted run leaves the app broken on disk, and `frontend/src/` appearing in
+`git status` is itself a STOP condition here. If you want an explicit mutation
+drill anyway, run it in a **throwaway clone** so the shared checkout is never
+touched:
+
+```bash
+DRILL="$(mktemp -d)"; trap 'rm -rf "$DRILL"' EXIT INT TERM
+git clone --quiet --no-hardlinks "/Users/d/Developer/Active Projects/IMMI-Case-" "$DRILL/repo"
+# copy your new route-guards.test.tsx into the clone, mutate the page there,
+# run vitest there, then let the trap delete the whole clone.
+```
+
+**Verify**:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run __tests__/route-guards.test.tsx; echo "exit=$?"
+npx vitest run __tests__/route-guards.test.tsx \
+  -t "CaseDetailPage redirects to /cases when the :id route param is absent"; echo "named exit=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short -- frontend/src
+```
+
+→ `Tests  4 passed (4)` with `exit=0`; the named-test run also `exit=0`; the
+`git status` prints **nothing**.
 
 ### Step 5: Add `__tests__/hooks/use-theme-preset.test.ts`
 
@@ -1067,6 +1136,32 @@ placeholder like `"fake-token"` returns `null` and `scheduleRefresh` silently
 returns without arming a timer, which would make test 1 pass for the wrong
 reason.
 
+**Two things the first draft of this plan got wrong, and which the file below
+fixes. Do not revert them.**
+
+1. **The timer test must bracket the boundary, not just advance past it.**
+   Advancing by `exp − 60s + 10ms` once and asserting "one refresh happened"
+   passes just as happily against a timer armed at `exp − 240s`, or at `0ms`.
+   The only way to pin `exp − 60s` is to freeze the clock with
+   `vi.setSystemTime()`, assert **0 calls at boundary − 1 ms**, advance 2 ms,
+   and assert **exactly 1**. `Date.now()` must be frozen because
+   `scheduleRefresh` computes `payload.exp * 1000 - Date.now()`
+   (`AuthContext.tsx:39`) — with a live clock the arithmetic drifts between
+   building the token and arming the timer.
+
+2. **The `/auth/me` 401 path leaves the context in an inconsistent state, and
+   the test must say so rather than bless it.** `refresh()` at
+   `AuthContext.tsx:65-68` sets `accessToken` and `isAuthenticated: true` but
+   leaves `user`, `tenant` and `tenants` at their previous values — which, on
+   the mount path, are `null` / `null` / `[]` from the initial state at
+   `AuthContext.tsx:24-29`. So after a 401 the app is "authenticated" with no
+   identity. Asserting only `isAuthenticated === true` would enshrine that as
+   correct. The test below pins the **whole** observed snapshot, with the defect
+   named in a comment, so that when someone fixes `refresh()` (re-fetch
+   `/auth/me`, or have the endpoint return a full identity snapshot) the test
+   fails loudly and is updated in the same change. Fixing `AuthContext.tsx` is
+   out of this plan's scope — see "Maintenance notes" → AUTH-REFRESH-IDENTITY.
+
 Target file:
 
 ```tsx
@@ -1099,7 +1194,9 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const ACCESS_TTL_SECONDS = 300; // matches the 5-min access token in production
+// AuthContext.tsx:40 — setTimeout(..., Math.max(msUntilExpiry - 60_000, 0))
 const REFRESH_FIRES_AFTER_MS = (ACCESS_TTL_SECONDS - 60) * 1000;
+const FROZEN_NOW = new Date("2026-08-27T00:00:00.000Z");
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -1112,6 +1209,10 @@ function refreshCallCount() {
 describe("AuthProvider silent refresh", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Freeze the clock: scheduleRefresh computes payload.exp * 1000 - Date.now(),
+    // so a live clock makes the armed delay drift and the boundary assertions
+    // below meaningless.
+    vi.setSystemTime(FROZEN_NOW);
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -1121,7 +1222,7 @@ describe("AuthProvider silent refresh", () => {
     vi.unstubAllGlobals();
   });
 
-  it("schedules the refresh for 60s before expiry and fires it exactly once", async () => {
+  it("arms the refresh at exactly exp - 60s: nothing fires 1ms early, exactly one fires 1ms late", async () => {
     fetchMock.mockImplementation((url: string) => {
       if (String(url).includes("/auth/me")) {
         return Promise.resolve(
@@ -1143,14 +1244,22 @@ describe("AuthProvider silent refresh", () => {
 
     expect(refreshCallCount()).toBe(0);
 
+    // 1 ms BEFORE the boundary: still zero. This is the half that a plain
+    // "advance past it and assert >= 1" test cannot detect — a timer armed too
+    // early (or at 0ms) would already have fired by here.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(REFRESH_FIRES_AFTER_MS + 10);
+      await vi.advanceTimersByTimeAsync(REFRESH_FIRES_AFTER_MS - 1);
     });
+    expect(refreshCallCount()).toBe(0);
 
+    // Cross the boundary by 2 ms: exactly one refresh, never a storm.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
+    });
     expect(refreshCallCount()).toBe(1);
   });
 
-  it("falls back to a silent refresh when /auth/me returns 401", async () => {
+  it("falls back to a silent refresh when /auth/me returns 401, and ends authenticated-but-identityless", async () => {
     fetchMock.mockImplementation((url: string) => {
       if (String(url).includes("/auth/me")) {
         return Promise.resolve(jsonResponse(null, 401));
@@ -1164,7 +1273,21 @@ describe("AuthProvider silent refresh", () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(refreshCallCount()).toBe(1);
-    expect(result.current.isAuthenticated).toBe(true);
+
+    // CHARACTERIZATION OF A DEFECT (AUTH-REFRESH-IDENTITY), not a specification.
+    // AuthContext.tsx:65-68 sets isAuthenticated: true and the new accessToken,
+    // but never refetches identity — so after this path the app is
+    // "authenticated" with user === null and tenant === null. The whole snapshot
+    // is pinned deliberately: when refresh() is fixed to re-fetch /auth/me (or
+    // the endpoint is changed to return a full identity snapshot), THIS TEST
+    // MUST FAIL and be updated in the same commit. Do not weaken it to
+    // `expect(isAuthenticated).toBe(true)` — that would silently bless the bug.
+    expect({
+      isAuthenticated: result.current.isAuthenticated,
+      user: result.current.user,
+      tenant: result.current.tenant,
+      tenants: result.current.tenants,
+    }).toEqual({ isAuthenticated: true, user: null, tenant: null, tenants: [] });
   });
 
   it("logout clears the pending refresh timer", async () => {
@@ -1245,13 +1368,19 @@ the refresh schedule.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
-npx vitest run
-npx eslint .
+set -o pipefail
+npx vitest run 2>&1 | tee /tmp/immi-039-after.txt | tail -5; echo "vitest exit=$?"
+npx eslint .; echo "eslint exit=$?"
+AFTER_FILES=$(grep -oE 'Test Files +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-039-after.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+AFTER_TESTS=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-039-after.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "files: $BEFORE_FILES -> $AFTER_FILES ; tests: $BEFORE_TESTS -> $AFTER_TESTS"
 ```
 
 **Verify**:
-- `npx vitest run` → `Test Files 57 passed (57)`, `Tests 497 passed (497)`, exit 0.
-- `npx eslint .` → exit 0, `0 errors`.
+- `vitest exit=0` and `eslint exit=0` with `0 errors`.
+- `AFTER_FILES == BEFORE_FILES + 2` and `AFTER_TESTS == BEFORE_TESTS + 7`,
+  against the Step 0 baseline you recorded. Do **not** substitute a total copied
+  out of this plan.
 - `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` →
   entries only under `frontend/__tests__/` and `plans/`.
 
@@ -1314,33 +1443,43 @@ plus a mocked `global.fetch`.
 demonstrated by the two new storage-failure tests in
 `hooks/use-theme-preset.test.ts`, which cannot pass unless the switch works.
 
-Verification: `npx vitest run` → 497 passed across 57 files, including the 11 new
-tests.
+Verification: `npx vitest run` exits 0 with `AFTER_FILES == BEFORE_FILES + 2` and
+`AFTER_TESTS == BEFORE_TESTS + 7` against the Step 0 baseline, plus the six
+named-test checks in "Done criteria".
 
 ## Done criteria
 
 Machine-checkable. ALL must hold, run from
 `/Users/d/Developer/Active Projects/IMMI-Case-/frontend` unless noted:
 
-- [ ] `npx vitest run` exits 0 and reports `497 passed` across `57` test files
+- [ ] `npx vitest run` exits 0, and `AFTER_FILES == BEFORE_FILES + 2` and
+      `AFTER_TESTS == BEFORE_TESTS + 7` against the Step 0 baseline
+      (no absolute total is asserted anywhere — a sibling plan moves it)
 - [ ] `npx eslint .` exits 0 with `0 errors`
 - [ ] `test -f __tests__/no-as-any.test.tsx` returns non-zero (file is gone)
 - [ ] `test -f __tests__/hooks/use-theme-preset.test.ts` returns 0
 - [ ] `test -f __tests__/hooks/use-keyboard.test.tsx` returns 0
 - [ ] `test -f __tests__/hooks/use-auth.test.tsx` returns 0
-- [ ] `npx vitest run __tests__/hooks/` reports `11 passed` across `3` files
-- [ ] `grep -c "localStorageFailures" __tests__/legislations-setup.ts` returns `>= 5`
+- [ ] `npx vitest run __tests__/hooks/` reports `Test Files  3 passed (3)` / `Tests  11 passed (11)`
+- [ ] `npx vitest run __tests__/hooks/use-auth.test.tsx -t "arms the refresh at exactly exp - 60s"` → passes
+- [ ] `npx vitest run __tests__/hooks/use-theme-preset.test.ts -t "falls back to the claude preset when localStorage.getItem throws"` → passes
+      (this is the check that proves the new failure switch actually throws;
+      it cannot pass against the old mock)
+- [ ] `npx vitest run __tests__/route-guards.test.tsx -t "CaseDetailPage redirects to /cases when the :id route param is absent"` → passes
 - [ ] `grep -c "localStorageMock.clear()" __tests__/legislations-setup.ts` returns `1`
 - [ ] `grep -c "configurable: true" __tests__/legislations-setup.ts` returns `1`
-- [ ] `grep -c "readFileSync\|readfilesync" __tests__/route-guards.test.tsx` returns `0`
-- [ ] `grep -c "MemoryRouter" __tests__/route-guards.test.tsx` returns `>= 1`
+- [ ] `grep -c "readFileSync" __tests__/route-guards.test.tsx` returns `0`
 - [ ] `grep -c 'vi.mock("react-router-dom"' __tests__/route-guards.test.tsx` returns `0`
-- [ ] `grep -c "batchMutation, t\]" __tests__/i18n-hardcoded.test.ts` returns `0`
-- [ ] `npx vitest run __tests__/i18n-hardcoded.test.ts` reports `4 passed`
+- [ ] `npx vitest run __tests__/i18n-hardcoded.test.ts` reports `Tests  4 passed (4)`
+      and the run does **not** contain `batchMutation`
 - [ ] From the repo root, `git status --short` lists modified/added paths only
       under `frontend/__tests__/` and `plans/`
-- [ ] From the repo root, `git diff --stat -- frontend/src frontend/eslint.config.js frontend/vitest.config.ts`
-      produces empty output
+- [ ] From the repo root, all three of these produce empty output:
+      `git diff --stat -- frontend/src frontend/eslint.config.js`,
+      `git diff --cached --stat -- frontend/src frontend/eslint.config.js`,
+      `git status --short -- frontend/src frontend/eslint.config.js`
+      (`frontend/vitest.config.ts` is deliberately excluded: plan 002 edits it,
+      and this plan runs after 002)
 - [ ] `plans/README.md` status row updated **if that file exists**; not created if it does not
 
 ## STOP conditions
@@ -1348,19 +1487,25 @@ Machine-checkable. ALL must hold, run from
 Stop and report back (do not improvise) if:
 
 - **Step 1 changes the test count.** After adding `localStorage.clear()` to the
-  global `afterEach`, `npx vitest run` must still be `490 passed`. If a test now
-  fails, it was depending on storage leaking between tests — that is a real
-  defect in *that* test file, but every candidate file is out of this plan's
-  territory. Report which file and which test, with the failure output.
+  global `afterEach`, `npx vitest run` must still report exactly `BEFORE_FILES` /
+  `BEFORE_TESTS` from Step 0. If a test now fails, it was depending on storage
+  leaking between tests — that is a real defect in *that* test file, but every
+  candidate file is out of this plan's territory. Report which file and which
+  test, with the failure output.
 - **A new hook test fails for a reason in `frontend/src/`.** For example, if
   `use-theme-preset` genuinely propagates a storage throw rather than absorbing
   it, that is a source bug, and `frontend/src/hooks/` is explicitly out of scope.
   Report it; do not "fix" the hook and do not weaken the assertion to make it
   pass.
-- **The route-guard sanity check fails**: you comment out the `if (!id)` block in
-  `CaseDetailPage.tsx` and test 1 still passes. That means the test is not
-  actually exercising the guard — report rather than shipping a test that proves
-  nothing. Restore the file either way.
+- **`git status --short -- frontend/src` is non-empty at any point.** The
+  route-guard step must not mutate the page it tests; do the mutation drill in a
+  throwaway clone or not at all. If `frontend/src/` is dirty, a parallel agent
+  may already have read a broken component — report, and do **not** run
+  `git checkout --` to tidy it yourself.
+- **The route-guard pair does not discriminate**: test 1 (no `:id` → sentinel)
+  and test 2 (`:id` present → no sentinel, `Loading` rendered) must both pass. If
+  test 2 also renders the sentinel, the redirect is unconditional and the pair
+  proves nothing — report it.
 - **The `route-guards.test.tsx` render throws** because a page calls a hook or
   module you did not anticipate mocking, and the fix would require mocking
   something under `frontend/src/`. Report the exact error; do not add
@@ -1382,6 +1527,15 @@ Stop and report back (do not improvise) if:
   after.** That means `parseJwtPayload` returned `null` and no timer was ever
   armed, so the test proves nothing. Check that `makeToken` produces a real
   three-segment base64url JWT, not a placeholder string.
+- **Step 7 test 1's "1 ms early" assertion fails with 1 call instead of 0.** The
+  refresh is being armed *earlier* than `exp − 60s` — a real defect (more refresh
+  traffic than designed, more `immi_refresh_sessions` churn in D1). Report it;
+  do not relax the assertion to `toBeLessThanOrEqual(1)`.
+- **Step 7 test 2's full-snapshot assertion fails because `user` is now
+  populated.** That means someone fixed `refresh()` to re-fetch identity. Good —
+  but do not just delete the assertion: update it to the new correct snapshot and
+  remove the AUTH-REFRESH-IDENTITY note from "Maintenance notes" in the same
+  change, so the record stays honest.
 - Any step's verification fails twice after one reasonable fix attempt.
 - The fix appears to require touching `frontend/eslint.config.js`,
   `frontend/vitest.config.ts`, or anything under `frontend/src/`.
@@ -1392,9 +1546,25 @@ For whoever owns this code next:
 
 - **What a reviewer should scrutinise.** The single highest-value line in the
   whole diff is `localStorageMock.clear()` in the global `afterEach`. Everything
-  else is additive; that one line changes the isolation guarantees for all 56
-  test files. Confirm the pre-change and post-change suite counts were both
-  taken (490 at Step 1, 497 at Step 8).
+  else is additive; that one line changes the isolation guarantees for every
+  collected test file. Confirm the executor actually recorded the Step 0
+  baseline and checked `+2 files / +7 tests` against it, rather than pattern-
+  matching a total copied out of this document.
+- **AUTH-REFRESH-IDENTITY — an open source defect this plan pins but does not
+  fix.** `AuthContext.tsx:44-74`: `refresh()` sets `isAuthenticated: true` and
+  the new `accessToken`, but never refreshes `user` / `tenant` / `tenants`. On
+  the mount path (`AuthContext.tsx:103-109`, the `/auth/me` 401 branch) those are
+  still the initial `null` / `null` / `[]`, so the app ends up authenticated with
+  no identity: anything rendering `user.*` sees null, and tenant-scoped UI has no
+  active tenant to send. The fix is one of (a) re-fetch `/auth/me` after a
+  successful `refresh()`, or (b) have `POST /api/v1/auth/refresh` return the full
+  identity snapshot the way `/auth/me` does — (b) also removes a round trip but
+  needs a Worker change in `workers/auth/cloudflare_handlers.js`. Both are
+  outside this plan (`frontend/src/**` and `workers/**` are out of scope). The
+  test in Step 7 pins the current snapshot **with the defect named in a
+  comment**, so the fix produces an intentional, visible failure rather than a
+  silent behaviour change. Whoever fixes it updates that test in the same commit
+  and deletes this note.
 - **The deps-test replacement is only half-done, on purpose.**
   `react-hooks/exhaustive-deps` is configured at `warn` (`[1]`), and
   `npx eslint .` exits 0 on warnings — so deleting the three `useCallback` deps

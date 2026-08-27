@@ -7,28 +7,80 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A committed-range diff
+> cannot see uncommitted, staged or untracked edits, so the first command alone
+> gives a dirty tree a false all-clear.
+>
+> Note the path list is **the files this plan actually owns**, not the whole of
+> `workers/__tests__/`. Scanning the entire test directory would make this plan
+> STOP every time any sibling plan adds an unrelated test file.
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS="workers/auth/cloudflare_handlers.js
+>   workers/auth/jwt.js
+>   workers/auth/nonce_do.js
+>   workers/storage/cloudflare.js
+>   workers/pipeline/control_handlers.js
+>   workers/admin/cloudflare_handlers.js
+>   workers/case-api/cloudflare_mutations.js
+>   workers/__tests__/pipeline-control.test.js
+>   workers/__tests__/cloudflare-admin-handlers.test.js
+>   workers/__tests__/cloudflare-mutations.test.js
+>   workers/__tests__/auth-jwt.test.js
+>   workers/__tests__/auth-nonce.test.js
+>   workers/__tests__/cloudflare-native-auth-handlers.test.js
+>   migrations/d1/account"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS   # committed since the plan was written
+> git diff --stat -- $PATHS                 # unstaged working-tree edits
+> git diff --cached --stat -- $PATHS        # staged but uncommitted edits
 > ```
-> git diff --stat 42826a3..HEAD -- workers/auth workers/storage/cloudflare.js workers/pipeline/control_handlers.js workers/admin/cloudflare_handlers.js workers/case-api/cloudflare_mutations.js workers/__tests__ migrations/d1/account
-> ```
-> Expected at the time of writing: no output (nothing changed). If any in-scope
-> file changed since this plan was written, compare the "Current state"
-> excerpts below against the live code before proceeding; on a mismatch, treat
-> it as a STOP condition.
+> Expected: the last three print nothing and `git status --short` lists no
+> in-scope path. Any in-scope path appearing in **any** of them is a STOP
+> condition — compare the "Current state" excerpts below against the live code
+> and report before proceeding.
+>
+> **Two deliberate exceptions**, because this plan runs *after* `plans/005-*.md`:
+> - `workers/case-api/cloudflare_mutations.js` will contain
+>   `return await handle…(` dispatch lines. Expected; keep them.
+> - `workers/storage/cloudflare.js` will contain an
+>   `ON CONFLICT(retrieve_code) DO NOTHING` inside
+>   `CloudflareCouncilStore.createSession`. Expected; that region is 005's and
+>   is disjoint from the `CloudflareIdentityStore` region this plan owns.
+>
+> Anything else in those two files is real drift.
+>
+> **Never** run `git checkout --`, `git restore` or `git clean` to clear a
+> dirty tree — those edits may be the operator's uncommitted work. Report and
+> stop instead.
 
 ## Status
 
 - **Priority**: P1
 - **Effort**: L
-- **Risk**: MED
-- **Depends on**: none — this plan touches only Worker JavaScript, one SQL
-  migration file, and Worker unit tests. Its sole verification gate is
-  `cd workers && npx vitest run`, which is green at commit `42826a3`. It does
-  not use `make typecheck` (which other plans repair) and its in-scope file
-  list is disjoint from the frontend and Python trees, so it can run in
-  parallel with those plans.
+- **Risk**: HIGH — this plan deliberately revokes an authority every existing
+  user currently has, and it requires a D1 migration applied in a specific
+  order relative to the code deploy. Step 0 exists because getting that order
+  wrong locks the operator out of their own pipeline controls.
+- **Depends on**: `plans/005-*.md` (file-level: 005 rewrites
+  `workers/case-api/cloudflare_mutations.js` and adds a mutation test whose
+  store double this plan must update — see "Sequencing")
 - **Category**: security
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+This plan does not use `make typecheck` and its in-scope file list is disjoint
+from the frontend and Python trees, so it needs none of the verification-gate
+repairs plans 001–003 make.
+
+### Sequencing (cross-plan) — read before starting
+
+| Plan | Shared file | Order | What you must do |
+|---|---|---|---|
+| `005` | `workers/case-api/cloudflare_mutations.js`, `workers/storage/cloudflare.js` | **005 first** | Step 5 here rewires `requireWriter` from `assertMembership` to `assertPlatformOperator`. That **breaks the mutation test 005 adds** (`"surfaces a typed storage error from a case mutation handler"` in `workers/__tests__/dispatcher-error-propagation.test.js`), whose store double supplies only `assertMembership`. **This plan owns fixing it** — see Step 5. Do not leave it red and do not delete it. |
+| `007` | `workers/storage/cloudflare.js` | either order | Disjoint regions (007 owns `CloudflareCaseStore.exportCases`; this plan owns `CloudflareIdentityStore`). 007 also declares a dependency on this plan for its operator-authorization policy, so in practice this lands first. |
+| `008` | — | either order | No shared file. An earlier draft's drift check covered all of `workers/__tests__/`, which would have made 006 and 008 STOP on each other for no reason; both are now narrowed to the files they own. |
+
+Do **not** run 005 and 006 concurrently against one working tree.
 
 ## Why this matters
 
@@ -521,18 +573,47 @@ SQL-dispatching variant instead; the shape above is the structural model.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker tests (full) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0; baseline at `42826a3` is `25 passed (25)` files / `345 passed (345)` tests |
+| Worker tests (full) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0, **0 failed**; see "Baselines, not absolutes" |
 | Worker tests (one file) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/auth-jwt.test.js` | exit 0, that file's tests pass |
-| All tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test` | Python 1141 passed / 3 failed / 7 skipped (see note), frontend 490 passed, workers pass |
+| Worker test by name | `cd ".../workers" && npx vitest run __tests__/<file>.test.js -t "<test name>"` | that test passes |
+| All tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test` | 0 failures except the 3 named Python ones below; frontend and workers green |
 | Show a file region | `awk 'NR>=1290 && NR<=1320 {printf "%d: %s\n", NR, $0}' workers/storage/cloudflare.js` | prints numbered lines |
+| Apply migrations to a scratch SQLite DB | `.venv/bin/python -c "..."` (Step 1) | see Step 1 |
 | Confirm no stray edits | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only in-scope paths listed |
 
-**Note on the 3 Python failures**: at commit `42826a3`, `make test-py` reports
-`1141 passed, 3 failed, 7 skipped`. All three failures are in
-`tests/test_backfill_judge_overrides_from_pdf.py` and are **environmental** — a
-Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf`
-import. They are pre-existing, unrelated to this plan, and must not be
-"fixed" here. Do not let them block you; just confirm the count does not grow.
+### Baselines, not absolutes
+
+**Do not assert a whole-suite total anywhere in this plan.** Sibling plans
+(004, 005, 007, 008) add tests to the same Worker suite, so any fixed total is
+true only until one of them lands, and an executor who "corrects" a mismatched
+total is editing the yardstick instead of the code. Record baselines first:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+WORKER_BEFORE=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+')
+FILES_BEFORE=$(npx vitest run 2>&1 | grep -oE 'Test Files +[0-9]+ passed' | grep -oE '[0-9]+')
+for f in pipeline-control cloudflare-admin-handlers cloudflare-mutations auth-jwt auth-nonce cloudflare-native-auth-handlers; do
+  printf '%s: ' "$f"; npx vitest run "__tests__/$f.test.js" 2>&1 | grep -oE 'Tests +[0-9]+ passed'
+done
+```
+
+This plan adds **2 new test files** and **a net +31 tests** (see "Test plan").
+The final assertion is `WORKER_BEFORE + 31` across `FILES_BEFORE + 2` files
+with **0 failed**. Per-file deltas stated in each step are relative to the
+per-file numbers you just recorded.
+
+**Note on the 3 Python failures**: `make test-py` reports 3 failures that are
+**environmental** — a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch
+breaks the `pypdf` import. After this plan they must still be **exactly those
+3, by name**:
+
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_clean_line_does_not_destroy_words`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_extract_judiciary_names_filters_non_judicial_judging`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_merge_treats_postnominal_variant_as_equivalent`
+
+They are pre-existing, unrelated to this plan, and must not be "fixed" here.
+Judge by **name**, not by count — a count can coincidentally stay at 3 while a
+different test breaks.
 
 ## Suggested executor toolkit
 
@@ -566,6 +647,10 @@ import. They are pre-existing, unrelated to this plan, and must not be
 - `workers/__tests__/cloudflare-native-auth-handlers.test.js`
 - `workers/__tests__/identity-platform-operator.test.js` (create)
 - `workers/__tests__/identity-refresh-family.test.js` (create)
+- `workers/__tests__/dispatcher-error-propagation.test.js` — **one line only**,
+  and only if `plans/005-*.md` has landed: add `assertPlatformOperator` to the
+  mutation test's store double, which Step 5 breaks. This plan owns that
+  repair; see Step 5(iv).
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -601,6 +686,70 @@ import. They are pre-existing, unrelated to this plan, and must not be
 
 ## Steps
 
+### Step 0: Write the rollout runbook before you write any code
+
+This plan removes an authority every current user has. **The order of
+migration, grant and deploy is the difference between a clean cutover and a
+window in which nobody — including the operator — can drive the pipeline.**
+An earlier draft left this entirely to a "Maintenance notes" bullet that said
+"deploy, then grant", which manufactures exactly that outage.
+
+There is also no automation to lean on: `.github/workflows/deploy-worker.yml`
+contains **no D1 migration step at all** (verified: a grep for `d1`,
+`migration` and `migrate` over that workflow returns nothing). Migrations are
+applied by hand via `wrangler d1 execute`. So the runbook is the only control.
+
+Produce the following, verbatim, in the PR description. You do not execute it —
+it needs production credentials you must not seek — but the plan is not done
+without it.
+
+**0a. Correct order (migration and grant BEFORE the code deploy).** Each step
+is safe on the *old* code, which is what makes zero downtime possible:
+
+| # | Action | Safe on old code because |
+|---|---|---|
+| 1 | `wrangler d1 execute IMMI_ACCOUNT_DB --file migrations/d1/account/0002_platform_admin.sql` (remote) | The column is additive and nothing reads it yet. |
+| 2 | `SELECT user_id, username FROM users ORDER BY last_login_at DESC LIMIT 21;` — identify the operator's own `user_id` | Read-only. Use `LIMIT 21` and check whether 21 rows came back, so truncation is detectable; `LIMIT 20` with a `>= 20` check cannot tell "exactly 20" from "more". |
+| 3 | `UPDATE users SET platform_admin = 1 WHERE user_id = '<uuid>';` for **at least two** people | Still nothing reads it. Two, not one, so a single lost device does not lock the platform. |
+| 4 | Verify: `SELECT user_id, platform_admin FROM users WHERE platform_admin = 1;` returns the expected rows and **only** those | — |
+| 5 | Deploy the Worker | The grants already exist, so the new gate admits the operator on the first request after rollout. |
+| 6 | Smoke: `GET /api/v1/admin/pipeline-runs` as a granted user → `200`; as an ungranted user → `403 platform_operator_required` | This is the proof the cutover worked, in both directions. |
+
+Steps 1–4 are reversible and can be done days ahead. Only step 5 changes
+behaviour.
+
+**0b. Break-glass path if the migration cannot be applied.** Set the Worker var
+`IMMI_PLATFORM_OPERATOR_IDS` to a comma-separated list of user UUIDs. Step 2's
+`assertPlatformOperator` checks the allowlist **before** touching the column
+and fails closed if the column read throws, so this works with or without
+migration 0002. Confirm the var is set *before* the deploy, not after.
+
+**0c. Rollback.** Two independent levers, in preference order:
+
+1. **Redeploy the previous Worker build.** The old code reads
+   `memberships.role`, which is untouched, so it works immediately. This is the
+   fast lever and the one to reach for first.
+2. **Do not roll back the migration.** Dropping the column is unnecessary
+   (nothing else reads it) and SQLite `DROP COLUMN` on a live table is riskier
+   than leaving an unused integer column at 0.
+3. To revoke a specific grant without a deploy:
+   `UPDATE users SET platform_admin = 0 WHERE user_id = '<uuid>';` and remove
+   the UUID from `IMMI_PLATFORM_OPERATOR_IDS`. **Both**, or the allowlist
+   silently keeps the grant alive — that is the whole point of it being a
+   break-glass override.
+
+**0d. What to tell users.** After the deploy, everyone who is not granted gets
+`403 platform_operator_required` on `POST /api/v1/pipeline-action`,
+`POST /api/v1/download/start`, `POST /api/v1/legislations/update` and
+`GET /api/v1/admin/pipeline-runs`. That is the fix, not a regression — but if
+anyone besides the operator was using those routes, they need telling before
+step 5, not after.
+
+**Verify**: not machine-checkable. The Done criterion is that 0a–0d appear
+verbatim in the PR description, with the operator's own `user_id` **not**
+included (never write a real identifier into the plan or the PR — the operator
+fills it in at run time).
+
 ### Step 1: Add the `platform_admin` column migration
 
 Create `migrations/d1/account/0002_platform_admin.sql` with exactly this
@@ -624,8 +773,56 @@ CREATE INDEX IF NOT EXISTS users_platform_admin_idx ON users(platform_admin);
 
 No code reads this yet — this step is purely additive.
 
-**Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && ls migrations/d1/account/ && grep -c "platform_admin" migrations/d1/account/0002_platform_admin.sql`
-→ lists `0001_account.sql` and `0002_platform_admin.sql`, and prints `3`.
+**Verify — the file must actually execute, not merely exist.** An earlier draft
+verified this step with `ls` plus `grep`, which proves nothing: a migration
+with a syntax error, a wrong table name, or a column that already exists passes
+both and then fails at `wrangler d1 execute` in front of the operator. Apply
+both migrations to a throwaway SQLite database instead and inspect the
+resulting schema:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/python - <<'PY'
+import pathlib, sqlite3, sys
+
+root = pathlib.Path(".")
+con = sqlite3.connect(":memory:")
+for name in ("0001_account.sql", "0002_platform_admin.sql"):
+    sql = (root / "migrations/d1/account" / name).read_text(encoding="utf-8")
+    con.executescript(sql)          # raises on any syntax or ordering error
+
+cols = {row[1]: row for row in con.execute("PRAGMA table_info(users)")}
+assert "platform_admin" in cols, f"platform_admin missing; got {sorted(cols)}"
+_, _, coltype, notnull, default, _ = cols["platform_admin"]
+assert coltype.upper() == "INTEGER", coltype
+assert notnull == 1, "platform_admin must be NOT NULL"
+assert str(default) == "0", f"platform_admin must default to 0 (fail closed), got {default!r}"
+
+idx = {row[1] for row in con.execute("PRAGMA index_list(users)")}
+assert "users_platform_admin_idx" in idx, sorted(idx)
+
+# The grant must actually work, and must default to denied.
+con.execute("INSERT INTO tenants VALUES ('t1','individual','T','now','now')")
+con.execute("INSERT INTO users (user_id, created_at, updated_at) VALUES ('u1','now','now')")
+assert con.execute("SELECT platform_admin FROM users WHERE user_id='u1'").fetchone()[0] == 0
+con.execute("UPDATE users SET platform_admin = 1 WHERE user_id = 'u1'")
+assert con.execute("SELECT platform_admin FROM users WHERE user_id='u1'").fetchone()[0] == 1
+print("migration OK")
+PY
+```
+→ prints `migration OK`. Any assertion failure or `sqlite3.OperationalError` is
+a real defect in the migration — fix the SQL, not the check.
+
+**Verify (the check can fail)**: temporarily change the migration's
+`DEFAULT 0` to `DEFAULT 1`, re-run, and confirm the fail-closed assertion
+fires. Restore it. A verification that cannot fail is not a verification.
+
+**Note on `IF NOT EXISTS`**: SQLite's `ALTER TABLE ... ADD COLUMN` has no
+`IF NOT EXISTS` form, so re-running `0002` against an already-migrated database
+errors with `duplicate column name: platform_admin`. That is acceptable and
+intended — it makes a double-apply loud rather than silent — but the operator
+runbook in Step 0 must say so, because a runbook that re-runs migrations
+blindly will trip on it.
 
 ### Step 2: Add `assertPlatformOperator()` to `CloudflareIdentityStore`
 
@@ -773,7 +970,10 @@ Cases to assert (six):
    than propagating the D1 error.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
-→ exit 0, `26 passed (26)` files, `351 passed (351)` tests (345 baseline + 6 new).
+→ exit 0, **0 failed**, `Tests` == `WORKER_BEFORE + 6` and `Test Files` ==
+`FILES_BEFORE + 1`. Separately,
+`npx vitest run __tests__/identity-platform-operator.test.js` → `6 passed`
+(a per-file count, stable).
 
 ### Step 3: Gate the global pipeline controls on platform operator
 
@@ -788,9 +988,11 @@ async function requireOperator(request, env, stores) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
   try {
-    // NOT assertMembership: these three CONTROL_PATHS are global in effect and
-    // the tenant role is self-granted at signup, so only a platform grant can
-    // authorize them.
+    // These three CONTROL_PATHS are global in effect, and the tenant role is
+    // self-granted at signup, so only a platform grant can authorize them.
+    // (Deliberately does not name the tenant-scoped check here: the Done
+    // criteria grep for calls to it in this file, and a comment mentioning it
+    // would be a false positive.)
     const auth = await stores.identityStore.assertPlatformOperator(authResult.claims);
     return { auth };
   } catch (error) {
@@ -800,14 +1002,41 @@ async function requireOperator(request, env, stores) {
 }
 ```
 
-Leave `dispatchCloudflarePipelineControl` (lines 99-134) untouched — it already
-handles a `Response` return at line 104 and routes `StorageBoundaryError`
-through `clientError` at line 130.
+**Also fix the dispatcher's four missing `await`s — do not "leave it
+untouched".** An earlier draft of this step said to leave
+`dispatchCloudflarePipelineControl` alone. That was wrong twice over: it leaves
+the exact defect `plans/005-*.md` explicitly hands to this plan, and the count
+was wrong. There are **four** unawaited dispatch lines, not one — verified:
 
-**Test updates** in `workers/__tests__/pipeline-control.test.js`: the `stores()`
-helper at lines 28-36 currently supplies only `assertMembership`. Add
-`assertPlatformOperator` alongside it (keep `assertMembership` — other code in
-the file may still reference it):
+```
+workers/pipeline/control_handlers.js:109:      return enqueueControl(request, env, stores, "download", {
+workers/pipeline/control_handlers.js:119:      return enqueueControl(request, env, stores, "legislation_update", { law_ids: requested });
+workers/pipeline/control_handlers.js:123:    if (action === "stop") return enqueueControl(request, env, stores, "stop", {});
+workers/pipeline/control_handlers.js:124:    return enqueueControl(request, env, stores, "start", {
+```
+
+All four sit inside the `try` opened at line 101 whose `catch` is at line 129,
+and `dispatchCloudflarePipelineControl` is `async` — so `return somePromise`
+settles after the `try` scope is left and the `catch` never sees a rejection
+raised inside `enqueueControl` (which throws a deliberate
+`StorageBoundaryError` at line 88). Change all four to
+`return await enqueueControl(...)`. Nothing else in the dispatcher changes: it
+already handles a `Response` return at line 104 and routes
+`StorageBoundaryError` through `clientError` at line 130.
+
+**Verify the await fix**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -cE "return enqueueControl\(" workers/pipeline/control_handlers.js        # → 0
+grep -cE "return await enqueueControl\(" workers/pipeline/control_handlers.js  # → 4
+node --check workers/pipeline/control_handlers.js                              # → exit 0
+```
+
+**Test updates** in `workers/__tests__/pipeline-control.test.js`.
+
+**(i) The shared `stores()` helper** at lines 28-36 currently supplies only
+`assertMembership`. Add `assertPlatformOperator` alongside it (keep
+`assertMembership` — other code in the file may still reference it):
 
 ```js
 function stores() {
@@ -824,7 +1053,62 @@ function stores() {
 }
 ```
 
-Then add one new test proving the regression is closed:
+**(ii) You must also fix the existing test that builds its own store double.**
+`it("requires an operator role", ...)` at line 91 does **not** use the shared
+helper — line 93 constructs an inline object containing only
+`assertMembership: vi.fn(async () => ({ ...CLAIMS, role: "viewer" }))`
+(verified verbatim). After the `requireOperator` rewrite, that test calls
+`stores.identityStore.assertPlatformOperator(...)` on an object where it is
+`undefined`, and fails with `assertPlatformOperator is not a function` — a
+TypeError, not the 403 it asserts. Rewrite it so it tests the new gate:
+
+```js
+  it("requires a platform operator grant, not a tenant role", async () => {
+    const current = stores();
+    // A tenant `viewer` and a tenant `owner` are equally irrelevant now: the
+    // signup flow self-grants `owner`, so only the platform grant decides.
+    current.identityStore.assertMembership = vi.fn(async () => ({ ...CLAIMS, role: "viewer" }));
+    current.identityStore.assertPlatformOperator = vi.fn(async () => {
+      throw new StorageBoundaryError("Platform operator access is required", {
+        code: "platform_operator_required",
+        status: 403,
+      });
+    });
+    mockStores.mockReturnValue(current);
+    // ...rest of the original test body, but asserting 403 with
+    // code "platform_operator_required" instead of "operator_role_required".
+  });
+```
+
+Read the original test body before rewriting and preserve its dispatch call and
+its "nothing was enqueued" assertions; only the store double and the expected
+error code change.
+
+**(iii) Add a queue-rejection regression test**, which is what the `await` fix
+buys. Without it the fix is unverified:
+
+```js
+  it("returns a typed response when the control queue rejects", async () => {
+    const current = stores();
+    mockStores.mockReturnValue(current);
+    const send = vi.fn(async () => { throw new Error("queue unavailable"); });
+    const response = await dispatchCloudflarePipelineControl(
+      request("/api/v1/pipeline-action", { action: "start" }),
+      "/api/v1/pipeline-action",
+      { IMMI_STORAGE_MODE: "cloudflare", PIPELINE_CONTROL_QUEUE: { send } },
+    );
+    // Before the `await` fix this rejects out of the dispatcher entirely and
+    // the runtime turns it into a bodyless 500 with no `code` field.
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(await response.json()).toHaveProperty("code");
+  });
+```
+
+**Verify (iii) can fail**: revert one `return await enqueueControl` to
+`return enqueueControl`, re-run this test, and confirm it fails (the call
+rejects instead of returning a Response). Restore, re-run green.
+
+**(iv)** Then add one new test proving the SEC-01 regression is closed:
 
 ```js
   it("denies a self-granted tenant owner who is not a platform operator", async () => {
@@ -854,8 +1138,19 @@ That test needs `StorageBoundaryError`. The file mocks
 a real import at the top of the test file:
 `import { StorageBoundaryError } from "../storage/contracts.js";`
 
-**Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/pipeline-control.test.js`
-→ exit 0, all tests pass including the new `denies a self-granted tenant owner` case.
+**Verify**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run __tests__/pipeline-control.test.js
+```
+→ exit 0, **0 failed**, and the per-file count is `pipeline-control BEFORE + 2`
+(one rewritten in place, two added). Then check the three that matter by name:
+```bash
+npx vitest run __tests__/pipeline-control.test.js -t "requires a platform operator grant, not a tenant role"
+npx vitest run __tests__/pipeline-control.test.js -t "returns a typed response when the control queue rejects"
+npx vitest run __tests__/pipeline-control.test.js -t "denies a self-granted tenant owner"
+```
+→ each passes.
 
 ### Step 4: Gate the platform admin read on platform operator
 
@@ -957,9 +1252,12 @@ Leave `dispatchCloudflareCaseMutation` (lines 290-320) untouched; the freeze
 check at 302, `requireMutationQueue`, and the `Response` handling at 309 all
 still work.
 
-**Test updates** in `workers/__tests__/cloudflare-mutations.test.js`: in the
-`stores()` helper (lines 28-42), add `assertPlatformOperator` next to
-`assertMembership`:
+**Test updates — three of them, and two are repairs to tests that this change
+breaks.** Skipping the repairs leaves the suite red.
+
+**(i) The shared `stores()` helper** in
+`workers/__tests__/cloudflare-mutations.test.js` (lines 28-42): add
+`assertPlatformOperator` next to `assertMembership`:
 
 ```js
     identityStore: {
@@ -968,8 +1266,29 @@ still work.
     },
 ```
 
-Add `import { StorageBoundaryError } from "../storage/contracts.js";` at the
-top, then add one new `describe` block with four cases — all with the freeze
+**(ii) Two existing tests assert the *old* call and will fail.** Verified
+verbatim:
+
+- line 101, in `it("uses tenant auth and CSRF for metadata update", ...)`:
+  `expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);`
+- line 267, in `it("falls through to JWT auth when the crawler token is absent", ...)`:
+  `expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);`
+
+After this step `requireWriter` calls `assertPlatformOperator` instead, so both
+assertions fail. Change **both** to
+`expect(current.identityStore.assertPlatformOperator).toHaveBeenCalledWith(CLAIMS);`
+and rename the first test to
+`it("requires a platform operator grant and CSRF for metadata update", ...)`
+so the name still describes what it checks.
+
+Line 246, in `it("accepts a crawler service token without login or CSRF", ...)`,
+reads `expect(current.identityStore.assertMembership).not.toHaveBeenCalled();`.
+That one still passes, but it now proves less than it should — the crawler
+bypass must skip the *platform* check too. Add, next to it:
+`expect(current.identityStore.assertPlatformOperator).not.toHaveBeenCalled();`
+
+**(iii)** Add `import { StorageBoundaryError } from "../storage/contracts.js";`
+at the top, then add one new `describe` block with four cases — all with the freeze
 lifted (`IMMI_CASE_MUTATIONS_ENABLED: "true"`) and the mutation queue bound the
 same way the existing unfrozen tests in this file do it (copy the `env` object
 from whichever existing test already passes `IMMI_CASE_MUTATIONS_ENABLED:
@@ -1000,8 +1319,35 @@ Add a fifth case proving the crawler bypass still works: with
 `assertPlatformOperator` ever being called
 (`expect(current.identityStore.assertPlatformOperator).not.toHaveBeenCalled()`).
 
-**Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/cloudflare-mutations.test.js`
-→ exit 0, all pre-existing tests plus 5 new ones pass.
+**(iv) Repair the test `plans/005-*.md` added, if that plan has landed.**
+005 creates `workers/__tests__/dispatcher-error-propagation.test.js` with
+`it("surfaces a typed storage error from a case mutation handler", ...)`, whose
+store double supplies only
+`identityStore: { assertMembership: vi.fn(async () => AUTH) }`. After this step
+that test fails with `assertPlatformOperator is not a function`. **This plan
+owns the repair** — add `assertPlatformOperator: vi.fn(async () => AUTH)` to
+that double. Do not delete or skip the test, and do not ask 005 to
+pre-emptively add a method that did not exist when it was written. If 005 has
+not landed, this sub-step is a no-op; check with
+`ls workers/__tests__/dispatcher-error-propagation.test.js`.
+
+**Verify**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run __tests__/cloudflare-mutations.test.js
+```
+→ exit 0, **0 failed**, per-file count is `cloudflare-mutations BEFORE + 5`.
+Then, if 005 has landed:
+```bash
+npx vitest run __tests__/dispatcher-error-propagation.test.js
+```
+→ exit 0, **0 failed**.
+
+**Verify the repairs were actually needed** (i.e. that you did not skip a
+broken test): before making change (ii), run
+`npx vitest run __tests__/cloudflare-mutations.test.js` with only the
+`requireWriter` edit applied and confirm exactly the two named tests fail. If
+they pass, `requireWriter` was not rewired — go back and check.
 
 ### Step 6: Close the open redirect in the Telegram callback (SEC-03)
 
@@ -1069,17 +1415,45 @@ row below** (9 in total), calling it with origin `"https://immi.example"`:
 
 In `workers/storage/cloudflare.js`:
 
-**7a.** Add a module-level constant next to `refreshSessionError` (line 202):
+**7a. No grace window — revoke the family on any reuse of a revoked token.**
 
-```js
-/**
- * Grace window for a benign concurrent refresh. Two browser tabs can fire
- * their proactive refresh timers within milliseconds of each other; the loser
- * presents a token that was rotated moments ago. That is a race, not theft, so
- * it is rejected without nuking the family. Anything older is treated as reuse.
- */
-const REFRESH_REUSE_GRACE_MS = 10_000;
-```
+An earlier draft of this step added a 10-second `REFRESH_REUSE_GRACE_MS` window
+in which a rotated token could be replayed without revoking the family. That is
+a real weakening of the control, not a refinement of it, and the attack it
+admits is the exact one the control exists to stop:
+
+> The attacker steals a refresh cookie and redeems it first. The victim's
+> browser refreshes seconds later with the now-revoked token. Inside a
+> 10-second window the victim gets a bare 401 and the **attacker's successor
+> family stays live** — the attacker keeps a rolling 7-day lineage and the only
+> signal anyone sees is one failed refresh, which looks like a flaky network.
+
+Ten seconds is not a small window either: a proactive-refresh timer firing on a
+background tab lands well inside it. So the default must be fail-secure:
+**any reuse of a revoked refresh token revokes the whole family**, with no
+time-based exemption.
+
+Add **no** grace constant. Do not add a config knob for it either — a knob
+whose safe value is zero is a footgun with a label on it.
+
+The multi-tab concurrent-refresh case is real, and it is handled where it
+belongs rather than by ignoring a security signal:
+
+- The compare-and-swap failure branch in `rotateRefreshSession`
+  (lines 1503-1505) already covers genuine simultaneity — two requests racing
+  the *same* live token. That branch deliberately does **not** revoke the
+  family (see 7b), because there the loser never held a revoked token.
+- The remaining case — a tab whose refresh lands *after* another tab's
+  rotation committed — is a client bug, and its fix is client-side
+  single-flight in `frontend/src/contexts/AuthContext.tsx` (one in-flight
+  refresh promise shared by all callers). `frontend/` is out of this plan's
+  scope, so this is recorded as a follow-up in "Maintenance notes" with the
+  telemetry to size it first.
+- Because it is a client bug, ship this with the `auth.refresh.reuse_detected`
+  log event and **watch it for one week before assuming the client is fine**.
+  If it fires at a rate that correlates with active multi-tab users rather than
+  with anything attack-shaped, do the client single-flight work — do not
+  reintroduce the window.
 
 **7b.** Add `revokeRefreshFamily()` immediately after `revokeRefreshSession()`
 (after the closing brace on line 1455):
@@ -1125,54 +1499,85 @@ and line 1465 becomes:
       // rotateRefreshSession, so an already-rotated token lands here, not in
       // the CAS backstop. A stolen refresh cookie redeemed after the victim's
       // next refresh must kill the whole lineage, not just the presented jti.
-      const rotatedAt = new Date(session.revoked_at).getTime();
-      const benignRace = session.revoked_reason === "rotated"
-        && Number.isFinite(rotatedAt)
-        && Date.now() - rotatedAt <= REFRESH_REUSE_GRACE_MS;
-      if (!benignRace) {
-        await this.revokeRefreshFamily({
-          familyId: session.family_id,
-          userId: checkedUserId,
-          reason: "reuse_detected",
-        });
-        console.log(JSON.stringify({
-          event: "auth.refresh.reuse_detected",
-          user_id: checkedUserId,
-          family_id: session.family_id,
-          revoked_reason: session.revoked_reason || null,
-        }));
-      }
+      //
+      // No time-based exemption, deliberately. A grace window would let an
+      // attacker who rotated first keep a live successor family whenever the
+      // victim's replay happens to land inside it, and a background tab's
+      // proactive-refresh timer lands inside any window worth having. Benign
+      // simultaneity is handled by the CAS branch in rotateRefreshSession,
+      // where the loser never held a revoked token.
+      await this.revokeRefreshFamily({
+        familyId: session.family_id,
+        userId: checkedUserId,
+        reason: "reuse_detected",
+      });
+      console.log(JSON.stringify({
+        event: "auth.refresh.reuse_detected",
+        user_id: checkedUserId,
+        family_id: session.family_id,
+        revoked_reason: session.revoked_reason || null,
+      }));
       throw refreshSessionError("Refresh token has been revoked", "revoked_refresh_token");
     }
 ```
 
-Do **not** add family revocation to the compare-and-swap failure branch at
-lines 1503-1505. That branch fires only on a genuine concurrent race, where
-revoking the family would destroy the successor token the winning request just
-issued.
+`revoked_reason` is still added to the SELECT: it is not used for a decision
+any more, but it is what makes the log line diagnosable (`"rotated"` reads as
+possible client double-refresh; `"logout"` or `"reuse_detected"` reads as a
+replay of a token that was explicitly killed).
+
+**7b. Do NOT add family revocation to the compare-and-swap failure branch** at
+lines 1503-1505. That branch fires only on a genuine concurrent race — two
+requests contending for the *same live* token — where the loser never held a
+revoked credential and revoking the family would destroy the successor the
+winning request just issued. This is the one place where not revoking is
+correct, and test 4 below pins it so a later "consistency" refactor cannot
+quietly remove the distinction.
 
 **7c-test.** Create `workers/__tests__/identity-refresh-family.test.js` using
 the same SQL-dispatching fake-D1 approach as Step 2, with `run()` recording the
-SQL and bound params so the family UPDATE can be asserted. Cases (four):
+SQL and bound params so the family UPDATE can be asserted. Cases (five):
 
-1. **Reuse outside the grace window revokes the family**: `first()` returns
+1. **Reuse of a rotated token revokes the family**: `first()` returns
    `{ jti, user_id, family_id, expires_at: <future ISO>, revoked_at: <60s ago ISO>, revoked_reason: "rotated" }`.
    Assert `loadRefreshAuthSnapshot` rejects with `code: "revoked_refresh_token"`
    **and** that a statement whose SQL matches `/UPDATE immi_refresh_sessions/`
    and `/WHERE family_id = \? AND user_id = \?/` was `run()` with
    `reason === "reuse_detected"`.
-2. **Benign race inside the grace window does not**: same row but
-   `revoked_at` 1 second ago. Assert it still rejects with
-   `revoked_refresh_token` and that **no** family UPDATE was run.
-3. **A logout-revoked token still revokes the family**: `revoked_reason:
-   "logout"`, `revoked_at` 1 second ago — the grace window only applies to
-   `"rotated"`, so the family UPDATE must run.
-4. **`revokeRefreshFamily` is directly callable and validates input**: a
-   non-UUID `familyId` rejects with `code: "invalid_identifier"`.
+2. **Reuse one second after rotation revokes the family too** — same row but
+   `revoked_at` 1 second ago. This is the case an earlier draft exempted with a
+   10-second grace window; it must now revoke, because that window is exactly
+   where an attacker-who-rotated-first hides. Assert the family UPDATE ran.
+3. **A logout-revoked token revokes the family**: `revoked_reason: "logout"`,
+   `revoked_at` 1 second ago — same outcome, no reason-based exemption either.
+4. **The CAS backstop does not revoke the family** — drive
+   `rotateRefreshSession` so the compare-and-swap reports `changes: 0` and
+   assert it rejects with `revoked_refresh_token` **and that no statement
+   matching `/WHERE family_id = \?/` was run**. This pins the one place where
+   *not* revoking is correct: a genuine concurrent race whose winner just
+   minted the successor. Without this test, a later "simplification" that
+   revokes there too would silently log the winning tab out.
+5. **`revokeRefreshFamily` validates input**: a non-UUID `familyId` rejects
+   with `code: "invalid_identifier"`.
 
-**Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/identity-refresh-family.test.js`
-→ exit 0, 4 tests pass. Then confirm the whole suite still passes:
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` → exit 0.
+**Verify**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run __tests__/identity-refresh-family.test.js
+```
+→ exit 0, `Tests 5 passed (5)` (a per-file count for a file only this plan
+owns, so it is stable).
+
+**Verify no grace window survived**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -c "REFRESH_REUSE_GRACE_MS\|benignRace" workers/storage/cloudflare.js
+```
+→ `0`.
+
+Then confirm the whole suite still passes:
+`cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
+→ exit 0, **0 failed**.
 
 ### Step 8: Require `exp` in `verifyJwt` (JSCORR-16 + TEST-19)
 
@@ -1223,7 +1628,14 @@ either sets `exp` or is an error-path assertion on `signJwt` itself (lines 247,
 252, 257) that never reaches `verifyJwt`.
 
 **Verify**: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/auth-jwt.test.js`
-→ exit 0, `31 passed` (baseline for this file is 30; one test rewritten, one added).
+→ exit 0, **0 failed**, per-file count == `auth-jwt BEFORE + 1` (one test
+rewritten in place, one added). At the time of writing the baseline was 30, so
+`31 passed`; re-derive it from your own Step-0 recording rather than assuming.
+Also check the two by name:
+```bash
+npx vitest run __tests__/auth-jwt.test.js -t "rejects a token with no exp field"
+npx vitest run __tests__/auth-jwt.test.js -t "rejects a token whose exp is a string"
+```
 
 ### Step 9: Make the AuthNonce DO actually prune its storage (JSCORR-04)
 
@@ -1337,11 +1749,12 @@ New tests, by file:
 | File | New cases |
 |---|---|
 | `workers/__tests__/identity-platform-operator.test.js` (new) | 6 — fresh signup denied; tenant `admin` denied; `platform_admin=1` granted; env allowlist granted; wrong allowlist entry denied; missing-column D1 error denied not thrown |
-| `workers/__tests__/pipeline-control.test.js` | 1 — self-granted tenant owner gets 403 `platform_operator_required` and nothing is enqueued |
+| `workers/__tests__/pipeline-control.test.js` | 1 rewritten + 2 new — `"requires an operator role"` rewritten onto the platform gate (it would otherwise die with `assertPlatformOperator is not a function`); queue rejection returns a typed response (pins the four `await` fixes); self-granted tenant owner gets 403 `platform_operator_required` and nothing is enqueued |
 | `workers/__tests__/cloudflare-admin-handlers.test.js` | 1 rewritten + 1 new — denial arm returns 403 `platform_operator_required`; tenant `owner` alone rejected |
-| `workers/__tests__/cloudflare-mutations.test.js` | 5 — POST/PUT/DELETE/batch-delete each 403 with the store method uncalled; crawler token bypass still succeeds |
+| `workers/__tests__/cloudflare-mutations.test.js` | 2 repaired + 5 new — the `assertMembership` call assertions at lines 101 and 267 become `assertPlatformOperator`; POST/PUT/DELETE/batch-delete each 403 with the store method uncalled; crawler token bypass still succeeds |
+| `workers/__tests__/dispatcher-error-propagation.test.js` (owned by plan 005) | 1 repaired — add `assertPlatformOperator` to its mutation store double, if 005 has landed |
 | `workers/__tests__/cloudflare-native-auth-handlers.test.js` | 9 — one `it` per row of the Step 6 table: `safeRedirectTarget` accepts same-origin paths and rejects `/\`, `//`, absolute, NUL, null, empty |
-| `workers/__tests__/identity-refresh-family.test.js` (new) | 4 — reuse revokes family; benign race does not; logout-revoked reuse does; invalid familyId rejected |
+| `workers/__tests__/identity-refresh-family.test.js` (new) | 5 — reuse of a rotated token revokes the family; reuse 1s after rotation revokes it too (no grace window); logout-revoked reuse revokes it; the CAS backstop does **not**; invalid familyId rejected |
 | `workers/__tests__/auth-jwt.test.js` | 1 rewritten + 1 new — exp-less token rejected as `expired`; string `exp` rejected |
 | `workers/__tests__/auth-nonce.test.js` | 4 — `put` called with 2 args (no options); alarm scheduled on first write; `alarm()` prunes expired and keeps fresh; re-arms only while entries remain |
 
@@ -1351,25 +1764,38 @@ Structural patterns to copy: handler tests follow
 `workers/__tests__/cloudflare-storage-contracts.test.js:22-40`, extended to
 dispatch on SQL text.
 
-Final verification: `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
-→ exit 0. Expected totals: **27 test files** (25 baseline + 2 new) and
-**≥ 376 tests** (345 baseline + 31 net new; one file's count changes by
-rewrite-in-place so treat 376 as a floor, not an equality).
+**Net test delta: +31** (6 + 2 + 1 + 5 + 9 + 5 + 1 + 2, with three tests
+rewritten in place and three repaired in place, none of which change the
+count). Final verification:
+`cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
+→ exit 0, **0 failed**, `Tests` == `WORKER_BEFORE + 31`, `Test Files` ==
+`FILES_BEFORE + 2`, using the baselines from "Baselines, not absolutes". Do not
+hard-code either number — plans 004, 005, 007 and 008 all move them.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0, reports 27 test files and at least 376 passing tests, 0 failing
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` still reports `1141 passed` and no more than `3 failed` (the pre-existing pyexpat/pypdf environment failures)
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` still reports `490 passed`
-- [ ] `grep -rn "assertMembership" workers/pipeline/control_handlers.js workers/admin/cloudflare_handlers.js workers/case-api/cloudflare_mutations.js` returns **no matches**
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with **0 failed**, `Tests` equal to `WORKER_BEFORE + 31` and `Test Files` equal to `FILES_BEFORE + 2` (baselines recorded before you started)
+- [ ] `cd ".../workers" && npx vitest run __tests__/identity-platform-operator.test.js` reports `6 passed`
+- [ ] `cd ".../workers" && npx vitest run __tests__/identity-refresh-family.test.js` reports `5 passed`
+- [ ] `cd ".../workers" && npx vitest run __tests__/pipeline-control.test.js -t "returns a typed response when the control queue rejects"` passes
+- [ ] `cd ".../workers" && npx vitest run __tests__/pipeline-control.test.js -t "requires a platform operator grant, not a tenant role"` passes
+- [ ] `cd ".../workers" && npx vitest run __tests__/identity-refresh-family.test.js -t "does not revoke the family"` passes (the CAS-backstop case)
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` reports **0 failures other than exactly these 3, by name**: `test_clean_line_does_not_destroy_words`, `test_extract_judiciary_names_filters_non_judicial_judging`, `test_merge_treats_postnominal_variant_as_equivalent`, all in `tests/test_backfill_judge_overrides_from_pdf.py`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` reports **0 failed** and the same passing count you recorded before starting (no frontend file changes here)
+- [ ] The Step 1 migration script prints `migration OK` — i.e. `0001` + `0002` apply cleanly to a fresh SQLite DB, `platform_admin` is `INTEGER NOT NULL DEFAULT 0`, and `users_platform_admin_idx` exists
+- [ ] `grep -rnE "\.assertMembership\(" workers/pipeline/control_handlers.js workers/admin/cloudflare_handlers.js workers/case-api/cloudflare_mutations.js` returns **no matches** — note the `\.` and `\(`: this matches an actual *call*, so an explanatory comment mentioning the name does not create a false positive the way a bare `grep "assertMembership"` would
 - [ ] `grep -c "assertPlatformOperator" workers/storage/cloudflare.js` returns `1` and `grep -rc "assertPlatformOperator" workers/pipeline/control_handlers.js workers/admin/cloudflare_handlers.js workers/case-api/cloudflare_mutations.js` returns `1` for each file
 - [ ] `grep -c "is_admin" workers/admin/cloudflare_handlers.js` returns `0`
 - [ ] `grep -c "expirationTtl" workers/auth/nonce_do.js` returns `0`
+- [ ] `grep -c "REFRESH_REUSE_GRACE_MS\|benignRace" workers/storage/cloudflare.js` returns `0` — no reuse grace window survived review
 - [ ] `grep -c "revokeRefreshFamily" workers/storage/cloudflare.js` returns `2` (definition + the call in `loadRefreshAuthSnapshot`)
+- [ ] `grep -cE "return enqueueControl\(" workers/pipeline/control_handlers.js` returns `0` and `grep -cE "return await enqueueControl\(" workers/pipeline/control_handlers.js` returns `4`
+- [ ] `node --check workers/pipeline/control_handlers.js` exits 0
 - [ ] `test -f migrations/d1/account/0002_platform_admin.sql` succeeds
-- [ ] `git status --short` lists only the files in the "In scope" list (plus this plan file and, if it exists, `plans/README.md`); `wrangler.toml` and everything under `frontend/` are unmodified
+- [ ] `git status --short` lists only the files in the "In scope" list (plus this plan file, `workers/__tests__/dispatcher-error-propagation.test.js` if you repaired plan 005's test, and, if it exists, `plans/README.md`); `wrangler.toml` and everything under `frontend/` are unmodified
+- [ ] Step 0's runbook (0a–0d) appears verbatim in the PR description, with no real `user_id` filled in
 - [ ] `plans/README.md` status row updated, if that file exists
 
 ## STOP conditions
@@ -1386,8 +1812,18 @@ Stop and report back (do not improvise) if:
   the excerpts above, stop.
 - **Any step's verification fails twice** after one reasonable fix attempt.
 - **Removing `isAdmin` or rewiring `requireOperator` breaks a test you did not
-  expect to touch.** That means some other caller depends on tenant role for a
-  global surface — report which, do not loosen the new gate to make it pass.
+  expect to touch.** Steps 3 and 5 name the five tests this change is *known*
+  to break (`pipeline-control.test.js:91`, `cloudflare-mutations.test.js:101`
+  and `:267`, plus plan 005's mutation dispatcher test) and this plan owns
+  repairing all of them. A **sixth** breakage means some other caller depends
+  on tenant role for a global surface — report which, do not loosen the new
+  gate to make it pass and do not `.skip` it.
+- **You are tempted to reintroduce a refresh-reuse grace window** because a
+  test or a manual multi-tab check logs you out. That is the client bug
+  described in Step 7a; the fix is client-side and out of scope. Report it.
+- **The Step 1 migration script does not print `migration OK`.** Do not
+  downgrade the check to `ls` + `grep`; a migration that cannot execute is the
+  defect.
 - **You find a caller that legitimately needs an exp-less JWT.** Step 8 assumes
   none exists (verified: only `makeAccessToken` and `makeRefreshToken` call
   `signJwt`, and both set `exp`). If a third minter appears, stop.
@@ -1408,15 +1844,26 @@ For the human or agent who owns this code after the change lands:
   `POST /api/v1/download/start`, `POST /api/v1/legislations/update` and
   `GET /api/v1/admin/pipeline-runs` return `403 platform_operator_required` for
   every user, including whoever was using them before. That is the fix, not a
-  regression. Two ways to grant, in the operator's preferred order:
-  1. Apply `migrations/d1/account/0002_platform_admin.sql` via
-     `wrangler d1 execute`, then
-     `UPDATE users SET platform_admin = 1 WHERE user_id = '<uuid>';`
-  2. Break-glass, no migration needed: set the Worker var
-     `IMMI_PLATFORM_OPERATOR_IDS` to a comma-separated list of user UUIDs.
-     Deliberately **not** added to the checked-in `wrangler.toml`, matching the
-     existing policy for operator-supplied resource IDs and secrets (see the
-     `# Operator-set secrets only` comment at `wrangler.toml:95-97`).
+  regression — **but only if the grant lands before the deploy.** The full
+  ordering, the grant SQL, the two-operator rule, the smoke checks and the
+  rollback are in **Step 0**, which is a numbered step with its own Done
+  criterion rather than a note here. An earlier draft had "deploy, then grant"
+  buried in this section, which manufactures an avoidable all-users-403 window.
+  Do not re-summarise Step 0 here; follow it.
+- **`IMMI_PLATFORM_OPERATOR_IDS` is deliberately not in the checked-in
+  `wrangler.toml`**, matching the existing policy for operator-supplied
+  resource IDs and secrets (see the `# Operator-set secrets only` comment at
+  `wrangler.toml:95-97`). Note it is an *override*, not a fallback: revoking a
+  grant means clearing both the column and this var.
+- **Follow-up this plan deliberately does not do: client-side refresh
+  single-flight.** Step 7 revokes the refresh-token family on any reuse, with
+  no grace window. If `auth.refresh.reuse_detected` fires for ordinary
+  multi-tab users, the fix is a shared in-flight refresh promise in
+  `frontend/src/contexts/AuthContext.tsx` so two tabs cannot both redeem the
+  same cookie — **not** reintroducing a server-side window that an attacker who
+  rotated first can hide inside. `frontend/` is outside this plan's scope, so
+  measure first: watch the event for a week and check whether its rate tracks
+  active multi-tab users or something attack-shaped.
 - **A reviewer should scrutinise**: that no remaining global-effect route calls
   `assertMembership` directly; that the `CRAWLER_WRITE_TOKEN` bypass in
   `requireWriter` is byte-for-byte unchanged (production ingestion depends on
@@ -1430,14 +1877,19 @@ For the human or agent who owns this code after the change lands:
   `workers/case-api/cloudflare.js` does not, and should not.
 - **Refresh reuse detection deliberately excludes the compare-and-swap failure
   branch** (`workers/storage/cloudflare.js`, `rotateRefreshSession`). A CAS
-  failure means a genuine concurrent race, where family revocation would kill
-  the successor token the winning request just minted. If reuse telemetry later
-  shows the 10-second grace window is too generous or too tight, tune
-  `REFRESH_REUSE_GRACE_MS` — it is a single named constant.
+  failure means a genuine concurrent race for the *same live* token, where
+  family revocation would kill the successor the winning request just minted.
+  That distinction is pinned by test 4 in
+  `workers/__tests__/identity-refresh-family.test.js`; do not "unify" the two
+  branches.
+- **There is no grace window, on purpose.** Any reuse of an already-revoked
+  refresh token revokes the family. See Step 7a for why a time-based exemption
+  is unsafe: it is precisely the window an attacker who rotated first survives
+  inside.
 - **Watch the `auth.refresh.reuse_detected` log event.** Pipe it through
-  Cloudflare Logpush. A sustained rate above roughly one per active user per
-  week suggests the grace window is too tight (multi-tab users being logged
-  out), not that tokens are being stolen.
+  Cloudflare Logpush. A sustained rate correlated with multi-tab usage means
+  the *client* needs single-flight refresh (see the follow-up above) — it does
+  not mean the server should start ignoring the signal.
 - **Explicitly deferred** (see "Findings reconsidered"): removing the
   `access_token` echo from `/api/v1/auth/me`. Doing that properly is a
   cookie-only-auth redesign spanning `frontend/src/contexts/AuthContext.tsx`

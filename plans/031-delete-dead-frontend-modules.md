@@ -7,9 +7,45 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff cannot see uncommitted,
+> staged or untracked work, so run **all four** commands below over the same
+> path list — a dirty tree would otherwise give a false all-clear. Treat any
+> in-scope path appearing in any of them as a STOP condition, and **never** run
+> an unconditional `git checkout -- …` / `git restore …` / `git clean -f` to
+> tidy it up; those changes may be the operator's.
+>
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> git status --short --branch
+> for MODE in "--stat 42826a3..HEAD" "--stat" "--cached --stat"; do
+>   echo "=== git diff $MODE ==="
+>   git diff $MODE -- \
+>     frontend/src/lib/api.ts frontend/src/lib/api-cases.ts \
+>     frontend/src/lib/api-analytics.ts frontend/src/pages/TaxonomyPage.tsx \
+>     frontend/src/pages/SearchTaxonomyPage.tsx frontend/src/hooks/use-llm-council.ts \
+>     frontend/src/components/dashboard/TrendChart.tsx \
+>     frontend/src/components/judges/ComparisonTable.tsx \
+>     frontend/src/components/judges/SpecializationBadge.tsx \
+>     frontend/src/components/judges/DualMetricChart.tsx \
+>     frontend/src/components/shared/DatabaseCard.tsx \
+>     frontend/src/components/shared/ProgressRing.tsx \
+>     frontend/src/components/taxonomy/JudgeAutocomplete.tsx \
+>     frontend/__tests__/dual-metric-chart.test.tsx frontend/src/App.tsx \
+>     frontend/I18N_IMPLEMENTATION_PLAN.md \
+>     CLAUDE.md AGENTS.md .claude/skills/add-chart/SKILL.md
+> done
+> git status --short --untracked-files=all -- frontend CLAUDE.md AGENTS.md .claude/skills/add-chart/SKILL.md
+> ```
+>
+> **Expected drift you should NOT stop for**: `CLAUDE.md` and `AGENTS.md` may
+> legitimately differ if `plans/033-single-source-the-domain-vocabulary.md` has
+> already landed — it edits lines 91-92 of both. That is why Step 5 anchors on
+> **content**, never on a line number. Any other in-scope path appearing is a
+> STOP condition.
+>
+> <details><summary>Original (insufficient) form, kept for reference</summary>
+>
+> ```bash
 > git diff --stat 42826a3..HEAD -- \
 >   frontend/src/lib/api.ts \
 >   frontend/src/lib/api-cases.ts \
@@ -28,18 +64,31 @@
 >   frontend/src/App.tsx \
 >   CLAUDE.md AGENTS.md .claude/skills/add-chart/SKILL.md
 > ```
-> Empty output means no drift — proceed. If any in-scope file changed since
-> this plan was written, compare the "Current state" excerpts against the live
-> code before proceeding; on a mismatch, treat it as a STOP condition.
+> </details>
 
 ## Status
 
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: `plans/033-single-source-the-domain-vocabulary.md` (ordering
+  only — see below)
 - **Category**: tech-debt
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+**Why 033 comes first, and it is only an ordering constraint.** Both plans edit
+`CLAUDE.md` and `AGENTS.md`. Plan 033 rewrites lines 91-92 of both, which sits
+*above* the lines this plan edits (116 and 125), so if 033 lands second it
+reflows the anchors this plan used. Two consequences, both already applied
+below: (1) run 033 first on a shared branch, and (2) **Step 5 anchors on file
+content, never on a line number**, so the order stops mattering if it slips.
+Do not run the two in parallel in the same worktree.
+
+There is **no** test-count dependency on
+`plans/035-fix-frontend-dependency-advisories.md`. An earlier reading claimed
+one, because both plans quoted absolute Vitest totals. Both now express their
+gates as deltas against a baseline the executor records, so either order works;
+see "Commands you will need".
 
 ## Why this matters
 
@@ -434,11 +483,21 @@ command says `cd frontend`.
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Frontend typecheck | `cd frontend && npx tsc -b --noEmit --force` | exit 0, no output (~60s) |
-| Frontend unit tests | `cd frontend && npx vitest run` | **before**: `Test Files 55 passed (55)` / `Tests 490 passed (490)`; **after**: `54 passed (54)` / `483 passed (483)` (~50s) |
-| Frontend lint | `cd frontend && npx eslint .` | exit 0, `✖ 25 problems (0 errors, 25 warnings)` — identical before and after |
-| Worker unit tests | `cd workers && npx vitest run` | `345 passed`, 25 files — unchanged by this plan |
-| Python unit tests | `make test-py` | `3 failed, 1141 passed, 7 skipped` — unchanged by this plan (~6 min) |
+| Frontend unit tests | `cd frontend && npx vitest run` | **delta**: files `FE_FILES_BEFORE − 1`, tests `FE_TESTS_BEFORE − 7` (~50s) |
+| Named-test gate | `cd frontend && npx vitest run __tests__/dual-metric-chart.test.tsx` | **before**: `7 passed`; **after**: vitest exits non-zero with `No test files found` |
+| Frontend lint | `cd frontend && npx eslint .` | exit 0, and the problem/error/warning triple **identical** to `ESLINT_BEFORE` |
+| Worker unit tests | `cd workers && npx vitest run` | identical to `WORKER_BEFORE` — unchanged by this plan |
+| Python unit tests | `make test-py` | identical to your recorded baseline — unchanged by this plan (~6 min). Whatever the pass count, the failures must remain **exactly the 3 named `pypdf`/`pyexpat` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`** |
 | Worktree state | `git status --short` | see Done criteria |
+
+**Delta rule (read before quoting any number).** Sibling plans in this batch add
+and remove tests in the same suites, so absolute totals such as "490 passed" are
+not usable gates — they break the moment another plan merges, and an executor
+who edits the expected number has destroyed the gate. Step 1 records
+`FE_FILES_BEFORE`, `FE_TESTS_BEFORE`, `ESLINT_BEFORE`, `WORKER_BEFORE` and
+`PAGES_BEFORE` on *your* tree; every later expectation is a delta from those.
+At `42826a3` they happened to be 55 / 490 / `25 problems (0 errors, 25 warnings)`
+/ 25 files-345 tests / 27 — informational only.
 
 Notes on the gates:
 
@@ -455,11 +514,11 @@ Notes on the gates:
   3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf` import. They
   are not this plan's problem. Running `make test-py` is optional here (this
   plan touches no Python), and is listed only so you recognise the baseline.
-- **`npx eslint .` currently emits 25 warnings and 0 errors, and exits 0.** None
-  of the 12 files this plan deletes contributes any of them (verified
-  file-by-file with `npx eslint --format json` at commit `42826a3`), so the
-  number must be **unchanged** afterwards. A different number means you deleted
-  something else.
+- **`npx eslint .` exits 0 and emits warnings only.** None of the 12 files this
+  plan deletes contributes any of them (verified file-by-file with
+  `npx eslint --format json` at commit `42826a3`), so the triple must be
+  **identical to `ESLINT_BEFORE`** afterwards. A different triple means you
+  deleted something else. Record the triple, not a remembered `25`.
 
 ## Scope
 
@@ -480,12 +539,17 @@ Notes on the gates:
 
 Total: **1,269 lines**, all currently tracked by git.
 
-**In scope** — edit these 3 files, one or two lines each, because they name a
-file being deleted:
+**In scope** — edit these 4 files, one or two lines each, because they name a
+file being deleted. **Locate every one by content, not by line number** (Step 5
+explains why):
 
-13. `CLAUDE.md` — line 116 (`27 pages` → `26 pages`), line 125 (drop `TaxonomyPage, `)
-14. `AGENTS.md` — the same two lines, same line numbers, identical content
-15. `.claude/skills/add-chart/SKILL.md` — line 75 (the `TrendChart.tsx` bullet)
+13. `CLAUDE.md` — the `27 pages` line → `26 pages`; the
+    `TaxonomyPage, SearchTaxonomyPage,` line → drop `TaxonomyPage, `
+14. `AGENTS.md` — the same two lines, identical content
+15. `.claude/skills/add-chart/SKILL.md` — the `TrendChart.tsx` bullet
+16. `frontend/I18N_IMPLEMENTATION_PLAN.md` — delete the single
+    ``- [ ] `TrendChart.tsx` - 圖表標題`` checklist line (line 103 at `42826a3`).
+    Keep the `OutcomeTrendChart.tsx` and `ConceptTrendChart.tsx` entries.
 
 > **Note on file territory.** This plan was scoped as owning `frontend/src/lib/**`,
 > but the work it describes necessarily reaches into `frontend/src/components/`,
@@ -522,12 +586,14 @@ file being deleted:
   (`.gitignore:58` matches `**/.omc/`). It mentions `api-cases.ts`; leave it.
 - **`design/capture-screenshots.mjs`** — its `["TaxonomyPage", "/taxonomy"]`
   entry still resolves, because the `/taxonomy` route survives.
-- **Running `npm run build` / `make build`.** The Vite build writes to
-  `../immi_case_downloader/static/react` (`frontend/vite.config.ts:34`) and
-  **93 of those artifacts are tracked in git**. A build would rewrite hashed
-  asset filenames and dirty the tree far outside this plan's scope. None of the
-  deleted modules is present in the committed bundle (verified: their i18n keys
-  do not appear in `immi_case_downloader/static/react/`), so no rebuild is owed.
+- **Running `npm run build` / `make build` / `npm run build:cloudflare`.** All
+  three run `npm run tokens && tsc -b && vite build`, and the configured `outDir`
+  is `../immi_case_downloader/static/react` (`frontend/vite.config.ts:34`),
+  **93 of whose artifacts are tracked in git**; `npm run tokens` additionally
+  rewrites the tracked `frontend/src/tokens/tokens.css` and `tokens.ts`. Step 6
+  uses `npx vite build --outDir /tmp/... --emptyOutDir` instead, which touches
+  neither: it overrides the outDir and skips the `tokens` prebuild. Use that
+  form and no other.
 - **`frontend/src/i18n/locales/en.json` and `zh-TW.json`.** Deleting
   `JudgeAutocomplete.tsx` orphans the whole `taxonomy` namespace (5 keys) in
   both files — it is the only `taxonomy.*` consumer in `src/`. Leave them;
@@ -564,22 +630,38 @@ Do **not** push, do **not** open a PR, do **not** merge.
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npx tsc -b --noEmit --force; echo "tsc exit=$?"
 npx vitest run 2>&1 | tail -4
-npx eslint . 2>&1 | tail -2; 
+npx vitest run __tests__/dual-metric-chart.test.tsx 2>&1 | tail -3
+npx eslint . 2>&1 | tail -2
 npx eslint . > /dev/null 2>&1; echo "eslint exit=$?"
+ls src/pages/*.tsx | wc -l
+(cd ../workers && npx vitest run 2>&1 | tail -3)
 ```
+
+Write these down as named variables and use them for every later expectation:
+
+- `FE_FILES_BEFORE`, `FE_TESTS_BEFORE` (frontend vitest totals)
+- `ESLINT_BEFORE` (the whole `✖ N problems (E errors, W warnings)` line)
+- `PAGES_BEFORE` (`ls src/pages/*.tsx | wc -l`)
+- `WORKER_BEFORE` (worker vitest files/tests)
 
 **Verify**:
 - `tsc exit=0`
-- vitest tail shows `Test Files  55 passed (55)` and `Tests  490 passed (490)`
-- eslint tail shows `✖ 25 problems (0 errors, 25 warnings)` and `eslint exit=0`
+- `npx vitest run __tests__/dual-metric-chart.test.tsx` reports `7 passed` —
+  this is the named-test gate that Step 4 flips
+- `eslint exit=0`, and `ESLINT_BEFORE` has `0 errors`
 
-If any of the three baselines differs, STOP — the tree has drifted from commit
-`42826a3` and this plan's expected numbers are invalid.
+If `tsc exit` is non-zero, or eslint reports any **error**, STOP — this plan
+cannot start from an already-broken tree. A different *count* from
+`42826a3`'s 55/490/27 is **not** a reason to stop; another plan may have landed.
+Your recorded numbers are the gate from here on.
 
 ### Step 2: Prove the 12 files have no importers, then delete the api.ts split
 
-First, re-run the reachability proof. All four commands must produce the stated
-result **before** you delete anything:
+First, re-run the reachability proof. **Searching for fixed `@/`-aliased
+specifiers is not sufficient on its own** — it would miss a sibling import
+(`./TrendChart`), a parent-relative one (`../judges/ComparisonTable`), a barrel
+re-export, or a dynamic `import()`. All six commands below must produce the
+stated result **before** you delete anything:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
@@ -587,33 +669,52 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 # (a) nothing imports the split (the only hits must be the gitignored .omc file)
 grep -rn -e 'api-cases' -e 'api-analytics' . --exclude-dir=node_modules
 
-# (b) nothing imports the other nine modules by path
-grep -rn \
-  -e 'components/dashboard/TrendChart' \
-  -e 'judges/ComparisonTable' \
-  -e 'judges/SpecializationBadge' \
-  -e 'judges/DualMetricChart' \
-  -e 'shared/DatabaseCard' \
-  -e 'shared/ProgressRing' \
-  -e 'taxonomy/JudgeAutocomplete' \
-  -e 'pages/TaxonomyPage' \
+# (b) nothing imports the other nine modules by ANY specifier shape —
+#     aliased, sibling-relative, parent-relative, or extensioned
+grep -rnE 'from ["'"'"'][^"'"'"']*(TrendChart|ComparisonTable|SpecializationBadge|DualMetricChart|DatabaseCard|ProgressRing|JudgeAutocomplete|TaxonomyPage)(\.tsx?)?["'"'"']' \
   src __tests__ e2e scripts index.html
 
-# (c) nothing imports the orphaned hook (note: `-sessions` is a DIFFERENT module)
+# (c) nothing references the exported SYMBOLS either (catches barrels and
+#     any usage the specifier grep could miss). Definition sites are expected.
+grep -rn -e 'DualMetricChart' -e 'ComparisonTable' -e 'SpecializationBadge' \
+        -e 'DatabaseCard' -e 'ProgressRing' -e 'JudgeAutocomplete' \
+        -e 'TrendChart' -e 'TaxonomyPage' \
+  src __tests__ e2e scripts index.html
+
+# (d) nothing imports the orphaned hook (note: `-sessions` is a DIFFERENT module)
 grep -rn -e 'hooks/use-llm-council"' -e "hooks/use-llm-council'" src __tests__ e2e
 
-# (d) there is no barrel that could re-export the split
-ls src/lib/index.ts
+# (e) no barrel anywhere under src/ could re-export any of them
+find src -name 'index.ts' -o -name 'index.tsx'
+
+# (f) no dynamic import with a computed specifier could reach them
+grep -rn 'import(' src __tests__ | grep -v '"@/' | grep -v "'@/"
 ```
 
 **Verify**:
 - (a) prints exactly two lines, both `./.omc/project-memory.json:…`
-- (b) prints exactly one line:
-  `__tests__/dual-metric-chart.test.tsx:3:import { DualMetricChart } from "@/components/judges/DualMetricChart";`
-- (c) prints nothing (exit 1 is the expected "no match")
-- (d) prints `ls: src/lib/index.ts: No such file or directory`
+- (b) prints **exactly two** lines, and both name a file this plan keeps:
+  `src/components/analytics/OutcomeAnalysisSection.tsx:5:import { OutcomeTrendChart } from "./OutcomeTrendChart";`
+  and
+  `src/components/analytics/ConceptIntelligenceSection.tsx:7:import { ConceptTrendChart } from "./ConceptTrendChart";`
+  — plus the one `__tests__/dual-metric-chart.test.tsx:3` hit. If any **other**
+  file appears, that module is not dead. (`OutcomeTrendChart` /
+  `ConceptTrendChart` are substring matches on `TrendChart`; they are live and
+  must survive.)
+- (c) every line is either a **definition** inside one of the nine doomed files,
+  the single `__tests__/dual-metric-chart.test.tsx` referrer, or one of the two
+  live analytics charts above. A reference from any other live file is a STOP.
+- (d) prints nothing (exit 1 is the expected "no match")
+- (e) prints only `src/i18n/index.ts` — a locale barrel, unrelated to these
+  modules. Any barrel under `src/lib/`, `src/components/` or `src/pages/` is a
+  STOP condition: re-read it before deleting anything.
+- (f) prints nothing
 
 If any command returns more than that, STOP.
+
+These greps are a *pre*-check, not the proof. The proof is the compile and
+build gates in Steps 3, 4 and 6 — TypeScript resolves every specifier shape,
+and the temporary Vite build in Step 6 resolves the actual Rollup graph.
 
 Now delete the split:
 
@@ -648,8 +749,8 @@ ls src/pages/*.tsx | wc -l
 grep -c "SearchTaxonomyPage" src/App.tsx
 git -C .. diff --stat -- frontend/src/App.tsx frontend/src/lib/api.ts
 ```
-→ `tsc exit=0`; `ls | wc -l` prints `26`; the `grep -c` prints `5`; the
-`git diff --stat` prints **nothing** (App.tsx and api.ts untouched).
+→ `tsc exit=0`; `ls | wc -l` prints `PAGES_BEFORE − 1`; the `grep -c` prints
+`5`; the `git diff --stat` prints **nothing** (App.tsx and api.ts untouched).
 
 ### Step 4: Delete the seven components and the one test that holds one of them up
 
@@ -677,33 +778,58 @@ only on `DualMetricChart`, which ceases to exist in the same commit.
 cd frontend
 npx tsc -b --noEmit --force; echo "tsc exit=$?"
 npx vitest run 2>&1 | tail -4
+npx vitest run __tests__/dual-metric-chart.test.tsx; echo "named-test exit=$?"
 ls src/components/dashboard/ | wc -l
 ls src/components/analytics/ConceptTrendChart.tsx src/components/analytics/OutcomeTrendChart.tsx
 ```
-→ `tsc exit=0`; vitest reports `Test Files  54 passed (54)` and
-`Tests  483 passed (483)`; `ls src/components/dashboard/ | wc -l` prints `5`;
-both analytics chart files still exist.
+→ `tsc exit=0`; vitest reports files `FE_FILES_BEFORE − 1` and tests
+`FE_TESTS_BEFORE − 7`; the named-test run now exits **non-zero** with
+`No test files found` (that is the point — the file is gone);
+`ls src/components/dashboard/ | wc -l` prints `5`; both analytics chart files
+still exist.
 
-### Step 5: Update the three docs that name a deleted file
+### Step 5: Update the four docs that name a deleted file
 
-**Edit A** — `CLAUDE.md:116`. Change exactly one word:
+**Anchor on content, not on line numbers.** `plans/033-single-source-the-domain-vocabulary.md`
+rewrites `CLAUDE.md` / `AGENTS.md` lines 91-92 — above everything this step
+touches — so the numbers below (116, 125, 75, 103) are only where the text sat
+at `42826a3`. Locate each edit with `grep -n` on the quoted text first, and edit
+the line `grep` reports. If a `grep` returns zero or more than one hit, STOP.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -n 'pages/            → 27 pages including:' CLAUDE.md AGENTS.md
+grep -n 'TaxonomyPage, SearchTaxonomyPage,' CLAUDE.md AGENTS.md
+grep -n '`TrendChart.tsx` — stacked area' .claude/skills/add-chart/SKILL.md
+grep -n '`TrendChart.tsx`' frontend/I18N_IMPLEMENTATION_PLAN.md
+```
+
+**Edit A** — the `27 pages` line in `CLAUDE.md`. Change exactly one word:
 
 ```
     pages/            → 26 pages including:
 ```
 
-**Edit B** — `CLAUDE.md:125`. Drop `TaxonomyPage, ` from the start of the list,
-keeping the leading indentation identical to the surrounding lines:
+**Edit B** — the `TaxonomyPage, SearchTaxonomyPage,` line in `CLAUDE.md`. Drop
+`TaxonomyPage, ` from the start of the list, keeping the leading indentation
+identical to the surrounding lines:
 
 ```
                         SearchTaxonomyPage,
 ```
 
-**Edit C and D** — apply the identical two edits to `AGENTS.md`, at the same
-line numbers 116 and 125. The two files' content at those lines is byte-identical.
+**Edit C and D** — apply the identical two edits to `AGENTS.md`. The two files'
+content at those lines is byte-identical at `42826a3`.
 
-**Edit E** — `.claude/skills/add-chart/SKILL.md:75`. Replace the broken bullet
-with a live exemplar. Before:
+**Edit F** — `frontend/I18N_IMPLEMENTATION_PLAN.md`, the line reading
+``- [ ] `TrendChart.tsx` - 圖表標題`` (line 103 at `42826a3`). It is an unticked
+i18n checklist entry for a component this plan deletes, so the task can never be
+done. Delete that single line. Leave the ``OutcomeTrendChart.tsx`` (line 77) and
+``ConceptTrendChart.tsx`` (line 80) entries alone — those components survive.
+
+**Edit E** — the `TrendChart.tsx` bullet in
+`.claude/skills/add-chart/SKILL.md`. Replace the broken bullet with a live
+exemplar. Before:
 
 ```
 - `TrendChart.tsx` — stacked area with custom tooltip filtering zeros
@@ -726,12 +852,21 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 grep -rn "TaxonomyPage" CLAUDE.md AGENTS.md
 grep -n "26 pages\|27 pages" CLAUDE.md AGENTS.md
 grep -rn "TrendChart" .claude/skills/add-chart/SKILL.md
-diff <(sed -n '110,130p' CLAUDE.md) <(sed -n '110,130p' AGENTS.md) && echo IDENTICAL
+grep -n "TrendChart" frontend/I18N_IMPLEMENTATION_PLAN.md
+diff <(grep -n 'pages/' CLAUDE.md) <(grep -n 'pages/' AGENTS.md) && echo "PAGES BLOCK IDENTICAL"
 ```
 → the first grep prints exactly two lines, both containing
 `SearchTaxonomyPage,` and neither containing a bare `TaxonomyPage,`; the second
 prints two `26 pages` lines and no `27 pages`; the third prints one line
-containing `OutcomeTrendChart.tsx`; the `diff` prints `IDENTICAL`.
+containing `OutcomeTrendChart.tsx`; the fourth prints exactly two lines, for
+`OutcomeTrendChart.tsx` and `ConceptTrendChart.tsx`, and none for a bare
+`TrendChart.tsx`; the `diff` prints `PAGES BLOCK IDENTICAL`.
+
+(The old form of that last check diffed a fixed line window, `sed -n
+'110,130p'`. That is unsafe here: plan 033 shifts those numbers, so the window
+could compare two unrelated regions and still print nothing. Comparing the
+grep-selected lines compares the same content in both files regardless of where
+it sits.)
 
 ### Step 6: Full-suite regression pass
 
@@ -741,15 +876,33 @@ npx tsc -b --noEmit --force; echo "tsc exit=$?"
 npx vitest run 2>&1 | tail -4
 npx eslint . 2>&1 | tail -2
 npx eslint . > /dev/null 2>&1; echo "eslint exit=$?"
+rm -rf /tmp/immi-plan-031-build
+npx vite build --outDir /tmp/immi-plan-031-build --emptyOutDir; echo "build exit=$?"
 cd ../workers && npx vitest run 2>&1 | tail -4
+cd .. && git status --porcelain -- immi_case_downloader/static/react frontend/src/tokens
 ```
 
 **Verify**:
 - `tsc exit=0`
-- frontend vitest: `Test Files  54 passed (54)`, `Tests  483 passed (483)`
-- eslint: `✖ 25 problems (0 errors, 25 warnings)`, `eslint exit=0` — **exactly
-  the Step 1 number**; a different count means an unintended file was removed
-- workers vitest: `Test Files  25 passed (25)`, `Tests  345 passed (345)`
+- frontend vitest: files `FE_FILES_BEFORE − 1`, tests `FE_TESTS_BEFORE − 7`
+- eslint: the triple is **identical to `ESLINT_BEFORE`** and `eslint exit=0`; a
+  different triple means an unintended file was removed
+- `build exit=0`, ending with `✓ built in …`
+- workers vitest: identical to `WORKER_BEFORE`
+- the final `git status --porcelain` prints **nothing** — the build went to
+  `/tmp`, so neither the tracked bundle nor the generated tokens moved
+
+**Why the temporary build is required.** This plan previously argued that
+grepping the *committed* bundle under `immi_case_downloader/static/react/` for a
+few distinctive strings was equivalent assurance. It is not: that bundle is a
+historical artifact, so its contents prove what Rollup reached at some past
+build, not that the **current** source graph still resolves. Only an actual Vite
+build does that. `--outDir /tmp/... --emptyOutDir` overrides
+`frontend/vite.config.ts:34` (`outDir: "../immi_case_downloader/static/react"`),
+so the tracked output directory is never touched — which is why `npm run build`
+/ `make build` remain forbidden. `npx vite build` also does **not** run the
+`npm run tokens` prebuild step, so `frontend/src/tokens/` stays clean; the final
+`git status` above is what proves both.
 
 ### Step 7: Confirm the worktree contains only the intended changes
 
@@ -769,25 +922,27 @@ pre-existing agent state such as `.claude/STATE.md`.
 This plan writes **no new tests**. It is a pure deletion, and the entire test
 strategy is "prove the deletions are invisible":
 
-| Gate | Before | After | What a deviation would mean |
-|---|---|---|---|
-| `npx tsc -b --noEmit --force` | exit 0 | exit 0 | a deleted file was actually imported |
-| `npx vitest run` (frontend) | 55 files / 490 tests | 54 files / 483 tests | anything other than the 7 `dual-metric-chart` cases changed |
-| `npx eslint .` | 25 problems, 0 errors | 25 problems, 0 errors | you removed a file that was contributing lint findings — i.e. not one of these 12 |
-| `npx vitest run` (workers) | 25 files / 345 tests | 25 files / 345 tests | you strayed outside `frontend/` |
-| `make test-py` (optional) | 1141 passed / 3 env-failed / 7 skipped | identical | you strayed outside `frontend/` |
+| Gate | Required result | What a deviation would mean |
+|---|---|---|
+| `npx tsc -b --noEmit --force` | exit 0 | a deleted file was actually imported |
+| `npx vite build --outDir /tmp/immi-plan-031-build --emptyOutDir` | exit 0 | the live Rollup graph still reaches a deleted module (a shape `tsc` alone can miss, e.g. a CSS or asset import) |
+| `npx vitest run` (frontend) | files `FE_FILES_BEFORE − 1`, tests `FE_TESTS_BEFORE − 7` | anything other than the 7 `dual-metric-chart` cases changed |
+| `npx vitest run __tests__/dual-metric-chart.test.tsx` | `7 passed` before, "no test files found" (non-zero) after | the deletion did not take effect |
+| `npx eslint .` | triple identical to `ESLINT_BEFORE`, 0 errors | you removed a file that was contributing lint findings — i.e. not one of these 12 |
+| `npx vitest run` (workers) | identical to `WORKER_BEFORE` | you strayed outside `frontend/` |
+| `make test-py` (optional) | identical to your recorded baseline; failures still exactly the 3 named `pypdf` ImportErrors | you strayed outside `frontend/` |
 
 The **only** intended test-count change is the removal of
-`frontend/__tests__/dual-metric-chart.test.tsx`: −1 file, −7 tests
-(490 → 483). Any other delta is a STOP condition.
+`frontend/__tests__/dual-metric-chart.test.tsx`: −1 file, −7 tests. Any other
+delta is a STOP condition.
 
-Deliberately **not** verified by a build: `npm run build` writes into the
-git-tracked `immi_case_downloader/static/react/` tree. Instead, the equivalent
-assurance was obtained statically — the deleted modules' distinctive strings
-(e.g. the i18n keys `taxonomy.judge_autocomplete_desc` and
-`taxonomy.judge_min_chars` from `JudgeAutocomplete.tsx`) do **not** appear
-anywhere under `immi_case_downloader/static/react/`, confirming Rollup never
-reached them.
+**A build is required, and a bundle grep is not a substitute.** An earlier draft
+skipped the build and instead grepped the *committed* bundle under
+`immi_case_downloader/static/react/` for the deleted modules' distinctive i18n
+keys. That proves what Rollup reached at some past build; it says nothing about
+whether the current source graph resolves after twelve deletions, and it cannot
+fail for the reason we care about. Step 6's `/tmp` build is the real gate, and
+it keeps the tracked bundle untouched.
 
 ## Done criteria
 
@@ -796,10 +951,12 @@ Machine-checkable. ALL must hold. Run from
 
 - [ ] `git ls-files frontend/src/lib/api-cases.ts frontend/src/lib/api-analytics.ts frontend/src/pages/TaxonomyPage.tsx frontend/src/hooks/use-llm-council.ts frontend/src/components/dashboard/TrendChart.tsx frontend/src/components/judges/ComparisonTable.tsx frontend/src/components/judges/SpecializationBadge.tsx frontend/src/components/judges/DualMetricChart.tsx frontend/src/components/shared/DatabaseCard.tsx frontend/src/components/shared/ProgressRing.tsx frontend/src/components/taxonomy/JudgeAutocomplete.tsx frontend/__tests__/dual-metric-chart.test.tsx | wc -l` prints `0`
 - [ ] `cd frontend && npx tsc -b --noEmit --force` exits 0
-- [ ] `cd frontend && npx vitest run` reports `Test Files  54 passed (54)` and `Tests  483 passed (483)`
-- [ ] `cd frontend && npx eslint .` exits 0 and reports `✖ 25 problems (0 errors, 25 warnings)`
-- [ ] `cd workers && npx vitest run` reports `Test Files  25 passed (25)` and `Tests  345 passed (345)`
-- [ ] `ls frontend/src/pages/*.tsx | wc -l` prints `26`
+- [ ] `cd frontend && npx vite build --outDir /tmp/immi-plan-031-build --emptyOutDir` exits 0
+- [ ] `cd frontend && npx vitest run` reports files `FE_FILES_BEFORE − 1` and tests `FE_TESTS_BEFORE − 7`
+- [ ] `cd frontend && npx vitest run __tests__/dual-metric-chart.test.tsx` exits non-zero with "no test files found"
+- [ ] `cd frontend && npx eslint .` exits 0 and reports a triple identical to `ESLINT_BEFORE`, with `0 errors`
+- [ ] `cd workers && npx vitest run` reports exactly `WORKER_BEFORE`
+- [ ] `ls frontend/src/pages/*.tsx | wc -l` prints `PAGES_BEFORE − 1`
 - [ ] `ls frontend/src/components/dashboard/ | wc -l` prints `5`
 - [ ] `grep -rn -e 'api-cases' -e 'api-analytics' frontend/src frontend/__tests__ frontend/e2e frontend/scripts` returns no matches
 - [ ] `grep -rn 'DualMetricChart\|ComparisonTable\|SpecializationBadge\|DatabaseCard\|ProgressRing\|JudgeAutocomplete' frontend/src frontend/__tests__` returns no matches
@@ -808,8 +965,9 @@ Machine-checkable. ALL must hold. Run from
 - [ ] `grep -c '27 pages' CLAUDE.md AGENTS.md` prints `0` for both; `grep -c '26 pages' CLAUDE.md AGENTS.md` prints `1` for both
 - [ ] `grep -rn 'TaxonomyPage' CLAUDE.md AGENTS.md` returns exactly 2 lines, both reading `                        SearchTaxonomyPage,`
 - [ ] `grep -c 'TrendChart' .claude/skills/add-chart/SKILL.md` prints `1`, and that line contains `OutcomeTrendChart.tsx`
-- [ ] `git status --porcelain` shows no modification outside the 15 in-scope files, `plans/`, and pre-existing agent state (`.claude/STATE.md`)
-- [ ] `git status --porcelain --untracked-files=all immi_case_downloader/static/react` returns no matches (no accidental rebuild)
+- [ ] `grep -c 'TrendChart' frontend/I18N_IMPLEMENTATION_PLAN.md` prints `2`, and both lines name `OutcomeTrendChart.tsx` / `ConceptTrendChart.tsx`
+- [ ] `git status --porcelain` shows no modification outside the 16 in-scope files, `plans/`, and pre-existing agent state (`.claude/STATE.md`)
+- [ ] `git status --porcelain --untracked-files=all immi_case_downloader/static/react frontend/src/tokens` returns no matches (no accidental rebuild, no token regeneration)
 - [ ] `plans/README.md` status row updated (only if that file exists)
 
 ## STOP conditions
@@ -828,21 +986,32 @@ Stop and report back — do not improvise — if any of these occur:
 - **Step 2's grep (a) returns a hit outside `./.omc/project-memory.json`.**
   Something now imports the split; deleting it would break the build.
 - **`npx tsc -b --noEmit --force` reports `TS2307: Cannot find module`** after
-  any deletion. Restore the file with `git checkout -- <path>` (or
-  `git restore --staged --worktree <path>`) and report which module referenced
-  it — do **not** "fix" it by adding an import to `api.ts`.
-- **The frontend vitest count is anything other than 54 files / 483 tests.**
-  Specifically: 55/490 means a deletion did not take effect; fewer than 54 files
-  means you deleted a test that was not `dual-metric-chart.test.tsx`.
-- **`npx eslint .` reports a number other than `25 problems (0 errors, 25 warnings)`.**
-  None of the 12 doomed files produces a lint finding, so this number is a
+  any deletion. Restore **only the single file you just deleted** —
+  `git restore --staged --worktree <that one path>` — and report which module
+  referenced it. Do **not** "fix" it by adding an import to `api.ts`, and never
+  widen the restore to a directory or to `.`; other paths in the tree may hold
+  the operator's own uncommitted work.
+- **The frontend vitest delta is anything other than `−1` file / `−7` tests
+  against your Step 1 baseline.** A zero delta means a deletion did not take
+  effect; a bigger delta means you deleted a test that was not
+  `dual-metric-chart.test.tsx`. Do **not** adjust the expected delta to match
+  what you got.
+- **`npx eslint .` reports a triple different from `ESLINT_BEFORE`.** None of
+  the 12 doomed files produces a lint finding, so an unchanged triple is the
   fingerprint of "you deleted exactly the right set".
+- **`npx vite build --outDir /tmp/... --emptyOutDir` fails.** Report the
+  unresolved specifier verbatim; do not add an import to `api.ts` or re-create a
+  deleted file to make it pass without understanding which module wanted it.
 - **`git diff` shows a change inside `frontend/src/lib/api.ts` or
-  `frontend/src/App.tsx`.** Both are explicitly out of scope; revert with
-  `git checkout -- <path>`.
-- **`immi_case_downloader/static/react/` becomes dirty.** That means a build
-  ran. Revert those files (`git checkout -- immi_case_downloader/static/react`)
-  and do not run `npm run build` or `make build` again.
+  `frontend/src/App.tsx`.** Both are explicitly out of scope. If the change is
+  yours, revert that one file (`git restore --worktree <path>`). If you cannot
+  tell whether it is yours, **stop and report** rather than reverting — it may
+  be the operator's.
+- **`immi_case_downloader/static/react/` or `frontend/src/tokens/` becomes
+  dirty.** That means a full build or the token prebuild ran. Stop and report
+  which command you ran. Do **not** blanket-revert those directories: if they
+  were already dirty before you started (check your Step 1 `git status`), the
+  changes are not yours to discard.
 - **You are tempted to delete `runLlmCouncil` / `checkLlmCouncilHealth` from
   `api.ts`** because Step 3 orphaned them. Don't — they serve live Worker routes
   (`workers/llm-council/cloudflare_handlers.js:409` and `:412`). Report it as a

@@ -13,23 +13,34 @@
 > you find yourself editing a `.py`, `.tsx`, or a Worker source or test file,
 > you have left the plan.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff is blind to uncommitted,
+> staged and untracked work, so run **all four** commands; a dirty tree would
+> otherwise hand you a false all-clear. Any in-scope path appearing in any of
+> them is a STOP condition, and you must **never** run an unconditional
+> `git checkout -- …`, `git restore …` or `git clean -f` to clear it — those
+> changes may be the operator's.
 >
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-> git diff --stat 42826a3..HEAD -- \
->   package.json \
->   package-lock.json \
->   workers/austlii-scraper/package.json \
->   workers/austlii-scraper/package-lock.json \
->   .github/workflows/deploy-worker.yml \
->   README.md \
->   .nvmrc
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS='package.json package-lock.json
+> workers/austlii-scraper/package.json workers/austlii-scraper/package-lock.json
+> .github/workflows/deploy-worker.yml README.md .nvmrc'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
 > ```
 >
-> If any of those files changed since commit `42826a3`, compare the
-> "Current state" excerpts below against the live files before proceeding.
-> On a mismatch, treat it as a STOP condition.
+> On a mismatch, compare the "Current state" excerpts below against the live
+> files; if they differ, STOP.
+>
+> **Sequencing.** This plan is deliberately last in its batch: it rebuilds the
+> root and pipeline `node_modules`, so it must not run while another plan is
+> executing the Worker (`plans/030`, `033`, `034`) or pipeline (`033`) suites in
+> the same checkout — a test run against a half-installed tree proves nothing.
+> Use a separate worktree, or serialise. `plans/035-fix-frontend-dependency-advisories.md`
+> rebuilds `frontend/node_modules`; the same rule applies to it.
 
 ## Status
 
@@ -300,22 +311,32 @@ a `working-directory` is stated.
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Install root deps | `npm install` | exit 0 |
-| Production Worker suite | `npm run test:workers` | `Test Files 25 passed (25)`, `Tests 345 passed (345)` |
+| CI-parity root install | `rm -rf node_modules && npm ci` | exit 0 — see Step 6 |
+| Production Worker suite | `npm run test:workers` | **identical to `WORKER_BEFORE`**, the counts you record in Step 1 |
 | Install pipeline deps | `cd workers/austlii-scraper && npm install --ignore-scripts` | exit 0 |
+| CI-parity pipeline install | `cd workers/austlii-scraper && rm -rf node_modules && npm ci --ignore-scripts` | exit 0 — see Step 6 |
 | Pipeline typecheck | `cd workers/austlii-scraper && npm run typecheck` | exit 0, no output after the npm banner |
-| Pipeline tests | `cd workers/austlii-scraper && npm test` | `Test Files 7 passed (7)`, `Tests 28 passed (28)` |
+| Pipeline tests | `cd workers/austlii-scraper && npm test` | **identical to `PIPE_BEFORE`** |
 | Wrangler identity | `npx wrangler --version` | `4.120.0` |
-| CI-shape assertions | `.venv/bin/pytest tests/test_effective_native_ci.py tests/test_native_effective_references.py -q` | `7 passed` |
+| CI-shape assertions | `.venv/bin/pytest tests/test_effective_native_ci.py tests/test_native_effective_references.py -q` | `7 passed` (a per-file count; stable) |
 | Native reference scan | `python3 scripts/check_native_effective_references.py --json` | exit 0, `"ok": true`, all markers `0` |
 | YAML validity | `.venv/bin/python -c "import yaml;yaml.safe_load(open('.github/workflows/deploy-worker.yml'));print('yaml ok')"` | `yaml ok` |
 | Working-tree check | `git status --short` | only in-scope paths listed |
 
+**Delta rule.** This plan changes no application code, so its correctness
+criterion is that both suites come out at **exactly the counts you record in
+Step 1** — never at a number transcribed from this document. Sibling plans
+(`030`, `033`, `034`) add and remove Worker and pipeline tests, so the
+`42826a3` figures of 25/345 and 7/28 are informational only. If you find
+yourself editing an expected count to match a run, stop: you have removed the
+gate.
+
 Not needed by this plan, listed so you do not run them by mistake:
-`make test-py` (1141 passed / 3 failed / 7 skipped at `42826a3`; the 3 failures
-are a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks the
-`pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py` — an
-environment defect, unrelated to and unaffected by this plan) and
-`cd frontend && npx vitest run` (490 passed; `frontend/` is out of scope here).
+`make test-py` (whatever its counts, the failures are the 3 named `pypdf`
+ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py` — a Homebrew
+Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch, unrelated to and unaffected by
+this plan) and `cd frontend && npx vitest run` (`frontend/` is out of scope
+here).
 
 ## Scope
 
@@ -338,8 +359,14 @@ environment defect, unrelated to and unaffected by this plan) and
   make the bump green — those files are actively being edited by other plans
   and an edit here would collide.
 - `frontend/package.json`, `frontend/package-lock.json` — an `engines` field
-  belongs there too, but that file is owned by the frontend plans that may be
-  running in parallel. Recorded as a deferred follow-up in Maintenance notes.
+  belongs there too, and **`plans/035-fix-frontend-dependency-advisories.md`
+  now adds it** (its Step 4b), so the "one declared Node version" claim in this
+  plan's title is only true once both have landed. Note the two floors differ on
+  purpose: root and pipeline are constrained by wrangler (`>=22`), frontend by
+  `eslint@10.0.0`, whose `engines.node` is `^20.19.0 || ^22.13.0 || >=24` and
+  therefore needs `>=22.13`. Both are satisfied by the Node 22 CI pins. If plan
+  035 has not landed when you finish, say so in your handoff — do not add the
+  field here (its lockfile is 035's territory).
 - `.github/workflows/ci.yml` — owned by the plans that repair the verification
   gates. Its `npx tsc --noEmit` step is a known separate defect; not yours.
 - `Makefile` — both worker-suite entry points already work under vitest 4.
@@ -381,13 +408,16 @@ npm run test:workers 2>&1 | tail -4
 npx wrangler --version
 ```
 
+Record them as `WORKER_BEFORE` (files/tests) and `PIPE_BEFORE` (files/tests).
+
 At commit `42826a3` these produce, respectively:
 `Test Files 25 passed (25)` / `Tests 345 passed (345)`; `typecheck exit=0` with
 no diagnostics; `Test Files 7 passed (7)` / `Tests 28 passed (28)`; `4.120.0`.
 
-If your numbers differ from those, that is acceptable — another plan may have
-landed since — but from here on **your** recorded numbers are the gate, and you
+If your numbers differ from those, that is acceptable — plans 030, 033 and 034
+all move them — but from here on **your** recorded numbers are the gate, and you
 must state both the baseline and the final numbers in your completion report.
+Never substitute the `42826a3` figures for your own.
 
 **Verify**: `git status --short` → shows no modification to any file listed in
 "In scope".
@@ -417,13 +447,24 @@ Two changes only: `vitest` `^2.0.0` → `^4.1.11`, and a new `engines` block.
 `wrangler` stays pinned at exactly `4.120.0` — that pin is correct and is the
 version both production deploys already use.
 
-Then regenerate the lockfile and re-run the suite:
+Then regenerate the lockfile and re-run the suite. **Request the exact version,
+not the caret range** — a bare `npm install` after a hand-edited `"^4.1.11"`
+resolves to *the newest 4.x on the registry today*, which may be 4.1.12 or
+4.2.0, and Verify's `packages['node_modules/vitest'].version → 4.1.11` would
+then fail for a reason unrelated to your work:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-npm install
+npm install --save-dev vitest@4.1.11
 npm run test:workers 2>&1 | tail -4
 ```
+
+`npm install --save-dev vitest@4.1.11` pins **this** resolution in the lockfile
+while npm's default `save-prefix` writes `"^4.1.11"` into `package.json` — which
+is exactly the manifest text specified above, so the hand-edit of the `vitest`
+line becomes unnecessary (keep the hand-edit for `engines`). If your npm is
+configured with `save-exact=true` (`npm config get save-exact`), add
+`--save-prefix='^'`.
 
 `vitest 4.1.11` was published 2026-08-18 and is the current `latest`. The only
 vitest-4 behaviour changes that could plausibly touch this suite are the mock
@@ -446,14 +487,13 @@ node -p "require('./package.json').engines.node"                                
 npm run test:workers 2>&1 | tail -4
 ```
 
-The last one must report the **same file and test counts you recorded in step 1**
-(`25 passed (25)` / `345 passed (345)` at `42826a3`), and the run banner must
-read `RUN v4.1.11`.
+The last one must report **exactly `WORKER_BEFORE`**, the counts you recorded in
+step 1, and the run banner must read `RUN v4.1.11`.
 
 Also confirm the other entry point still works:
 
 ```bash
-(cd workers && npx vitest run 2>&1 | tail -4)   # → same counts, RUN v4.1.11
+(cd workers && npx vitest run 2>&1 | tail -4)   # → WORKER_BEFORE, RUN v4.1.11
 ```
 
 Commit: `chore: run the Worker suite on vitest 4`
@@ -510,12 +550,17 @@ npm run typecheck; echo "typecheck exit=$?"
 npm test 2>&1 | tail -4
 ```
 
-Expect no ERESOLVE, `typecheck exit=0` with no diagnostics, and the same test
-counts you recorded in step 1. This exact combination was installed and
-exercised at plan time: `tsc --noEmit` was clean across all 17 files in `src/`
-and all 28 tests passed. `skipLibCheck: true` in `tsconfig.json` plus the fact
-that `src/` imports nothing external is why a workers-types major is a
-non-event here.
+Expect no ERESOLVE, `typecheck exit=0` with no diagnostics, and exactly
+`PIPE_BEFORE`. This exact combination was installed and exercised at plan time:
+`tsc --noEmit` was clean across all 17 files in `src/` and all tests passed.
+`skipLibCheck: true` in `tsconfig.json` plus the fact that `src/` imports
+nothing external is why a workers-types major is a non-event here.
+
+`wrangler` is pinned exactly (`4.120.0`) in the manifest, so `npm install`
+cannot resolve it to anything else; that is why this one is safe to write by
+hand. `@cloudflare/workers-types` is a caret range on purpose — its exact build
+is not load-bearing, only its major — so do **not** assert on its full version,
+only on `.split('.')[0] === "5"` as the Verify block does.
 
 **Verify** (all five):
 
@@ -648,24 +693,46 @@ step-2 changes before committing.
 
 Commit: `ci: gate wrangler declaration drift before the operator deploy`
 
-### Step 6: Final end-to-end verification
+### Step 6: Final end-to-end verification, from a CI-identical clean install
+
+Both suites so far have run against `node_modules` trees produced by
+`npm install` on top of whatever was already there. CI does not do that — it
+does `npm ci` at the root (`.github/workflows/ci.yml:55`, `deploy-worker.yml:37`)
+and `npm ci --ignore-scripts` in `workers/austlii-scraper`
+(`ci.yml:96-98`), each against an **empty** `node_modules`. `npm ci` also fails
+loudly (`EUSAGE`) when a manifest and its lockfile disagree, which an incremental
+`npm install` silently repairs instead. So the only run that proves CI will
+work is a clean one:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+
+rm -rf node_modules
+npm ci; echo "root npm ci exit=$?"
 npm run test:workers 2>&1 | tail -4
+npx wrangler --version
+
+(cd workers/austlii-scraper && rm -rf node_modules && npm ci --ignore-scripts; echo "pipeline npm ci exit=$?")
 (cd workers/austlii-scraper && npm run typecheck; echo "typecheck exit=$?")
 (cd workers/austlii-scraper && npm test 2>&1 | tail -4)
+
 .venv/bin/pytest tests/test_effective_native_ci.py tests/test_native_effective_references.py -q 2>&1 | tail -3
 python3 scripts/check_native_effective_references.py --json
 git status --short
 git log --oneline 42826a3..HEAD
 ```
 
-**Verify**: worker-suite and pipeline-suite counts equal your step-1 baselines;
-typecheck exit 0; `7 passed`; reference scan `"ok": true`; `git status --short`
-shows nothing beyond the pre-existing ` M .claude/STATE.md` and `?? plans/`
-(everything of yours is committed); `git log` shows exactly the four commits
-from steps 2–5 with `<type>: <description>` messages and no attribution lines.
+**Verify**: both `npm ci` commands exit 0 with no `EUSAGE`; worker-suite and
+pipeline-suite counts equal `WORKER_BEFORE` and `PIPE_BEFORE` exactly;
+`npx wrangler --version` → `4.120.0`; typecheck exit 0; `7 passed`; reference
+scan `"ok": true`; `git status --short` shows nothing beyond the pre-existing
+` M .claude/STATE.md` and `?? plans/` (everything of yours is committed);
+`git log` shows exactly the four commits from steps 2–5 with
+`<type>: <description>` messages and no attribution lines.
+
+A `npm ci` that fails here while `npm install` succeeded means the manifest and
+lockfile disagree — regenerate the lockfile with `npm install` once, re-run
+`npm ci`, and if it still fails, STOP (see STOP conditions).
 
 ## Test plan
 
@@ -678,10 +745,11 @@ What is exercised, and by what:
 
 | Change | Exercised by | Gate |
 |---|---|---|
-| root vitest 2.1.9 → 4.1.11 | `npm run test:workers` (25 files, 345 tests) and `cd workers && npx vitest run` | identical counts to step-1 baseline, banner reads `RUN v4.1.11` |
+| root vitest 2.1.9 → 4.1.11 | `npm run test:workers` and `cd workers && npx vitest run`, both after a clean `npm ci` | counts identical to `WORKER_BEFORE`, banner reads `RUN v4.1.11` |
+| both lockfiles are CI-installable | `rm -rf node_modules && npm ci` at the root and `npm ci --ignore-scripts` in the pipeline | exit 0, no `EUSAGE` — an incremental `npm install` cannot prove this |
 | pipeline wrangler `^4.98.0` → `4.120.0` | `npm install --ignore-scripts` resolving without ERESOLVE; `npx wrangler --version` | exit 0; `4.120.0` |
 | pipeline workers-types `^4` → `^5` | `cd workers/austlii-scraper && npm run typecheck` over all 17 files in `src/` | exit 0, no diagnostics |
-| pipeline suite unaffected | `cd workers/austlii-scraper && npm test` (7 files, 28 tests) | identical counts to step-1 baseline |
+| pipeline suite unaffected | `cd workers/austlii-scraper && npm test`, after a clean `npm ci --ignore-scripts` | counts identical to `PIPE_BEFORE` |
 | deploy-worker.yml gate step | `tests/test_effective_native_ci.py`, `tests/test_native_effective_references.py`, `scripts/check_native_effective_references.py --json`, PyYAML parse | `7 passed`; `"ok": true`; `yaml ok` |
 | the gate actually fails on drift | the tamper-and-restore check in step 5 | exit 1 with the mismatch message, then exit 0 after restore |
 
@@ -703,9 +771,11 @@ Machine-checkable. ALL must hold:
 - [ ] `node -p "require('./workers/austlii-scraper/package.json').engines.node"` prints `>=22`
 - [ ] `node -p "require('./workers/austlii-scraper/package-lock.json').packages['node_modules/wrangler'].version"` prints `4.120.0`
 - [ ] `node -p "require('./workers/austlii-scraper/package-lock.json').packages['node_modules/@cloudflare/workers-types'].version.split('.')[0]"` prints `5`
-- [ ] `npm run test:workers` exits 0 with the same file/test counts as the step-1 baseline (`25 passed (25)` / `345 passed (345)` at `42826a3`)
+- [ ] `rm -rf node_modules && npm ci` exits 0 with no `EUSAGE`
+- [ ] `npm run test:workers` exits 0 with counts **equal to `WORKER_BEFORE`**, run from that clean install
+- [ ] `cd workers/austlii-scraper && rm -rf node_modules && npm ci --ignore-scripts` exits 0 with no `EUSAGE`
 - [ ] `cd workers/austlii-scraper && npm run typecheck` exits 0 with no diagnostics
-- [ ] `cd workers/austlii-scraper && npm test` exits 0 with the same counts as the step-1 baseline (`7 passed (7)` / `28 passed (28)` at `42826a3`)
+- [ ] `cd workers/austlii-scraper && npm test` exits 0 with counts **equal to `PIPE_BEFORE`**, run from that clean install
 - [ ] `grep -c "Node.js | 22+" README.md` prints `1`
 - [ ] `grep -rn "18+\|20 LTS" README.md` returns no matches
 - [ ] `cat .nvmrc` prints `22`
@@ -722,14 +792,20 @@ Machine-checkable. ALL must hold:
 
 Stop and report back (do not improvise) if:
 
+- **Either `npm ci` in step 6 fails with `EUSAGE` / "lock file does not satisfy
+  package.json".** The manifest and lockfile drifted apart — most likely a
+  hand-edit that was not followed by `npm install`. Re-run `npm install` once in
+  that directory; if `npm ci` still fails, stop. Never reach for `--force` or
+  `--legacy-peer-deps` to get past it.
 - **Any `workers/__tests__/*.test.js` test fails after the vitest bump in
-  step 2.** All 345 were verified passing under vitest 4.1.11 at plan time
+  step 2.** All were verified passing under vitest 4.1.11 at plan time
   against an isolated copy, so a failure means either the suite has changed
-  since `42826a3` or something environment-specific is in play. Revert
-  `package.json` and `package-lock.json` to their pre-step-2 state
-  (`git checkout -- package.json package-lock.json`), and report which test
-  files failed and their assertion messages. Do **not** edit a worker test to
-  make the bump green — those files are owned by other in-flight plans.
+  since `42826a3` or something environment-specific is in play. Revert **those
+  two files only** — `git restore --worktree package.json package-lock.json` —
+  and report which test files failed and their assertion messages. Do **not**
+  widen the restore to a directory or to `.`; other paths may hold the
+  operator's uncommitted work. Do **not** edit a worker test to make the bump
+  green — those files are owned by other in-flight plans.
 - **`npm install --ignore-scripts` in `workers/austlii-scraper` reports
   `ERESOLVE`.** That means the wrangler/workers-types pairing in step 3 no
   longer matches upstream peer ranges. Report the full npm error and the output
@@ -786,13 +862,15 @@ For whoever owns this next:
   frontend `^4.0.18`) — they now agree on the major, which is what the
   divergence risk was actually about. If someone later wants a stricter vitest
   assertion, it belongs in `ci.yml`, not in the operator deploy workflow.
-- **Deferred out of this plan, deliberately**: adding
-  `"engines": {"node": ">=22"}` to `frontend/package.json`. It belongs there —
-  frontend's eslint/vite/plugin-react floors are `^20.19.0 || >=22.12.0`-class,
-  and the repo standardises on 22 — but that file is owned by frontend plans
-  that may be landing in parallel, and a two-line manifest edit is not worth a
-  merge conflict in a lockfile. Add it in whichever frontend plan touches that
-  manifest next.
+- **Handed to plan 035, not simply deferred**: `frontend/package.json`'s
+  `engines` block. `plans/035-fix-frontend-dependency-advisories.md` Step 4b now
+  adds `"engines": {"node": ">=22.13"}` there, because that plan already owns
+  the manifest and its lockfile. The floor is `>=22.13`, not `>=22`:
+  `eslint@10.0.0` declares `"node": "^20.19.0 || ^22.13.0 || >=24"`, so Node
+  22.0–22.12 does not satisfy it, while wrangler only needs `>=22`. Two
+  different numbers, both honest, both satisfied by CI's Node 22. Until 035
+  lands, this plan's title claim ("one declared Node version") covers the root
+  and pipeline manifests only — say so in your handoff.
 - **Also deferred**: `frontend/package.json:11-12` (`dev:cloudflare`,
   `deploy:cloudflare`) invoke `wrangler pages dev|deploy` on `dist/`. These are
   almost certainly vestigial — the SPA now ships through the main Worker's
@@ -840,7 +918,26 @@ of the steps above:
   in the root lock is wrangler 4.120.0's own transitive pin, not a repo choice,
   so it is not something to "fix" either.
 
-One evidence correction, folded into the steps rather than dropped:
+Three corrections to this plan's own earlier drafts, folded into the steps:
+
+- **The vitest bump was specified as a hand-edited caret plus a bare
+  `npm install` — corrected to an exact install request.** `npm install` against
+  `"vitest": "^4.1.11"` resolves to the newest 4.x on the registry that day, so
+  the plan's own
+  `packages['node_modules/vitest'].version → 4.1.11` assertion could fail for a
+  reason unrelated to the change. `npm install --save-dev vitest@4.1.11` pins
+  the resolution while npm's default save-prefix still writes `^4.1.11`.
+- **Every gate ran against an incrementally-installed `node_modules` — corrected
+  to a clean `npm ci` in Step 6.** CI runs `npm ci` at the root and
+  `npm ci --ignore-scripts` in `workers/austlii-scraper`, each against an empty
+  tree, and `npm ci` is the only command that fails when a manifest and its
+  lockfile disagree. `npm install` silently repairs that disagreement, so a
+  green `npm install`-based run says nothing about whether CI will install.
+- **"One declared Node version" omitted `frontend/package.json` — handed to plan
+  035.** See Maintenance notes; the frontend floor is `>=22.13` because of
+  `eslint@10.0.0`, not `>=22`.
+
+One evidence correction from the original audit, also folded into the steps:
 
 - The audit framed the README defect as "README says 18+, toolchain needs 22+".
   Reading the lockfiles, `eslint` 10.0.0, `vite` 7.3.1, `@vitejs/plugin-react`

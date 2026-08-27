@@ -3,23 +3,45 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — that file does not exist at the time of writing; if
-> it still does not exist, skip that and say so in your report. Do not create
-> it.
+> report — do not improvise. When done, report the new status for this plan's
+> row in `plans/README.md`. **That file now exists** (it was created after this
+> plan was written) and all four of plans 015–018 touch adjacent rows of the
+> same status table, so **do not edit it yourself when running in parallel** —
+> report your row and let the integration coordinator write it. Edit it only if
+> you are running this plan alone.
 >
 > Every path in this file is relative to the repository root
 > `/Users/d/Developer/Active Projects/IMMI-Case-`. The directory name contains
 > a space and a trailing hyphen, so **always quote it** in shell commands.
 >
 > **Drift check (run first)**:
+>
+> `git diff 42826a3..HEAD` is blind to uncommitted, staged and untracked work,
+> so on a dirty tree it hands you a false all-clear. Run **all four**:
+>
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE='frontend/src/hooks/use-judges.ts
+> frontend/src/hooks/use-stats.ts
+> frontend/src/hooks/use-cases.ts
+> frontend/src/hooks/use-bookmarks.ts
+> frontend/src/lib/api.ts'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE          # committed drift
+> git diff --stat -- $SCOPE                        # unstaged drift
+> git diff --cached --stat -- $SCOPE               # staged drift
+> git status --porcelain=v1 -uall > /tmp/immi-016-baseline-status.txt
 > ```
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- frontend/src/hooks/use-judges.ts frontend/src/hooks/use-stats.ts frontend/src/hooks/use-cases.ts frontend/src/hooks/use-bookmarks.ts frontend/src/lib/api.ts
-> ```
-> If that prints nothing, the codebase has not drifted — proceed. If any
-> in-scope file changed since this plan was written, compare the "Current
-> state" excerpts below against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+>
+> Expected: the three `git diff` commands print nothing and no in-scope path
+> appears in `git status`. If **any** in-scope file appears anywhere, treat it as
+> a STOP condition: compare the "Current state" excerpts below against the live
+> code and report before proceeding.
+>
+> **Never run `git checkout --` or `git clean -f` to "clean" the tree** — that
+> destroys the operator's or a parallel agent's uncommitted work. Report and
+> stop. Keep `/tmp/immi-016-baseline-status.txt`; Step 7 diffs against it so
+> pre-existing dirt is not mistaken for your output.
 
 ## Status
 
@@ -39,6 +61,25 @@ is what makes the new test files compile-checked rather than silently untyped.
 This plan's own verification commands do **not** require plan 001 — they work
 as written at `42826a3` — so if plan 001 is blocked you may still run this plan,
 but say so in your report.
+
+### Sequencing — read before dispatching this plan in parallel
+
+- **`frontend/src/hooks/use-cases.ts` is shared with
+  `plans/017-fix-frontend-async-and-navigation.md`.** This plan **writes** one
+  line to it (Step 5). 017 only **reads** it, but 017's drift check originally
+  listed it as a hard STOP-on-any-change, which would have blocked 017 for no
+  reason the moment this plan committed. 017 has been revised to treat its
+  read-only references as *re-verify*, not *stop*. Either order works now; if
+  you land Step 5 first, tell whoever runs 017 so they re-read the excerpt.
+- **Steps 1 and 2 must land as ONE commit.** The Step 1 test file imports
+  `analyticsFilterKey`, which Step 2 creates. Committing Step 1 alone leaves a
+  tree whose `frontend/__tests__/` does not compile — and once
+  `plans/001-restore-the-frontend-compile-gate.md` has landed, `__tests__/` is
+  inside the `tsc -b` project, so that is a genuinely broken commit, not a
+  cosmetic one. Do the two steps back to back and commit once:
+  `fix: key analytics queries on every wire filter and stop judge identity bleed`.
+- **Do not edit `plans/README.md`** while running in parallel (see the executor
+  instructions above).
 
 ## Why this matters
 
@@ -590,6 +631,14 @@ Quoted from `CLAUDE.md` (the executor has not read it):
 | `cd frontend && npx vitest run` | 55 files, 490 tests, all pass |
 | `cd frontend && npx eslint .` | **0 errors**, 25 warnings |
 
+Those two numbers are the state at `42826a3` **only**, recorded for context.
+They are *not* the gate: plans 015, 017 and 018 add tests to the same suite, so
+by the time you run, the totals will legitimately differ. Take your own
+`BEFORE_TESTS` / `BEFORE_FILES` / `BEFORE_WARNINGS` during the drift check and
+assert a **delta** (Step 7). Never assert an absolute suite total — it makes
+parallel execution impossible and teaches the next executor to edit the
+yardstick instead of the code.
+
 The 25 warnings are pre-existing (unused `eslint-disable` directives and unused
 vars); one of them is at `frontend/src/hooks/use-bookmarks.ts:154`. Do not
 "fix" them — this plan's bar is *no new errors and no new warnings*.
@@ -603,11 +652,13 @@ vars); one of them is at `frontend/src/hooks/use-bookmarks.ts:154`. Do not
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- frontend/src/hooks/use-judges.ts frontend/src/hooks/use-stats.ts frontend/src/hooks/use-cases.ts frontend/src/hooks/use-bookmarks.ts frontend/src/lib/api.ts` | no output |
+| Drift check | the four-command block in the Executor instructions (committed + unstaged + staged + `git status`) | no in-scope path listed anywhere |
 | Typecheck (real) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEmit` | exit 0, no output |
-| Frontend tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | `0 failed` |
-| One test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run <path>` | all pass |
-| Lint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint .` | `0 errors`, at most 25 warnings |
+| Frontend tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | `0 failed`, and `AFTER_TESTS == BEFORE_TESTS + 28` / `AFTER_FILES == BEFORE_FILES + 3` |
+| One test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run <path>` | the per-file count named in that step — **the stable unit under parallel execution** |
+| One test by name | `cd "…/frontend" && npx vitest run <path> -t "<test name>"` | exit 0, `1 passed` |
+| Lint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint .` | `0 errors`, warnings ≤ your recorded `BEFORE_WARNINGS` |
+| **Production build** | `cd "…/frontend" && npm run build:cloudflare` | exit 0 — writes `frontend/dist`, which `wrangler.toml:15` serves |
 
 `@typescript-eslint/no-unused-vars` is configured as an **error**
 (`frontend/eslint.config.js:24-28`), and the Step 1 test scaffold declares mocks
@@ -1070,12 +1121,33 @@ then
 
 ### Step 3: Make a failing CSRF-token request fail loudly instead of sending `undefined`
 
-Edit `frontend/src/lib/api.ts`. Replace `fetchCsrfToken` (currently lines 48-54)
-with:
+**A correction you must apply — the mint must be single-flight.** The Worker's
+`getCsrfToken` mints a fresh random token **and mirrors it into the `__Host-csrf`
+cookie via `Set-Cookie`** (`workers/auth/csrf.js:19-33`), and `verifyCsrf` only
+accepts a request whose `X-CSRFToken` header equals that cookie (`:35-49`). The
+naive `if (csrfToken) return csrfToken; … await fetch(…)` shape has no in-flight
+dedup: two concurrent mutations (two open tabs' worth of work in one tab — a
+batch tag plus a council turn, say) both see `csrfToken === null` and both mint.
+The **second** `Set-Cookie` overwrites the cookie, so the first request's header
+no longer matches it and the server 403s. Under the Step 4 retry that failure
+then *re-mints again*, racing the other request a second time — so the "self
+healing" path can convert a transient race into a repeated one. Hold a single
+in-flight promise instead.
+
+Add a second module-level cache line immediately below the existing
+`let csrfToken: string | null = null;` (line 29):
 
 ```ts
-async function fetchCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
+/** In-flight mint, so concurrent mutations share one token and one Set-Cookie. */
+let csrfTokenInFlight: Promise<string> | null = null;
+/** Bumped on every successful mint; lets a caller prove its token is the stale one. */
+let csrfTokenGeneration = 0;
+```
+
+Then replace `fetchCsrfToken` (currently lines 48-54) with:
+
+```ts
+async function mintCsrfToken(): Promise<string> {
   const res = await fetch("/api/v1/csrf-token", { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -1095,13 +1167,65 @@ async function fetchCsrfToken(): Promise<string> {
     );
   }
   csrfToken = token;
+  csrfTokenGeneration += 1;
   return token;
+}
+
+async function fetchCsrfToken(): Promise<{ token: string; generation: number }> {
+  if (csrfToken) return { token: csrfToken, generation: csrfTokenGeneration };
+  // Single-flight: the Worker's mint also rewrites the __Host-csrf cookie, so
+  // two concurrent mints leave one caller holding a header that no longer
+  // matches the cookie and gets a 403 it cannot distinguish from a real one.
+  if (!csrfTokenInFlight) {
+    csrfTokenInFlight = mintCsrfToken().finally(() => {
+      csrfTokenInFlight = null;
+    });
+  }
+  const token = await csrfTokenInFlight;
+  return { token, generation: csrfTokenGeneration };
 }
 ```
 
+The caller at lines 109-111 becomes:
+
+```ts
+  let csrfGeneration = -1;
+  if (requestOptions.method && requestOptions.method !== "GET") {
+    const minted = await fetchCsrfToken();
+    headers["X-CSRFToken"] = minted.token;
+    csrfGeneration = minted.generation;
+  }
+```
+
+`apiFetchOnce` must make `csrfGeneration` visible to its caller so Step 4 can
+tell "my token was the stale one" from "someone else already replaced it".
+The cheapest way that does not change the return type: hang it on the thrown
+`ApiError`. In the `if (!res.ok)` block (lines 154-162), after constructing the
+error and before throwing, add:
+
+```ts
+    (error_ as ApiError & { csrfGeneration?: number }).csrfGeneration =
+      csrfGeneration;
+```
+
+(where `error_` is the `ApiError` you are about to throw — restructure the
+existing `throw new ApiError(...)` into `const error_ = new ApiError(...);` plus
+`throw error_;`).
+
 `ApiError` is declared later in the file (line 71) but is only referenced from
-inside a function body, which runs after module evaluation — this is safe and
+inside function bodies, which run after module evaluation — this is safe and
 needs no reordering. Do **not** move the `ApiError` class.
+
+`clearCsrfToken()` (line 1399-1402) must also drop the in-flight promise, or a
+mint that was already in progress when the 403 arrived will repopulate the
+stale token:
+
+```ts
+export function clearCsrfToken(): void {
+  csrfToken = null;
+  csrfTokenInFlight = null;
+}
+```
 
 Now create `frontend/__tests__/api-csrf-lifecycle.test.ts` with this scaffold
 plus the first test:
@@ -1230,7 +1354,20 @@ export async function apiFetch<T>(
     // request exactly once — never more, so a genuinely rejected request
     // cannot loop. Every mutation body in this module is a JSON string, so
     // replaying is safe.
-    clearCsrfToken();
+    //
+    // Generation compare: only the caller whose token was current at send time
+    // may invalidate the cache. If another concurrent mutation already re-minted
+    // (generation moved on), our 403 is collateral from that race — replay with
+    // the token that is now cached rather than minting a third one and racing
+    // again.
+    const failedGeneration = (error as ApiError & { csrfGeneration?: number })
+      .csrfGeneration;
+    if (
+      failedGeneration === undefined ||
+      failedGeneration === csrfTokenGeneration
+    ) {
+      clearCsrfToken();
+    }
     return await apiFetchOnce<T>(url, options);
   }
 }
@@ -1331,16 +1468,71 @@ describe("apiFetch — stale CSRF recovery", () => {
     });
     expect(gets).toBe(1);
   });
+
+  it("mints exactly one token for two concurrent mutations", async () => {
+    // Models the Worker's Set-Cookie mirror: the LAST token minted is the one
+    // the cookie holds, and only a header matching that cookie is accepted.
+    let cookieToken: string | null = null;
+    let mints = 0;
+    const rejected: string[] = [];
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith(CSRF_URL)) {
+          mints += 1;
+          cookieToken = `t${mints}`;
+          // Mints are not instantaneous; give the second caller a chance to
+          // observe the empty cache if the single-flight guard is missing.
+          await new Promise((r) => setTimeout(r, 0));
+          return jsonResponse({ csrf_token: cookieToken });
+        }
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const sent = headers["X-CSRFToken"];
+        if (sent !== cookieToken) {
+          rejected.push(String(sent));
+          return jsonResponse({ error: "csrf", code: "csrf" }, 403);
+        }
+        return jsonResponse({ success: true });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const [a, b] = await Promise.all([
+      apiFetch<{ success: boolean }>(MUTATION_URL, {
+        method: "POST",
+        body: "{}",
+      }),
+      apiFetch<{ success: boolean }>(MUTATION_URL, {
+        method: "POST",
+        body: "{}",
+      }),
+    ]);
+
+    expect(a.success).toBe(true);
+    expect(b.success).toBe(true);
+    // The binding assertions: one mint, and no request was ever rejected for
+    // holding a token the cookie had already replaced.
+    expect(mints).toBe(1);
+    expect(rejected).toEqual([]);
+  });
 });
 ```
 
+That last case is the one that fails without the single-flight guard: two
+concurrent `apiFetch` calls both find `csrfToken === null`, both mint, and the
+first one's header no longer matches the cookie.
+
 **Verify**:
 `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run __tests__/api-csrf-lifecycle.test.ts`
-→ `Test Files  1 passed (1)`, `Tests  6 passed (6)`
+→ `Test Files  1 passed (1)`, `Tests  7 passed (7)`
 
 and
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && grep -c 'clearCsrfToken' src/lib/api.ts`
-→ prints `2` (one call site inside `apiFetch`, one definition)
+`cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && grep -c 'csrfTokenInFlight' src/lib/api.ts`
+→ prints `5` (declaration, the `if (!…)` guard, the assignment, the `.finally`
+reset, and the reset inside `clearCsrfToken`). A bare `grep -c clearCsrfToken`
+is **not** a useful check on its own — the string also appears in comments and
+in the export — so assert on the single-flight symbol, which nothing else uses.
 
 ### Step 5: Give `useCaseCount` the anti-flash affordance its sibling already has
 
@@ -1418,44 +1610,64 @@ function emptyState(): BookmarksState {
   return { bookmarks: [], collections: [] };
 }
 
-function isBookmarkEntry(value: unknown): value is BookmarkEntry {
-  if (!value || typeof value !== "object") return false;
+/**
+ * NORMALISE, do not reject.
+ *
+ * The claim that "the app itself can never write a bad shape" is only true of
+ * the code as it stands *today* — it is unverified for every version a user's
+ * browser may have run since `immi-bookmarks` was introduced, and this store is
+ * the user's own curated work (bookmarked cases, hand-written notes, collection
+ * ordering) with no server copy to restore from. A predicate that drops any
+ * entry missing one string is a silent data-loss machine the first time an older
+ * or newer field set shows up. Require only the identity field; supply defaults
+ * for the rest. That is strictly safer and still produces a value that satisfies
+ * the declared type.
+ */
+function normalizeBookmarkEntry(value: unknown): BookmarkEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const b = value as Record<string, unknown>;
-  return (
-    typeof b.case_id === "string" &&
-    b.case_id.length > 0 &&
-    typeof b.case_title === "string" &&
-    typeof b.case_citation === "string" &&
-    typeof b.court_code === "string" &&
-    typeof b.date === "string" &&
-    typeof b.note === "string" &&
-    typeof b.bookmarked_at === "string"
-  );
+  if (typeof b.case_id !== "string" || b.case_id.length === 0) return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    case_id: b.case_id,
+    case_title: str(b.case_title),
+    case_citation: str(b.case_citation),
+    court_code: str(b.court_code),
+    date: str(b.date),
+    note: str(b.note),
+    bookmarked_at: str(b.bookmarked_at),
+  };
 }
 
-function isCollection(value: unknown): value is Collection {
-  if (!value || typeof value !== "object") return false;
+function normalizeCollection(value: unknown): Collection | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const c = value as Record<string, unknown>;
-  return (
-    typeof c.id === "string" &&
-    c.id.length > 0 &&
-    typeof c.name === "string" &&
-    typeof c.description === "string" &&
-    Array.isArray(c.tags) &&
-    c.tags.every((tag) => typeof tag === "string") &&
-    Array.isArray(c.case_order) &&
-    c.case_order.every((id) => typeof id === "string") &&
-    typeof c.case_notes === "object" &&
-    c.case_notes !== null &&
-    !Array.isArray(c.case_notes) &&
-    Object.values(c.case_notes as Record<string, unknown>).every(
-      (note) => typeof note === "string",
-    ) &&
-    typeof c.created_at === "string" &&
-    typeof c.updated_at === "string" &&
-    (c.color === undefined ||
-      (typeof c.color === "string" && COLLECTION_COLORS.includes(c.color)))
-  );
+  if (typeof c.id !== "string" || c.id.length === 0) return null;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const strArray = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  const notes: Record<string, string> = {};
+  if (c.case_notes && typeof c.case_notes === "object" && !Array.isArray(c.case_notes)) {
+    for (const [k, v] of Object.entries(c.case_notes as Record<string, unknown>)) {
+      if (typeof v === "string") notes[k] = v;
+    }
+  }
+  const color =
+    typeof c.color === "string" && COLLECTION_COLORS.includes(c.color)
+      ? (c.color as CollectionColor)
+      : undefined; // an unknown colour drops to the default, it does not
+                   // discard the collection and the notes inside it
+  return {
+    id: c.id,
+    name: str(c.name),
+    description: str(c.description),
+    tags: strArray(c.tags),
+    case_order: strArray(c.case_order),
+    case_notes: notes,
+    created_at: str(c.created_at),
+    updated_at: str(c.updated_at),
+    ...(color ? { color } : {}),
+  };
 }
 
 /**
@@ -1471,10 +1683,39 @@ function isCollection(value: unknown): value is Collection {
  *
  * Exported so it can be unit-tested without reloading the module graph.
  */
+export const BOOKMARKS_QUARANTINE_KEY = "immi-bookmarks:unreadable";
+
+/**
+ * Move an unreadable blob aside instead of deleting it.
+ *
+ * `localStorage.removeItem(STORAGE_KEY)` on its own is irreversible: the user's
+ * bookmarks and hand-written notes are gone with no server copy and no undo. If
+ * the shape guard here turns out to be wrong about some past or future payload,
+ * the quarantine copy is what lets an operator recover it — and it is one line.
+ * Best effort only: storage can be full or unavailable, in which case we still
+ * proceed rather than blocking startup.
+ */
+function quarantine(raw: string): void {
+  try {
+    localStorage.setItem(
+      BOOKMARKS_QUARANTINE_KEY,
+      JSON.stringify({ quarantined_at: new Date().toISOString(), raw }),
+    );
+  } catch {
+    // Quota or private mode — nothing more we can do; continue.
+  }
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage unavailable — nothing to clean up.
+  }
+}
+
 export function readBookmarksFromStorage(): BookmarksState {
   if (typeof window === "undefined") return emptyState();
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return emptyState();
 
     const parsed: unknown = JSON.parse(raw);
@@ -1485,7 +1726,7 @@ export function readBookmarksFromStorage(): BookmarksState {
       !Array.isArray((parsed as { bookmarks?: unknown }).bookmarks) ||
       !Array.isArray((parsed as { collections?: unknown }).collections)
     ) {
-      localStorage.removeItem(STORAGE_KEY);
+      quarantine(raw);
       return emptyState();
     }
 
@@ -1494,19 +1735,22 @@ export function readBookmarksFromStorage(): BookmarksState {
       collections: unknown[];
     };
     return {
-      bookmarks: candidate.bookmarks.filter(isBookmarkEntry),
-      collections: candidate.collections.filter(isCollection),
+      bookmarks: candidate.bookmarks
+        .map(normalizeBookmarkEntry)
+        .filter((b): b is BookmarkEntry => b !== null),
+      collections: candidate.collections
+        .map(normalizeCollection)
+        .filter((c): c is Collection => c !== null),
     };
   } catch {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Storage unavailable (private mode / quota) — nothing to clean up.
-    }
+    if (raw !== null) quarantine(raw);
     return emptyState();
   }
 }
 ```
+
+`CollectionColor` must be imported as a **type** (`import type { CollectionColor }`)
+if it is not already — `verbatimModuleSyntax` is on.
 
 **6b.** Change line 23 (`let _state: BookmarksState = readFromStorage();`) to:
 
@@ -1599,46 +1843,117 @@ describe("readBookmarksFromStorage", () => {
     ["a missing collections key", '{"bookmarks":[]}'],
     ["a missing bookmarks key", '{"collections":[]}'],
     ["non-array bookmarks", '{"bookmarks":{},"collections":[]}'],
-  ])("returns the empty state and clears the key for %s", (_label, raw) => {
-    seed(raw);
-    expect(readBookmarksFromStorage()).toEqual({
-      bookmarks: [],
-      collections: [],
-    });
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
-  });
+  ])(
+    "returns the empty state and quarantines rather than deletes for %s",
+    (_label, raw) => {
+      seed(raw);
+      expect(readBookmarksFromStorage()).toEqual({
+        bookmarks: [],
+        collections: [],
+      });
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+      // The blob must be recoverable, not gone.
+      const quarantined = window.localStorage.getItem(
+        BOOKMARKS_QUARANTINE_KEY,
+      );
+      expect(quarantined).not.toBeNull();
+      expect(JSON.parse(quarantined as string).raw).toBe(raw);
+    },
+  );
 
-  it("drops malformed entries and keeps the valid ones", () => {
+  it("keeps entries whose identity is intact and defaults the rest", () => {
+    // A legacy payload: identity present, later-added fields absent. Older
+    // builds of this app are NOT proven to have written today's exact field
+    // set, and this store has no server copy — so a missing string must not
+    // cost the user a bookmark.
     seed(
       JSON.stringify({
-        bookmarks: [VALID_BOOKMARK, { case_id: 123 }, null, "nope"],
-        collections: [VALID_COLLECTION, { id: "x" }, { ...VALID_COLLECTION, case_order: [1, 2] }],
+        bookmarks: [
+          VALID_BOOKMARK,
+          { case_id: "legacy00001", case_title: "Older entry" },
+          { case_id: 123 },
+          null,
+          "nope",
+        ],
+        collections: [
+          VALID_COLLECTION,
+          { id: "legacy-col", name: "Older collection" },
+          { name: "no id at all" },
+        ],
       }),
     );
     const state = readBookmarksFromStorage();
-    expect(state.bookmarks).toEqual([VALID_BOOKMARK]);
-    expect(state.collections).toEqual([VALID_COLLECTION]);
+    expect(state.bookmarks).toEqual([
+      VALID_BOOKMARK,
+      {
+        case_id: "legacy00001",
+        case_title: "Older entry",
+        case_citation: "",
+        court_code: "",
+        date: "",
+        note: "",
+        bookmarked_at: "",
+      },
+    ]);
+    expect(state.collections).toEqual([
+      VALID_COLLECTION,
+      {
+        id: "legacy-col",
+        name: "Older collection",
+        description: "",
+        tags: [],
+        case_order: [],
+        case_notes: {},
+        created_at: "",
+        updated_at: "",
+      },
+    ]);
   });
 
-  it("rejects a collection carrying an unknown colour", () => {
+  it("drops only the members it cannot type, not the whole record", () => {
+    seed(
+      JSON.stringify({
+        bookmarks: [],
+        collections: [
+          { ...VALID_COLLECTION, case_order: ["ok", 1, 2], tags: ["a", 5] },
+        ],
+      }),
+    );
+    const [col] = readBookmarksFromStorage().collections;
+    expect(col.case_order).toEqual(["ok"]);
+    expect(col.tags).toEqual(["a"]);
+    expect(col.id).toBe(VALID_COLLECTION.id);
+  });
+
+  it("drops an unknown colour but keeps the collection and its notes", () => {
     seed(
       JSON.stringify({
         bookmarks: [],
         collections: [{ ...VALID_COLLECTION, color: "chartreuse" }],
       }),
     );
-    expect(readBookmarksFromStorage().collections).toEqual([]);
+    const [col] = readBookmarksFromStorage().collections;
+    expect(col).toBeDefined();
+    expect(col.color).toBeUndefined();
+    expect(col.case_notes).toEqual(VALID_COLLECTION.case_notes);
   });
 });
 ```
 
+Import `BOOKMARKS_QUARANTINE_KEY` alongside `readBookmarksFromStorage`, and
+clear both keys in `beforeEach`.
+
 **Verify**:
 `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run __tests__/use-bookmarks-storage.test.ts`
-→ `Test Files  1 passed (1)`, `Tests  13 passed (13)`
+→ `Test Files  1 passed (1)`, `Tests  14 passed (14)`
 
 and
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -c 'readFromStorage' frontend/src/hooks/use-bookmarks.ts`
-→ prints `0`
+`cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -c 'readFromStorage(' frontend/src/hooks/use-bookmarks.ts`
+→ prints `2` — both of them `readBookmarksFromStorage(` (the export and the
+`_state` initialiser). Assert on the exact old name instead:
+`grep -cE '(^|[^s])readFromStorage\(' frontend/src/hooks/use-bookmarks.ts` → `0`.
+The naive `grep -c 'readFromStorage'` matches the *new* name as a substring and
+can never fail, so it is not a check.
 
 ### Step 7: Full gate
 
@@ -1651,25 +1966,46 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEm
 ```
 → exit 0, no output
 
+Record the baseline **before** your first edit (or read it off the run you did
+during the drift check):
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -6
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint . 2>&1 | tail -3
+```
+→ note `BEFORE_TESTS`, `BEFORE_FILES`, `BEFORE_WARNINGS`.
+
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run
 ```
-→ `Test Files  58 passed (58)`, `Tests  516 passed (516)` — **`0 failed` is the
-binding assertion**; the totals are the expected values at `42826a3` (55 files /
-490 tests) plus this plan's 3 files / 26 tests. If another plan has landed since,
-the totals will differ but `0 failed` must still hold and the three named files
-must each pass.
+→ **`0 failed`**, `AFTER_FILES == BEFORE_FILES + 3`, and
+`AFTER_TESTS == BEFORE_TESTS + 28`. **Do not assert an absolute suite total.**
+Plans 015, 017 and 018 add tests to this same suite; an absolute number makes
+parallel execution impossible and trains the next executor to edit the yardstick
+instead of the code. The per-file counts asserted in Steps 2, 4, 5 and 6 are the
+stable unit and each must hold exactly.
 
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint .
 ```
-→ `✖ 25 problems (0 errors, 25 warnings)` — 0 errors is binding; the warning
-count must not increase.
+→ `0 errors` is binding, and warnings must be `<= BEFORE_WARNINGS` (this plan
+introduces none).
 
 ```
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npm run build:cloudflare
 ```
-→ exactly these eight paths and nothing else:
+→ exit 0. This is the **production** build: it writes `frontend/dist`, which is
+what `wrangler.toml:15` (`[assets] directory = "./frontend/dist"`) actually
+serves. `npm run build` writes `../immi_case_downloader/static/react`
+(`frontend/vite.config.ts:34`), the local-dev Flask surface, and proves nothing
+about the artifact users receive. This plan touches `lib/api.ts`, which every
+page imports, so run the production build.
+
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain=v1 -uall > /tmp/immi-016-final-status.txt
+diff /tmp/immi-016-baseline-status.txt /tmp/immi-016-final-status.txt
+```
+→ only **added** lines, and every added line is one of these eight paths:
 ```
  M frontend/src/hooks/use-bookmarks.ts
  M frontend/src/hooks/use-cases.ts
@@ -1680,10 +2016,12 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ?? frontend/__tests__/query-cache-correctness.test.ts
 ?? frontend/__tests__/use-bookmarks-storage.test.ts
 ```
+Pre-existing dirt recorded during the drift check must be unchanged. Do not
+"clean" anything you did not create.
 
 ## Test plan
 
-Three new files, 26 new tests. All under `frontend/__tests__/`, which is the
+Three new files, 28 new tests (7 + 7 + 14). All under `frontend/__tests__/`, which is the
 only directory the Vitest `include` glob covers
 (`frontend/vitest.config.ts:11`: `include: ["__tests__/**/*.{test,spec}.{ts,tsx}"]`).
 
@@ -1700,7 +2038,7 @@ structurally on `frontend/__tests__/use-llm-council-sessions.test.ts`
 | `analyticsFilterKey(undefined) === analyticsFilterKey({})` | the `DataToolsPage.tsx:79` no-arg call site |
 | `useStats` refetches when only an advanced filter changes | end-to-end proof the key reaches TanStack |
 
-**`frontend/__tests__/api-csrf-lifecycle.test.ts`** (6 tests) — modelled on
+**`frontend/__tests__/api-csrf-lifecycle.test.ts`** (7 tests) — modelled on
 `frontend/__tests__/dashboard-api-fallback.test.ts` (`vi.stubGlobal("fetch", …)`
 plus a local `jsonResponse` helper):
 
@@ -1712,8 +2050,9 @@ plus a local `jsonResponse` helper):
 | replay happens at most once, then the error surfaces | the recursion guard |
 | 403 `admin_required` is not replayed | no over-broad retry |
 | a GET is never replayed and never requests a token | no over-broad retry |
+| two concurrent mutations mint one token, neither is 403'd | the Set-Cookie race the single-flight guard closes |
 
-**`frontend/__tests__/use-bookmarks-storage.test.ts`** (13 tests, 9 of them from
+**`frontend/__tests__/use-bookmarks-storage.test.ts`** (14 tests, 9 of them from
 one `it.each`) — modelled on the plain-unit style of
 `frontend/src/lib/__tests__/saved-searches.test.ts`:
 
@@ -1721,9 +2060,10 @@ one `it.each`) — modelled on the plain-unit style of
 |---|---|
 | empty state when nothing stored | baseline |
 | well-formed payload round-trips unchanged | no false positives (no data loss) |
-| 9 × malformed root → empty state + key cleared | invalid JSON, truncated write, `null`, `[]`, `42`, `"text"`, missing `collections`, missing `bookmarks`, non-array `bookmarks` |
-| malformed entries dropped, valid ones kept | per-item guard |
-| unknown collection colour rejected | avoids a `CollectionColor` type lie |
+| 9 × malformed root → empty state, key cleared, **blob quarantined** | invalid JSON, truncated write, `null`, `[]`, `42`, `"text"`, missing `collections`, missing `bookmarks`, non-array `bookmarks` — and each asserts the raw string survives under `immi-bookmarks:unreadable` so the deletion is recoverable |
+| a legacy entry with only `case_id` / only `id` survives with defaults | the data-loss risk in a strict predicate |
+| untypeable array members dropped, record kept | per-field normalisation |
+| unknown collection colour dropped, collection and its notes kept | avoids a `CollectionColor` type lie without discarding user work |
 
 No Python, Worker or Playwright test is added or changed by this plan.
 `make test-py` and `cd workers && npx vitest run` are untouched and need not be
@@ -1734,19 +2074,30 @@ run.
 ALL must hold:
 
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEmit` exits 0 with no output
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` reports **0 failed**
+- [ ] `cd "…/frontend" && npx vitest run` reports **0 failed**, with
+      `AFTER_FILES == BEFORE_FILES + 3` and `AFTER_TESTS == BEFORE_TESTS + 28`
+      against the baseline recorded in Step 7 (never an absolute total)
 - [ ] `cd "…/frontend" && npx vitest run __tests__/query-cache-correctness.test.ts` → 7 passed
-- [ ] `cd "…/frontend" && npx vitest run __tests__/api-csrf-lifecycle.test.ts` → 6 passed
-- [ ] `cd "…/frontend" && npx vitest run __tests__/use-bookmarks-storage.test.ts` → 13 passed
-- [ ] `cd "…/frontend" && npx eslint .` reports **0 errors** and no more than 25 warnings
+- [ ] `cd "…/frontend" && npx vitest run __tests__/api-csrf-lifecycle.test.ts` → 7 passed
+- [ ] `cd "…/frontend" && npx vitest run __tests__/use-bookmarks-storage.test.ts` → 14 passed
+- [ ] The single-flight case passes **by name**:
+      `npx vitest run __tests__/api-csrf-lifecycle.test.ts -t "mints exactly one token for two concurrent mutations"` → `1 passed`
+- [ ] `cd "…/frontend" && npx eslint .` reports **0 errors** and no more warnings than the recorded baseline
+- [ ] `cd "…/frontend" && npm run build:cloudflare` exits 0 (the artifact
+      `wrangler.toml:15` actually serves)
 - [ ] `grep -c 'placeholderData: keepPreviousData' frontend/src/hooks/use-judges.ts` → `2`
 - [ ] `grep -c 'placeholderData: keepPreviousData' frontend/src/hooks/use-cases.ts` → `2`
-- [ ] `grep -c 'clearCsrfToken' frontend/src/lib/api.ts` → `2`
-- [ ] `grep -c 'readFromStorage' frontend/src/hooks/use-bookmarks.ts` → `0`
+- [ ] `grep -c 'csrfTokenInFlight' frontend/src/lib/api.ts` → `5`
+- [ ] `grep -cE '(^|[^s])readFromStorage\(' frontend/src/hooks/use-bookmarks.ts` → `0`
+      (a bare `grep -c readFromStorage` also matches the new
+      `readBookmarksFromStorage` and therefore cannot fail)
+- [ ] `grep -c 'BOOKMARKS_QUARANTINE_KEY' frontend/src/hooks/use-bookmarks.ts` → `2`
 - [ ] `grep -c 'return csrfToken!' frontend/src/lib/api.ts` → `0`
 - [ ] `grep -c 'filters?.court, filters?.yearFrom, filters?.yearTo' frontend/src/hooks/use-stats.ts` → `0`
-- [ ] `git status --short` lists exactly the eight paths in Step 7 and nothing else
-- [ ] `plans/README.md` status row updated **if that file exists** (it does not at `42826a3`; do not create it)
+- [ ] `diff /tmp/immi-016-baseline-status.txt /tmp/immi-016-final-status.txt`
+      shows only added lines, all eight of them in-scope paths
+- [ ] The new status for this plan's `plans/README.md` row is **reported**; the
+      row is edited only if you are running this plan alone (see Sequencing)
 
 ## STOP conditions
 
@@ -1806,15 +2157,28 @@ For whoever owns this code next:
   server policy. If it is ever shortened, the client now degrades to one extra
   round trip per expiry rather than breaking — but a very short TTL would make
   that round trip frequent, and a proactive refresh would then be worth adding.
-- **The bookmarks guards encode today's `BookmarksState`.** Adding a required
-  field to `BookmarkEntry` or `Collection` without updating `isBookmarkEntry` /
-  `isCollection` will silently discard every entry a user already has. Add the
-  field as optional, or write a migration.
+- **The bookmarks readers normalise rather than reject, on purpose.** Only
+  `case_id` / `id` are required; everything else is defaulted. Adding a new
+  **required** field to `BookmarkEntry` or `Collection` without giving
+  `normalizeBookmarkEntry` / `normalizeCollection` a default for it will make
+  every stored entry fail to type-check at build time — which is the right
+  failure. Never "fix" that by adding the field to the required set: this store
+  has no server copy and no undo.
+- **`immi-bookmarks:unreadable` accumulates one entry per unreadable blob**
+  (each write overwrites the previous). It is a recovery aid, not a schema. If
+  bookmarks ever move server-side (`plans/050-move-user-data-server-side.md`),
+  drain it during migration rather than dropping it.
+- **The CSRF mint is single-flight and the replay is generation-compared.**
+  Both exist because the Worker's mint rewrites the `__Host-csrf` cookie
+  (`workers/auth/csrf.js:19-33`), so a second concurrent mint invalidates the
+  first caller's header. If anyone removes `csrfTokenInFlight`, concurrent
+  mutations start 403ing again and the retry turns the race into a loop.
 - **What a reviewer should scrutinise**: (1) the property order inside
   `normalizeAnalyticsFilters` — it is load-bearing for `localStorage` cache
   continuity; (2) the code allow-list in `isStaleCsrfError` — widening it to
   "any 403" would replay real authorization failures; (3) that the `...options`
-  spread stays last in `useCaseCount` so `SavedSearchCard` can still opt out.
+  spread stays last in `useCaseCount` so `SavedSearchCard` can still opt out;
+  (4) that `clearCsrfToken()` clears `csrfTokenInFlight` as well as `csrfToken`.
 
 ## Findings reconsidered
 

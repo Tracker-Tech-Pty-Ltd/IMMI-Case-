@@ -3,37 +3,72 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   frontend/src/pages/CaseEditPage.tsx \
->   frontend/src/pages/CaseAddPage.tsx \
->   frontend/src/pages/CaseComparePage.tsx \
->   frontend/src/components/layout/MobileNav.tsx \
->   frontend/src/components/shared/Pagination.tsx \
->   frontend/src/components/shared/FilterPill.tsx \
->   frontend/src/components/shared/CourtBadge.tsx \
->   frontend/src/components/cases/CasesTable.tsx \
->   frontend/src/components/judges/ComparisonTable.tsx \
->   frontend/src/components/judges/ConceptEffectivenessTable.tsx \
->   frontend/src/components/analytics/ConceptComboTable.tsx \
->   frontend/src/components/lineage/CourtVolumeTable.tsx
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="frontend/src/pages/CaseEditPage.tsx \
+>    frontend/src/pages/CaseAddPage.tsx \
+>    frontend/src/pages/CaseComparePage.tsx \
+>    frontend/src/components/layout/MobileNav.tsx \
+>    frontend/src/components/shared/Pagination.tsx \
+>    frontend/src/components/shared/FilterPill.tsx \
+>    frontend/src/components/shared/CourtBadge.tsx \
+>    frontend/src/components/cases/CasesTable.tsx \
+>    frontend/src/components/judges/ComparisonTable.tsx \
+>    frontend/src/components/judges/ConceptEffectivenessTable.tsx \
+>    frontend/src/components/analytics/ConceptComboTable.tsx \
+>    frontend/src/components/lineage/CourtVolumeTable.tsx"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
-> Expected at the time of writing: **empty output**. If any in-scope file
-> changed since this plan was written, compare the "Current state" excerpts
-> against the live code before proceeding; on a mismatch, treat it as a STOP
-> condition.
+> Expected: the last three print nothing, and `git status --short` lists no
+> in-scope path — **with one allowed exception**, below. If any other in-scope
+> file appears in any of them, compare the "Current state" excerpts against the
+> live code before proceeding; on a mismatch, treat it as a STOP condition.
+>
+> **`CasesTable.tsx` is the known collision.** `plans/020-fix-render-performance.md`
+> Step 5 restructures the same `return` block this plan's Step 8 edits: it wraps
+> the mobile note + card grid in a `{!isDesktop && ( … )}` guard and adds a
+> `useSyncExternalStore` media-query subscription. The two changes are
+> compatible but **must not be applied concurrently**: plan 020's Step 5 lands
+> first, then this plan's Step 8 on top, or a single executor applies both in
+> that order. So `CasesTable.tsx` appearing in the committed diff with 020's
+> changes is **expected and fine** — verify it contains `useSyncExternalStore`
+> and still contains `overflow-x-auto`, re-locate the `<th>` lines in Step 8 by
+> reading the file (their line numbers will have moved), and continue. Never
+> revert 020's work to make this plan's line numbers match.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md` — that plan repairs the repo's TypeScript gate. This plan does **not** block on it: every verification command below already uses the working `npx tsc -b --noEmit` form, which passes at commit `42826a3` regardless of whether 001 has landed. Run them exactly as written.
+- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md` — **soft, but
+  real.** Every verification command below already uses the working
+  `npx tsc -b --noEmit` form, which passes at `42826a3` regardless, so this plan
+  is executable standalone. What 001 adds is `frontend/tsconfig.test.json`:
+  without it, files under `frontend/__tests__/` are **not** type-checked by any
+  project, so the three new test files this plan creates compile only inside
+  Vitest's esbuild transform (which strips types without checking them). Prefer
+  running after 001; if you run before it, say so in your report.
+- **Must run AFTER**: `plans/020-fix-render-performance.md` — both edit
+  `frontend/src/components/cases/CasesTable.tsx`. See the drift-check note above.
+- **Must run BEFORE**: `plans/024-add-accessibility-gates.md`. Step 7a of this
+  plan gives `FilterPill`'s remove button an `aria-label`, which is precisely
+  the defect 024's axe suite pins as
+  `expect(await violationIds(container)).toEqual(["button-name"])`. Once this
+  plan lands, that expectation must become `[]`. If 024 runs first it will bake
+  in a stale expectation and then fail the moment this plan lands.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -485,11 +520,16 @@ Run all frontend commands from `/Users/d/Developer/Active Projects/IMMI-Case-/fr
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Typecheck (**use this form**) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEmit` | exit 0, no output |
-| Frontend unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | baseline at `42826a3` is **490 passed, 55 files**; after this plan expect 55 + 3 = **58 files** and > 490 passed |
+| Frontend unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | **0 failed**, `Tests passed` == `FE_BEFORE + <it count in the 3 new files>`, `Test Files passed` == `FEFILES_BEFORE + 3`. Record both baselines in Step 10 before editing. |
 | Single test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run __tests__/a11y-mobile-nav.test.tsx` | all pass |
-| ESLint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint src` | baseline is **0 errors, 4 warnings**; must stay at 0 errors and must not add warnings |
-| Worker tests (regression only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | 345 passed, 25 files (unchanged — this plan touches no Worker code) |
+| ESLint | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx eslint src` | **0 errors**. The warning count is not a gate — `plans/024-add-accessibility-gates.md` deliberately adds ~19 jsx-a11y warnings, and other plans land more. |
+| Worker tests (regression only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | 0 failed, `Tests passed` unchanged from `WK_BEFORE` (this plan touches no Worker code) |
 | Git status | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only in-scope paths listed |
+
+Absolute suite totals are deliberately absent from this table and from "Done
+criteria". Several frontend plans run in parallel; a hard-coded
+`490 passed / 55 files` turns any sibling plan landing first into a false STOP
+and teaches the executor to edit the yardstick.
 
 **Do NOT use `make typecheck` or a bare `npx tsc --noEmit`.** At commit
 `42826a3` those exit 0 while loading **zero** files, because
@@ -687,7 +727,22 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
 Rewrite `frontend/src/components/layout/MobileNav.tsx`. Target shape — the
 `<nav>` body from `:63-104` is copied across **verbatim**, only the shell changes:
 
+⚠️ **`lg:hidden` alone is not enough once this is a real modal.** Today the
+drawer is a plain `<div>` behind `if (!open) return null`, so when the viewport
+crosses to `lg` the CSS simply hides it and nothing else happens. A Radix
+`Dialog.Root` with `open={true}` keeps its focus trap, its `aria-hidden` on
+sibling content and its outside-pointer blocking **regardless of whether the
+content is visually hidden** — so a user who opens the drawer on a narrow
+viewport and then widens the window (rotate a tablet, un-split a window, resize
+a browser) is left with an invisible modal that swallows every click and traps
+Tab on the desktop layout. That is a worse bug than the one being fixed.
+
+`mobileOpen` lives in `frontend/src/components/layout/AppLayout.tsx:13`, which
+is **out of scope**, so the guard has to live inside this component: watch the
+`lg` media query and call `onClose()` when it matches. Detail 6 below.
+
 ```tsx
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -695,6 +750,9 @@ import { X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
 import { APP_NAV_GROUPS } from "@/components/layout/nav-config";
+
+/** Tailwind `lg`. Above this width AppLayout renders the desktop Sidebar. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
 
 interface MobileNavProps {
   open: boolean;
@@ -704,6 +762,26 @@ interface MobileNavProps {
 export function MobileNav({ open, onClose }: MobileNavProps) {
   const { t } = useTranslation();
   const { savedSearches } = useSavedSearches();
+
+  // A Radix dialog keeps its focus trap and pointer blocking even while
+  // `lg:hidden` hides it, so an open drawer that survives a resize to desktop
+  // becomes an invisible modal over the desktop layout. Close it instead.
+  // `mobileOpen` is owned by AppLayout (out of scope), so this component asks
+  // to be closed rather than closing itself.
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    if (mql.matches) {
+      onClose();
+      return;
+    }
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) onClose();
+    };
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [open, onClose]);
 
   return (
     <Dialog.Root
@@ -748,13 +826,13 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
 }
 ```
 
-Five details that are load-bearing — get each of them right:
+Six details that are load-bearing — get each of them right:
 
-1. **Delete the `useEffect` import and the entire keydown effect** (original
-   `:1` and `:18-27`). Radix handles Escape. Leaving the unused `useEffect`
-   import is an ESLint **error** under
-   `@typescript-eslint/no-unused-vars` as configured in
-   `frontend/eslint.config.js`.
+1. **Delete the original keydown effect** (`:18-27`). Radix handles Escape.
+   **Keep the `useEffect` import** — it is now used by the media-query guard in
+   detail 6. (An earlier draft of this step said to delete the import and made
+   `grep -c 'useEffect'` → `0` a done-criterion; that is no longer correct.
+   What must not survive is the *keydown listener*, not the import.)
 2. **Delete the `<button>` backdrop** (original `:34-39`). `Dialog.Overlay`
    replaces it and closes on outside pointer-down by default. The old backdrop
    was a focusable duplicate of the real close button.
@@ -770,7 +848,24 @@ Five details that are load-bearing — get each of them right:
 5. **Keep the `Dialog.Content` class string byte-identical** to the original
    drawer div's: `fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar
    shadow-lg lg:hidden`. Four Playwright tests locate the drawer by
-   `.fixed.inset-y-0.left-0` (see "E2E coupling" above).
+   `.fixed.inset-y-0.left-0` (see "E2E coupling" above). Keep `lg:hidden` too —
+   it is still the right *visual* rule; detail 6 handles the *behavioural* half
+   that a CSS class cannot.
+6. **Close the dialog when the viewport reaches `lg`** — the `useEffect` shown
+   in the target shape above. Three sub-points, all deliberate:
+   - It checks `mql.matches` **immediately**, not only on `change`, so a drawer
+     whose `open` prop is set while already on desktop (a stale state after a
+     reload, or a future `Dialog.Trigger`) closes on the next commit rather than
+     waiting for a resize that may never come.
+   - It guards `typeof window === "undefined" || !window.matchMedia`. jsdom does
+     **not** implement `matchMedia` in this repo's shared test setup
+     (`frontend/__tests__/legislations-setup.ts` mocks `localStorage`,
+     `ResizeObserver` and `IntersectionObserver`, but not `matchMedia`), so
+     without the guard every existing test that renders `AppLayout` would throw.
+     With it, the effect is a no-op in jsdom and the drawer behaves exactly as
+     before — which is why test 9b can still open it.
+   - It calls `onClose()` rather than managing its own state, because
+     `mobileOpen` lives in `AppLayout.tsx`, which this plan does not own.
 
 `aria-describedby={undefined}` is the documented way to tell Radix you
 deliberately have no `Dialog.Description`; without it Radix logs a dev-mode
@@ -779,12 +874,18 @@ console warning on every open.
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
-  grep -c 'useEffect' src/components/layout/MobileNav.tsx; \
+  grep -c 'window.addEventListener("keydown"' src/components/layout/MobileNav.tsx; \
   grep -c 'radix-ui/react-dialog' src/components/layout/MobileNav.tsx; \
+  grep -c 'matchMedia' src/components/layout/MobileNav.tsx; \
   grep -c 'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar shadow-lg lg:hidden' src/components/layout/MobileNav.tsx; \
   npx tsc -b --noEmit && npx eslint src/components/layout/MobileNav.tsx && echo LINT_OK
 ```
-→ `0`, `1`, `1`, then `LINT_OK` with no error output.
+→ `0` (the hand-rolled Escape listener is gone), `1`, `1` (the media-query
+guard is present), `1`, then `LINT_OK` with no error output.
+
+Note the first grep targets the **keydown listener**, not the `useEffect`
+import: counting `useEffect` cannot distinguish "the Escape handler was removed"
+from "the resize guard was never added", and both are required.
 
 ### Step 6: Let `Pagination` wrap, and announce its summary
 
@@ -914,8 +1015,9 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
   grep -c 'sr-only' src/components/shared/CourtBadge.tsx; \
   npx tsc -b --noEmit && npx eslint src && echo LINT_OK
 ```
-→ `1`, `1`, `1`, then `LINT_OK` with **0 errors** (4 pre-existing warnings are
-expected and must not increase).
+→ `1`, `1`, `1`, then `LINT_OK` with **0 errors**. Do not gate on the warning
+count: `plans/024-add-accessibility-gates.md` intentionally makes ~19 existing
+jsx-a11y violations visible as warnings, and other plans in this batch add more.
 
 ### Step 8: Fix table semantics
 
@@ -1075,6 +1177,52 @@ Render `<MobileNav open onClose={onClose} />` inside a `<MemoryRouter>`
   `userEvent from "@testing-library/user-event"`, already a devDependency) then
   `expect(onClose).toHaveBeenCalled()`.
 - Rendering with `open={false}` yields `screen.queryByRole("dialog") === null`.
+- **Resizing to desktop closes the drawer** — the regression guard for Step 5
+  detail 6, and the assertion that would have caught the invisible-modal bug.
+  jsdom has no `matchMedia`, so stub a controllable one before rendering:
+
+  ```tsx
+  function stubMatchMedia(initialMatches: boolean) {
+    const listeners = new Set<(e: MediaQueryListEvent) => void>();
+    const mql = {
+      matches: initialMatches,
+      media: "(min-width: 1024px)",
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (_: string, l: (e: MediaQueryListEvent) => void) => { listeners.add(l); },
+      removeEventListener: (_: string, l: (e: MediaQueryListEvent) => void) => { listeners.delete(l); },
+      dispatchEvent: () => false,
+    };
+    Object.defineProperty(window, "matchMedia", {
+      writable: true, configurable: true, value: () => mql,
+    });
+    return {
+      goDesktop() {
+        mql.matches = true;
+        listeners.forEach((l) => l({ matches: true } as MediaQueryListEvent));
+      },
+    };
+  }
+  ```
+
+  Delete the stub in `afterEach` (`delete (window as { matchMedia?: unknown }).matchMedia;`)
+  so the other tests keep the jsdom default and the guard's no-op path.
+
+  Three assertions:
+  1. Mobile start (`stubMatchMedia(false)`), render `<MobileNav open />` →
+     `screen.getByRole("dialog")` exists and `onClose` has **not** been called.
+  2. `act(() => controls.goDesktop())` → `expect(onClose).toHaveBeenCalled()`.
+     Without detail 6 this fails: the dialog stays open with its focus trap
+     live, which is the invisible-modal bug.
+  3. Opening while **already** desktop (`stubMatchMedia(true)`, then render
+     `<MobileNav open />`) also calls `onClose` — the immediate `mql.matches`
+     check, not just the `change` listener.
+- **Do not** assert that the dialog is absent from the DOM after `goDesktop()`.
+  This component only *requests* a close; `open` is owned by `AppLayout`, so in
+  isolation the dialog stays mounted. The contract under test is that `onClose`
+  fires. Asserting on unmounting here would be asserting on the test harness,
+  not on the component.
 
 **9c. `frontend/__tests__/a11y-controls-and-tables.test.tsx`**
 
@@ -1109,14 +1257,36 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
 
 ### Step 10: Run the full gate
 
+Record the baseline **before** you start editing (do this as your very first
+action, alongside the drift check):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
+#   FE_BEFORE      = "Tests  N passed"
+#   FEFILES_BEFORE = "Test Files  N passed"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -5
+#   WK_BEFORE = "Tests  N passed"
+```
+
+Then, at the end:
+
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEmit && echo TSC_OK && \
   npx eslint src && echo LINT_OK && \
-  npx vitest run
+  npx vitest run 2>&1 | tail -5 && \
+  npx vitest run __tests__/a11y-form-labels.test.tsx __tests__/a11y-mobile-nav.test.tsx __tests__/a11y-controls-and-tables.test.tsx 2>&1 | tail -5
 ```
 
-Expected: `TSC_OK`; `LINT_OK` with 0 errors and no more than the 4 pre-existing
-warnings; Vitest reporting **58 test files** and **more than 490 passed, 0 failed**.
+Expected:
+- `TSC_OK`.
+- `LINT_OK` with **0 errors**. The warning count is not a gate — sibling plans
+  land warnings in parallel.
+- Full Vitest: **0 failed**, `Tests passed` == `FE_BEFORE + <the number of `it`
+  blocks you wrote across the three new files>`, `Test Files passed` ==
+  `FEFILES_BEFORE + 3`. State that arithmetic explicitly in your report. Do not
+  compare against any number written into this plan.
+- Three-file run: all pass, 0 failed — a per-file result that stays valid
+  however many sibling plans land.
 
 Then confirm nothing outside the territory moved:
 
@@ -1124,6 +1294,8 @@ Then confirm nothing outside the territory moved:
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ```
 → only the 12 in-scope source files (`M`) and the 3 new test files (`??`).
+If anything else appears, **stop and report** — do not run `git checkout --` or
+`git clean`, which cannot tell your mistake from the operator's own work.
 
 ## Test plan
 
@@ -1141,31 +1313,78 @@ Structural patterns to copy:
 - Source-text assertions: `frontend/__tests__/i18n-hardcoded.test.ts`.
 
 Regression surface to re-run unchanged:
-- `cd frontend && npx vitest run` — the 55 pre-existing files must all still pass.
+- `cd frontend && npx vitest run` — every pre-existing file must still pass.
   `frontend/__tests__/case-detail-page.test.tsx` and
   `frontend/__tests__/court-sparkline-grid.test.tsx` are the two that assert on
-  court-code text; both must stay green (Step 7b is designed so they do).
-- `cd workers && npx vitest run` — must remain 345 passed / 25 files. This plan
-  touches no Worker code; run it once at the end as a sanity check.
+  court-code text; both must stay green (Step 7b is designed so they do). Run
+  those two by name so the check does not depend on a whole-suite total.
+- `cd workers && npx vitest run` — 0 failed and the count unchanged from
+  `WK_BEFORE`. This plan touches no Worker code; run it once at the end as a
+  sanity check.
 
 Playwright E2E (`tests/e2e/react/`) is **not** part of this gate — it needs a
 running Flask server and a built SPA bundle. Do not attempt to run it. The two
 coupling points it has with this change are pinned by unit assertions instead
 (the `.fixed.inset-y-0.left-0` class check in 9b, the exact-text check in 9c).
 
+### What jsdom cannot prove, and who owns proving it
+
+Be honest about this in your report. The three new files run in jsdom, which has
+no layout engine, no real focus ring, and no viewport. They can assert that an
+attribute exists and that a callback fires; they **cannot** assert any of the
+following, and none of it is covered anywhere in this repo today:
+
+| Claim this plan makes | Why jsdom cannot check it |
+|---|---|
+| Pagination no longer overflows at 320px | jsdom computes no layout; `flex-wrap` has no effect on any measurable box |
+| Tab cycles within the open drawer and does not escape into page content | Radix's focus trap depends on real focusability and `inert`/`aria-hidden` behaviour |
+| Focus is restored to the hamburger after the drawer closes | needs a real focus stack |
+| Background content is genuinely non-interactive while the drawer is open | needs real hit-testing |
+| Resizing mobile → desktop leaves no invisible modal blocking clicks | 9b proves `onClose` fires; only a browser proves the page is clickable afterwards |
+| `<th scope="row">` conversions did not visibly re-centre a column | needs rendering |
+
+**HANDOFF to `plans/040-revive-the-e2e-suites.md`.** That plan owns the E2E job.
+Ask it to add these six scenarios against a built SPA:
+
+1. At 320px and 390px, load `/cases` and assert
+   `document.documentElement.scrollWidth <= window.innerWidth` (no horizontal
+   overflow) with the pager visible.
+2. At 390px, open the drawer, press Tab 20 times, assert
+   `document.activeElement` is always inside `[role="dialog"]`.
+3. Press Escape → drawer closes **and** focus returns to the hamburger button.
+4. With the drawer open, assert a link in the page behind it is not clickable
+   (`page.click` on it times out or the click lands on the overlay).
+5. Open the drawer at 390px, resize the viewport to 1280px, then click a
+   sidebar link — it must work. This is the invisible-modal regression.
+6. Screenshot `/cases` and `/judges/compare` before/after to confirm no column
+   re-centred after the `<td>` → `<th scope="row">` conversion.
+
+Until those exist, the accessibility claims in this plan rest on attribute
+presence, not on behaviour. Say so rather than implying browser-level
+verification happened.
+
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npx eslint src` reports **0 errors** and no more than 4 warnings
-- [ ] `cd frontend && npx vitest run` reports **58 test files**, **0 failed**, and more than 490 passed
-- [ ] `cd workers && npx vitest run` still reports 345 passed / 25 files
+- [ ] `cd frontend && npx eslint src` reports **0 errors** (warning count is
+      explicitly not a gate)
+- [ ] `cd frontend && npx vitest run` reports **0 failed**, `Tests passed` ==
+      `FE_BEFORE + <it count across the 3 new files>`, `Test Files passed` ==
+      `FEFILES_BEFORE + 3`
+- [ ] `cd frontend && npx vitest run __tests__/a11y-form-labels.test.tsx __tests__/a11y-mobile-nav.test.tsx __tests__/a11y-controls-and-tables.test.tsx`
+      reports 3 files passed, 0 failed
+- [ ] `cd frontend && npx vitest run __tests__/case-detail-page.test.tsx __tests__/court-sparkline-grid.test.tsx`
+      reports 0 failed (the two suites coupled to `CourtBadge`'s exact text)
+- [ ] `cd workers && npx vitest run` reports 0 failed with `Tests passed`
+      unchanged from `WK_BEFORE`
 - [ ] `cd frontend && grep -c 'htmlFor=' src/pages/CaseAddPage.tsx` returns `3`
 - [ ] `cd frontend && grep -c 'htmlFor=' src/pages/CaseEditPage.tsx` returns `3`
 - [ ] `cd frontend && grep -c 'PageHeader' src/pages/CaseEditPage.tsx` returns `2`
 - [ ] `cd frontend && grep -c '<h1' src/pages/CaseComparePage.tsx` returns `1`
-- [ ] `cd frontend && grep -c 'useEffect' src/components/layout/MobileNav.tsx` returns `0`
+- [ ] `cd frontend && grep -c 'window.addEventListener("keydown"' src/components/layout/MobileNav.tsx` returns `0`
+- [ ] `cd frontend && grep -c 'matchMedia' src/components/layout/MobileNav.tsx` returns `1`
 - [ ] `cd frontend && grep -c 'radix-ui/react-dialog' src/components/layout/MobileNav.tsx` returns `1`
 - [ ] `cd frontend && grep -c 'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-sidebar shadow-lg lg:hidden' src/components/layout/MobileNav.tsx` returns `1`
 - [ ] `cd frontend && grep -c 'role="status"' src/components/shared/Pagination.tsx` returns `1`
@@ -1173,8 +1392,14 @@ Machine-checkable. ALL must hold:
 - [ ] `cd frontend && grep -c 'sr-only' src/components/shared/CourtBadge.tsx` returns `1`
 - [ ] The Step 8 verification loop prints `th=N scope=N caption=1` on all six rows
 - [ ] `cd frontend && git diff --stat -- src/i18n/locales/` is empty (no locale files touched)
+- [ ] The report names the five new `defaultValue`-only i18n keys and hands them
+      to `plans/018-complete-the-i18n-catalogue.md` (see Maintenance notes) —
+      shipping them untranslated is a known, disclosed gap, not an oversight
+- [ ] The report states which accessibility claims are **not** verified by these
+      tests and hands the six browser scenarios to
+      `plans/040-revive-the-e2e-suites.md` (see "What jsdom cannot prove")
 - [ ] `git status --short` lists only the 12 in-scope source files and the 3 new test files
-- [ ] `plans/README.md` status row for plan 023 updated
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
@@ -1184,8 +1409,8 @@ Stop and report back (do not improvise) if:
   `42826a3`, and the "Current state" excerpts no longer match the live code.
 - Any line number in Step 8's `<th>` table does not actually contain a `<th`
   when you open the file. Do not guess a nearby line — the file has drifted.
-- `npx vitest run` drops below 490 pre-existing passes, or any test outside your
-  three new files starts failing. In particular, if
+- `npx vitest run` reports any failure, or `Tests passed` is not
+  `FE_BEFORE + <it count across the 3 new files>`. In particular, if
   `frontend/__tests__/case-detail-page.test.tsx` or
   `frontend/__tests__/court-sparkline-grid.test.tsx` fails after Step 7b, you
   have nested the `sr-only` expansion *inside* the badge instead of beside it —
@@ -1197,8 +1422,19 @@ Stop and report back (do not improvise) if:
   complexity"), so this is the one step with real unknowns. Keep the component
   change, report exactly which assertion fails and its error, and do **not**
   weaken the assertion to make it pass.
-- `npx eslint src` reports any **error** (not warning). The most likely cause is
-  a leftover `useEffect` import in `MobileNav.tsx`.
+- `npx eslint src` reports any **error** (not warning). The most likely cause in
+  `MobileNav.tsx` is an unused import left behind by the rewrite — note that
+  `useEffect` is still **used** (Step 5 detail 6), so removing it is the error,
+  not the fix.
+- The Step 5 detail-6 media-query effect cannot be made to pass 9b's resize
+  assertions after two genuine attempts. Keep the component change and report
+  the failing assertion verbatim. Do **not** delete the effect to get a green
+  suite: without it an open drawer that survives a resize to desktop leaves an
+  invisible modal blocking every click on the desktop layout, which is worse
+  than the missing focus trap this plan set out to fix.
+- The drift check shows `frontend/src/components/cases/CasesTable.tsx` changed
+  **and** it does not contain `useSyncExternalStore`. That is not plan 020's
+  change; something else edited the file. Report and stop.
 - Converting `<td>` to `<th scope="row">` visibly re-centres a column in a
   screenshot or in a snapshot test. You forgot `text-left`.
 - The fix appears to require editing any file in the "Out of scope" list.
@@ -1215,7 +1451,32 @@ For the human or agent who owns this code next:
   Playwright tests select on `.fixed.inset-y-0.left-0` and there is no unit test
   that would catch a typo in the *other* classes; (2) that the `sr-only` court
   expansion is a **sibling** of the badge span, not a child; (3) that every
-  `<td>` → `<th>` conversion also gained `text-left`.
+  `<td>` → `<th>` conversion also gained `text-left`; (4) that the media-query
+  effect in `MobileNav.tsx` is still there and still guards
+  `!window.matchMedia` — deleting it turns a resize into an invisible modal, and
+  deleting the guard breaks every jsdom test that renders `AppLayout`.
+- **HANDOFF — five new i18n keys ship untranslated.** This plan introduces the
+  following, and **none of them exists in `frontend/src/i18n/locales/en.json` or
+  `zh-TW.json`** (verified: `grep -c` → 0 in both for all five). They ship as
+  `defaultValue`-only, which means a zh-TW user — including a zh-TW screen-reader
+  user, who is exactly the person these strings exist for — gets English. Locale
+  JSON is owned by `plans/018-complete-the-i18n-catalogue.md`; hand it this
+  table:
+
+  | key | en | zh-TW |
+  |---|---|---|
+  | `filters.remove_filter` | `Remove filter` | `移除篩選條件` |
+  | `judges.comparison_table_caption` | `Judge comparison metrics` | `法官比較指標` |
+  | `judges.concept_effectiveness_caption` | `Legal concept effectiveness by judge` | `各法官的法律概念成效` |
+  | `analytics.concept_combo_caption` | `Legal concept combinations` | `法律概念組合` |
+  | `lineage.court_volume_caption` | `Case volume by court` | `各法院案件量` |
+
+  Note that `filters.remove_filter` is composed in JS at the call site
+  (`` `${removeLabel}: ${label}: ${value}` ``) rather than interpolated through
+  i18next — see Step 7a for why. The catalogue entry is therefore the bare
+  prefix, with no `{{}}` placeholders. Do not "improve" it into an interpolated
+  string without re-reading that rationale, or every pill's accessible name
+  collapses to one identical string under the test mock.
 - **Deliberately deferred, and why** — each of these is a real remaining gap in
   the same finding family, left out only because it lives in a file territory
   another plan owns:

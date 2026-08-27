@@ -13,21 +13,35 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   pytest.ini \
+> IN_SCOPE="pytest.ini \
 >   extract_structured_fields.py \
 >   immi_case_downloader/extraction/regex.py \
 >   tests/test_extraction_regex.py \
->   tests/test_extraction_container_boundary.py
+>   tests/test_extraction_container_boundary.py \
+>   extract_llm_structured.py extract_structured_fields_llm.py \
+>   extract_llm_fields.py extract_with_llm.py download_fulltext.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
+> git diff --stat -- $IN_SCOPE                 # unstaged
+> git diff --cached --stat -- $IN_SCOPE        # staged
 > ```
 >
-> Empty output means no drift — proceed. If any of those files changed since
-> this plan was written, compare the "Current state" excerpts against the live
-> code before proceeding; on a mismatch, treat it as a STOP condition. In
-> particular, a diff on `extract_structured_fields.py` or
-> `immi_case_downloader/extraction/regex.py` most likely means
-> `plans/032-consolidate-the-extraction-scripts.md` has landed — see STOP
-> condition 1.
+> All three diffs must be empty; a `42826a3..HEAD` diff alone cannot see a dirty
+> working tree and would give a false all-clear. If any in-scope file appears in
+> any of them, compare the "Current state" excerpts against the live code before
+> proceeding; on a mismatch, treat it as a STOP condition. In particular, a diff
+> on `extract_structured_fields.py` or `immi_case_downloader/extraction/regex.py`
+> most likely means `plans/032-consolidate-the-extraction-scripts.md` has landed
+> — see STOP condition 1.
+>
+> **Expected exception**: `pytest.ini` *will* differ once
+> `plans/002-fix-test-collection-and-install.md` has landed (it deletes the
+> `addopts` line). That is this plan's declared dependency, not drift.
+>
+> Never `git checkout --` or `git clean -f` to clear drift; report and stop.
+>
+> **Parallel execution**: run in a dedicated `git worktree` or clone if anything
+> else is in flight — this plan asserts on `git status --short`.
 >
 > **Every expected value in this plan was measured by running the real code at
 > commit `42826a3`.** They are not guesses. If a value you transcribe does not
@@ -38,9 +52,28 @@
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: `plans/002-fix-test-collection-and-install.md` (hard —
+  ordering), transitively `plans/001-restore-the-frontend-compile-gate.md`.
+- **Must run BEFORE**: `plans/032-consolidate-the-extraction-scripts.md`. This is
+  a hard ordering constraint, not a preference — see below.
 - **Category**: tests
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+**Why the 002 dependency is hard.** The first draft of this plan edited
+`pytest.ini`'s `addopts` line to widen the `--cov` scope. Plan 002 Step 5
+**deletes that line entirely** (coverage becomes opt-in via `make coverage`,
+because forcing `--cov` onto every run cost 5.2s → 1.4s on a single-file run and
+rewrote `.coverage` each invocation). The two edits are in direct conflict: run
+this plan first and 002 silently removes its coverage flags; run 002 first and
+the string this plan wants to replace no longer exists. Plan 002's design wins —
+so **this plan no longer edits `pytest.ini` at all**. See Step 5.
+
+**Why 032 must come after, not just "should".** Plan 032 restructures the exact
+functions characterized here. Landing these tests first turns that refactor from
+"hope the regexes survived" into a mechanical green/red check; landing 032 first
+makes every import line and several expected values in this plan wrong (STOP
+condition 1). Previously this was buried in "Maintenance notes"; it is a
+sequencing constraint and belongs here.
 
 ## Why this matters
 
@@ -324,21 +357,37 @@ Always use the project venv — never global `pip`/`python`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python unit tests | `make test-py` | `1198 passed, 3 failed, 11 skipped` after this plan (see note below) |
-| Just the new characterization file | `.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts=""` | `56 passed` |
-| Just the new import-smoke file | `.venv/bin/python -m pytest tests/test_extraction_script_imports.py -q -o addopts=""` | `1 passed, 4 skipped` |
-| Coverage of the target script | `.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts="--cov=extract_structured_fields --cov-report=term"` | row `extract_structured_fields.py  514  ≤205  ≥60%` |
+| Python unit tests | `make test-py` | exit status and the **set of failing files** unchanged vs. the Step 0 baseline; passed count = `PY_BEFORE + 57` |
+| Just the new characterization file | `.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider` | `55 passed, 2 xfailed` |
+| Just the new import-smoke file | `.venv/bin/pytest tests/test_extraction_script_imports.py -q -p no:cacheprovider -rs` | `1 passed, 4 skipped` |
+| Coverage of the target script (the real gate) | `.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider --cov=extract_structured_fields --cov-report=term --cov-fail-under=60` | exit 0 (non-zero if coverage drops below 60%) |
 | Lint the two new files | `.venv/bin/ruff check tests/test_extraction_structured_fields.py tests/test_extraction_script_imports.py` | `All checks passed!` |
-| Repo lint gate (unchanged scope) | `make lint` | `All checks passed!` |
-| Confirm nothing else changed | `git status --short` | only the three in-scope paths |
+| Repo lint gate (unchanged scope) | `make lint-py` (`make lint` before plan 001 lands) | `All checks passed!` |
+| Confirm nothing else changed | `git status --short` | only the two in-scope paths |
 
-**Note on the 3 failures**: at `42826a3`, `make test-py` reports
-`1141 passed, 3 failed, 7 skipped`. The 3 failures are **environmental** —
-Homebrew Python 3.14.7 has a `pyexpat`/`libexpat` ABI mismatch that breaks the
-`pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. They are
-not caused by repo code and are **not** this plan's problem. If your machine
-shows `1141 passed, 0 failed`, that is fine too — expect the passed count to
-rise by 57 and the skipped count by 4, whatever the failure count is.
+Note on `-o addopts=""`: plan 002 removes the global `addopts` line from
+`pytest.ini`, so the override is no longer needed. `-p no:cacheprovider` is kept
+so a single-file run does not rewrite `.pytest_cache`.
+
+**Step 0 — record the baseline.** No absolute suite total appears in this plan's
+checks; sibling plans 002, 038, 039 and 040 all move them.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py > /tmp/immi-041-py-before.txt 2>&1; echo "make test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-041-py-before.txt | sort > /tmp/immi-041-pyfail-before.txt
+PY_BEFORE=$(grep -oE '[0-9]+ passed' /tmp/immi-041-py-before.txt | tail -1 | grep -oE '[0-9]+')
+SKIP_BEFORE=$(grep -oE '[0-9]+ skipped' /tmp/immi-041-py-before.txt | tail -1 | grep -oE '[0-9]+')
+echo "PY_BEFORE=$PY_BEFORE SKIP_BEFORE=$SKIP_BEFORE"; cat /tmp/immi-041-pyfail-before.txt
+```
+
+**On the failing set**: on the planning machine `/tmp/immi-041-pyfail-before.txt`
+held exactly 3 lines, all in `tests/test_backfill_judge_overrides_from_pdf.py`,
+all `ImportError` caused by the Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI
+mismatch breaking `pypdf`. Those are environmental and not this plan's problem.
+The check at the end compares the failing set **by name**, not by count — a
+count check would pass if one new real failure replaced one environmental one.
+On a machine without that ABI problem the set is empty, which is also fine.
 
 ## Scope
 
@@ -346,7 +395,9 @@ rise by 57 and the skipped count by 4, whatever the failure count is.
 
 - `tests/test_extraction_structured_fields.py` — **create**
 - `tests/test_extraction_script_imports.py` — **create**
-- `pytest.ini` — **edit line 3 only**
+
+`pytest.ini` was in scope in an earlier draft and is now explicitly **out** —
+see Step 5 and the conflict with plan 002 Step 5.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -363,8 +414,13 @@ rise by 57 and the skipped count by 4, whatever the failure count is.
   modify the script itself (it performs network I/O).
 - `postprocess.py` and `tests/test_postprocess_judges.py` — already tested;
   step 5 only makes the existing number visible.
+- `pytest.ini` — owned by `plans/002-fix-test-collection-and-install.md`, which
+  deletes its `addopts` line. Do not re-add a global `--cov`.
 - `requirements-test.txt`, `requirements.txt`, `Makefile`,
   `.github/workflows/ci.yml` — no dependency or gate changes in this plan.
+  Turning Step 5's coverage command into a `make coverage-extraction` target or
+  a CI job is the right follow-up, and it belongs to whichever plan owns the
+  `Makefile` and `.github/` (001/002). Recorded in "Maintenance notes".
 - `tests/test_extraction_regex.py`, `tests/test_extraction_container_boundary.py`
   — leave both exactly as they are.
 - `downloaded_cases/` in any form — gitignored, machine-local, never read by a
@@ -418,18 +474,32 @@ applicant_name / respondent / country_of_origin / visa_subclass_number /
 hearing_date / is_represented / representative / visa_outcome_reason /
 legal_test_applied across the 149,016-row case catalog.
 
-These are characterization tests, not specifications: several assertions below
-record behaviour that is arguably wrong (see
-test_outcome_reason_without_terminator_* in particular). They exist so that a
-change to a regex in that script shows up as a failing test instead of silently
-reshaping a field across the whole dataset — the failure mode documented in
+These are characterization tests: they pin what the code does so that a change
+to a regex shows up as a failing test instead of silently reshaping a field
+across the whole dataset — the failure mode documented in
 docs/JUDGE_DATA_QUALITY.md. Do not "fix" the script to make one of these pass
 differently without a deliberate, separately reviewed data migration.
 
-No test here may read from downloaded_cases/ — that directory is gitignored and
-machine-local. process_case() falls back to reading
-downloaded_cases/case_texts/<citation>.txt, so every process_case row below
-either omits `citation` or sets it to "".
+Two behaviours below are KNOWN DEFECTS. They are written as
+@pytest.mark.xfail(strict=True) asserting the CORRECT value, never as green
+assertions on the wrong value. A green assertion on wrong output turns data
+loss into the specification: it reads to the next maintainer as intended
+behaviour, and fixing the code then looks like breaking a test. strict=True
+means an XPASS is a failure, so the day the defect is fixed the suite says so
+loudly and the marker is removed in the same commit.
+
+No test here may read the machine-local case corpus. process_case() falls back
+to reading CASES_DIR/<citation>.txt (extract_structured_fields.py:896-903), and
+CASES_DIR is a gitignored directory holding ~142,966 real files on a developer
+machine and zero in CI. Two independent guards below:
+
+  1. the autouse _isolate_case_corpus fixture repoints CASES_DIR at an empty
+     tmp_path for every test in this module, so even a careless fixture cannot
+     reach the real corpus; and
+  2. every process_case row still omits `citation` or sets it to "".
+
+Guard (1) is the load-bearing one, and it is tested — see
+test_corpus_isolation_fixture_is_effective.
 """
 
 from __future__ import annotations
@@ -439,6 +509,7 @@ import tempfile
 
 import pytest
 
+import extract_structured_fields as esf
 from extract_structured_fields import (
     _clean_country_value,
     _demonym_to_country,
@@ -452,6 +523,45 @@ from extract_structured_fields import (
     extract_visa_subclass_number,
     process_case,
 )
+
+
+# ---------------------------------------------------------------------------
+# Corpus isolation — a runtime guard, not a source-text convention
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _isolate_case_corpus(monkeypatch, tmp_path):
+    """Repoint CASES_DIR at an empty temp dir for every test in this module.
+
+    extract_structured_fields.CASES_DIR is Path("downloaded_cases/case_texts")
+    (extract_structured_fields.py:29) and process_case() reads
+    CASES_DIR/<citation>.txt when a row has a citation but no full_text_path
+    (:896-903). On a developer machine that directory holds ~142,966 real case
+    files; in CI it holds none. A test that reached it would therefore produce
+    different results on different machines — worse than no test.
+
+    Looked up as a module global at call time, so monkeypatching the attribute
+    is sufficient; no import-order care is needed.
+    """
+    monkeypatch.setattr(esf, "CASES_DIR", tmp_path / "case_texts")
+
+
+def test_corpus_isolation_fixture_is_effective(tmp_path) -> None:
+    """Prove the guard actually redirects the lookup, rather than assuming it.
+
+    Writes a file under the *redirected* CASES_DIR and shows process_case reads
+    it. If the fixture ever stops applying, process_case would look in the real
+    downloaded_cases/case_texts instead, find nothing for this citation, and
+    return blanks — failing this test loudly.
+    """
+    corpus = esf.CASES_DIR
+    corpus.mkdir(parents=True, exist_ok=True)
+    (corpus / "ISOLATION-PROBE.txt").write_text(
+        "COUNTRY OF REFERENCE: Nepal\n\nDECISION", encoding="utf-8"
+    )
+    got = process_case({"title": "", "citation": "ISOLATION-PROBE"})
+    assert got["country_of_origin"] == "Nepal"
+    assert str(esf.CASES_DIR) != "downloaded_cases/case_texts"
 
 
 # ---------------------------------------------------------------------------
@@ -597,30 +707,48 @@ def test_extract_visa_outcome_reason_no_catchwords() -> None:
     assert extract_visa_outcome_reason("") == ""
 
 
-def test_outcome_reason_without_terminator_drops_the_field() -> None:
-    """CHARACTERIZATION OF A DEFECT — see the module docstring.
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFECT: RE_CATCHWORDS_SECTION (extract_structured_fields.py:354-357) "
+        "terminates only on LEGISLATION / STATEMENT OF / DECISION AND REASONS / "
+        "end-of-string. With none of those and no trailing newline there is NO "
+        "match at all, so visa_outcome_reason is silently dropped. Today this "
+        "returns ''."
+    ),
+)
+def test_outcome_reason_without_terminator_should_still_extract_the_catchwords() -> None:
+    """EXPECTED TO FAIL — asserts the CORRECT value, not the current one.
 
-    RE_CATCHWORDS_SECTION only terminates on LEGISLATION / STATEMENT OF /
-    DECISION AND REASONS / end-of-string. A document with none of those and no
-    trailing newline yields NO match at all, so the field is silently dropped
-    rather than partially extracted.
+    Written as xfail(strict=True) rather than as a green assertion on "" so
+    that the right answer is recorded in the source and a fix produces a loud,
+    intentional XPASS failure instead of looking like a broken test. The
+    expected value is not invented: adding a terminator to the same document
+    yields exactly "Student visa" today
+    (extract_visa_outcome_reason("CATCHWORDS: MIGRATION - Student visa\\nLEGISLATION:\\n")).
     """
     body = "CATCHWORDS: MIGRATION - Student visa\n\n" + ("filler words " * 60)
-    assert extract_visa_outcome_reason(body) == ""
+    assert extract_visa_outcome_reason(body) == "Student visa"
 
 
-def test_outcome_reason_without_terminator_overcaptures_when_text_ends_in_newline() -> None:
-    """CHARACTERIZATION OF A DEFECT — the mirror image of the test above.
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFECT (mirror image): add a trailing newline to the same document and "
+        "the end-of-string branch matches instead, swallowing the whole body "
+        "into the catchwords field, truncated to 300 chars plus an ellipsis. "
+        "Today this returns a 301-character string starting 'Student visa "
+        "filler words'."
+    ),
+)
+def test_outcome_reason_with_trailing_newline_should_not_swallow_the_body() -> None:
+    """EXPECTED TO FAIL — asserts the CORRECT value.
 
-    Add a trailing newline to the same document and the end-of-string branch
-    matches instead, swallowing the entire body into the catchwords field,
-    truncated to 300 chars plus an ellipsis.
+    The same document must yield the same catchwords whether or not it happens
+    to end in a newline. That it does not is the defect.
     """
     body = "CATCHWORDS: MIGRATION - Student visa\n\n" + ("filler words " * 60) + "\n"
-    got = extract_visa_outcome_reason(body)
-    assert got.startswith("Student visa filler words")
-    assert got.endswith("...")
-    assert len(got) == 301
+    assert extract_visa_outcome_reason(body) == "Student visa"
 
 
 # ---------------------------------------------------------------------------
@@ -642,11 +770,22 @@ def test_extract_legal_test(text: str, expected: str) -> None:
 **Verify**:
 
 ```bash
-.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts=""
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider -rxX; echo "exit=$?"
+# The corpus guard must be a real, runnable check — not a source-text convention:
+.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider \
+  -k test_corpus_isolation_fixture_is_effective; echo "guard exit=$?"
 ```
-→ `52 passed`
+→ `exit=0` with `51 passed, 2 xfailed`, and `guard exit=0`.
 
-(52 at this point; step 3 adds the remaining 4 for a file total of 56.)
+(53 collected at this point — 51 passing, 2 xfail; step 3 adds 4 more for a file
+total of 57. These are **per-file** counts, which are stable no matter what other
+plans land.)
+
+Both `xfail` entries must appear as `x` (xfail), never as `X` (XPASS). An XPASS
+means the defect was fixed elsewhere — `strict=True` turns that into a failure
+on purpose. If it happens, **STOP**: remove the marker, keep the assertion, and
+say which defect was fixed.
 
 ### Step 3: Add the `process_case` integration tests to the same file
 
@@ -753,17 +892,21 @@ def test_process_case_missing_text_file_is_not_an_error() -> None:
 **Verify** (both must hold):
 
 ```bash
-.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts=""
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider -rxX; echo "exit=$?"
 ```
-→ `56 passed`
+→ `exit=0` with `55 passed, 2 xfailed` (a per-file count, stable across plans).
 
 ```bash
-.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q \
-  -o addopts="--cov=extract_structured_fields --cov-report=term" 2>&1 | tail -6
+.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider \
+  --cov=extract_structured_fields --cov-report=term --cov-fail-under=60
+echo "coverage gate exit=$?"
 ```
-→ a table row reading `extract_structured_fields.py     514    204    60%`
-(the `Miss` column must be **≤ 205** and `Cover` **≥ 60%**; an exact match of
-`204 / 60%` is what was measured at `42826a3`).
+→ `coverage gate exit=0`. `--cov-fail-under=60` makes this a command that can
+actually fail: reading a percentage off a table by eye is not a gate. At
+`42826a3` the measured row was `extract_structured_fields.py  514  204  60%`;
+the gate asserts the floor, not that exact triple, so it survives a harmless
+statement-count change.
 
 ### Step 4: Record the importability of the remaining root extraction scripts
 
@@ -786,17 +929,35 @@ it only emits a CoverageWarning.
 Importing a module is a weak test, but it is strictly better than nothing: it
 catches syntax errors, bad top-level constants and import-time side effects,
 none of which any other test in this repo would catch for these files.
+
+WHY A SUBPROCESS. The four LLM scripts must NOT be imported into the pytest
+process. extract_structured_fields_llm.py runs _find_and_load_env() at import
+time (lines 36-51), which walks up to eight directories looking for a .env and
+calls load_dotenv(candidate, override=True) — override=True rewrites the whole
+process environment, for every test that runs afterwards, with whatever the
+developer's .env happens to contain. That is a nasty, order-dependent way to
+poison a test run, and it would only start happening on the day someone adds
+`anthropic` to the test requirements (i.e. long after anyone remembers this
+file). Each import therefore runs in a fresh interpreter with a minimal
+environment, and only its exit status and stderr come back.
 """
 
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
+import sys
 
 import pytest
 
 
 def test_download_fulltext_imports_cleanly() -> None:
-    """download_fulltext has no third-party deps beyond the app requirements."""
+    """download_fulltext has no third-party deps beyond the app requirements.
+
+    Safe to import in-process: it defines only constants and functions at module
+    scope and performs no network or environment side effects on import.
+    """
     module = importlib.import_module("download_fulltext")
     assert hasattr(module, "main")
 
@@ -811,78 +972,172 @@ LLM_EXTRACTION_SCRIPTS = [
     "extract_with_llm",
 ]
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _import_in_subprocess(module_name: str) -> subprocess.CompletedProcess:
+    """Import `module_name` in a fresh interpreter with a sanitised env."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "PYTHONPATH": REPO_ROOT,
+        # Belt and braces: even if a script's dotenv walk finds a file, it has
+        # nothing to override that this test process cares about.
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    return subprocess.run(
+        [sys.executable, "-c", f"import {module_name}"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
 
 @pytest.mark.parametrize("module_name", LLM_EXTRACTION_SCRIPTS)
 def test_llm_extraction_script_imports_cleanly(module_name: str) -> None:
-    pytest.importorskip(
-        "anthropic",
-        reason="anthropic is not a test dependency; these scripts are unimportable here",
+    result = _import_in_subprocess(module_name)
+    if result.returncode != 0 and "No module named 'anthropic'" in result.stderr:
+        pytest.skip(
+            "anthropic is not a test dependency; this script cannot be imported "
+            "here. Add it to the test requirements to turn this into a real check."
+        )
+    assert result.returncode == 0, (
+        f"{module_name} failed to import:\n{result.stderr[-2000:]}"
     )
-    importlib.import_module(module_name)
+
+
+def test_llm_scripts_are_never_imported_into_the_test_process() -> None:
+    """The subprocess isolation above must not be quietly undone.
+
+    If one of these ends up in sys.modules, some test imported it directly and
+    extract_structured_fields_llm's import-time load_dotenv(override=True) has
+    already rewritten os.environ for every test that runs after it.
+    """
+    leaked = [name for name in LLM_EXTRACTION_SCRIPTS if name in sys.modules]
+    assert leaked == [], f"LLM extraction scripts imported in-process: {leaked}"
 ```
 
 **Verify**:
 
 ```bash
-.venv/bin/python -m pytest tests/test_extraction_script_imports.py -q -o addopts="" -rs
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/pytest tests/test_extraction_script_imports.py -q -p no:cacheprovider -rs; echo "exit=$?"
 ```
-→ `1 passed, 4 skipped`, and the skip reason mentions `anthropic`.
+→ `exit=0` with `2 passed, 4 skipped`, and the skip reason mentions `anthropic`.
 
-### Step 5: Widen the coverage scope in `pytest.ini`
+Then prove the isolation is real rather than assumed — the environment of the
+pytest process must be untouched by the four subprocess imports:
 
-Edit `pytest.ini` line 3 only. Change:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/python - <<'PY'
+import os, subprocess, sys
+before = dict(os.environ)
+subprocess.run([sys.executable, "-m", "pytest", "tests/test_extraction_script_imports.py",
+                "-q", "-p", "no:cacheprovider"], check=False)
+after = dict(os.environ)
+changed = {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
+print("env keys changed by the run:", sorted(changed))
+assert not changed, changed
+print("ENV_ISOLATION_OK")
+PY
+```
+→ prints `ENV_ISOLATION_OK`.
 
-```ini
-addopts = -v --cov=immi_case_downloader --cov-report=term-missing
+### Step 5: Make the extraction coverage an explicit, failable command
+
+**`pytest.ini` is no longer edited by this plan. Do not touch it.**
+
+The first draft widened `pytest.ini`'s `addopts` to
+`--cov=extract_structured_fields --cov=postprocess`. That collides head-on with
+`plans/002-fix-test-collection-and-install.md` Step 5, which **deletes the
+`addopts` line entirely** so that coverage is opt-in via `make coverage` — a
+deliberate DX fix worth 5.2s → 1.4s on a single-file run. Plan 002's design
+wins; forcing coverage back onto every invocation would undo it, and a global
+`--cov` is the wrong home for a per-module floor anyway (repo-wide coverage is
+~13%, so a global `--cov-fail-under` cannot be set at all).
+
+Instead, record the extraction coverage as a **standalone command with a real
+failure mode**, and put it in the module docstring of
+`tests/test_extraction_structured_fields.py` so the next reader finds it:
+
+```
+# The extraction coverage gate (run explicitly; not part of `make test-py`):
+#   .venv/bin/pytest tests/test_extraction_structured_fields.py \
+#     tests/test_postprocess_judges.py -q -p no:cacheprovider \
+#     --cov=extract_structured_fields --cov=postprocess \
+#     --cov-report=term --cov-fail-under=60
 ```
 
-to:
-
-```ini
-addopts = -v --cov=immi_case_downloader --cov=extract_structured_fields --cov=postprocess --cov-report=term-missing
-```
+`--cov-fail-under=60` is the point: a coverage number that is only ever *read*
+is not a gate. This command exits non-zero the moment the combined figure drops
+below 60%.
 
 Add **only** those two modules. Do not add the four `anthropic`-dependent
 scripts or `download_fulltext` — a module that no test imports is omitted from
-the report and emits a `CoverageWarning` instead, which is noise, not signal.
-Do not add `--cov-fail-under`.
-
-Leave every other line of `pytest.ini` untouched.
+the report entirely and emits a `CoverageWarning` instead, which is noise, not
+signal.
 
 **Verify**:
 
 ```bash
-.venv/bin/python -m pytest tests/test_extraction_structured_fields.py \
-  tests/test_postprocess_judges.py -q --no-header -p no:cacheprovider 2>&1 \
-  | grep -E "^extract_structured_fields|^postprocess"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/pytest tests/test_extraction_structured_fields.py tests/test_postprocess_judges.py \
+  -q --no-header -p no:cacheprovider \
+  --cov=extract_structured_fields --cov=postprocess \
+  --cov-report=term --cov-fail-under=60 > /tmp/immi-041-cov.txt 2>&1
+echo "coverage gate exit=$?"
+grep -E "^(extract_structured_fields|postprocess)\.py" /tmp/immi-041-cov.txt
+
+# Prove the gate can fail — otherwise it is decoration:
+.venv/bin/pytest tests/test_extraction_structured_fields.py tests/test_postprocess_judges.py \
+  -q --no-header -p no:cacheprovider \
+  --cov=extract_structured_fields --cov=postprocess \
+  --cov-report=term --cov-fail-under=99 > /dev/null 2>&1
+echo "impossible-floor exit=$? (must be non-zero)"
+
+# And prove pytest.ini was NOT touched:
+git diff --stat -- pytest.ini; git diff --cached --stat -- pytest.ini
 ```
-→ two rows, e.g.
-`extract_structured_fields.py   514   204   60% ...` and
-`postprocess.py                 292   179   39% ...`
+→ `coverage gate exit=0`; two coverage rows printed; `impossible-floor exit`
+**non-zero**; both `git diff` commands print nothing.
 
 ### Step 6: Full-suite verification
 
 ```bash
-make lint
-.venv/bin/ruff check tests/test_extraction_structured_fields.py tests/test_extraction_script_imports.py
-make test-py
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make lint-py; echo "lint-py exit=$?"       # `make lint` before plan 001 lands
+.venv/bin/ruff check tests/test_extraction_structured_fields.py tests/test_extraction_script_imports.py; echo "ruff exit=$?"
+make test-py > /tmp/immi-041-py-after.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-041-py-after.txt | sort > /tmp/immi-041-pyfail-after.txt
+diff /tmp/immi-041-pyfail-before.txt /tmp/immi-041-pyfail-after.txt; echo "failing set unchanged=$?"
+PY_AFTER=$(grep -oE '[0-9]+ passed' /tmp/immi-041-py-after.txt | tail -1 | grep -oE '[0-9]+')
+SKIP_AFTER=$(grep -oE '[0-9]+ skipped' /tmp/immi-041-py-after.txt | tail -1 | grep -oE '[0-9]+')
+echo "passed: $PY_BEFORE -> $PY_AFTER ; skipped: $SKIP_BEFORE -> $SKIP_AFTER"
 git status --short
 ```
 
 **Verify**:
-- `make lint` → `All checks passed!`
-- the `ruff check` on the two new files → `All checks passed!`
-- `make test-py` → passed count is **1141 + 57 = 1198**, skipped is
-  **7 + 4 = 11**. The failure count is whatever it was before you started
-  (3 on Homebrew Python 3.14.7, 0 elsewhere) and must not have increased.
-- `git status --short` lists exactly three paths:
-  `pytest.ini`, `tests/test_extraction_structured_fields.py`,
+- `lint-py exit=0` with `All checks passed!`; `ruff exit=0`.
+- `failing set unchanged=0` — the `diff` is empty, i.e. **the same test files
+  fail, by name**, as in the Step 0 baseline. On the planning machine that is
+  still exactly the 3 `ImportError`s in
+  `tests/test_backfill_judge_overrides_from_pdf.py`. Comparing the set rather
+  than a count matters: a count check passes when a new real failure replaces an
+  environmental one.
+- `PY_AFTER == PY_BEFORE + 57` and `SKIP_AFTER == SKIP_BEFORE + 4`, plus 2 new
+  `xfailed`. These are deltas against **your** Step 0 baseline; do not substitute
+  an absolute total from this document — plans 002/038/039/040 all move it.
+- `git status --short` lists exactly two paths:
+  `tests/test_extraction_structured_fields.py`,
   `tests/test_extraction_script_imports.py`
-  (plus `plans/` if you updated the index). Nothing else.
+  (plus `plans/` if you updated the index). **`pytest.ini` must NOT appear.**
 
 ## Test plan
 
-**New file `tests/test_extraction_structured_fields.py` — 56 tests:**
+**New file `tests/test_extraction_structured_fields.py` — 57 tests** (55 passing + 2 `xfail(strict=True)`)**:**
 
 | Function under test | Tests | Cases covered |
 |---|---:|---|
@@ -898,9 +1153,14 @@ git status --short
 | `extract_legal_test` | 5 | s.36; s.501; genuine temporary entrant; absent; empty |
 | `process_case` | 4 | all nine fields from an AATA-style doc; empty row → nine blank keys; title-less doc falls back to structured labels; missing text file does not raise |
 
-**New file `tests/test_extraction_script_imports.py` — 5 tests** (1 passing,
-4 skipped): `download_fulltext` import smoke, and one parametrized
-`importorskip`-gated import per `anthropic`-dependent script.
+Two of those 57 are `@pytest.mark.xfail(strict=True)` — the catchwords defects —
+plus one new corpus-isolation guard test, so the file reports
+`55 passed, 2 xfailed`.
+
+**New file `tests/test_extraction_script_imports.py` — 6 tests** (2 passing,
+4 skipped): `download_fulltext` import smoke (safe in-process), one parametrized
+**subprocess** import per `anthropic`-dependent script, and a guard asserting
+none of those four ever lands in `sys.modules` of the test process.
 
 **Structural pattern to model after**: `tests/test_postprocess_judges.py` —
 same repo-root-script import style, same `@pytest.mark.parametrize` tables with
@@ -908,31 +1168,43 @@ a per-row comment, same `tempfile.mkstemp` helper shape.
 
 **Regression this locks in**: any edit to a regex in
 `extract_structured_fields.py` that changes what a field extracts now fails a
-named test. The two `test_outcome_reason_without_terminator_*` tests
-deliberately pin known-bad behaviour so that a future fix is a *deliberate*,
-reviewed change with a visible data-migration decision attached — not a silent
-reshape of 149,016 rows.
+named test. The two catchwords tests are `xfail(strict=True)` asserting the
+**correct** value, so a fix produces an XPASS failure — a *deliberate*, reviewed
+change with a visible data-migration decision attached, rather than a silent
+reshape of ~149K rows. They are not green assertions on the wrong value; that
+would have made the defect the specification.
 
-**Verification**: `make test-py` → 1198 passed, 11 skipped, failure count
-unchanged from baseline.
+**Verification**: `make test-py` → `PY_BEFORE + 57` passed, `SKIP_BEFORE + 4`
+skipped, 2 xfailed, and the failing set identical to the Step 0 baseline by
+file name. No absolute total is asserted.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] `.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts=""` → `56 passed`
-- [ ] `.venv/bin/python -m pytest tests/test_extraction_script_imports.py -q -o addopts=""` → `1 passed, 4 skipped`
-- [ ] `.venv/bin/python -m pytest tests/test_extraction_structured_fields.py -q -o addopts="--cov=extract_structured_fields --cov-report=term" 2>&1 | grep "^extract_structured_fields"` shows `Miss` ≤ 205 and `Cover` ≥ 60%
-- [ ] `grep -c -- "--cov=extract_structured_fields" pytest.ini` → `1`
-- [ ] `grep -c -- "--cov=postprocess" pytest.ini` → `1`
-- [ ] `grep -c -- "--cov-fail-under" pytest.ini` → `0`
-- [ ] `.venv/bin/python -m pytest tests/test_extraction_structured_fields.py tests/test_postprocess_judges.py -q --no-header 2>&1 | grep -cE "^(extract_structured_fields|postprocess)\.py"` → `2`
-- [ ] `make lint` → `All checks passed!`
+- [ ] `.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider -rxX` → exit 0, `55 passed, 2 xfailed`, and both xfails print as `x` (never `X`/XPASS)
+- [ ] `.venv/bin/pytest tests/test_extraction_script_imports.py -q -p no:cacheprovider -rs` → exit 0, `2 passed, 4 skipped`
+- [ ] `.venv/bin/pytest tests/test_extraction_structured_fields.py -q -p no:cacheprovider -k test_corpus_isolation_fixture_is_effective` → exit 0
+      (**this replaces the old `grep -rn "downloaded_cases" … → no matches` check, which
+      could never pass: the module docstring and the `process_case` section comment both
+      contain that string by design. The guard is now a runtime redirect of
+      `extract_structured_fields.CASES_DIR`, and this test proves the redirect is live.**)
+- [ ] `.venv/bin/pytest tests/test_extraction_script_imports.py -q -p no:cacheprovider -k test_llm_scripts_are_never_imported_into_the_test_process` → exit 0
+- [ ] The Step 4 `ENV_ISOLATION_OK` check prints `ENV_ISOLATION_OK`
+- [ ] Step 5's coverage command with `--cov-fail-under=60` exits 0, **and** the
+      same command with `--cov-fail-under=99` exits non-zero (proves the gate can fail)
+- [ ] `git diff --stat -- pytest.ini` and `git diff --cached --stat -- pytest.ini` are both empty
+- [ ] `make lint-py` → `All checks passed!` (`make lint` before plan 001 lands)
 - [ ] `.venv/bin/ruff check tests/test_extraction_structured_fields.py tests/test_extraction_script_imports.py` → `All checks passed!`
-- [ ] `make test-py` → `1198 passed` and `11 skipped`; failure count not higher than the baseline you recorded in step 1
-- [ ] `grep -rn "downloaded_cases" tests/test_extraction_structured_fields.py tests/test_extraction_script_imports.py` → no matches
-- [ ] `git diff --stat 42826a3..HEAD -- extract_structured_fields.py` → empty (the script was not modified)
-- [ ] `git status --short` lists only `pytest.ini`, `tests/test_extraction_structured_fields.py`, `tests/test_extraction_script_imports.py` (and `plans/` if the index was updated)
+- [ ] `make test-py`: `PY_AFTER == PY_BEFORE + 57`, `SKIP_AFTER == SKIP_BEFORE + 4`,
+      and `diff /tmp/immi-041-pyfail-before.txt /tmp/immi-041-pyfail-after.txt` is empty
+      (the same files fail **by name** — still exactly the 3 pyexpat/pypdf
+      `ImportError`s in `tests/test_backfill_judge_overrides_from_pdf.py`)
+- [ ] All three are empty: `git diff --stat 42826a3..HEAD -- extract_structured_fields.py`,
+      `git diff --stat -- extract_structured_fields.py`,
+      `git diff --cached --stat -- extract_structured_fields.py`
+- [ ] `git status --short` lists only `tests/test_extraction_structured_fields.py`
+      and `tests/test_extraction_script_imports.py` (and `plans/` if the index was updated)
 - [ ] `plans/README.md` status row updated, **if that file exists**
 
 ## STOP conditions
@@ -967,37 +1239,61 @@ Stop and report back (do not improvise) if:
    the production extraction container. Record the assertion's *measured*
    value, note the defect in your report, and move on.
 
-5. **`make test-py` failures increase.** If the failure count rises above the
-   baseline you recorded in step 1, a new test is interacting with an existing
-   one (most likely via the corpus fallback or a leaked tempfile). Do not
-   delete or `skip` the failing test to get green.
+5. **The `make test-py` failing set changes.** Compare by identity:
+   `diff /tmp/immi-041-pyfail-before.txt /tmp/immi-041-pyfail-after.txt` must be
+   empty. A new name in that set means a new test is interacting with an
+   existing one (most likely via the corpus fallback, a leaked tempfile, or an
+   in-process import of an LLM script rewriting `os.environ`). Do not delete or
+   `skip` the failing test to get green.
 
-6. **You are tempted to add `anthropic` to a requirements file** to make the
+6. **Either `xfail` reports XPASS.** `strict=True` turns that into a failure on
+   purpose: someone fixed the catchwords defect. Remove the marker (keep the
+   assertion, it already states the correct value), and report which defect was
+   fixed and by whom — the fix changes real values across the catalog and needs
+   the data-migration discipline in `CLAUDE.md`'s "Production data cleanup rule".
+
+7. **`test_llm_scripts_are_never_imported_into_the_test_process` fails.** Some
+   test imported one of the four LLM scripts directly. That is not cosmetic:
+   `extract_structured_fields_llm.py:36-51` calls
+   `load_dotenv(candidate, override=True)` at import time, rewriting the whole
+   pytest process environment for every test that runs afterwards. Find the
+   importer and move it to a subprocess; do not delete the guard.
+
+8. **`git status --short` shows `pytest.ini`.** This plan no longer edits it —
+   see Step 5 and the conflict with plan 002.
+
+9. **You are tempted to add `anthropic` to a requirements file** to make the
    four skipped tests run. That is a dependency decision with cost and
    licensing implications, it is out of scope, and plan 032 is consolidating
    those four scripts anyway.
 
-7. Any step's verification fails twice after one reasonable fix attempt.
+10. Any step's verification fails twice after one reasonable fix attempt.
 
 ## Maintenance notes
 
 For whoever owns this code next:
 
-- **Single-file pytest runs now emit two harmless warnings.** After step 5,
-  running e.g. `.venv/bin/pytest tests/test_models.py` prints
-  `CoverageWarning: Module extract_structured_fields was never imported` and
-  the same for `postprocess`, because neither is imported by that file. The
-  warning is cosmetic, does not fail anything, and disappears on a full-suite
-  run. Suppressing it would require an `omit`/`source` rework in a
-  `.coveragerc` that is not worth the complexity today.
+- **The extraction coverage gate is a standalone command, not a config change.**
+  It lives in the module docstring of
+  `tests/test_extraction_structured_fields.py` and in Step 5 of this plan, and
+  it carries `--cov-fail-under=60` so it can actually fail. Promoting it to a
+  `make coverage-extraction` target and a CI job is the right follow-up and
+  belongs to whichever plan owns the `Makefile` and `.github/` (001/002). Until
+  then it is a documented command an operator must remember to run — which is
+  weaker than a gate, and is stated here rather than glossed over.
 
-- **These are characterization tests, not a specification.** Four assertions
-  pin behaviour that is arguably wrong: `_clean_country_value("P.R.C.")`
-  returning `"P.R.C"`, `extract_representation` returning `""` (not `"No"`)
-  when representation is simply unstated, and both
-  `test_outcome_reason_without_terminator_*` cases. A reviewer should confirm
-  each such test carries the "CHARACTERIZATION OF A DEFECT" comment or an
-  explanatory row comment, so nobody later reads them as intended behaviour.
+- **These are characterization tests, not a specification — with two exceptions
+  that are the other way round.** Two assertions pin behaviour that is arguably
+  wrong but is a defensible reading (`_clean_country_value("P.R.C.")` →
+  `"P.R.C"`, stripping only a trailing period; `extract_representation`
+  returning `""` rather than `"No"` when representation is simply unstated —
+  unknown genuinely is not the same as "no"). Those stay as green
+  characterization assertions with explanatory row comments. The two catchwords
+  behaviours are **not** defensible — the same document yields different
+  extraction depending only on whether it ends in a newline — so they are
+  `xfail(strict=True)` asserting the correct value instead. A reviewer should
+  check that no green assertion in this file records an output the author
+  believed to be wrong.
 
 - **The catchwords defect is the one worth fixing next, separately.**
   `RE_CATCHWORDS_SECTION` (`extract_structured_fields.py:354-357`) terminates
@@ -1010,18 +1306,37 @@ For whoever owns this code next:
   `docs/JUDGE_DATA_QUALITY.md`.
 
 - **This plan is a de-risker for plan 032, so run it first.** Plan 032
-  restructures these exact functions. Landing these 56 tests beforehand turns
+  restructures these exact functions. Landing these 57 tests beforehand turns
   that refactor from "hope the regexes survived" into a mechanical
   green/red check. If 032 lands first, these tests must be rewritten against
   the new module layout (STOP condition 1).
 
+- **The four LLM scripts still end up as four skips, and that is the honest
+  limit of this plan — not a solved problem.** Four scripts totalling 1,482
+  lines (`extract_llm_structured.py` 546, `extract_structured_fields_llm.py`
+  450, `extract_llm_fields.py` 275, `extract_with_llm.py` 211) remain untested.
+  The subprocess smoke turns "unimportable" into a visible skip; it does not
+  test behaviour. What would, in a follow-up plan owned jointly with
+  `plans/032-consolidate-the-extraction-scripts.md`:
+  - **Extract the seams.** Each script mixes an Anthropic client, a prompt/JSON
+    response parser, a batching loop and a checkpoint writer in one module.
+    Split client construction behind a small interface so a **fake client** can
+    be injected; then batching (partial batch, retry on error, rate delay),
+    response parsing (malformed JSON, truncated completion, missing field) and
+    checkpointing (atomic save every `CHECKPOINT_EVERY`, resume from a partial
+    run) all become testable with **no** `anthropic` dependency and no network.
+  - **Check in a small golden corpus.** Ten to twenty de-identified case texts
+    under `tests/fixtures/extraction/`, chosen to span AATA / FCA / RRTA shapes,
+    with expected extracted fields alongside. Small enough to review by hand,
+    committed so CI has it, de-identified so it is safe to commit. That is what
+    turns the current synthetic one-liners into evidence.
+  - **Enforce the floor in CI**, via the `--cov-fail-under` command in Step 5
+    promoted to its own job, rather than a number someone reads once.
 - **Deliberately deferred**: raising `extract_structured_fields.py` above 60%
   (the remaining uncovered blocks are `load_csv`/`save_csv`/`main` — CSV I/O
-  and argparse plumbing, low value per test); any coverage for the four
-  `anthropic`-dependent scripts; and any coverage floor
-  (`--cov-fail-under`), which cannot be set repo-wide while the total sits at
-  13%. Once plan 032 consolidates the LLM scripts, a per-module floor becomes
-  worth revisiting.
+  and argparse plumbing, low value per test); and any **repo-wide** coverage
+  floor, which cannot be set while the total sits at 13%. The per-module floor
+  is delivered by Step 5's command.
 
 ## Findings reconsidered
 

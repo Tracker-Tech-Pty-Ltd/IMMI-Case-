@@ -9,14 +9,23 @@
 > This plan edits **documentation only**. It must not change a single line of
 > Python, TypeScript, JavaScript, SQL, TOML, YAML or JSON.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff is
+> blind to uncommitted, staged and untracked changes, so on a dirty tree it
+> reports a false all-clear:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
->   git diff --stat 42826a3..HEAD -- README.md frontend/README.md .env.example
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- README.md frontend/README.md .env.example
+> git diff --stat -- README.md frontend/README.md .env.example
+> git diff --cached --stat -- README.md frontend/README.md .env.example
 > ```
-> If any of those files changed since this plan was written, compare the
-> "Current state" excerpts below against the live files before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> The last three must print nothing. If a file appears in any of them, compare
+> the "Current state" excerpts below against the live file before proceeding; on
+> a mismatch, treat it as a STOP condition. Never `git checkout --` or
+> `git clean -f` to clear drift — report and stop.
+>
+> **Parallel execution**: run in a dedicated `git worktree` or clone if anything
+> else is in flight; this plan asserts on `git status --porcelain`.
 
 ## Status
 
@@ -24,17 +33,27 @@
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: `plans/002-fix-test-collection-and-install.md` (which itself
-  depends on `plans/001-restore-the-frontend-compile-gate.md`)
+  depends on `plans/001-restore-the-frontend-compile-gate.md`), **and
+  `plans/040-revive-the-e2e-suites.md`**.
 - **Category**: docs
 - **Planned at**: commit `42826a3`, 2026-08-27
 
-**Why the dependency is hard, not advisory**: this plan tells readers to run
+**Why the 002 dependency is hard, not advisory**: this plan tells readers to run
 `.venv/bin/python -m pip install -r requirements-e2e.txt` before `make test-e2e`.
 That file **does not exist at `42826a3`** — plan 002 creates it. Writing an
 install instruction for a file that is not there is the exact failure this plan
 exists to eliminate. Plan 002 also widens the Vitest `include` glob in
 `frontend/vitest.config.ts`, which changes what `frontend/README.md` should say
 about where tests live. Run 002 first.
+
+**Why the 040 dependency is hard**: plan 040 **deletes** `frontend/e2e/` (13
+files) and `frontend/playwright.config.ts`. An earlier draft of this plan wrote
+a `frontend/README.md` that documented `npm run e2e`, linked to
+`frontend/e2e/README.md`, and listed `e2e/` in the directory tree. After 040
+those do not exist and `npm run e2e` fails — so the new README would ship
+already wrong, which is precisely this plan's own failure mode. Step 6 is written
+for the **post-040** state. If 040 has not landed when you reach Step 6, STOP:
+do not "helpfully" document the pre-040 layout.
 
 ## Why this matters
 
@@ -307,12 +326,31 @@ Always run from the repo root: `/Users/d/Developer/Active Projects/IMMI-Case-`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `git diff --stat 42826a3..HEAD -- README.md frontend/README.md .env.example` | no output (or only your own commits) |
-| Python unit tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` — the 3 failures are a **local Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch** breaking the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. Not this plan's problem; do not fix them. |
-| Frontend tests | `cd frontend && npx vitest run` | all pass (`55 files / 490 tests` at `42826a3`; `56 files / 518 tests` after plan 002) |
-| Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files |
+| Drift check | the four commands above | no output from the last three |
+| Python unit tests | `make test-py` | exit status and the **set of failing files** unchanged vs. the Step 0 baseline |
+| Frontend tests | `cd frontend && npx vitest run` | exit 0; count unchanged (this plan adds none) |
+| Worker tests | `cd workers && npx vitest run` | exit 0; count unchanged |
 | Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0 |
-| Python lint | `make lint` | `All checks passed!` |
+| Python lint | `make lint-py` (`make lint` before plan 001) | `All checks passed!` |
+
+**Step 0 — record the baseline.** This is a docs-only plan, so every suite check
+is an *unchanged* check; no absolute total appears anywhere, because plans 002,
+038, 039, 040 and 041 all move them:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py > /tmp/immi-043-py-before.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-043-py-before.txt | sort > /tmp/immi-043-pyfail-before.txt
+cat /tmp/immi-043-pyfail-before.txt
+( cd frontend && npx vitest run 2>&1 | tail -3 > /tmp/immi-043-fe-before.txt ); cat /tmp/immi-043-fe-before.txt
+( cd workers && npx vitest run 2>&1 | tail -3 > /tmp/immi-043-wk-before.txt ); cat /tmp/immi-043-wk-before.txt
+```
+
+On the planning machine `/tmp/immi-043-pyfail-before.txt` holds exactly 3 lines,
+all in `tests/test_backfill_judge_overrides_from_pdf.py`, all `ImportError` from
+a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaking `pypdf`. Not
+this plan's problem; do not fix them. The end-of-run check compares that set
+**by name**, not by count.
 | Page count | `ls frontend/src/pages/*.tsx \| wc -l` | `27` |
 | Python unit-test source count | `grep -rn "def test_" tests/ --include="*.py" \| grep -v "/e2e/" \| wc -l` | `1107` |
 | E2E source count | `grep -rn "def test_" tests/e2e/ --include="*.py" \| wc -l` | `260` |
@@ -350,9 +388,10 @@ Always run from the repo root: `/Users/d/Developer/Active Projects/IMMI-Case-`.
 - `requirements-app.txt`, `requirements-test.txt`, `requirements-e2e.txt`,
   `Makefile`, `.github/workflows/**`, `frontend/vitest.config.ts`. Plans 001
   and 002 own these. This plan only *documents* what they already do.
-- `frontend/e2e/README.md`. It is genuine, accurate project documentation for
-  the TypeScript Playwright suite. Leave it; the new `frontend/README.md` links
-  to it.
+- `frontend/e2e/**`. Plan 040 deletes the whole directory, including its
+  `README.md`. Do not link to it from the new `frontend/README.md`, and do not
+  recreate it. (An earlier draft of this plan told you to link to it — that was
+  written before the 040 dependency was established.)
 - `README.md:526`'s `149K 向量建立 HNSW` inside troubleshooting ⑤. That number
   describes a **past incident** on the retired Supabase stack, so it is correct
   as a historical statement. Leave it.
@@ -430,13 +469,19 @@ make test-py
 # 前端 Vitest 單元測試
 make test-fe
 
-# Worker Vitest 測試
+# Worker Vitest 測試（主 Worker）
 make test-workers
 
-# 上面三個一次跑完
+# austlii-scraper（pipeline Worker）Vitest 測試
+make test-pipeline
+
+# 上面四個一次跑完
 make test
 
-# Playwright E2E（需先照 §4.2 裝 requirements-e2e.txt + chromium，且需有可連線的 server）
+# Playwright E2E（需先照 §4.2 裝 requirements-e2e.txt + chromium）
+# 不需要另外開 server：tests/e2e/conftest.py 會自己在 daemon thread 起一個
+# 帶 10 筆種子資料的 Flask fixture server（conftest.py:232-274）。
+# 只有設了 E2E_BASE_URL 才會改打外部伺服器（conftest.py:229、:278-282）。
 make test-e2e
 ```
 
@@ -465,23 +510,30 @@ with:
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  grep -n 'python3 -m pytest' README.md ; \
-  grep -c 'requirements-e2e.txt' README.md ; \
-  grep -c 'make test-workers' README.md ; \
-  grep -c 'playwright install chromium' README.md
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -n 'python3 -m pytest' README.md ; echo "bare-pytest grep exit=$? (want 1)"
+grep -c 'requirements-e2e.txt' README.md
+grep -c 'make test-workers' README.md
+grep -c 'playwright install chromium' README.md
+# The claim about test-e2e must be true of the code, not of this plan's memory:
+grep -n 'E2E_BASE_URL' tests/e2e/conftest.py
+grep -n '需有可連線的 server\|requires a running server' README.md ; echo "stale-server-claim grep exit=$? (want 1)"
 ```
-→ the first `grep` prints **nothing** (exit 1 is expected and fine); then `2`,
-then `2`, then `1`. (`requirements-e2e.txt` becomes `3` after Step 2d adds the
-third mention — check this one again at the end of Step 2, not here.)
+→ the first grep prints nothing (`exit=1`); then `2`, `2`, `1`; the `conftest.py`
+grep shows `E2E_BASE_URL` used only to *opt into* live mode; and the
+stale-server-claim grep prints nothing.
 
-Then confirm the documented command still passes:
+Then confirm the documented command still passes, reading the real exit status
+rather than a piped `tail`:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py > /tmp/immi-043-py.txt 2>&1; echo "make test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-043-py.txt | sort
 ```
-→ `1141 passed, 3 failed, 7 skipped` (the 3 are the known local `pypdf`/`pyexpat`
-environment failures described in "Commands you will need" — leave them).
+→ the failing set must be identical to the Step 0 baseline
+(`/tmp/immi-043-pyfail-before.txt`). On the planning machine that is the 3
+known `pypdf`/`pyexpat` `ImportError`s — leave them.
 
 ### Step 2: Correct or de-hardcode every count
 
@@ -810,6 +862,21 @@ fails. If it appears anywhere else, fix that occurrence too.
 
 ### Step 6: Replace `frontend/README.md`
 
+**Confirm the post-040 state first.** This step's content assumes plan 040 has
+deleted the TypeScript Playwright suite:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+test ! -d frontend/e2e && test ! -e frontend/playwright.config.ts && echo "POST_040_OK"
+grep -n '"e2e"' frontend/package.json ; echo "dead-script grep exit=$? (1 = already cleaned)"
+```
+
+If `POST_040_OK` does not print, **STOP** — plan 040 has not landed and this
+README would document a layout that is about to be deleted. If the dead-script
+grep *does* find `"e2e"` in `frontend/package.json`, that is expected: plan 040
+records it as a known leftover for plans 001/024/035 to remove. Say so in the
+README (the template below does) rather than pretending the script works.
+
 Overwrite `frontend/README.md` entirely (all 74 lines of Vite scaffold go) with
 the content below. Two placeholders must be resolved by running commands, not
 guessed:
@@ -845,9 +912,17 @@ npx tsc -b --noEmit    # 真正的型別檢查（見下方 tsconfig 說明）
 npx vitest run                              # 全部單元測試
 npx vitest run __tests__/judge-pages.test.tsx   # 單一檔案
 npm run test:coverage                       # v8 coverage（門檻 80%）
-
-npm run e2e            # Playwright E2E（TypeScript，見 e2e/README.md）
 ```
+
+> **前端已經沒有自己的 E2E 套件。** `frontend/e2e/`（TypeScript Playwright）與
+> `frontend/playwright.config.ts` 已刪除：它跟 repo 根目錄的 Python Playwright
+> 套件測同一個 SPA，最後一次更新是 2026-03-09，而且還在打兩條早就不存在的
+> 路由（`/search`、`/update-db`）。全專案唯一的 E2E 套件是 `../tests/e2e/`，
+> 用 `make test-e2e` 跑（先 `make install-e2e`）。
+>
+> `package.json` 裡的 `e2e`、`e2e:ui`、`e2e:headed` script 與
+> `@playwright/test` devDependency 目前**還沒清掉**（那個檔案有其他 plan 在改，
+> 避免衝突）。`npm run e2e` 現在會直接失敗，這是預期行為，不是壞掉。
 
 ## Layout
 
@@ -863,8 +938,7 @@ frontend/
 │   │   └── router.ts   resolveRouterBasename()：自動判斷 / 或 /app/
 │   └── tokens/tokens.json   設計令牌的單一來源
 ├── scripts/build-tokens.ts  tokens.json → CSS + TS（npm run tokens）
-├── __tests__/          Vitest 單元測試
-├── e2e/                Playwright E2E（TypeScript，另有自己的 README）
+├── __tests__/          Vitest 單元測試（本目錄唯一的測試）
 ├── vite.config.ts      dev server / proxy / build.outDir
 ├── vitest.config.ts    測試設定（include glob、jsdom、coverage 門檻）
 └── tsconfig.app.json   ← 路徑 alias 只在這裡
@@ -877,9 +951,11 @@ frontend/
 - **`frontend/src/__tests__/` 不存在。** 任何指向
   `src/__tests__/components/...` 的指令都是錯的；用
   `npx vitest run __tests__/judge-pages.test.tsx` 這種真實路徑。
-- `e2e/` 是**另一套**測試（TypeScript Playwright，`npm run e2e`），與 repo 根目錄
-  的 Python Playwright 套件 `../tests/e2e/`（`make test-e2e`）互相獨立。
-  `vitest.config.ts` 刻意把 `e2e/**` 排除在單元測試之外。
+- **E2E 不在這裡。** 全專案唯一的 E2E 套件是 repo 根目錄的
+  `../tests/e2e/`（pytest + pytest-playwright，`make test-e2e`）。它會自己啟動
+  一個帶種子資料的 Flask fixture server，不需要你先開 server；只有設了
+  `E2E_BASE_URL` 才會改打外部伺服器。前端曾經有第二套 TypeScript Playwright
+  測試（`frontend/e2e/`），已刪除——理由見 `../tests/e2e/README.md`。
 
 ### tsconfig（容易踩雷）
 
@@ -922,21 +998,35 @@ frontend/
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  grep -c 'This template provides a minimal setup' frontend/README.md ; \
-  grep -c 'Legal Codex' frontend/README.md ; \
-  grep -c 'tsc -b --noEmit' frontend/README.md ; \
-  grep -c 'toSorted' frontend/README.md ; \
-  grep -c '不存在' frontend/README.md ; \
-  grep -c '__tests__/judge-pages.test.tsx' frontend/README.md ; \
-  test -f frontend/__tests__/judge-pages.test.tsx && echo EXAMPLE_TEST_EXISTS ; \
-  test -d frontend/src/__tests__ && echo UNEXPECTED_DIR || echo NO_SRC_TESTS_DIR
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -c 'This template provides a minimal setup' frontend/README.md   # -> 0
+grep -c 'Legal Codex' frontend/README.md                              # -> 1
+grep -c 'tsc -b --noEmit' frontend/README.md                          # -> 2
+grep -c 'toSorted' frontend/README.md                                 # -> 1
+grep -c '__tests__/judge-pages.test.tsx' frontend/README.md           # -> 2
+test -f frontend/__tests__/judge-pages.test.tsx && echo EXAMPLE_TEST_EXISTS
+test -d frontend/src/__tests__ && echo UNEXPECTED_DIR || echo NO_SRC_TESTS_DIR
+# Every path the new README names must actually exist. This is the check that
+# catches a README written against the wrong plan ordering. Paths are relative
+# to frontend/, so resolve them from there:
+grep -oE '`[^`]*\.(ts|tsx|json|md)`' frontend/README.md \
+  | tr -d '`' | sort -u | while read -r p; do
+      case "$p" in
+        /*|*[' ']*) continue ;;                 # skip absolutes and prose fragments
+      esac
+      [ -e "frontend/$p" ] || echo "README references a path that does not exist: $p"
+    done
+test ! -d frontend/e2e && echo "e2e dir correctly absent"
+grep -n 'npm run e2e' frontend/README.md   # must appear only inside the "還沒清掉" note
 ```
-→ `0`, `1`, `2`, `1`, `1`, `2`, `EXAMPLE_TEST_EXISTS`, `NO_SRC_TESTS_DIR`.
-(`tsc -b --noEmit` appears twice — Commands block and the tsconfig note;
-`__tests__/judge-pages.test.tsx` twice — Commands block and the “測試放在哪裡” note.)
-(`__tests__/judge-pages.test.tsx` appears twice: once in the Commands block,
-once in the “測試放在哪裡” note.)
+→ `0`, `1`, `2`, `1`, `2`, `EXAMPLE_TEST_EXISTS`, `NO_SRC_TESTS_DIR`, no
+"references a path that does not exist" line, `e2e dir correctly absent`, and
+the single `npm run e2e` mention sits inside the paragraph explaining that it
+now fails.
+
+(`tsc -b --noEmit` appears twice — Commands block and the tsconfig note.
+`__tests__/judge-pages.test.tsx` appears twice — Commands block and the
+“測試放在哪裡” note.)
 
 Then prove the example command in the new README actually runs:
 
@@ -954,22 +1044,37 @@ Run the full gate set and confirm nothing outside scope moved.
 
 **Verify**:
 
+Capture each command's own exit status. Chaining `cmd 2>&1 | tail -N && next`
+advances on `tail`'s status, which is always 0 — so a failing suite would
+silently promote the next gate:
+
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  git status --porcelain && \
-  echo "--- tests ---" && \
-  make test-py 2>&1 | tail -2 && \
-  (cd frontend && npx vitest run 2>&1 | tail -3) && \
-  (cd workers && npx vitest run 2>&1 | tail -3) && \
-  (cd frontend && npx tsc -b --noEmit && echo TSC_OK) && \
-  make lint
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git status --porcelain
+
+make test-py > /tmp/immi-043-py-after.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-043-py-after.txt | sort > /tmp/immi-043-pyfail-after.txt
+diff /tmp/immi-043-pyfail-before.txt /tmp/immi-043-pyfail-after.txt; echo "pyfail set unchanged=$?"
+
+( cd frontend && npx vitest run > /tmp/immi-043-fe-after.txt 2>&1; echo "fe exit=$?"; tail -3 /tmp/immi-043-fe-after.txt )
+diff /tmp/immi-043-fe-before.txt <(tail -3 /tmp/immi-043-fe-after.txt); echo "fe counts unchanged=$?"
+
+( cd workers && npx vitest run > /tmp/immi-043-wk-after.txt 2>&1; echo "wk exit=$?"; tail -3 /tmp/immi-043-wk-after.txt )
+diff /tmp/immi-043-wk-before.txt <(tail -3 /tmp/immi-043-wk-after.txt); echo "wk counts unchanged=$?"
+
+( cd frontend && npx tsc -b --noEmit; echo "tsc exit=$?" )
+make lint-py; echo "lint-py exit=$?"       # `make lint` before plan 001 lands
 ```
 → `git status --porcelain` lists **only** ` M README.md`, ` M frontend/README.md`
 (plus ` M plans/README.md` if that file exists and you updated it, and
 `?? plans/043-correct-the-readme.md` if the plan itself is untracked).
-`make test-py` → `1141 passed, 3 failed, 7 skipped` (the 3 known environmental
-failures). Vitest frontend and workers suites pass. `TSC_OK`. `make lint` →
-`All checks passed!`.
+Every `exit=` line is `0`; `pyfail set unchanged=0`; `fe counts unchanged=0`;
+`wk counts unchanged=0`; `make lint-py` prints `All checks passed!`.
+
+A docs-only plan cannot move a test result. Any non-zero `unchanged=` value
+means you edited source — that is a STOP condition, and comparing the failing
+**set by name** rather than a failure count is what makes it detectable when one
+new real failure replaces one environmental one.
 
 If `plans/README.md` exists, set this plan's row to `DONE`.
 
@@ -989,7 +1094,7 @@ Manual read-through (do this once at the end, it catches what grep cannot):
    `make test-py` (3 known environmental failures) and `make test-e2e`, which
    additionally needs a running server.
 2. Read the new `frontend/README.md` top-to-bottom and run every command in its
-   "Commands" block except `npm run dev`, `npm run e2e` and the `build*`
+   "Commands" block except `npm run dev` and the `build*`
    targets (`npm run build` writes into the tracked directory
    `immi_case_downloader/static/react/` and would dirty ~80 files — do **not**
    run it).
@@ -1022,11 +1127,22 @@ Machine-checkable. ALL must hold, from the repo root
 - [ ] `grep -c 'Legal Codex' frontend/README.md` → `1`
 - [ ] `grep -c 'tsc -b --noEmit' frontend/README.md` → `2`
 - [ ] `cd frontend && npx vitest run __tests__/judge-pages.test.tsx` → `Test Files  1 passed (1)`
-- [ ] `make test-py` → `1141 passed, 3 failed, 7 skipped` (unchanged from before this plan)
-- [ ] `cd frontend && npx vitest run` → all pass, count unchanged from before this plan
-- [ ] `cd workers && npx vitest run` → `345 passed`
+- [ ] `grep -n '需有可連線的 server' README.md` → no matches, and `README.md` §4.5
+      states that `make test-e2e` starts its own fixture server
+      (`tests/e2e/conftest.py:232-274`) with `E2E_BASE_URL` as the opt-in switch
+- [ ] `test ! -d frontend/e2e && test ! -e frontend/playwright.config.ts` — plan 040
+      has landed — and `frontend/README.md` contains no live instruction to run
+      `npm run e2e` (the one mention explains that it now fails)
+- [ ] Every path `frontend/README.md` names exists on disk (the path-existence
+      loop in Step 6's Verify block prints no "does not exist" line)
+- [ ] `diff /tmp/immi-043-pyfail-before.txt /tmp/immi-043-pyfail-after.txt` is
+      empty — the same test files fail **by name** as before this plan (still
+      exactly the 3 pyexpat/pypdf `ImportError`s in
+      `tests/test_backfill_judge_overrides_from_pdf.py`)
+- [ ] `cd frontend && npx vitest run` exits 0 with its summary lines identical to
+      the Step 0 baseline; same for `cd workers && npx vitest run`
 - [ ] `cd frontend && npx tsc -b --noEmit` → exit 0
-- [ ] `make lint` → `All checks passed!`
+- [ ] `make lint-py` → `All checks passed!` (`make lint` before plan 001 lands)
 - [ ] `git status --porcelain` shows no modified file outside
       `README.md`, `frontend/README.md`, `plans/README.md`
 - [ ] `plans/README.md` row updated **if that file exists**
@@ -1049,8 +1165,10 @@ Stop and report back (do not improvise) if:
   files under `immi_case_downloader/static/react/`. Revert those
   (`git checkout -- immi_case_downloader/static/react/`) and never run a build
   target in this plan.
-- **Any of the three test suites changes its pass/fail count.** A docs-only plan
-  cannot move a test result; if one moves, you edited source. Revert and report.
+- **Any suite's result changes.** Specifically: `diff` of the before/after
+  failing-file sets is non-empty, or a suite's summary lines differ from the
+  Step 0 baseline. A docs-only plan cannot move a test result; if one moves, you
+  edited source. Revert and report.
 - **The env-key script in Step 4 reports a key you cannot classify.** Someone
   added a key to `.env.example` after `42826a3`. Do not guess what it does and
   do not omit it — stop and ask, because a wrong description in the env table is

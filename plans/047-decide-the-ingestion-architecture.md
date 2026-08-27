@@ -7,11 +7,23 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 42826a3..HEAD -- docs/adr scripts/crawler workers/austlii-scraper`
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**. A committed-history diff cannot see uncommitted,
+> staged or untracked work, so all four commands must run:
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE="docs/adr scripts/crawler workers/austlii-scraper"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
+> git diff --stat -- $SCOPE                   # unstaged
+> git diff --cached --stat -- $SCOPE          # staged
+> ```
+> Expected: the last three print nothing and no in-scope path appears in
+> `git status` — with one allowed exception, `docs/adr/` itself, which
+> `plans/044-retire-the-stale-planning-docs.md` owns and may have created
+> already (see "Where new documents go"). If any **other** in-scope path
+> appears, treat it as a STOP condition: compare the "Current state" excerpts
+> against the live code and report. **Never** run `git checkout --` or
+> `git clean -f` to force a clean tree — the uncommitted work is the operator's.
 >
 > **This is a decision/spike plan.** Most of the output is a written decision
 > record. There is exactly one behaviour change (Step 5) and it is small. Do
@@ -277,21 +289,31 @@ All four commits exist and are verified:
 
 ### Where new documents go
 
-There is no `docs/adr/` directory yet — `ls docs/` returns
+At `42826a3` there is no `docs/adr/` directory — `ls docs/` returns
 `ARCHITECTURE.md  HYPERDRIVE_CACHE_RFC.md  JUDGE_DATA_QUALITY.md  ops  plans
 screenshots  UPLOAD_JUDGE_PHOTOS.md`. There is no `scripts/crawler/` either.
-Neither path is gitignored (`git check-ignore -v docs/adr/0001-x.md
-scripts/crawler/README.md` returns nothing). You are creating both.
+Neither path is gitignored (`git check-ignore -v docs/adr/0047-x.md
+scripts/crawler/README.md` returns nothing).
+
+**ADR ownership — assigned centrally, not negotiable.**
+`plans/044-retire-the-stale-planning-docs.md` **owns `docs/adr/`**: it creates
+the directory, `docs/adr/README.md`, `docs/adr/TEMPLATE.md` and ADRs
+0001–0003. This plan creates **exactly one file**,
+`docs/adr/0047-austlii-ingestion-architecture.md`, and **must not create or
+edit `docs/adr/README.md` or `docs/adr/TEMPLATE.md`**. `mkdir -p docs/adr` is
+fine — the directory already existing is normal and is **not** a STOP
+condition. The index row for 0047 is added by 044 when it lands; a Maintenance
+note records that hand-off.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `git diff --stat 42826a3..HEAD -- docs/adr scripts/crawler workers/austlii-scraper` | no output |
+| Drift check | see the four-command block at the top of this file | no in-scope path in any of them |
 | Scraper typecheck | `cd workers/austlii-scraper && npm run typecheck` | exit 0, no output |
-| Scraper tests (baseline) | `cd workers/austlii-scraper && npm test` | `Test Files  7 passed (7)` / `Tests  28 passed (28)` |
-| Scraper tests (after Step 6) | `cd workers/austlii-scraper && npm test` | `Test Files  7 passed (7)` / `Tests  30 passed (30)` |
-| Main Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files |
+| Scraper tests (baseline) | `cd workers/austlii-scraper && npm test` | record it — `Tests  28 passed (28)` at `42826a3`. This suite is touched by no other plan, so its absolute is stable; if yours differs, use **your** number as the baseline |
+| Scraper tests (after Step 6) | `cd workers/austlii-scraper && npm test` | baseline **+ 2**, 0 failed |
+| Main Worker tests | `cd workers && npx vitest run` | record the passed count in Step 1 (`345` at `42826a3`); after this plan it must be **unchanged** with 0 failed — this plan adds no test there. Do not assert an absolute; sibling plans add tests to this suite in parallel |
 | Shell syntax check | `bash -n scripts/crawler/import_from_vps.sh` | exit 0, no output |
 | Changed-file audit | `git status --short` | only in-scope paths listed |
 | Whitespace check | `git diff --check` | no output |
@@ -312,8 +334,8 @@ Notes:
 
 **In scope** (the only files you may create or modify):
 
-- `docs/adr/README.md` (create)
-- `docs/adr/0001-austlii-ingestion-architecture.md` (create)
+- `docs/adr/0047-austlii-ingestion-architecture.md` (create — this is the
+  **only** file you may add under `docs/adr/`)
 - `scripts/crawler/README.md` (create)
 - `scripts/crawler/import_from_vps.sh` (create)
 - `workers/austlii-scraper/src/index.ts` (modify — Step 5 only)
@@ -323,6 +345,8 @@ Notes:
 
 **Out of scope** (do NOT touch, even though they look related):
 
+- `docs/adr/README.md` and `docs/adr/TEMPLATE.md` — owned by `plans/044`. Do
+  not create them, do not append to them, do not "tidy" them if they exist.
 - `workers/pipeline/control_handlers.js` — the `202`-instead-of-`503` producer
   bug lives here. Another plan owns this file; changing it here would collide.
   Record it as a follow-up in the ADR instead.
@@ -360,56 +384,50 @@ Notes:
 
 ### Step 1: Confirm the baseline
 
-Run the drift check and capture the current test baseline before changing
-anything.
+Run the full four-command drift check from the top of this file, then capture
+the current test baselines before changing anything.
 
 ```bash
-git diff --stat 42826a3..HEAD -- docs/adr scripts/crawler workers/austlii-scraper
-cd workers/austlii-scraper && npm run typecheck && npm test
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+(cd workers/austlii-scraper && npm run typecheck && npm test)   # -> SCRAPER_BEFORE
+(cd workers && npx vitest run 2>&1 | tail -3)                   # -> WK_BEFORE
 ```
 
-**Verify**: the drift check prints nothing; typecheck exits 0 with no output;
-the test run ends with `Test Files  7 passed (7)` and `Tests  28 passed (28)`.
-If the drift check prints any file, stop (see STOP conditions).
+**Verify**: the drift check reports no in-scope path (`docs/adr/` existing
+because `plans/044` landed is the one allowed exception); typecheck exits 0
+with no output; the scraper run ends `Test Files  7 passed (7)` /
+`Tests  28 passed (28)` at `42826a3` — record whatever it actually says as
+`SCRAPER_BEFORE`; the main Worker suite reports **0 failed** — record its
+passed count as `WK_BEFORE`. If any drift command reports an in-scope path,
+stop (see STOP conditions).
 
-### Step 2: Create the ADR index
+### Step 2: Make the ADR directory available (no index file)
 
-Create `docs/adr/README.md` with exactly this content:
-
-```markdown
-# Architecture Decision Records
-
-One file per decision, named `NNNN-kebab-slug.md`, numbered in the order the
-decision was taken. An ADR is append-only history: to change a decision, add a
-new ADR that supersedes the old one and edit only the old one's `Status` line
-to say so. Never rewrite the body of a landed ADR.
-
-## Status values
-
-| Status | Meaning |
-|---|---|
-| `Proposed` | Written and argued, awaiting operator sign-off. Not yet binding. |
-| `Accepted` | Signed off. Binding on all subsequent work. |
-| `Superseded by NNNN` | Replaced. Kept for the historical record. |
-| `Rejected` | Considered and declined; kept so it is not re-litigated. |
-
-## Index
-
-| ADR | Title | Status |
-|---|---|---|
-| [0001](0001-austlii-ingestion-architecture.md) | AustLII ingestion architecture | Proposed |
+```bash
+mkdir -p docs/adr
 ```
 
-**Verify**: `test -f docs/adr/README.md && grep -c "0001-austlii-ingestion-architecture.md" docs/adr/README.md`
-→ prints `1`.
+That is the whole step. **Do not create `docs/adr/README.md` or
+`docs/adr/TEMPLATE.md`** — `plans/044-retire-the-stale-planning-docs.md` owns
+both, and an earlier draft of this plan wrote its own competing index, which is
+exactly the collision that forced central ADR-number assignment. The directory
+already existing (because 044 or a sibling landed first) is the normal case and
+is **not** a STOP condition.
+
+**Verify**:
+```bash
+test -d docs/adr && git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md
+```
+→ the directory exists, and `git status` prints **nothing** for those two paths
+(you neither created nor modified them).
 
 ### Step 3: Write the decision record
 
-Create `docs/adr/0001-austlii-ingestion-architecture.md`. Write it yourself
+Create `docs/adr/0047-austlii-ingestion-architecture.md`. Write it yourself
 from the material in this plan's "Current state" section — every fact you need
 is there. It must contain these sections, in this order, with this substance:
 
-**`# ADR 0001: AustLII ingestion architecture`**
+**`# ADR 0047: AustLII ingestion architecture`**
 
 **`## Status`** — exactly:
 
@@ -480,6 +498,44 @@ single-disk single point of failure); operator honesty; cost.
   over 149K rows at documented fill rates; the VPS already has a Python venv.
   *Against*: the crawler is not in version control today; one box, one
   residential line, one operator.
+
+  **Write this caveat into the ADR verbatim — do not present "run the existing
+  extractor on the VPS" as something that already works.** It does not, and the
+  gap is structural, not a matter of copying a file:
+
+  - `extract_structured_fields.py:29-30` hard-codes
+    `CASES_DIR = Path("downloaded_cases/case_texts")` and
+    `CSV_PATH = Path("downloaded_cases/immigration_cases.csv")`. It reads a
+    local directory of per-case text files and rewrites a local CSV in place
+    (via `CSV_PATH.with_suffix(".csv.bak_extract")` / `".csv.tmp"` at lines
+    992-998). Both paths are module-level constants with no CLI override.
+  - The production crawler contract is different in both directions: it POSTs
+    each case to the Worker's `POST /api/v1/cases` and keeps no CSV, and there
+    is **no route anywhere** that accepts extracted-field updates back into D1
+    other than the same flag-gated mutation path.
+
+  So Option B, as written, requires three interfaces that do not exist yet, and
+  the ADR must name them as **preconditions of the decision**, not as
+  consequences discovered later:
+
+  1. **Crawler output contract** — what the crawler writes to local disk (a
+     `case_texts/` corpus, or nothing at all) and where the extractor reads it
+     from. Today the crawler POSTs and discards.
+  2. **Incremental extraction input** — which cases a run should process. The
+     script's unit of work is "every file in a directory, dedup against a CSV";
+     an incremental daily run needs "the cases ingested since timestamp T",
+     which means either a local state file or a read endpoint.
+  3. **Write-back path** — how extracted fields reach D1. Either the mutation
+     route with `CRAWLER_WRITE_TOKEN` accepts a fields-only update (and
+     `IMMI_CASE_MUTATIONS_ENABLED` interacts with that), or a new authenticated
+     bulk-update route exists. Neither is designed today.
+
+  Until those three are specified, "the VPS is the extraction system of record"
+  is an *intent*, not a description. State it that way in the ADR, and put the
+  three items at the top of `## Consequences → Required follow-ups`. Do **not**
+  design or implement them here — `extract_structured_fields.py` is owned by
+  `plans/032-consolidate-the-extraction-scripts.md` and
+  `plans/041-cover-the-extraction-scripts.md`, and this plan must not touch it.
 - **Option C — keep both with clear roles.** *Against*: this is the status quo
   and it is what produced a whole unextracted year plus an operator UI that
   lies. Rejected because "both" without an owner means neither is maintained.
@@ -505,9 +561,28 @@ single-disk single point of failure); operator honesty; cost.
   of burning three retries into a DLQ nothing reads.
 - The inert crons are documented as inert in `wrangler.toml`.
 
+*Preconditions of Option B that do not exist yet (see "Options considered" for
+the evidence — list these FIRST, because the decision is not actionable until
+they are specified):*
+- A crawler output contract: what the crawler leaves on local disk for an
+  extractor to read. `extract_structured_fields.py:29` reads
+  `downloaded_cases/case_texts`; the crawler writes nothing there today.
+- An incremental extraction input: "cases ingested since T", versus the
+  script's current "every file in a directory, deduped against a CSV"
+  (`extract_structured_fields.py:30`, `:992-998`).
+- A write-back path for extracted fields into D1. Owner: whoever owns
+  `workers/case-api/cloudflare_mutations.js` — not this plan.
+
 *Required follow-ups, deliberately NOT done here (name the owning file):*
 - `workers/pipeline/control_handlers.js:96` must return a typed `503` rather
-  than `202 {started: true}` when the consumer's gate is closed.
+  than `202 {started: true}` when the consumer's gate is closed. **This is the
+  producer half of the change Steps 5–6 make on the consumer side, and until it
+  lands the loop is only half-closed**: the consumer now records a terminal
+  `failed` and acks instead of dead-lettering, but the operator still sees
+  `202 {started: true, ok: true}` and — for `start`, `stop` and `download` —
+  still has no route on which to read the failure back. Say plainly in the ADR
+  that this plan improves the *record* without improving the *operator's view*,
+  so nobody reads Steps 5–6 as having fixed the honesty gap.
 - Surface DLQ depth and per-command status on
   `GET /api/v1/admin/pipeline-runs` (`workers/admin/cloudflare_handlers.js`)
   and in the SPA, or remove the pipeline controls from the UI entirely.
@@ -536,23 +611,36 @@ single-disk single point of failure); operator honesty; cost.
 **Verify**:
 
 ```bash
-test -f docs/adr/0001-austlii-ingestion-architecture.md \
-  && grep -c "^## " docs/adr/0001-austlii-ingestion-architecture.md \
-  && grep -c "Operator sign-off" docs/adr/0001-austlii-ingestion-architecture.md \
-  && grep -c "workers/pipeline/control_handlers.js" docs/adr/0001-austlii-ingestion-architecture.md \
-  && ! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" docs/adr/ \
+ADR=docs/adr/0047-austlii-ingestion-architecture.md
+test -f "$ADR" \
+  && grep -c "^## " "$ADR" \
+  && grep -c "Operator sign-off" "$ADR" \
+  && grep -c "workers/pipeline/control_handlers.js" "$ADR" \
+  && grep -c "extract_structured_fields.py" "$ADR" \
+  && ! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" "$ADR" \
   && echo "NO-SECRETS-OK"
 ```
 
 → the `grep -c "^## "` count is at least `6`, the sign-off count is `1`, the
-follow-up citation count is at least `1`, and the last line prints
-`NO-SECRETS-OK`.
+follow-up citation count is at least `1`, the extractor citation count is at
+least `1` (proving the Option B preconditions were written down, not
+summarised away), and the last line prints `NO-SECRETS-OK`.
 
-The last grep is a deliberate belt-and-braces check. The ADR must contain **no
-credential values** and **no IP address** — the operator's residential egress
-IP is recorded in `.claude/STATE.md`; describe the tunnel and why it exists,
-never the address. If that grep matches, remove the offending text before
-continuing.
+Note the secrets grep is scoped to **your** file, not to `docs/adr/` as a
+whole — another plan's ADR is not yours to police, and scanning the directory
+would make your check fail on their content.
+
+The secrets grep is a deliberate belt-and-braces check. The ADR must contain
+**no credential values** and **no IP address** — the operator's residential
+egress IP is recorded in `.claude/STATE.md`; describe the tunnel and why it
+exists, never the address. If that grep matches, remove the offending text
+before continuing.
+
+Confirm you did not touch the shared index:
+```bash
+git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md
+```
+→ no output.
 
 ### Step 4: Create the VPS crawler import harness
 
@@ -580,6 +668,34 @@ contract; the operator runs it.
   `scripts/crawler/import_from_vps.sh`, review the diff, confirm no secrets
   are embedded in the fetched files, then commit with
   `chore: import the AustLII VPS crawler into version control`.
+- A **Recovery bundle — what is still missing** section. Two Python/shell files
+  do **not** make a rebuildable service, and the README must say so rather than
+  implying the single-disk risk is closed once they land. List, as an explicit
+  operator checklist with the command that produces each artefact:
+  - **Dependency lock** — `ssh <host> '/opt/austlii-crawler/venv/bin/pip freeze'`
+    → `scripts/crawler/requirements-crawler.txt`. Without it a rebuild guesses
+    at library versions against a site that already blocks unusual clients.
+  - **Schedule definition** — the exact crontab line
+    (`ssh <host> 'crontab -l -u austlii-crawler'`) → recorded in this README,
+    plus any systemd unit or timer if one exists.
+  - **Environment variable names** (names only, never values): which variable
+    carries `CRAWLER_WRITE_TOKEN`, which carries the target base URL, and where
+    the process reads them from (a `0600` env file path, or the crontab).
+  - **Network/egress contract** — the WireGuard interface name (`wg1-home`),
+    which peer it dials, and that AustLII blocks datacentre egress. **No keys,
+    no endpoints, no addresses.** State that the WireGuard config itself is a
+    credential and is deliberately NOT imported into this repository.
+  - **Health check** — how an operator answers "did last night's run work?"
+    today (tail `/var/log/austlii-crawl.log` for the 25-record heartbeat) and
+    what would be needed to answer it without SSH.
+  - **Alerting** — record honestly that there is none: a silent failure is
+    currently detected by a human noticing missing cases. Name it as a gap.
+  - **Rollback** — what to do when a run POSTs bad data. Note that the Worker
+    upserts idempotently by `case_id`, so a re-run with corrected data is the
+    forward fix, and that `workers/austlii-scraper/scripts/rollback_run.ts`
+    targets the **legacy Supabase stack** and is not a rollback for this path.
+  Mark every unchecked item as an open risk. The point of the section is that a
+  reader can tell at a glance how far the service is from reproducible.
 - A **Security** section: `crawler.py` / `pipeline.sh` must read
   `CRAWLER_WRITE_TOKEN` from the environment or a `0600` file outside this
   repository — never from a literal in the source. If the imported files
@@ -592,28 +708,73 @@ contract; the operator runs it.
   must return nothing.
 
 **4b.** Create `scripts/crawler/import_from_vps.sh`, executable, modelled on
-`scripts/export_immi_source_snapshot.sh:1-30`. Required behaviour:
+`scripts/export_immi_source_snapshot.sh:1-30`.
+
+**The ordering is the whole design and is not negotiable: fetch into a
+quarantine outside the repository, scan there, and only then move into place
+atomically.** An earlier draft `scp`ed straight to the final repo paths and
+scanned afterwards — which means a failed second copy leaves a half-import in
+the tree, a credential-bearing file lands inside the repository before anything
+has looked at it (one careless `git add -A` away from being committed), and the
+refuse-to-overwrite guard then blocks the retry.
+
+Required behaviour, in this order:
 
 - `#!/usr/bin/env bash`, a comment block stating it is a read-only fetch that
-  copies two files and transfers no credentials, then `set -euo pipefail`.
+  copies two files, writes nothing to the VPS, and transfers no credentials,
+  then `set -euo pipefail`.
 - `CRAWLER_HOST="${IMMI_CRAWLER_HOST:-hstgr}"` and
   `CRAWLER_PATH="${IMMI_CRAWLER_PATH:-/opt/austlii-crawler}"`.
 - Resolve its own directory so it works from any cwd:
   `DEST="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`.
 - Refuse to overwrite: if `$DEST/crawler.py` or `$DEST/pipeline.sh` already
-  exists, print a message telling the caller to remove it first and
-  `exit 2`.
+  exists, print a message telling the caller to remove it first and `exit 2`.
+  Do this **before** any network call, so an already-imported tree costs
+  nothing.
+- Create the quarantine and guarantee it is removed on **every** exit path:
+  ```bash
+  QUARANTINE="$(mktemp -d "${TMPDIR:-/tmp}/immi-crawler-import.XXXXXX")"
+  chmod 700 "$QUARANTINE"
+  cleanup() { rm -rf "$QUARANTINE"; }
+  trap cleanup EXIT INT TERM
+  ```
+  `mktemp -d` outside the repository is deliberate: nothing partially fetched
+  is ever visible to `git status`, and the `trap` means an aborted or failed
+  run leaves the repository byte-identical to how it started.
 - `scp` exactly `"$CRAWLER_HOST:$CRAWLER_PATH/crawler.py"` and
-  `"$CRAWLER_HOST:$CRAWLER_PATH/pipeline.sh"` into `$DEST`. Nothing else — no
-  `.bak` files, no venv, no logs.
-- After the copy, scan the two fetched files for anything that looks like an
-  embedded credential and refuse loudly if found, e.g.:
-  `if grep -nEi '(token|secret|password|api[_-]?key)[[:space:]]*=[[:space:]]*["'"'"'][^"'"'"']{8,}' "$DEST/crawler.py" "$DEST/pipeline.sh"; then` → print
-  `"Refusing to finish: a literal credential appears above. Rotate CRAWLER_WRITE_TOKEN, move the value to an environment variable, then re-run."` and `exit 3`.
-- On success print the two destination paths and the next step (review, then
-  commit).
+  `"$CRAWLER_HOST:$CRAWLER_PATH/pipeline.sh"` into `"$QUARANTINE"`. Nothing
+  else — no `.bak` files, no venv, no logs, no WireGuard config. If either copy
+  fails, `set -e` aborts and the trap cleans up; the repo is untouched.
+- Verify **both** files arrived and are non-empty before scanning; if not,
+  print what is missing and `exit 4`.
+- Scan the quarantined files for anything that looks like an embedded
+  credential, e.g.:
+  `if grep -nEi '(token|secret|password|api[_-]?key)[[:space:]]*=[[:space:]]*["'"'"'][^"'"'"']{8,}' "$QUARANTINE/crawler.py" "$QUARANTINE/pipeline.sh"; then` → print
+  `"Refusing to import: a literal credential appears above. Rotate CRAWLER_WRITE_TOKEN, change the source to read it from the environment, then re-run. Nothing was written to the repository."` and `exit 3`.
+  Because the files are still in the quarantine, the trap deletes them — the
+  credential never enters the working tree, and a re-run after the fix is not
+  blocked by the overwrite guard.
+- **Only after the scan passes**, print the two files for the operator to eyeball
+  and require an explicit confirmation before landing them:
+  ```bash
+  if [ "${IMMI_CRAWLER_IMPORT_YES:-}" != "1" ]; then
+    echo "Review the two files above. Re-run with IMMI_CRAWLER_IMPORT_YES=1 to write them into $DEST."
+    exit 0
+  fi
+  mv "$QUARANTINE/crawler.py"  "$DEST/crawler.py"
+  mv "$QUARANTINE/pipeline.sh" "$DEST/pipeline.sh"
+  ```
+  Two `mv`s within one filesystem are as close to atomic as this gets; if the
+  second somehow fails, the message must tell the operator to delete
+  `$DEST/crawler.py` before retrying, so the state is never ambiguous.
+- On success print the two destination paths and the next step (review the
+  diff, complete the "Recovery bundle" checklist in
+  `scripts/crawler/README.md`, then commit).
 - No `ssh` command execution on the remote beyond `scp`. No `rsync --delete`.
-  No writes to the VPS.
+  No writes to the VPS. The recovery-bundle artefacts (`pip freeze`,
+  `crontab -l`) are **operator-run commands documented in the README**, not
+  things this script executes — keeping the script's remote surface to `scp`
+  alone is what makes "read-only" checkable rather than a claim.
 
 **4c.** `chmod +x scripts/crawler/import_from_vps.sh`.
 
@@ -624,25 +785,63 @@ bash -n scripts/crawler/import_from_vps.sh \
   && test -x scripts/crawler/import_from_vps.sh \
   && grep -q "set -euo pipefail" scripts/crawler/import_from_vps.sh \
   && grep -q "IMMI_CRAWLER_HOST" scripts/crawler/import_from_vps.sh \
+  && grep -q "mktemp -d" scripts/crawler/import_from_vps.sh \
+  && grep -q "trap cleanup EXIT" scripts/crawler/import_from_vps.sh \
   && test -f scripts/crawler/README.md \
   && grep -q "CRAWLER_WRITE_TOKEN" scripts/crawler/README.md \
   && grep -q "ps -u austlii-crawler" scripts/crawler/README.md \
+  && grep -q "Recovery bundle" scripts/crawler/README.md \
   && ! grep -rnE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" scripts/crawler/ \
   && echo IMPORT-HARNESS-OK
 ```
 
 → prints `IMPORT-HARNESS-OK`.
 
-Then confirm the guard actually fires, using a throwaway fixture **outside the
-repo**:
+`bash -n` is a syntax check, not evidence that anything works — so run the
+script for real against a **local fake host**, which exercises the quarantine,
+the scanner and the trap without touching the VPS. `scp` accepts a plain local
+path as a source when no `host:` prefix is present, so a fake `IMMI_CRAWLER_HOST`
+is not usable; instead point the script at a local directory by exporting an
+empty host. If your implementation composes `"$CRAWLER_HOST:$CRAWLER_PATH/..."`
+unconditionally, add a two-line escape hatch used only by this test:
+`SRC="${CRAWLER_HOST:+$CRAWLER_HOST:}$CRAWLER_PATH"`.
 
+**Test 1 — a hard-coded credential is refused and nothing lands in the repo:**
 ```bash
-mkdir -p /tmp/crawlerguard && printf 'TOKEN = "abcdefghijklmnop"\n' > /tmp/crawlerguard/crawler.py
-grep -nEi '(token|secret|password|api[_-]?key)[[:space:]]*=[[:space:]]*["'"'"'][^"'"'"']{8,}' /tmp/crawlerguard/crawler.py
+FAKE=$(mktemp -d)
+printf 'TOKEN = "abcdefghijklmnop"\n' > "$FAKE/crawler.py"
+printf '#!/bin/sh\necho hi\n'        > "$FAKE/pipeline.sh"
+IMMI_CRAWLER_HOST="" IMMI_CRAWLER_PATH="$FAKE" IMMI_CRAWLER_IMPORT_YES=1 \
+  bash scripts/crawler/import_from_vps.sh; echo "exit=$?"
+ls scripts/crawler/            # must NOT list crawler.py or pipeline.sh
+git status --short -- scripts/crawler/
+rm -rf "$FAKE"
 ```
+→ `exit=3`, the refusal message names the matching line, `ls` shows only
+`README.md` and `import_from_vps.sh`, and `git status` shows no new file. This
+is the case the old design got wrong: the credential must never reach the
+working tree.
 
-→ prints the matching line (exit 0), proving the pattern matches a hard-coded
-credential. Delete `/tmp/crawlerguard` afterwards.
+**Test 2 — a clean pair lands only after explicit confirmation:**
+```bash
+FAKE=$(mktemp -d)
+printf 'import os\nTOKEN = os.environ["CRAWLER_WRITE_TOKEN"]\n' > "$FAKE/crawler.py"
+printf '#!/bin/sh\nexec python -u crawler.py\n'                 > "$FAKE/pipeline.sh"
+IMMI_CRAWLER_HOST="" IMMI_CRAWLER_PATH="$FAKE" \
+  bash scripts/crawler/import_from_vps.sh; echo "dry-exit=$?"
+ls scripts/crawler/            # still no crawler.py — confirmation was not given
+IMMI_CRAWLER_HOST="" IMMI_CRAWLER_PATH="$FAKE" IMMI_CRAWLER_IMPORT_YES=1 \
+  bash scripts/crawler/import_from_vps.sh; echo "land-exit=$?"
+ls scripts/crawler/            # now crawler.py and pipeline.sh are present
+rm -f scripts/crawler/crawler.py scripts/crawler/pipeline.sh; rm -rf "$FAKE"
+```
+→ `dry-exit=0` with the "re-run with IMMI_CRAWLER_IMPORT_YES=1" message and no
+files written; then `land-exit=0` with both files present. **Delete them
+again** — the real import is the operator's run against the real VPS, and this
+plan must not commit a fixture.
+
+Confirm the tree is clean afterwards: `git status --short -- scripts/crawler/`
+lists only the two files this plan creates.
 
 ### Step 5: Stop dead-lettering control commands when the pipeline is gated
 
@@ -782,29 +981,44 @@ Immediately above `[triggers]` (currently line 103), insert:
 ```toml
 # These crons are inert while PIPELINE_ENABLED / NATIVE_PIPELINE_ENABLED are
 # "false": scheduled() checks nativePipelineReady() first and returns after
-# logging cron.skipped.disabled. Per docs/adr/0001-austlii-ingestion-architecture.md
-# this pipeline is quarantined break-glass, not a production path; production
-# ingestion is the external VPS crawler (see scripts/crawler/README.md).
-# Do not flip these flags without superseding that ADR.
+# logging cron.skipped.disabled. That is the observable fact and it is true
+# today regardless of any decision.
+#
+# docs/adr/0047-austlii-ingestion-architecture.md PROPOSES that this pipeline
+# stays quarantined break-glass while the external VPS crawler owns production
+# ingestion (see scripts/crawler/README.md). As of this comment that ADR is
+# **Proposed, not Accepted** — it is a recommendation awaiting operator
+# sign-off, not settled policy. Read it before flipping either flag; if it has
+# since been Accepted, superseding it is the way to change this.
 ```
+
+The wording matters. An earlier draft of this comment asserted "Per
+docs/adr/… this pipeline is quarantined", which states an unsigned
+recommendation as existing policy — inside a config file, where the next reader
+has no way to tell the difference. Describe the flags' actual behaviour as
+fact, and the ADR's decision as proposed, until an operator has signed it.
 
 **Verify**:
 
 ```bash
 git diff 42826a3 -- workers/austlii-scraper/wrangler.toml \
   | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^\+[[:space:]]*#' | wc -l
-grep -c "quarantined break-glass" workers/austlii-scraper/wrangler.toml
+grep -c "Proposed, not Accepted" workers/austlii-scraper/wrangler.toml
+grep -c "0047-austlii-ingestion-architecture" workers/austlii-scraper/wrangler.toml
 ```
 
 → the first prints `0` (nothing was removed and every added line is a
-comment); the second prints `1` (proving the comment was actually added, so
-the first check is not vacuously passing). Then re-run the full gate:
+comment); the second and third each print `1` (proving the comment was actually
+added — so the first check is not vacuously passing — and that it cites the ADR
+as *proposed*). Then re-run the full gate:
 
 ```bash
 cd workers/austlii-scraper && npm run typecheck && npm test
 ```
 
-→ exit 0 and `Tests  30 passed (30)`.
+→ exit 0 and `Tests  30 passed (30)` (28 before + the 2 added in Step 6). This
+suite is touched by no other plan, so a per-suite absolute is stable here — if
+your Step 1 baseline was not 28, use `baseline + 2` instead.
 
 ### Step 8: Final audit
 
@@ -817,26 +1031,41 @@ git diff --check
 cd workers && npx vitest run
 ```
 
-**Verify**: `git status --porcelain` lists exactly these seven entries and
-nothing else. Two of them are pre-existing and are not yours —
-`.claude/STATE.md` was already modified before you started (leave it alone),
-and `plans/` is untracked because this plan file lives there:
+**Verify**: `git status --porcelain` lists these entries and nothing else.
+Anything already dirty when you ran the drift check is pre-existing and is
+**not yours** — `.claude/STATE.md` was already modified before you started
+(leave it alone), and `plans/` may be untracked because this plan file lives
+there:
 
 ```
- M .claude/STATE.md
-?? docs/adr/
-?? plans/
+ M .claude/STATE.md                                            (pre-existing)
+?? docs/adr/          or  ?? docs/adr/0047-austlii-ingestion-architecture.md
+?? plans/                                                      (pre-existing)
 ?? scripts/crawler/
  M workers/austlii-scraper/src/__tests__/pipeline-control.test.ts
  M workers/austlii-scraper/src/index.ts
  M workers/austlii-scraper/wrangler.toml
 ```
 
+Expand the collapsed directories and confirm the exact contents:
+
+```bash
+git status --porcelain --untracked-files=all -- docs/adr scripts/crawler
+```
+→ lists exactly `docs/adr/0047-austlii-ingestion-architecture.md`,
+`scripts/crawler/README.md` and `scripts/crawler/import_from_vps.sh` as
+untracked, and **nothing else** — in particular no `docs/adr/README.md`, no
+`docs/adr/TEMPLATE.md`, and no `scripts/crawler/crawler.py` left behind by the
+Step 4 fixtures. (If 044 landed first, `docs/adr/README.md` will be *tracked
+and unmodified*, which is correct and will not appear here.)
+
 If `git status --porcelain` shows anything outside that list, you edited a file
 you do not own — revert it (see STOP conditions).
 
-`git diff --check` prints nothing. `cd workers && npx vitest run` still reports
-`345 passed` across 25 files.
+`git diff --check` prints nothing. `cd workers && npx vitest run` reports the
+same passed count it reported before you started (this plan adds no test to the
+main Worker suite) with **0 failed**. Record that number in Step 1 rather than
+asserting an absolute here; sibling plans add tests to that suite in parallel.
 
 ## Test plan
 
@@ -856,30 +1085,36 @@ you do not own — revert it (see STOP conditions).
   follow-up. Its existing tests in `workers/__tests__/pipeline-control.test.js`
   must keep passing untouched, which Step 8 verifies.
 - **Verification**: `cd workers/austlii-scraper && npm test` → 30 passed
-  (was 28); `cd workers && npx vitest run` → 345 passed, unchanged.
+  = `SCRAPER_BEFORE + 2`; `cd workers && npx vitest run` → `WK_BEFORE` passed,
+  unchanged, 0 failed.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] `test -f docs/adr/README.md` exits 0
-- [ ] `test -f docs/adr/0001-austlii-ingestion-architecture.md` exits 0
-- [ ] `grep -c "Operator sign-off" docs/adr/0001-austlii-ingestion-architecture.md` prints `1`
-- [ ] `grep -q "workers/pipeline/control_handlers.js" docs/adr/0001-austlii-ingestion-architecture.md` exits 0 (the 202→503 follow-up is recorded)
+- [ ] `test -f docs/adr/0047-austlii-ingestion-architecture.md` exits 0
+- [ ] `git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md` prints nothing (plan 044 owns both; you neither created nor edited them)
+- [ ] `git status --porcelain --untracked-files=all -- docs/adr` lists **only** `docs/adr/0047-austlii-ingestion-architecture.md`
+- [ ] `grep -c "Operator sign-off" docs/adr/0047-austlii-ingestion-architecture.md` prints `1`
+- [ ] `grep -q "workers/pipeline/control_handlers.js" docs/adr/0047-austlii-ingestion-architecture.md` exits 0 (the 202→503 follow-up is recorded)
+- [ ] `grep -q "extract_structured_fields.py" docs/adr/0047-austlii-ingestion-architecture.md` exits 0 (the Option B preconditions are recorded)
 - [ ] `test -x scripts/crawler/import_from_vps.sh` exits 0
 - [ ] `bash -n scripts/crawler/import_from_vps.sh` exits 0
+- [ ] The Step 4 credential fixture run exited `3` **and** left no `crawler.py` / `pipeline.sh` in `scripts/crawler/` (`bash -n` alone is not evidence the script runs)
+- [ ] The Step 4 clean fixture run exited `0` without confirmation and wrote nothing, then exited `0` with `IMMI_CRAWLER_IMPORT_YES=1` and wrote both files — and you deleted them again
 - [ ] `grep -q "ps -u austlii-crawler" scripts/crawler/README.md` exits 0
+- [ ] `grep -q "Recovery bundle" scripts/crawler/README.md` exits 0
 - [ ] `grep -c 'throw new Error("native pipeline is disabled")' workers/austlii-scraper/src/index.ts` prints `0`
 - [ ] `grep -c 'PIPELINE_DISABLED_REASON' workers/austlii-scraper/src/index.ts` prints `2`
 - [ ] `grep -c 'message.retry();' workers/austlii-scraper/src/index.ts` prints `4`
 - [ ] `cd workers/austlii-scraper && npm run typecheck` exits 0
-- [ ] `cd workers/austlii-scraper && npm test` exits 0 with `Tests  30 passed (30)`
-- [ ] `cd workers && npx vitest run` exits 0 with `345 passed`
+- [ ] `cd workers/austlii-scraper && npm test` exits 0 with `SCRAPER_BEFORE + 2` tests passed, 0 failed
+- [ ] `cd workers && npx vitest run` exits 0 with `WK_BEFORE` passed — unchanged
 - [ ] `git diff --check` prints nothing
-- [ ] Run before committing: `git status --porcelain` lists exactly the seven entries shown in Step 8 and nothing else
-- [ ] `grep -rnE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" docs/adr scripts/crawler` returns nothing
+- [ ] Run before committing: `git status --porcelain` lists only the entries shown in Step 8, plus whatever was already dirty at the drift check
+- [ ] `grep -rnE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" docs/adr/0047-austlii-ingestion-architecture.md scripts/crawler` returns nothing
 - [ ] `git diff 42826a3 -- workers/austlii-scraper/wrangler.toml | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^\+[[:space:]]*#' | wc -l` prints `0`
-- [ ] `grep -c "quarantined break-glass" workers/austlii-scraper/wrangler.toml` prints `1`
+- [ ] `grep -c "Proposed, not Accepted" workers/austlii-scraper/wrangler.toml` prints `1`
 - [ ] `plans/README.md` status row updated (skip if that file does not exist)
 
 ## STOP conditions
@@ -891,8 +1126,17 @@ Stop and report back (do not improvise) if:
   `if (!nativePipelineReady(env)) throw new Error("native pipeline is disabled");`
   the gate has already been restructured by someone else and Step 5's edit is
   wrong.
-- The baseline in Step 1 is not `28 passed` — someone has already changed this
-  suite and your `30 passed` target is wrong.
+- The scraper suite reports **any failure** at Step 1. A different passed count
+  with 0 failed is fine — record it as `SCRAPER_BEFORE` and target
+  `SCRAPER_BEFORE + 2`. A failure means something is already broken and this
+  plan must not build on it.
+- `docs/adr/README.md` or `docs/adr/TEMPLATE.md` appears in your
+  `git status` at any point. Those belong to `plans/044`; you must not create,
+  append to, or reformat them. (`docs/adr/` merely *existing* is fine and
+  expected.)
+- `docs/adr/0047-austlii-ingestion-architecture.md` already exists. Another
+  agent has taken this plan's assigned file — do not overwrite it and do not
+  renumber; report the collision.
 - You conclude the ADR's recommended decision (Option B) is wrong on the
   evidence. **Write your reasoning into the ADR's `## Options considered`
   section, leave the Status as `Proposed`, and report** — do not silently
@@ -919,11 +1163,23 @@ Stop and report back (do not improvise) if:
 
 For the human or agent who owns this next:
 
+- **`docs/adr/README.md` is owned by plan 044; add the index row there when 044
+  lands.** This plan deliberately creates no index and no template. The row is
+  `| [0047](0047-austlii-ingestion-architecture.md) | AustLII ingestion architecture | Proposed |`.
 - **The ADR is `Proposed`, not `Accepted`.** Nothing downstream should cite it
-  as binding until an operator fills in the sign-off line. A reviewer should
-  check that the decision matches what the operator actually intends to
-  maintain, because it commits them to keeping one rented VPS and one
-  residential line alive as production infrastructure.
+  as binding until an operator fills in the sign-off line — including the
+  comment Step 7 adds to `wrangler.toml`, which is worded to say "proposed" for
+  exactly that reason. A reviewer should check that the decision matches what
+  the operator actually intends to maintain, because it commits them to keeping
+  one rented VPS and one residential line alive as production infrastructure.
+- **Steps 5–6 close only the consumer half of the control loop.** After this
+  plan, a gated command is recorded `failed` and acked instead of being buried
+  in a DLQ — but the producer still answers `202 {started: true, ok: true}`
+  (`workers/pipeline/control_handlers.js:96`), and for `start`, `stop` and
+  `download` there is still no route that reads the record back. The operator's
+  experience is therefore **unchanged** until that producer fix and a status
+  route land. Do not report this plan as having fixed the "operator UI lies"
+  problem; it fixed the record the fix will eventually read from.
 - **What a reviewer should scrutinise in the diff**: (a) that Step 5's gate
   check really runs before the `running` write, so a gated command is never
   briefly marked `running`; (b) that the `catch` block at the bottom of

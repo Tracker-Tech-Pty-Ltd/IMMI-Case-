@@ -7,17 +7,30 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**: four commands, not one. A committed-history diff
+> cannot see uncommitted, staged or untracked work, so an executor starting
+> from a dirty tree would otherwise get a false all-clear.
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   Makefile pytest.ini requirements-test.txt \
->   frontend/vitest.config.ts workers/vitest.config.js \
+> IN_SCOPE=(
+>   Makefile pytest.ini requirements-test.txt requirements-e2e.txt
+>   frontend/vitest.config.ts workers/vitest.config.js
 >   .github/workflows/ci.yml
+> )
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- "${IN_SCOPE[@]}"   # committed since planning
+> git diff --stat -- "${IN_SCOPE[@]}"                  # unstaged
+> git diff --cached --stat -- "${IN_SCOPE[@]}"         # staged
 > ```
 >
-> **Expected**: `Makefile`, `.github/workflows/ci.yml` and
+> Any in-scope path that appears as **unstaged, staged or untracked (`??`)** is
+> a STOP condition regardless of what the committed-history diff says — it means
+> someone else is mid-edit in your territory. Never `git checkout --`,
+> `git restore`, `git stash` or `git clean` a path you did not create; report
+> instead.
+>
+> **Expected in the committed-history diff**: `Makefile`, `.github/workflows/ci.yml` and
 > `frontend/vitest.config.ts` **will** appear in that diff if
 > `plans/001-restore-the-frontend-compile-gate.md` has already landed. That is
 > normal and expected — plan 001 is a hard dependency of this one (see
@@ -41,7 +54,14 @@
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md`
+- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md` — a **hard,
+  integrated** dependency. Cut this plan's branch from the tip that already has
+  001 merged, not from `main`.
+- **Blocks**: `plans/003-lint-the-test-suite.md`. **001 → 002 → 003 is strictly
+  serial and must not be run in parallel**: all three edit `Makefile`, two edit
+  `.github/workflows/ci.yml`, and 001 and 002 both edit
+  `frontend/vitest.config.ts` (001 owns the `coverage` block's shape; this plan
+  owns re-measuring its thresholds after Step 1 — see Step 1a).
 - **Category**: tests
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -91,13 +111,26 @@ re-apply or revert them:
   rewritten; three `@echo` help lines change (`make coverage`, `make lint`,
   `make typecheck`).
 - `.github/workflows/ci.yml` — the `test-frontend` job gains an ESLint step, a
-  build step, and its Vitest step becomes `npx vitest run --coverage`.
-- `frontend/vitest.config.ts` — the `coverage: { ... }` block is rewritten to
-  move the four `80`s under a nested `thresholds: { ... }` key.
+  `build:cloudflare` step, a `git diff --exit-code` assertion on the generated
+  design tokens, a `tsconfig.json` references-identity assertion, and its Vitest
+  step becomes `npx vitest run --coverage`.
+- `frontend/vitest.config.ts` — the `coverage: { ... }` block is rewritten:
+  the four flat `80`s move under a nested `thresholds: { ... }` key,
+  `include: ["src/**/*.{ts,tsx}"]` is added (without it Vitest 4 counts only
+  files some test imported), and `exclude` is rewritten to cover both test
+  roots.
 
-**None of those overlap with the edits in this plan.** This plan does not
-touch `lint:`, `lint-py:`, `lint-fe:`, `typecheck:`, `coverage-fe:`, the
-`coverage:` block in `frontend/vitest.config.ts`, or the `test-frontend` job.
+**Only one of those overlaps with the edits in this plan, and the overlap is
+deliberate**: Step 1 of this plan widens the Vitest `include` glob, which
+executes `frontend/src/lib/saved-searches.ts` for the first time and therefore
+moves the coverage numbers that 001's ratchet was pinned to. **Step 1a of this
+plan owns re-measuring those four threshold numbers.** That is the single
+exception to "001 owns the coverage block"; everything else in it — `provider`,
+`reporter`, `include`, `exclude`, the nested shape — stays exactly as 001 left
+it.
+
+Otherwise this plan does not touch `lint:`, `lint-py:`, `lint-fe:`,
+`typecheck:`, `coverage-fe:`, or the `test-frontend` job.
 
 ### `frontend/vitest.config.ts` (verbatim, lines 5–28 at `42826a3`)
 
@@ -158,9 +191,16 @@ are exactly the crash-on-load paths:
 ```
 
 **Measured, not assumed**: with the widened glob, all 28 pass and the suite
-goes from 55 files / 490 tests to **56 files / 518 tests**. Verified on
-2026-08-27 by running Vitest against a copy of this config with the widened
-`include`. You should expect a clean green run, not new failures.
+gains **exactly +1 test file and +28 tests**. Verified on 2026-08-27 by running
+Vitest against a copy of this config with the widened `include`; at that commit
+the totals moved 55 → 56 files and 490 → 518 tests. Assert on the **delta**,
+not on `56`/`518`: those absolutes break the moment any sibling plan adds a
+frontend test, and an executor who "fixes" a failing check by editing the
+expected total has broken the gate rather than the code. Capture `BEFORE` in
+the baseline step and require `AFTER == BEFORE + 1` files / `BEFORE + 28`
+tests.
+
+You should expect a clean green run, not new failures.
 
 ### `Makefile` (verbatim, lines 1–16 at `42826a3`)
 
@@ -542,23 +582,61 @@ the Python API these 25 files import and it does not help here.
 
 All commands assume `cd "/Users/d/Developer/Active Projects/IMMI-Case-"`.
 
+### Baseline capture (do this before Step 1)
+
+Every expected number below is a **delta against a baseline you measure
+yourself**. Absolute suite totals rot as soon as a sibling plan lands and they
+train the next executor to edit the yardstick instead of the code. Run this
+first, on the post-001 tip, and keep the output:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+cd frontend
+FE_FILES_BEFORE=$(npx vitest list --filesOnly | grep -c .)
+npx vitest run 2>&1 | tail -6      # read "Tests N passed" -> FE_TESTS_BEFORE
+npx vitest run --coverage 2>&1 | grep -A2 'All files'   # the four ratchet numbers 001 pinned
+cd ..
+cd workers && npx vitest run 2>&1 | tail -4; cd ..      # -> WK_TESTS_BEFORE
+cd workers/austlii-scraper && npm test 2>&1 | tail -4; cd ../..   # -> PIPE_TESTS_BEFORE
+make test-py 2>&1 | tail -3        # -> PY_PASSED_BEFORE / PY_SKIPPED_BEFORE
+```
+
+| Baseline | Symbol | Value at `42826a3` (re-measure; do not trust this column) |
+|---|---|---|
+| frontend test files collected | `FE_FILES_BEFORE` | 55 |
+| frontend tests passing | `FE_TESTS_BEFORE` | 490 |
+| main Worker tests passing | `WK_TESTS_BEFORE` | 345 |
+| pipeline Worker tests passing | `PIPE_TESTS_BEFORE` | 28 |
+| python passed / skipped | `PY_PASSED_BEFORE` / `PY_SKIPPED_BEFORE` | 1141 / 7 |
+
+### Command reference
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python unit tests | `make test-py` | `3 failed, 1141 passed, 6 skipped` after Step 6 (`7 skipped` before it). The 3 failures are environmental — see above. ~4 min. |
-| Frontend tests | `cd frontend && npx vitest run` | `Test Files 56 passed (56)`, `Tests 518 passed (518)` after Step 1 (55/490 before). |
-| Frontend collected-file list | `cd frontend && npx vitest list --filesOnly` | 56 lines after Step 1 (55 before). |
-| Main Worker tests | `cd workers && npx vitest run` | `Test Files 25 passed (25)`, `Tests 345 passed (345)`. |
-| Pipeline Worker tests | `cd workers/austlii-scraper && npm test` | `Test Files 7 passed (7)`, `Tests 28 passed (28)`. |
+| Python unit tests | `make test-py` | `PY_PASSED_BEFORE` passed and `PY_SKIPPED_BEFORE - 1` skipped after Step 6 (`PY_SKIPPED_BEFORE` before it), plus the 3 named environmental failures. ~4 min. |
+| Frontend tests | `cd frontend && npx vitest run` | `FE_FILES_BEFORE + 1` files, `FE_TESTS_BEFORE + 28` tests, after Step 1. |
+| Frontend collected-file list | `cd frontend && npx vitest list --filesOnly` | `FE_FILES_BEFORE + 1` lines after Step 1. |
+| Main Worker tests | `cd workers && npx vitest run` | exactly `WK_TESTS_BEFORE` — unchanged by this plan. |
+| Pipeline Worker tests | `cd workers/austlii-scraper && npm test` | exactly `PIPE_TESTS_BEFORE` — unchanged by this plan. |
 | Pipeline Worker typecheck | `cd workers/austlii-scraper && npm run typecheck` | exit 0, no output. |
-| Python lint | `make lint` | `All checks passed!` |
-| Frontend lint | `cd frontend && npm run lint` | exit 0; `✖ 25 problems (0 errors, 25 warnings)`. Warnings are expected and are not yours to fix. |
+| Python lint | `make lint-py` | `All checks passed!` |
+| Frontend lint | `cd frontend && npm run lint` | exit 0 with **0 errors** (the warning count — 25 at `42826a3` — is not gated and is not yours to fix). |
 | Deploy-secret preflight | `bash scripts/test_preflight_secrets.sh` | `ALL PREFLIGHT TESTS PASSED`, exit 0. |
-| Makefile dry run | `make -n <target>` | prints the recipe without executing it. |
+| Makefile dry run | `make -n <target>` | prints the recipe without executing it. **`make -n` proves a target resolves; it never proves the recipe works.** Never cite it as evidence that something ran. |
 | Workflow lint | `actionlint .github/workflows/ci.yml` | Exits 1 with **exactly one** pre-existing `SC2035` finding on the `ruff check ... *.py` line. That single finding is the baseline; anything more is a regression. |
 | Workflow YAML parse | `.venv/bin/python -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && echo YAML_OK` | `YAML_OK` |
 
 `actionlint` is installed at `/opt/homebrew/bin/actionlint`. PyYAML 6.0.3 is
 available in `.venv`.
+
+**The 3 Python failures must still be exactly these three, by name**, when you
+finish — assert on the names, not on the number `3`:
+
+```
+tests/test_backfill_judge_overrides_from_pdf.py::test_clean_line_does_not_destroy_words
+tests/test_backfill_judge_overrides_from_pdf.py::test_extract_judiciary_names_filters_non_judicial_judging
+tests/test_backfill_judge_overrides_from_pdf.py::test_merge_treats_postnominal_variant_as_equivalent
+```
 
 ## Scope
 
@@ -566,7 +644,10 @@ available in `.venv`.
 
 - `Makefile`
 - `pytest.ini`
-- `frontend/vitest.config.ts` — **line 11 only** (`include:`)
+- `frontend/vitest.config.ts` — the `test.include` glob (Step 1) **and the four
+  numbers inside `coverage.thresholds` (Step 1a only)**. Nothing else in the
+  `coverage` block: `provider`, `reporter`, `include`, `exclude` and the nested
+  shape are plan 001's and must be left byte-identical.
 - `.github/workflows/ci.yml` — the `test-python` job header and the
   `test-worker` job's `setup-node` step only
 - `requirements-e2e.txt` — **create**
@@ -585,25 +666,36 @@ available in `.venv`.
   workspace would force a Vitest major reconciliation (root `^2.0.0` vs
   `austlii-scraper` `^4.1.8` vs `frontend` `^4.0.18`) with no test-coverage
   gain. See "Findings reconsidered".
-- `frontend/vitest.config.ts`'s `coverage: { ... }` block — plan 001 owns it.
+- `frontend/vitest.config.ts`'s `coverage: { ... }` block — plan 001 owns it,
+  **except** the four numbers under `coverage.thresholds`, which Step 1a of
+  this plan re-measures because Step 1 changes what is covered.
 - `Makefile`'s `lint:`, `lint-py:`, `lint-fe:`, `typecheck:` and `coverage-fe:`
   recipes — plans 001 and 003 own them. In particular, **do not** "fix"
   `make typecheck`; plan 001 already changes it to `tsc -b --noEmit` and
-  `make check` picks that up for free.
+  `make check` picks that up for free. `make check` may *depend on* those
+  targets (that is the point of it) without editing their recipes.
 - The `test-frontend` job in `.github/workflows/ci.yml` — plan 001 owns it. The
   `Lint with ruff` step — plan 003 owns it.
 - `tests/**` — no test file is edited by this plan. In particular
   `tests/integration/` is **not** deleted; see Step 6.
-- `README.md` and `CLAUDE.md`. Both will be stale after this plan (the README
-  install block at `README.md:118` omits the venv and the root `npm install`;
-  the frontend test count at `README.md:182` becomes 490 → 518). Documentation
-  is a different plan's territory — report the staleness in your handoff
+- `README.md` and `CLAUDE.md`. Both go stale as a result of this plan (the
+  README install block at `README.md:118` omits the venv and the root
+  `npm install`; the frontend test count at `README.md:182` gains 28 tests and
+  one file). Documentation is a different plan's territory and it has **named
+  owners**: `plans/043-correct-the-readme.md` for `README.md`,
+  `plans/042-rewrite-the-agent-facing-docs.md` for `CLAUDE.md` / `AGENTS.md`.
+  Both must run after this chain. Hand them the specifics in your handoff
   instead of editing.
-- `make build` / adding a build step to `make check`. `npm run build` writes
-  into the **tracked** directory `immi_case_downloader/static/react/`, so
-  running it dirties ~80 files with new content hashes every time. A one-command
-  check that leaves the tree dirty is worse than one that does not. Confirmed
-  empirically on 2026-08-27.
+- `make build` (the `npm run build` form) and adding **that** to `make check`.
+  `npm run build` writes into the **tracked** directory
+  `immi_case_downloader/static/react/`, so running it dirties ~80 files with
+  new content hashes every time. A one-command check that leaves the tree dirty
+  is worse than one that does not. Confirmed empirically on 2026-08-27.
+  **This does not apply to `npm run build:cloudflare`**, which writes to
+  `frontend/dist/` — ignored by `.gitignore:7` (`dist/`) — and which is
+  precisely what CI and the gated deploy workflow run. Step 8 therefore *does*
+  add a `build:cloudflare` gate to `make check`; the two commands were
+  conflated in an earlier draft of this plan.
 - `wrangler.toml` placeholder resource IDs, `IMMI_CASE_MUTATIONS_ENABLED` and
   the pipeline flags defaulting to `"false"`,
   `workers/austlii-scraper/scripts/rollback_run.ts` targeting legacy Supabase —
@@ -614,18 +706,29 @@ available in `.venv`.
 - Branch: `advisor/002-fix-test-collection-and-install`, created from `main`.
 - Commit per step (or per logical pair of steps). Message style is conventional
   commits, matching `git log`:
-  - Step 1–2: `test: collect colocated frontend tests and guard the include globs`
+  - Step 1–1a: `test: collect colocated frontend tests and re-measure the coverage ratchet`
+  - Step 2: `test: guard vitest include globs by comparing collected file sets`
   - Step 3: `test: run the pipeline Worker suite from make test`
   - Step 4: `fix: make install create and use the repo venv`
   - Step 5: `chore: stop forcing coverage on every pytest run`
   - Step 6: `test: split the opt-in integration suite out of make test-py`
   - Step 7: `test: make the Python E2E suite installable and self-diagnosing`
   - Step 8: `chore: add make check as the single local CI mirror`
+    (also introduces `check-native`, `typecheck-pipeline` and `build-fe`)
   - Step 9: `ci: cache python deps and add a python 3.14 matrix leg`
   - Step 10: `docs: refresh make help for the new targets`
 - No AI attribution / `Co-Authored-By` lines.
 - Do **NOT** push, do **NOT** open a PR, do **NOT** merge. The operator commits
   and pushes.
+- Before committing, per this repo's `CLAUDE.md` GitNexus rules, run
+  `detect_changes()` and report the affected symbol set. If the index is stale
+  (it lagged `HEAD` on 2026-08-28), refresh it with
+  `node .gitnexus/run.cjs analyze` or record the check as **unverified** — do
+  not silently skip it.
+- Whatever the drift check showed as already-dirty at the start is pre-existing:
+  leave it alone, do not stage it, and never `git checkout --`, `git restore`,
+  `git stash` or `git clean` a path you did not create. Record what was dirty in
+  your handoff so a reviewer can tell your diff from the operator's.
 
 ## Steps
 
@@ -643,8 +746,8 @@ with:
     // Two roots on purpose: the historical suite under frontend/__tests__/ and
     // tests colocated next to the module they cover (src/**/__tests__/). Before
     // the second glob existed, src/lib/__tests__/saved-searches.test.ts was in
-    // the tree but collected by nothing. `make check-test-collection` now fails
-    // if any test file on disk is missed again.
+    // the tree but collected by nothing. `make check-vitest-collection` now
+    // fails if any test file on disk is missed again.
     include: [
       "__tests__/**/*.{test,spec}.{ts,tsx}",
       "src/**/*.{test,spec}.{ts,tsx}",
@@ -672,63 +775,158 @@ nothing to fix.
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
 ```
 
-→ `Test Files  56 passed (56)` and `Tests  518 passed (518)`. Zero failures.
+→ `Test Files` = `FE_FILES_BEFORE + 1` and `Tests` = `FE_TESTS_BEFORE + 28`.
+Zero failures. (At `42826a3` that is `56 passed (56)` and `518 passed (518)`,
+but compare against your captured baseline, not against those literals.)
+
+Also confirm it is the *right* file that got added, not merely that the count
+went up:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest list --filesOnly | grep -Fx 'src/lib/__tests__/saved-searches.test.ts' \
+  && echo "COLOCATED_FILE_COLLECTED"
+npx vitest run src/lib/__tests__/saved-searches.test.ts -t "returns empty array for corrupted JSON"
+```
+
+→ `COLOCATED_FILE_COLLECTED`, then a passing single-test run. A count that rose
+by one because a *different* file appeared would pass a count check and fail
+this one.
 
 If any of the 28 newly collected tests fails, STOP and report the failure text
 — it was green on 2026-08-27 and a failure means something else changed.
 
-### Step 2: Add `make check-test-collection`, the guard that would have caught this
+### Step 1a: Re-measure the coverage ratchet that Step 1 just moved
 
-Add this target to `Makefile`, immediately **after** the `test-workers:` recipe
-and before the `# AC4 safety guard:` comment block. (If plan 001 added a
-`coverage-fe:` target in that gap, put yours after `coverage-fe:` — order does
-not matter, only that it lands in the Testing section.)
+Plan 001 pinned `coverage.thresholds` to numbers measured **before** this glob
+was widened. Step 1 makes `frontend/src/lib/saved-searches.ts` (305 lines)
+execute for the first time, which changes at least the `lines` and `functions`
+figures. Leaving 001's numbers in place would leave the ratchet slack by
+exactly the amount this plan just earned — the opposite of a ratchet.
 
-```make
-# Guard against include-glob drift: every test file on disk must be collected
-# by some vitest config. This is what silently hid
-# frontend/src/lib/__tests__/saved-searches.test.ts (28 tests) for as long as
-# the frontend include was anchored at frontend/__tests__/ only.
-check-test-collection:
-	@FE_DISK=$$(find "$(REPO_ROOT)/frontend" -type f \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) -not -path '*/node_modules/*' -not -path '*/e2e/*' -not -path '*/dist/*' | wc -l | tr -d ' '); \
-	FE_RUN=$$(cd "$(REPO_ROOT)/frontend" && npx vitest list --filesOnly 2>/dev/null | grep -c .); \
-	W_DISK=$$(find "$(REPO_ROOT)/workers" -type f \( -name '*.test.js' -o -name '*.test.ts' \) -not -path '*/node_modules/*' | wc -l | tr -d ' '); \
-	W_RUN=$$(cd "$(REPO_ROOT)/workers" && npx vitest list --filesOnly 2>/dev/null | grep -c .); \
-	P_RUN=$$(cd "$(REPO_ROOT)/workers/austlii-scraper" && npx vitest list --filesOnly --config vitest.config.ts 2>/dev/null | grep -c .); \
-	echo "frontend: $$FE_RUN collected / $$FE_DISK on disk"; \
-	echo "workers:  $$W_RUN + $$P_RUN collected / $$W_DISK on disk"; \
-	FAIL=0; \
-	[ "$$FE_RUN" = "$$FE_DISK" ] || { echo "ERROR: frontend vitest include misses $$(( FE_DISK - FE_RUN )) test file(s)"; FAIL=1; }; \
-	[ "$$(( W_RUN + P_RUN ))" = "$$W_DISK" ] || { echo "ERROR: worker vitest configs miss $$(( W_DISK - W_RUN - P_RUN )) test file(s)"; FAIL=1; }; \
-	[ "$$FAIL" = "0" ] && echo "OK: every test file on disk is collected by a vitest config"; \
-	exit $$FAIL
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run --coverage 2>&1 | grep -A2 'All files'
 ```
 
-The `frontend/e2e/` exclusion in the `find` is intentional: those 12 `.spec.ts`
-files belong to the JavaScript Playwright runner, not Vitest, and
-`frontend/vitest.config.ts` excludes them on purpose.
+Read the four `All files` percentages. For each metric, set
+`coverage.thresholds.<metric>` in `frontend/vitest.config.ts` to
+`max(previous_value, floor(measured))`, capped at `80`:
+
+- never **lower** a threshold below what plan 001 set — that is what makes it a
+  ratchet;
+- never set one **above** the measured value — that fails CI on the first run;
+- once a metric reaches 80, stop at `80`; the repo's written policy is 80% and
+  there is no reason to gate above it.
+
+Change nothing else in the `coverage` block. In particular leave
+`include: ["src/**/*.{ts,tsx}"]` and the `exclude` list exactly as 001 wrote
+them — the exclude list already contains `**/__tests__/**`, which is what keeps
+the newly collected `src/lib/__tests__/saved-searches.test.ts` from being
+counted as source.
 
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make check-test-collection
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run --coverage 2>&1 | tail -12
+grep -c '__tests__' coverage/coverage-summary.json
 ```
 
-→ exactly:
+→ the run exits 0 with **no** `does not meet threshold` line, and the
+`grep -c` prints `0` (no test file counted as source).
 
+Then prove the ratchet is still live rather than decorative: temporarily raise
+`thresholds.lines` by 5 points, re-run, confirm it **fails** with a threshold
+error and a non-zero exit, restore your measured value, confirm it passes. Do
+not commit the raised value.
+
+Commit this together with Step 1:
+`test: collect colocated frontend tests and re-measure the coverage ratchet`
+
+### Step 2: Add `make check-vitest-collection`, the guard that would have caught this
+
+The guard must compare **which files** are collected, not **how many**. A
+count-only guard passes when one file is missed and another is collected twice
+— exactly the class of bug it exists to catch — and it cannot name the offender
+when it does fail. Build sorted path sets and `diff` them.
+
+The target is named `check-vitest-collection`, not `check-test-collection`,
+because that is honestly what it covers. The Python suites are guarded by
+`pytest.ini`'s `testpaths = tests` (pytest walks the tree; it has no include
+glob to drift), and the two Playwright suites — `frontend/e2e/*.spec.ts` and
+`tests/e2e/**` — are deliberately outside it: they are run by different runners
+that this guard does not invoke. Do not let the target claim more than that.
+
+Add it to `Makefile`, in the Testing section after the `test-workers:` recipe
+(or after `coverage-fe:` if plan 001 put that in the gap — order does not
+matter):
+
+```make
+# Guard against include-glob drift: every Vitest-owned test file on disk must be
+# collected by exactly one vitest config. This is what silently hid
+# frontend/src/lib/__tests__/saved-searches.test.ts (28 tests) for as long as
+# the frontend include was anchored at frontend/__tests__/ only.
+#
+# Compares SETS of repo-relative paths, not counts: a count check passes when one
+# file is missed and another is double-collected, and cannot name the offender.
+#
+# NOT covered here (by design, different runners): frontend/e2e/*.spec.ts and
+# tests/e2e/** are Playwright; tests/**/*.py is pytest, guarded by pytest.ini's
+# `testpaths = tests`.
+check-vitest-collection:
+	@set -e; \
+	TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
+	( cd "$(REPO_ROOT)" && find frontend workers -type f \
+	    \( -name '*.test.js' -o -name '*.test.jsx' -o -name '*.test.ts' -o -name '*.test.tsx' \
+	    -o -name '*.spec.js' -o -name '*.spec.jsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) \
+	    -not -path '*/node_modules/*' -not -path 'frontend/e2e/*' -not -path '*/dist/*' \
+	  | sort -u ) > "$$TMP/disk"; \
+	( cd "$(REPO_ROOT)/frontend" && npx vitest list --filesOnly 2>/dev/null | sed 's|^|frontend/|'; \
+	  cd "$(REPO_ROOT)/workers" && npx vitest list --filesOnly 2>/dev/null | sed 's|^|workers/|'; \
+	  cd "$(REPO_ROOT)/workers/austlii-scraper" && npx vitest list --filesOnly --config vitest.config.ts 2>/dev/null | sed 's|^|workers/austlii-scraper/|' \
+	) | sed 's|^\./||' | sort > "$$TMP/collected.raw"; \
+	sort -u "$$TMP/collected.raw" > "$$TMP/collected"; \
+	DUPES=$$(uniq -d "$$TMP/collected.raw" || true); \
+	MISSING=$$(comm -23 "$$TMP/disk" "$$TMP/collected"); \
+	EXTRA=$$(comm -13 "$$TMP/disk" "$$TMP/collected"); \
+	FAIL=0; \
+	if [ -n "$$MISSING" ]; then echo "ERROR: on disk but collected by no vitest config:"; echo "$$MISSING"; FAIL=1; fi; \
+	if [ -n "$$EXTRA" ]; then echo "ERROR: collected but not found on disk (stale path or wrong prefix):"; echo "$$EXTRA"; FAIL=1; fi; \
+	if [ -n "$$DUPES" ]; then echo "ERROR: collected by more than one vitest config:"; echo "$$DUPES"; FAIL=1; fi; \
+	if [ "$$FAIL" = "0" ]; then echo "OK: $$(wc -l < "$$TMP/disk" | tr -d ' ') vitest test files on disk, each collected exactly once"; fi; \
+	exit $$FAIL
 ```
-frontend: 56 collected / 56 on disk
-workers:  25 + 7 collected / 32 on disk
-OK: every test file on disk is collected by a vitest config
+
+The `frontend/e2e/` exclusion in the `find` is intentional: that directory
+holds 12 `.ts` files (9 `*.spec.ts` plus `global-setup.ts`,
+`global-teardown.ts` and `helpers.ts`) belonging to the JavaScript Playwright
+runner, and `frontend/vitest.config.ts` excludes them on purpose.
+
+**Verify**:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make check-vitest-collection; echo "exit=$?"
 ```
 
-and exit 0.
+→ `OK: 88 vitest test files on disk, each collected exactly once` and `exit=0`.
+(At `42826a3` the disk set is 56 frontend files after Step 1 plus 32 worker
+files — 25 under `workers/__tests__/` and 7 under
+`workers/austlii-scraper/src/__tests__/` — verified 2026-08-28. Do not hard-code
+88 anywhere; the target derives it.)
 
-Sanity check that the guard is not vacuous — this exact target was run against
-the pre–Step 1 config on 2026-08-27 and correctly failed with
-`frontend: 55 collected / 56 on disk` /
-`ERROR: frontend vitest include misses 1 test file(s)` / exit 2. If yours
-prints `56 collected / 56 on disk`, Step 1 worked.
+Prove the guard is not vacuous, twice — both checks must fail for the right
+reason and both are reversible in one edit:
+
+1. **Missed file.** Temporarily revert the Step 1 `include` widening, re-run,
+   and confirm the output is
+   `ERROR: on disk but collected by no vitest config:` followed by exactly
+   `frontend/src/lib/__tests__/saved-searches.test.ts`, exit 2. Restore.
+2. **Double collection.** Temporarily add `"../workers/__tests__/**/*.test.js"`
+   to the frontend `include`, re-run, and confirm it reports under
+   `collected by more than one vitest config`. Restore.
+
+A count-only guard passes test 2. That is why this one compares sets.
 
 ### Step 3: Add `make test-pipeline` and put it in `make test`
 
@@ -762,13 +960,18 @@ test: test-py test-fe test-workers test-pipeline
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-pipeline 2>&1 | tail -4
 ```
 
-→ `Test Files  7 passed (7)` and `Tests  28 passed (28)`.
+→ exactly `PIPE_TESTS_BEFORE` tests passing (28 at `42826a3`, across 7 files).
+This plan runs that suite; it does not change it, so the number must match your
+baseline capture exactly.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make -n test | grep -c austlii-scraper
 ```
 
-→ `1`
+→ `1`. Note what this does and does not prove: `make -n` shows that `test`
+resolves `test-pipeline` and would run it. It does **not** prove the suite
+passes — the `make test-pipeline` run above is what proves that. Do not report
+`make -n` output as evidence that anything executed.
 
 ### Step 4: Make `make install` create and use the repo's `.venv`
 
@@ -813,11 +1016,47 @@ entire recipe before executing any of its lines, so `$(PYTHON)` would still
 evaluate against the *pre-creation* state of `.venv` even though the venv is
 created earlier in the same recipe.
 
-**Do not run `make install`.** `pip` is broken in this repo's `.venv` (see
-"KNOWN LOCAL DEFECT" in Current state) and a live install would fail for
-reasons unrelated to your change. Verify the recipe instead:
+**Do not run `make install` in this working copy.** `pip` is broken in this
+repo's `.venv` (see "KNOWN LOCAL DEFECT" in Current state), and because the new
+recipe *reuses* an existing `.venv`, running it here would exercise the broken
+interpreter and tell you nothing about your change.
 
-**Verify** (three checks, all non-mutating):
+**But do run it somewhere clean — this step is not finished until you have.**
+A `make -n` dry run proves the recipe resolves; it does not prove
+`requirements-app.txt` + `requirements-test.txt` install, and that is the exact
+claim this step makes. Use a disposable git worktree, which has no `.venv`, so
+the new `python3 -m venv` branch is the one that executes. `python3` on this
+machine resolves to
+`/Library/Frameworks/Python.framework/Versions/3.14/bin/python3` (Python 3.14.0,
+python.org build), whose `pyexpat` is healthy — verified 2026-08-28 with
+`python3 -c "import xml.parsers.expat"`, which prints nothing and exits 0.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+WT=$(mktemp -d)/immi-install-probe
+git worktree add "$WT" HEAD          # detached; your branch is untouched
+cd "$WT"
+git checkout "$(git -C "/Users/d/Developer/Active Projects/IMMI-Case-" rev-parse --abbrev-ref HEAD)" -- Makefile requirements-e2e.txt 2>/dev/null || true
+time make install                     # THE acceptance run
+./.venv/bin/python -c "import pandas, numpy, lxml, psycopg2; print('APP_DEPS_OK')"
+./.venv/bin/python -m pytest tests/test_models.py -q -p no:cacheprovider | tail -2
+```
+
+→ `make install` exits 0; `APP_DEPS_OK`; the single-file pytest run passes.
+Then clean up:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git worktree remove --force "$WT"
+```
+
+If you cannot complete that run — no network, no disk, a wheel that will not
+build — **report the step as `unverified` and say exactly which command you
+could not run**. Do not mark it done on the strength of `make -n` alone, and do
+not weaken the recipe to make a dry run look convincing.
+
+**Verify** (three static checks, all non-mutating, *in addition to* the
+worktree acceptance run above — not instead of it):
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make -n install
@@ -847,7 +1086,8 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && np
 ```
 
 → `added 104 packages in <time>` (the lockfile resolves cleanly; nothing is
-written).
+written). `--dry-run` proves resolution only — the real `npm ci` runs inside the
+worktree acceptance run above, and that is what proves installability.
 
 ### Step 5: Stop forcing coverage and `-v` onto every pytest run
 
@@ -939,8 +1179,21 @@ test-integration:
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -2
 ```
 
-→ `3 failed, 1141 passed, 6 skipped` (skips drop from 7 to 6; passes and
-failures unchanged). Takes ~4 minutes.
+→ `PY_PASSED_BEFORE` passed (unchanged) and exactly `PY_SKIPPED_BEFORE - 1`
+skipped — the one module-level skip in `tests/integration/` is what leaves the
+set. The failures must still be the three named
+`tests/test_backfill_judge_overrides_from_pdf.py` pyexpat ImportErrors, by
+name. At `42826a3` that reads `3 failed, 1141 passed, 6 skipped`; compare
+against your captured baseline, not against those literals. Takes ~4 minutes.
+
+A stronger, order-independent form of the same check:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep '^FAILED' | sort
+```
+
+→ exactly three lines, all in `tests/test_backfill_judge_overrides_from_pdf.py`.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-integration 2>&1 | tail -3
@@ -990,37 +1243,50 @@ with:
 # tests/e2e/react/react_helpers.py imports playwright.sync_api at module scope,
 # so without the plugin this target dies with 20 collection errors and no hint
 # about what to install. Fail early with an instruction instead.
+#
+# The guard checks the PLUGIN distribution, not `import playwright`. The two are
+# different packages: `playwright` is the browser-automation library, while the
+# session-scoped `browser` fixture that tests/e2e/conftest.py:297 consumes comes
+# from the separate `pytest-playwright` plugin. `import playwright` succeeds with
+# only the library installed, so that check would wave the run through and let it
+# die later on a missing fixture. It also checks that a browser binary is really
+# present, by launching one — `playwright install chromium` is a separate step
+# from installing the package and is just as easy to forget.
 test-e2e:
-	@"$(PYTHON)" -c "import playwright" 2>/dev/null || { \
-	  echo "ERROR: playwright is not installed for $(PYTHON)."; \
+	@"$(PYTHON)" -c "import importlib.metadata as m; m.version('pytest-playwright')" 2>/dev/null || { \
+	  echo "ERROR: the pytest-playwright plugin is not installed for $(PYTHON)."; \
+	  echo "(Note: the 'playwright' library alone is NOT enough — tests/e2e needs"; \
+	  echo " the plugin, which is what provides the 'browser' fixture.)"; \
 	  echo "Run 'make install-e2e' first (requirements-e2e.txt + chromium),"; \
 	  echo "then start a server ('make api') before running the E2E suite."; \
+	  exit 1; }
+	@"$(PYTHON)" -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()" 2>/dev/null || { \
+	  echo "ERROR: pytest-playwright is installed but chromium will not launch."; \
+	  echo "Run '$(PYTHON) -m playwright install chromium' (or 'make install-e2e')."; \
 	  exit 1; }
 	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60
 ```
 
-**Do not run `make install-e2e`.** `pip` is broken in this repo's `.venv` (see
-"KNOWN LOCAL DEFECT"), so a live install would fail for reasons unrelated to
-your change. Verify the plumbing instead:
+**Do not run `make install-e2e` in this working copy.** `pip` is broken in this
+repo's `.venv` (see "KNOWN LOCAL DEFECT"), so a live install here would fail
+for reasons unrelated to your change.
 
-**Verify** (three checks):
+**Verify** — the negative path here, the positive path in a clean worktree.
+
+*(a) Negative path, in this working copy.* The guard must fire, and must fire
+for the stated reason:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-e2e; echo "exit=$?"
 ```
 
-→ prints
-`ERROR: playwright is not installed for .../.venv/bin/python`, then the two
-instruction lines, then `make: *** [test-e2e] Error 1` and `exit=2`. Crucially
-it must **not** print a Python traceback or 20 collection errors. (This exact
-guard was probed against a real Makefile on 2026-08-27 and behaves this way.)
-
-```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make -n install-e2e
-```
-
-→ shows `/.venv/bin/python -m pip install -r requirements-e2e.txt` and
-`/.venv/bin/python -m playwright install chromium`.
+→ prints `ERROR: the pytest-playwright plugin is not installed for .../.venv/bin/python`,
+then the instruction lines, then `make: *** [test-e2e] Error 1` and `exit=2`.
+Crucially it must **not** print a Python traceback or 20 collection errors.
+(Verified 2026-08-28 that this venv has neither distribution:
+`.venv/bin/python -c "import importlib.metadata as m; m.version('pytest-playwright')"`
+raises `PackageNotFoundError`, and `import playwright` raises
+`ModuleNotFoundError`.)
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && test -f requirements-e2e.txt && grep -c 'pytest-playwright' requirements-e2e.txt
@@ -1028,38 +1294,93 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && test -f requirements-e2e.t
 
 → `1`
 
-Note for whoever later has a working interpreter: after `make install-e2e`,
-`.venv/bin/python -m pytest tests/e2e -q --collect-only` should end in a line
+*(b) Positive path — required, in a disposable worktree.* `make -n install-e2e`
+proves the recipe resolves; it proves nothing about whether the plugin installs,
+registers, or can drive a browser, which is the entire claim of this step. Reuse
+the worktree from Step 4 (or create a fresh one the same way) and run it for
+real:
+
+```bash
+cd "$WT"                       # the Step 4 worktree, which has a healthy .venv
+make install-e2e
+./.venv/bin/python -c "import importlib.metadata as m; print('plugin', m.version('pytest-playwright'))"
+./.venv/bin/python -m pytest tests/e2e --fixtures 2>/dev/null | grep -E '^browser( |$)' && echo "BROWSER_FIXTURE_REGISTERED"
+./.venv/bin/python -m pytest tests/e2e -q --collect-only 2>&1 | tail -2
+./.venv/bin/python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); print('CHROMIUM_LAUNCHES'); b.close(); p.stop()"
+make test-e2e 2>&1 | tail -5   # the guard must now fall through to pytest
+```
+
+→ a plugin version line; `BROWSER_FIXTURE_REGISTERED`; a collect-only line
 matching `<N> tests collected` with **no** `errors` (it is
-`42 tests collected, 20 errors` today). Actually *running* the suite needs a
-live server and is out of scope for this plan.
+`42 tests collected, 20 errors` before this change); `CHROMIUM_LAUNCHES`; and
+`make test-e2e` reaching pytest rather than exiting at the guard.
+
+Actually *passing* the E2E suite additionally needs a live server (`make api`)
+and is out of scope. If you cannot complete (b) — no network, no browser
+download — **report Step 7 as `unverified` naming the command you could not
+run**. `make -n` output is not a substitute and must not be presented as one.
 
 ### Step 8: Add `make check` — one command whose green means CI will pass
 
 Add this target to `Makefile`, in the Code Quality section after the
 `typecheck:` recipe:
 
-```make
-# The single command to run before pushing. Mirrors the CI job set in
-# .github/workflows/ci.yml: ruff + eslint, tsc, both Python-side suites, both
-# Vitest suites, the pipeline Worker suite, and the deploy secret-preflight
-# parser. Ordered cheapest-first so failures surface early. ~6 minutes.
-#
-# Deliberately excludes `build`: npm run build writes into the TRACKED
-# directory immi_case_downloader/static/react/, so including it would leave
-# ~80 modified files behind on every run.
-check: lint typecheck check-test-collection test-preflight test-py test-fe test-workers test-pipeline
-	@echo ""
-	@echo "make check: all gates passed."
-```
+The claim "green here means CI will pass" is only true if the prerequisite list
+actually covers the CI job set. Read `.github/workflows/ci.yml` and enumerate it
+rather than trusting this paragraph; at `42826a3`, after plan 001, the three
+jobs run:
 
-and add the preflight target next to the other test targets, after
-`test-integration:`:
+| CI job | Steps that can fail | Covered by |
+|---|---|---|
+| `test-python` | `ruff check …`; `pytest tests/ -q --ignore=…` | `lint-py`, `test-py` |
+| `test-frontend` | `tsc -b`; non-vacuity + references assertions; `npm run lint`; **`npm run build:cloudflare`**; **stale-token `git diff --exit-code`**; **`vitest run --coverage`** | `typecheck`, `lint-fe`, **`build-fe`**, **`coverage-fe`** |
+| `test-worker` | `test_preflight_secrets.sh`; **`check_native_effective_references.py`**; **`check_cloudflare_native_bundle.mjs`**; `npm run test:workers`; **`npm run typecheck` in `workers/austlii-scraper`**; `npm test` there | `test-preflight`, **`check-native`**, `test-workers`, **`typecheck-pipeline`**, `test-pipeline` |
+
+The bolded entries are the ones an earlier draft of this plan omitted, which
+would have let `make check` go green while CI failed on the frontend build, the
+coverage ratchet, the pipeline typecheck or either native gate. Add targets for
+them:
 
 ```make
 # CI runs this in the test-worker job; nothing ran it locally.
 test-preflight:
 	bash "$(REPO_ROOT)/scripts/test_preflight_secrets.sh"
+
+# The two Cloudflare-native boundary gates the test-worker job runs. Both are
+# read-only checkers; neither writes to the tree.
+check-native:
+	python3 "$(REPO_ROOT)/scripts/check_native_effective_references.py" --json
+	node "$(REPO_ROOT)/scripts/check_cloudflare_native_bundle.mjs"
+
+# The pipeline Worker has its own tsc gate, run only in CI until now.
+typecheck-pipeline:
+	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm run typecheck
+
+# The production bundle, exactly as CI and deploy-worker.yml build it.
+# build:cloudflare writes to frontend/dist/, which .gitignore:7 ignores — unlike
+# `npm run build`, which rewrites the TRACKED immi_case_downloader/static/react/
+# tree and would leave ~80 modified files behind on every run. The two are not
+# interchangeable; do not "simplify" this to `build`.
+build-fe:
+	cd "$(REPO_ROOT)/frontend" && npm run build:cloudflare
+	@git -C "$(REPO_ROOT)" diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts \
+	  || { echo "ERROR: the committed generated design tokens are stale (npm run tokens changed them)."; exit 1; }
+```
+
+and then the aggregate itself, in the Code Quality section after `typecheck:`:
+
+```make
+# The single command to run before pushing. Mirrors the CI job set in
+# .github/workflows/ci.yml, job by job — see the table in plans/002. Ordered
+# cheapest-first so failures surface early. ~8 minutes.
+#
+# coverage-fe, not test-fe: CI runs `vitest run --coverage`, so the thresholds
+# are part of the gate. Running test-fe here would let a coverage regression
+# pass locally and fail on the PR — and running both would run the suite twice.
+check: lint typecheck typecheck-pipeline check-vitest-collection check-native \
+       test-preflight build-fe test-py coverage-fe test-workers test-pipeline
+	@echo ""
+	@echo "make check: all gates passed."
 ```
 
 `check` depends on `lint`, which plan 001 turned into `lint: lint-py lint-fe`
@@ -1067,20 +1388,60 @@ test-preflight:
 `typecheck`, which plan 001 fixed to `tsc -b --noEmit`. Do not duplicate either
 here.
 
+**Known residual gap, stated rather than hidden**: nothing enforces that this
+prerequisite list stays in step with `ci.yml`. They drift independently. The
+Maintenance notes record this, and a reviewer should re-derive the table above
+whenever `ci.yml` changes.
+
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-preflight 2>&1 | tail -2
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-preflight 2>&1 | tail -2
+make check-native 2>&1 | tail -3
+make typecheck-pipeline && echo "PIPELINE_TSC_OK"
+make build-fe && echo "BUILD_FE_OK"
 ```
 
-→ `ALL PREFLIGHT TESTS PASSED`, exit 0.
+→ `ALL PREFLIGHT TESTS PASSED`; both native checkers exit 0;
+`PIPELINE_TSC_OK`; `BUILD_FE_OK` with no stale-token error.
+
+Now assert the aggregate really covers the CI job set. This check compares the
+prerequisite list against `ci.yml` and fails when they diverge, which a
+`make -n check | head -3` cannot do:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make -n check | head -3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/python - <<'PY'
+import re, yaml
+mk = open("Makefile").read()
+prereqs = set(re.search(r"^check:((?:.*\\\n)*.*)$", mk, re.M).group(1).replace("\\\n", " ").split())
+ci = yaml.safe_load(open(".github/workflows/ci.yml"))
+runs = " ".join(s.get("run", "") for j in ci["jobs"].values() for s in j["steps"])
+need = {
+    "ruff check": "lint",
+    "pytest": "test-py",
+    "tsc -b": "typecheck",
+    "npm run lint": "lint",
+    "build:cloudflare": "build-fe",
+    "vitest run --coverage": "coverage-fe",
+    "test_preflight_secrets.sh": "test-preflight",
+    "check_native_effective_references.py": "check-native",
+    "check_cloudflare_native_bundle.mjs": "check-native",
+    "npm run test:workers": "test-workers",
+    "npm run typecheck": "typecheck-pipeline",
+}
+missing = sorted({t for frag, t in need.items() if frag in runs and t not in prereqs})
+assert not missing, f"make check does not cover CI steps -> missing targets: {missing}"
+print("CHECK_MIRRORS_CI_OK")
+PY
 ```
 
-→ prints the first recipe lines without executing them (proves the target
-resolves and all prerequisites exist).
+→ `CHECK_MIRRORS_CI_OK`. Prove it can fail: temporarily delete `coverage-fe`
+from the `check:` prerequisite list, re-run, confirm the assertion fires naming
+`coverage-fe`, then restore.
+
+Finally run the thing:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make check 2>&1 | tail -3
@@ -1088,16 +1449,19 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make check 2>&1 | tail -3
 
 **Expected outcome on this machine: `make check` FAILS, and that is correct.**
 It stops at the `test-py` gate, because `make test-py` exits 1 with the 3
-environmental `pyexpat` failures described in "Current state". Takes ~5 minutes
+environmental `pyexpat` failures described in "Current state". Takes ~7 minutes
 to reach that point. What you must confirm is:
 
-1. `lint`, `typecheck`, `check-test-collection` and `test-preflight` all pass
-   *before* `test-py` runs (they are ordered first, so you will see their
-   output).
-2. The `test-py` failure list is **exactly** the three
+1. `lint`, `typecheck`, `typecheck-pipeline`, `check-vitest-collection`,
+   `check-native`, `test-preflight` and `build-fe` all pass *before* `test-py`
+   runs (they are ordered first, so you will see their output).
+2. The `test-py` failure list is **exactly** the three named
    `tests/test_backfill_judge_overrides_from_pdf.py` cases with
-   `ImportError: ... pyexpat`, and the summary line reads
-   `3 failed, 1141 passed, 6 skipped`.
+   `ImportError: ... pyexpat`, and passed/skipped match
+   `PY_PASSED_BEFORE` / `PY_SKIPPED_BEFORE - 1`.
+3. Re-run the remaining gates individually so none of them goes unexercised
+   just because `test-py` aborted the chain:
+   `make coverage-fe && make test-workers && make test-pipeline`.
 
 If a gate other than `test-py` fails, or `test-py` fails differently, STOP and
 report. The `make check: all gates passed.` line is only reachable on a machine
@@ -1159,6 +1523,35 @@ dependencies are known to have Python 3.14 wheels (verified locally:
 was checked on macOS/arm64, not on the manylinux wheels `ubuntu-latest` pulls.
 Making the new leg advisory for its first run means a wheel gap shows up as a
 visible ✗ instead of blocking every PR.
+
+**Operational gate — this step is not "done" when the YAML is written.** An
+advisory CI leg that nobody ever looks at is worse than no leg: it consumes
+runner minutes and reports nothing. This step therefore has a hard,
+non-negotiable follow-through, and it needs a named owner before the branch is
+handed over:
+
+1. The change cannot be evaluated from this machine — remote CI is the only
+   place it runs. **Deliver Step 9 as `pending operator observation`, not as
+   done**, and say so explicitly in your handoff.
+2. The **first remote CI run on this branch** is the acceptance evidence.
+   Whoever pushes must report, per matrix leg: job conclusion and, for the 3.14
+   leg, whether the failure (if any) is a missing manylinux wheel or a genuine
+   test failure.
+3. Then, **before merge**, exactly one of these must happen — the decision is
+   the operator's, not the executor's:
+   - 3.14 leg green → **delete the `continue-on-error:` line** so the leg is
+     blocking. This is the intended outcome.
+   - 3.14 leg red on a wheel gap → **delete the whole matrix leg**, reverting
+     `python-version` to `["3.12"]`. Do not leave a permanently-advisory job.
+   - 3.14 leg red on a real test failure → that is a finding, not a CI problem;
+     stop and report it.
+4. Rollback for the whole step is a single revert of the `test-python` job
+   header back to the un-matrixed `python-version: "3.12"` form. The `cache:
+   pip` addition is independent and can stay.
+
+Do not claim this step is complete on the strength of `actionlint` and a YAML
+parse. Those prove the file is well-formed; they prove nothing about whether
+the 3.14 leg installs.
 
 **9b.** In the `test-worker` job, replace:
 
@@ -1224,11 +1617,12 @@ contains (plan 001 rewrote it, so read the live line first rather than
 replacing it wholesale). Add these seven names:
 
 ```
-test-pipeline test-integration test-preflight check check-test-collection install install-e2e
+test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
 ```
 
 (`install` was already missing from `.PHONY` before this plan; adding it is
-correct and harmless.)
+correct and harmless. `build-fe` in particular **must** be here — a file named
+`build-fe` will never exist, but `.PHONY` is what documents that.)
 
 **10b.** Help text. Make four **targeted** edits — do not replace the whole
 help block, because plan 001 changed three lines inside it.
@@ -1238,7 +1632,9 @@ follows it:
 
 ```make
 	@echo "  make check        Everything CI checks, in one command (start here)"
-	@echo "  make check-test-collection  Assert every test file on disk is collected"
+	@echo "  make check-vitest-collection  Assert every Vitest file on disk is collected once"
+	@echo "  make check-native Cloudflare-native reference + bundle boundary gates"
+	@echo "  make build-fe     Production bundle (build:cloudflare -> gitignored dist/)"
 	@echo ""
 ```
 
@@ -1287,23 +1683,36 @@ with:
 	@echo "  make install-e2e  Playwright + chromium, for make test-e2e"
 ```
 
-**Verify**:
+Also add, next to the `make typecheck` line:
 
-```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make help
+```make
+	@echo "  make typecheck-pipeline  tsc gate for workers/austlii-scraper"
 ```
 
-→ lists `make check`, `make check-test-collection`, `make test-workers`,
-`make test-pipeline`, `make test-preflight`, `make test-integration` and
-`make install-e2e`. Exit 0.
+**Verify**: every new target must be reachable, listed in help, **and** in
+`.PHONY`. Check all three properties in one pass rather than eyeballing
+`make help` output:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && for t in check check-test-collection test-pipeline test-preflight test-integration install install-e2e; do
-  grep -q "^\.PHONY:.*\b$t\b" Makefile || echo "MISSING FROM .PHONY: $t";
-done; echo "PHONY_CHECK_DONE"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+HELP=$(make help)
+for t in check check-vitest-collection check-native typecheck-pipeline build-fe \
+         test-workers test-pipeline test-preflight test-integration install install-e2e; do
+  grep -q "^\.PHONY:.*[[:space:]]$t\([[:space:]]\|$\)" Makefile || echo "MISSING FROM .PHONY: $t"
+  grep -q "^$t:" Makefile || echo "TARGET NOT DEFINED: $t"
+  case "$HELP" in *"make $t"*) ;; *) echo "MISSING FROM help: $t";; esac
+done
+echo "TARGET_AUDIT_DONE"
 ```
 
-→ `PHONY_CHECK_DONE` with no `MISSING FROM .PHONY` lines.
+→ `TARGET_AUDIT_DONE` with **no** `MISSING`/`NOT DEFINED` lines. Prove the
+audit can fail by temporarily removing one name from `.PHONY` and re-running;
+restore afterwards.
+
+(`check-test-collection` is intentionally absent from that list — the target was
+renamed to `check-vitest-collection` in Step 2. If any reference to the old name
+survives, `grep -rn 'check-test-collection' Makefile .github/workflows/` will
+find it; it must return nothing.)
 
 ## Test plan
 
@@ -1328,24 +1737,36 @@ page, invalid `sort_dir`, missing params, valid params) and
 
 New non-test gates introduced:
 
-- `make check-test-collection` — fails if any `*.test.*` / `*.spec.*` file on
-  disk is not collected by a Vitest config. Proven non-vacuous: it fails
-  (55/56) against the pre–Step 1 config and passes (56/56) after.
-- `make test-e2e`'s import guard — fails fast with an instruction instead of a
-  20-error traceback.
-- `make check` — the aggregate.
+- `make check-vitest-collection` — compares the **set** of Vitest test files on
+  disk against the set collected by the three configs, and names every file
+  that is missed, stale, or double-collected. Proven non-vacuous twice in
+  Step 2: it names `frontend/src/lib/__tests__/saved-searches.test.ts` when the
+  Step 1 glob is reverted, and reports a double-collection when a config is
+  deliberately widened to overlap another.
+- `make test-e2e`'s preflight guard — fails fast with an instruction instead of
+  a 20-error traceback, and checks the `pytest-playwright` **plugin** plus a
+  real Chromium launch rather than `import playwright`.
+- `make check` — the aggregate, with a machine-checked assertion (Step 8) that
+  its prerequisite list still covers every failing step in `ci.yml`.
+- `make build-fe` — the production bundle plus a stale-generated-token
+  assertion.
 
-Full verification sequence at the end:
+Full verification sequence at the end (compare every count against the values
+captured in "Baseline capture" — no absolute totals):
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-make check-test-collection      # 56/56 and 25+7/32, exit 0
-make test-fe 2>&1 | tail -3     # 56 files, 518 tests
-make test-workers 2>&1 | tail -3   # 25 files, 345 tests
-make test-pipeline 2>&1 | tail -3  # 7 files, 28 tests
-make test-py 2>&1 | tail -2     # 3 failed (environmental), 1141 passed, 6 skipped
-make test-preflight             # ALL PREFLIGHT TESTS PASSED
-make lint                       # All checks passed!
+make check-vitest-collection       # each file collected exactly once, exit 0
+make test-fe 2>&1 | tail -3        # FE_FILES_BEFORE + 1 files, FE_TESTS_BEFORE + 28 tests
+make coverage-fe 2>&1 | tail -12   # same counts, no "does not meet threshold"
+make test-workers 2>&1 | tail -3   # WK_TESTS_BEFORE, unchanged
+make test-pipeline 2>&1 | tail -3  # PIPE_TESTS_BEFORE, unchanged
+make typecheck-pipeline            # exit 0
+make build-fe                      # exit 0, no stale-token error
+make check-native 2>&1 | tail -3   # both gates exit 0
+make test-py 2>&1 | grep '^FAILED' | sort   # exactly the 3 named pyexpat cases
+make test-preflight                # ALL PREFLIGHT TESTS PASSED
+make lint                          # ruff clean + eslint 0 errors
 actionlint .github/workflows/ci.yml 2>&1 | grep -c '^\.github'   # 1
 ```
 
@@ -1354,47 +1775,86 @@ actionlint .github/workflows/ci.yml 2>&1 | grep -c '^\.github'   # 1
 Machine-checkable. ALL must hold (run from
 `/Users/d/Developer/Active Projects/IMMI-Case-`):
 
-- [ ] `cd frontend && npx vitest run 2>&1 | grep -q "Test Files  56 passed (56)"`
-- [ ] `cd frontend && npx vitest run 2>&1 | grep -q "Tests  518 passed (518)"`
-- [ ] `make check-test-collection` exits 0 and prints
-      `OK: every test file on disk is collected by a vitest config`
-- [ ] `make test-pipeline 2>&1 | grep -q "Test Files  7 passed (7)"`
-- [ ] `make -n test | grep -c austlii-scraper` returns `1`
+Every count is a **comparison against the baseline you captured**, never a
+literal copied from this file — a literal breaks the moment `plans/003` or any
+sibling plan lands, and tempts the next executor to edit the yardstick instead
+of the code.
+
+- [ ] `cd frontend && npx vitest run` reports exactly `FE_FILES_BEFORE + 1`
+      test files and `FE_TESTS_BEFORE + 28` tests, zero failures.
+- [ ] `cd frontend && npx vitest list --filesOnly | grep -Fx 'src/lib/__tests__/saved-searches.test.ts'`
+      matches — the *right* file was added, not merely one more file.
+- [ ] `cd frontend && npx vitest run src/lib/__tests__/saved-searches.test.ts -t "returns empty array for corrupted JSON"`
+      passes.
+- [ ] `make check-vitest-collection` exits 0 and prints
+      `each collected exactly once`; and with the Step 1 glob reverted it exits
+      non-zero **naming** `frontend/src/lib/__tests__/saved-searches.test.ts`.
+- [ ] `make coverage-fe` exits 0 with no `does not meet threshold` line, and
+      `grep -c '__tests__' frontend/coverage/coverage-summary.json` returns `0`.
+- [ ] Each of the four `coverage.thresholds` numbers is `>=` the value plan 001
+      committed (a ratchet never loosens) and `<=` the value measured in
+      Step 1a (or the check would fail on the first CI run).
+- [ ] `make test-pipeline` reports exactly `PIPE_TESTS_BEFORE` tests passing.
+- [ ] `make -n test | grep -c austlii-scraper` returns `1` — *and*
+      `make test-pipeline` has been run for real (the dry run alone proves only
+      that the target resolves).
 - [ ] `grep -cF 'python3 -m venv' Makefile` returns `1`
 - [ ] `grep -cF '"$(VENV_PYTHON)" -m pip install' Makefile` returns `1`
 - [ ] `grep -cF '"$(PYTHON)" -m pip install' Makefile` returns `0`
 - [ ] `grep -cF 'npm ci --ignore-scripts' Makefile` returns `1`
+- [ ] **`make install` completed successfully in a disposable worktree** and
+      `./.venv/bin/python -c "import pandas, numpy, lxml, psycopg2"` succeeded
+      there — or the step is reported as `unverified` with the blocking reason.
 - [ ] `grep -c '^addopts' pytest.ini` returns `0`
 - [ ] `make -n coverage | grep -c -- '--cov=immi_case_downloader'` returns `1`
-- [ ] `make test-py 2>&1 | tail -1` reports `3 failed`, `1141 passed`,
-      `6 skipped` — and the 3 failures are exactly the three
-      `tests/test_backfill_judge_overrides_from_pdf.py` `pyexpat` ImportErrors
+- [ ] `make test-py` reports exactly `PY_PASSED_BEFORE` passed and
+      `PY_SKIPPED_BEFORE - 1` skipped, and
+      `make test-py 2>&1 | grep '^FAILED' | sort` returns exactly the three
+      named `tests/test_backfill_judge_overrides_from_pdf.py` pyexpat cases.
 - [ ] `make test-integration 2>&1 | tail -2 | grep -q "1 skipped"`
 - [ ] `test -f requirements-e2e.txt && grep -c pytest-playwright requirements-e2e.txt`
       returns `1`
-- [ ] `make test-e2e 2>&1 | grep -q "Run 'make install-e2e' first"` (and the
-      output contains no Python traceback)
+- [ ] `make test-e2e` in this working copy prints
+      `the pytest-playwright plugin is not installed` and exits non-zero, with
+      no Python traceback.
+- [ ] **In the disposable worktree**: after `make install-e2e`,
+      `pytest tests/e2e --collect-only -q` ends in `<N> tests collected` with
+      **no** `errors`, the `browser` fixture is listed by
+      `pytest tests/e2e --fixtures`, and Chromium launches — or Step 7 is
+      reported as `unverified` with the blocking reason.
 - [ ] `make test-preflight 2>&1 | grep -q "ALL PREFLIGHT TESTS PASSED"`
-- [ ] `make -n check` exits 0 (all prerequisites resolve)
+- [ ] `make check-native` exits 0; `make typecheck-pipeline` exits 0;
+      `make build-fe` exits 0 and leaves
+      `git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts`
+      clean.
+- [ ] The Step 8 `CHECK_MIRRORS_CI_OK` assertion passes, and has been shown to
+      fail when a prerequisite is removed.
 - [ ] `.venv/bin/python -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"`
       exits 0
 - [ ] `actionlint .github/workflows/ci.yml 2>&1 | grep -c '^\.github/workflows/ci\.yml:'`
       returns `1`
-- [ ] `make help` lists `make check`, `make test-pipeline`,
-      `make test-integration`, `make test-preflight`, `make install-e2e`
-- [ ] `make lint` prints `All checks passed!`
-- [ ] `cd workers && npx vitest run 2>&1 | grep -q "Tests  345 passed"`
+- [ ] The Step 10 `TARGET_AUDIT_DONE` audit prints no `MISSING` / `NOT DEFINED`
+      lines, and `grep -rn 'check-test-collection' Makefile .github/workflows/`
+      returns nothing.
+- [ ] `make lint` exits 0 (ruff `All checks passed!` plus ESLint 0 errors).
+- [ ] `cd workers && npx vitest run` reports exactly `WK_TESTS_BEFORE` tests
+      passing.
 - [ ] Tracked-file changes are ONLY `Makefile`, `pytest.ini`,
       `frontend/vitest.config.ts`, `.github/workflows/ci.yml` — check with
-      `git status --short | grep '^ M' | grep -vE 'Makefile|pytest\.ini|frontend/vitest\.config\.ts|\.github/workflows/ci\.yml|\.claude/STATE\.md'`
-      which must print nothing. (`plans/` and `requirements-e2e.txt` are new
-      untracked files, so they do not appear in `^ M` output. `.claude/STATE.md`
-      was already modified at `42826a3` — that is pre-existing and not yours;
-      leave it alone.)
+      `git status --short | grep '^ M' | grep -vE 'Makefile|pytest\.ini|frontend/vitest\.config\.ts|\.github/workflows/ci\.yml'`
+      which must print nothing, **after excluding whatever the drift check
+      recorded as already dirty**. (`plans/` and `requirements-e2e.txt` are new
+      untracked files, so they do not appear in `^ M` output.)
 - [ ] `git status --short -- immi_case_downloader/static/react/` prints
-      nothing. If it does not, you ran a build; that directory is **tracked**.
-      Restore it with `git checkout -- immi_case_downloader/static/react/`
-      followed by `git clean -f -- immi_case_downloader/static/react/`.
+      nothing. If it does not, you ran `npm run build` rather than
+      `build:cloudflare`; that directory is **tracked**. Restore **only that
+      path**, and only if you are certain you caused it:
+      `git checkout -- immi_case_downloader/static/react/` then
+      `git clean -f -- immi_case_downloader/static/react/`. Never run an
+      unscoped `git checkout --` / `git clean -f`; the operator may have work in
+      the tree.
+- [ ] Step 9 is reported as **`pending operator observation`**, not done, with
+      the three-way decision (promote / drop the leg / investigate) handed over.
 - [ ] `plans/README.md` status row for 002 updated (create the row if the file
       exists; if `plans/README.md` does not exist, skip this and say so in your
       handoff)
@@ -1403,65 +1863,90 @@ Machine-checkable. ALL must hold (run from
 
 Stop and report back (do not improvise) if:
 
-- **Any of the 28 newly collected saved-search tests fails after Step 1.** They
-  were measured green (28/28, 518 total) on 2026-08-27. A failure means
+- **Any of the 28 newly collected saved-search tests fails after Step 1.** All
+  28 were measured green on 2026-08-27. A failure means
   `frontend/src/lib/saved-searches.ts` or the shared setup file changed. Do not
   "fix" the test to make it pass and do not delete either `localStorage` mock —
   report the failure text.
-- **`make check-test-collection` reports a mismatch on the worker side**
-  (`25 + 7 collected / 32 on disk` is the expected line). A worker mismatch
-  means a new worker test file landed somewhere neither config reaches, and
-  `workers/vitest.config.js` is explicitly out of scope for this plan.
-- **`make test-py` reports anything other than `3 failed, 1141 passed,
-  6 skipped`** after Step 6, or the 3 failures are not the three
-  `tests/test_backfill_judge_overrides_from_pdf.py` `pyexpat` ImportErrors.
+- **`make check-vitest-collection` names any file under `workers/`** as missed,
+  stale or double-collected. A worker mismatch means a new worker test file
+  landed somewhere neither config reaches, and `workers/vitest.config.js` is
+  explicitly out of scope for this plan.
+- **`make test-py` reports anything other than `PY_PASSED_BEFORE` passed and
+  `PY_SKIPPED_BEFORE - 1` skipped** after Step 6, or the failing tests are not
+  exactly the three named `tests/test_backfill_judge_overrides_from_pdf.py`
+  pyexpat ImportErrors.
 - **A step's verification fails twice** after a reasonable fix attempt.
 - **`actionlint` reports more than one finding** on `.github/workflows/ci.yml`,
   or reports a finding that is not the pre-existing `SC2035` on the
   `ruff check ... *.py` line.
 - **The fix appears to require touching an out-of-scope file** — especially
-  `Makefile`'s `lint:` / `typecheck:` recipes, `frontend/vitest.config.ts`'s
-  `coverage:` block, the `test-frontend` CI job, `requirements-test.txt`, or
-  anything under `tests/`. Those belong to plans 001 and 003.
+  `Makefile`'s `lint:` / `typecheck:` recipes, the `test-frontend` CI job,
+  `requirements-test.txt`, or anything under `tests/`. Those belong to plans 001
+  and 003. (`frontend/vitest.config.ts`'s `coverage.thresholds` numbers are the
+  one deliberate exception — Step 1a. Every other key in that block is still
+  001's.)
 - **You conclude `tests/integration/` should be deleted.** It targets the
   retired Supabase/RLS stack, so the conclusion is defensible — but deleting a
   suite that encodes auth acceptance criteria (AC5/AC8/AC9/AC10) is an operator
   decision. Report the recommendation; do not act on it.
 - **`make check` fails at a gate other than `test-py`.** On this machine the
   only expected failure inside `make check` is the 3-failure environmental
-  `test-py` result. A failure in `lint`, `typecheck`, `check-test-collection`,
-  `test-preflight`, `test-fe`, `test-workers` or `test-pipeline` is real.
-- **`cd frontend && npx vitest run --coverage` exits non-zero after Step 1 when
-  it exited 0 before.** Plan 001 pins coverage thresholds to numbers it measured
-  *before* the include glob was widened. Widening it should raise measured
-  coverage (a file that was counted as uncovered source now executes), but if
-  it does not, plan 001's ratchet needs re-measuring — that is 001's territory,
-  not yours. Report it.
-- **You are tempted to run `make install` or `make install-e2e`.** Don't. `pip`
-  is broken in this repo's `.venv`; a failure there tells you nothing about
-  your change. If you believe a live install is genuinely required, stop and ask
-  the operator.
+  `test-py` result. A failure in `lint`, `typecheck`, `typecheck-pipeline`,
+  `check-vitest-collection`, `check-native`, `test-preflight`, `build-fe`,
+  `coverage-fe`, `test-workers` or `test-pipeline` is real.
+- **The Step 8 `CHECK_MIRRORS_CI_OK` assertion fails**, meaning `make check` no
+  longer covers a step that `ci.yml` runs. Add the missing target rather than
+  relaxing the assertion.
+- **A measured coverage metric goes *down* after Step 1.** Widening the include
+  glob makes `src/lib/saved-searches.ts` execute for the first time, so coverage
+  should rise or hold. A drop means the new test file is being counted as source
+  (check `coverage.exclude` still contains `**/__tests__/**`) or that something
+  else changed. Report it; do not lower the threshold to compensate.
+- **You are tempted to run `make install` or `make install-e2e` in this working
+  copy.** Don't — `pip` is broken in this repo's `.venv` and a failure there
+  tells you nothing about your change. Run them in the disposable worktree
+  described in Steps 4 and 7 instead. If even that is impossible, report the
+  step `unverified`; do not silently downgrade the evidence to `make -n`.
 
 ## Maintenance notes
 
 For the human or agent who owns this after the change lands:
 
-- **What a reviewer should scrutinise**: (1) that `make check`'s prerequisite
-  list still matches the CI job set in `.github/workflows/ci.yml` — they drift
-  independently and nothing enforces the correspondence; (2) that
-  `check-test-collection`'s `find` exclusions (`node_modules`, `e2e`, `dist`)
-  still describe reality if a new top-level test directory appears; (3) that the
-  `continue-on-error` line on the Python 3.14 CI leg has an owner.
+- **What a reviewer should scrutinise**: (1) that the Step 8
+  `CHECK_MIRRORS_CI_OK` assertion is present and that its `need` map still
+  lists every failing step in `ci.yml` — the assertion catches a missing
+  *target*, but the map itself is hand-maintained and is the remaining weak
+  link; (2) that `check-vitest-collection`'s `find` exclusions (`node_modules`,
+  `frontend/e2e`, `dist`) still describe reality if a new top-level test
+  directory appears; (3) that the `continue-on-error` line on the Python 3.14
+  CI leg has been resolved one way or the other before merge.
 - **Promote the 3.14 CI leg to blocking** after its first green run: delete the
   `continue-on-error:` line in the `test-python` job. If it is red because of a
   missing manylinux wheel, drop the leg entirely rather than leaving a
-  permanently-advisory job that nobody reads.
-- **Docs are now stale and were deliberately left alone** (out of territory):
-  `README.md:118` still documents a venv-less `pip install` and omits both the
-  root `npm install` and `workers/austlii-scraper`; `README.md:182` still says
-  the frontend suite is "490 個 — 55 files" when it is now 518 / 56;
-  `CLAUDE.md`'s test-count paragraph carries the same 490/55 figures. A docs
-  plan should reconcile all of these against `make help` in one pass.
+  permanently-advisory job that nobody reads. This is a **merge blocker**, not
+  a nice-to-have — see the operational gate in Step 9.
+- **Docs go stale the moment this lands, and the fix has named owners.** Do not
+  leave this as a floating note:
+  - `plans/043-correct-the-readme.md` owns `README.md`. Hand it:
+    `README.md:118` documents a venv-less `pip install` and omits both the root
+    `npm install` and `workers/austlii-scraper`; `README.md:182` states the
+    frontend suite as "490 個 — 55 files", which this plan changes by +28 tests
+    / +1 file; and `make help` now lists targets the README does not mention.
+  - `plans/042-rewrite-the-agent-facing-docs.md` owns `CLAUDE.md` / `AGENTS.md`,
+    which carry the same 490/55 figures and the old `make lint` /
+    `make typecheck` descriptions.
+  Both are documentation-only plans and must run **after** 001→002→003, because
+  the numbers and command names they reconcile are set by that chain. Say so in
+  your handoff; do not edit either file from this plan.
+- **A green `make check` is not a clean dependency audit.** This plan makes one
+  command mean "CI will pass". It does not mean "the dependencies are safe":
+  `frontend/package-lock.json` still carries npm advisories (17 at the time
+  `plans/035` was written, 2 of them critical; 8 reachable from production
+  dependencies), and neither CI nor `make check` looks at them. The owner is
+  **`plans/035-fix-frontend-dependency-advisories.md`**. Do not add an
+  unreviewed `npm audit fix` here, and do not let "make check is green" be read
+  as an all-clear on advisories.
 - **`pytest-xdist` / `-n auto` was deliberately NOT added**, despite being part
   of one of the findings that motivated this plan. Measured: the Python suite is
   I/O-bound, not CPU-bound (243s with coverage vs 259s without — the difference
@@ -1471,15 +1956,16 @@ For the human or agent who owns this after the change lands:
   `immi_case_downloader/cases_pagination.py`) that would have to be audited for
   cross-worker isolation first. Introducing flaky parallel failures would cost
   more than the minutes saved. Revisit only with an isolation audit attached.
-- **Coverage excludes were not updated.** `frontend/vitest.config.ts`'s
-  `coverage.exclude` lists `"./__tests__/"` but not `src/**/__tests__/**`, so
-  the newly collected file is not excluded from coverage's source set. That
-  block belongs to plan 001; whoever owns the coverage ratchet should decide
-  whether to add `"**/__tests__/**"` there.
-- **`make build` is still not in any aggregate gate**, by design — it rewrites
-  the tracked `immi_case_downloader/static/react/` tree. If a build gate is ever
-  wanted, build to a throwaway `--outDir` instead of adding `make build` to
-  `make check`.
+- **Coverage excludes are handled, not deferred.** An earlier draft left this
+  open. Plan 001 now sets `coverage.include: ["src/**/*.{ts,tsx}"]` and an
+  `exclude` list containing `**/__tests__/**`, so the file this plan newly
+  collects is not counted as source; Step 1a re-measures the thresholds on that
+  universe. Whoever changes either list must re-run the Step 1a measurement.
+- **`make build` (the `npm run build` form) is still not in any aggregate
+  gate**, by design — it rewrites the tracked
+  `immi_case_downloader/static/react/` tree. The gate added to `make check` is
+  `build-fe`, which runs `build:cloudflare` into the gitignored
+  `frontend/dist/`. Keep the two distinct.
 - **Two npm ecosystems, three Vitest majors.** Root is `vitest ^2.0.0`,
   `frontend` is `^4.0.18`, `workers/austlii-scraper` is `^4.1.8`. Nothing here
   needs them aligned, but a future Vitest workspace consolidation does — see
@@ -1506,8 +1992,9 @@ For the human or agent who owns this after the change lands:
   after the first `defineProperty` the descriptor is
   `configurable=true, writable=false`, and the second `defineProperty` succeeds
   and simply wins. Then verified end to end: with the widened glob all 28 tests
-  pass and the suite totals 56 files / 518 tests. No step is needed, and the
-  plan explicitly warns the executor not to pre-emptively delete either mock.
+  pass and the suite gains exactly one file and 28 tests (56 / 518 at
+  `42826a3`). No step is needed, and the plan explicitly warns the executor not
+  to pre-emptively delete either mock.
 
 - **"Make `workers/vitest.config.js` a Vitest workspace covering both worker
   projects" — rejected in favour of a second Make target.** The workspace form
@@ -1517,7 +2004,7 @@ For the human or agent who owns this after the change lands:
   version for both, which means a Vitest 2→4 migration of the 25-file / 345-test
   main Worker suite as a side effect of a DX fix. `make test-pipeline` gets the
   same coverage in three lines with zero migration risk, and
-  `make check-test-collection` independently guards the outcome the workspace
+  `make check-vitest-collection` independently guards the outcome the workspace
   was meant to guarantee. `workers/vitest.config.js` is therefore listed as
   out of scope.
 

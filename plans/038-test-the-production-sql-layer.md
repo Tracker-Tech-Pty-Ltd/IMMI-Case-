@@ -7,22 +7,36 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index, or the file does not exist (in which case skip it).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands, because a committed-only
+> diff cannot see a dirty working tree:
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   workers/__tests__ workers/vitest.config.js \
+> IN_SCOPE="workers/__tests__ workers/vitest.config.js \
 >   workers/storage/cloudflare.js workers/cloudflare-native.js \
 >   workers/llm-council/cloudflare_handlers.js \
->   migrations/d1 config/cloudflare-native-route-manifest.json
+>   workers/case-api workers/admin workers/auth \
+>   migrations/d1 config/cloudflare-native-route-manifest.json"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE          # committed since planning
+> git diff --stat -- $IN_SCOPE                         # unstaged
+> git diff --cached --stat -- $IN_SCOPE                # staged
 > ```
 >
-> **Expected**: empty output. Every excerpt in "Current state" was read at
-> `42826a3`. If any of those files is listed, re-read the cited lines and
-> compare them against the excerpts below **before** writing any code — a
-> mismatch is a STOP condition, because this plan's whole value is that the
-> tests encode the *real* schema and the *real* SQL.
+> **Expected**: the last three commands print nothing, and `git status` shows a
+> clean tree on your own branch. Every excerpt in "Current state" was read at
+> `42826a3`. If any in-scope file appears in **any** of the three diffs, that is
+> a STOP condition: re-read the cited lines and compare them against the
+> excerpts below before writing any code, because this plan's whole value is
+> that the tests encode the *real* schema and the *real* SQL.
+>
+> **Never** run `git checkout --` or `git clean -f` to "clear" drift. Those
+> destroy work that belongs to the operator or to a parallel plan. Report and
+> stop instead.
+>
+> **Parallel execution**: if another plan is running at the same time, run this
+> one in its own `git worktree` / clone. Several plans in this series assert on
+> `git status --porcelain`, so a shared checkout must be serialised.
 
 ## Status
 
@@ -51,8 +65,9 @@ the other twelve worker test files `vi.mock("../storage/cloudflare.js")`
 wholesale. The four migration files under `migrations/d1/` are bound to nothing:
 `grep -rn "migrations/d1" workers/ tests/ scripts/` matches only two
 `wrangler.toml` lines. Consequence: rename a column, drop an index, or ship an
-unapplied migration and you get a fully green 345-test worker suite plus a
-runtime 500 in production.
+unapplied migration and you get a fully green worker suite (345 tests at
+`42826a3`, though the total moves as sibling plans land) plus a runtime 500 in
+production.
 
 The same hole exists at the security boundary. `assertMembership()` is the
 *only* thing standing between tenants — there is no Postgres and therefore no
@@ -311,13 +326,13 @@ Run everything from the repo root: `cd "/Users/d/Developer/Active Projects/IMMI-
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Confirm Node has `node:sqlite` | `node -e "const s=require('node:sqlite'); if(!s.DatabaseSync) process.exit(1); console.log('ok')"` | prints `ok`, exit 0 |
-| Worker suite (baseline) | `make test-workers` | `Test Files 25 passed (25)` / `Tests 345 passed (345)` before your changes |
-| Worker suite (as CI runs it) | `npm run test:workers` | same counts |
+| Worker suite (baseline) | `make test-workers` | exit 0; **record the file and test counts as `BEFORE_FILES` / `BEFORE_TESTS`** (see Step 1) |
+| Worker suite (as CI runs it) | `npm run test:workers` | exit 0; same counts as `make test-workers` |
 | One worker test file | `cd workers && npx vitest run __tests__/d1-schema-contract.test.js` | file passes |
 | Native bundle closure gate | `node scripts/check_cloudflare_native_bundle.mjs` | `Cloudflare-native bundle closure passed (...)`, exit 0 |
 | Native reference gate | `python3 scripts/check_native_effective_references.py --json` | `{"bundle_ok": true, ..., "ok": true, ...}`, exit 0 |
 | Python route-manifest test (unchanged) | `.venv/bin/pytest tests/test_cloudflare_route_manifest.py -q` | `4 passed` |
-| Files changed | `git status --porcelain` | only the four new files in "Scope" |
+| Files changed | `git status --porcelain` | only the five new files in "Scope" |
 
 Note: `make test-workers` runs `cd workers && npx vitest run`; `npm run test:workers`
 runs `vitest run --config workers/vitest.config.js` from the root. Both collect the
@@ -335,6 +350,7 @@ to silence it.
 - `workers/__tests__/d1-schema-contract.test.js` (create)
 - `workers/__tests__/route-manifest-coverage.test.js` (create)
 - `workers/__tests__/entry-fallthrough.test.js` (create)
+- `workers/__tests__/route-tenant-matrix.test.js` (create — Step 5b)
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -379,16 +395,30 @@ Run, in order:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 node -e "const s=require('node:sqlite'); if(!s.DatabaseSync) process.exit(1); console.log('ok')"
-make test-workers 2>&1 | tail -5
+
+# Record the baseline as a DELTA anchor. Do NOT hardcode absolute totals into
+# any later check: a sibling plan landing in the same window changes them, and
+# an absolute total then trains you to edit the yardstick instead of the code.
+set -o pipefail
+make test-workers 2>&1 | tee /tmp/immi-038-baseline.txt | tail -5
+echo "make test-workers exit=$?"
+BEFORE_FILES=$(grep -oE 'Test Files +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-038-baseline.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+BEFORE_TESTS=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-038-baseline.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "BEFORE_FILES=$BEFORE_FILES BEFORE_TESTS=$BEFORE_TESTS"
 ```
 
-If the first command does not print `ok`, your Node is older than 22.13 —
+Write `BEFORE_FILES` and `BEFORE_TESTS` into your handoff notes now — every
+later check in this plan is expressed against them. (For reference only: at
+`42826a3` on the planning machine they were `25` and `345`. If yours differ,
+that is fine and expected once a sibling plan has landed; use *your* numbers.)
+
+If the `node -e` command does not print `ok`, your Node is older than 22.13 —
 **STOP and report**; do not install `better-sqlite3` or any other dependency as
 a workaround (this repo's root `package.json` has exactly two devDependencies
 and adding a native module is out of scope).
 
-**Verify**: `node -e ...` → prints `ok`; `make test-workers` →
-`Test Files  25 passed (25)` and `Tests  345 passed (345)`.
+**Verify**: `node -e ...` → prints `ok`; `make test-workers` → `exit=0` and both
+`BEFORE_FILES` and `BEFORE_TESTS` are non-empty integers.
 
 ### Step 2: Add the node:sqlite-backed D1 shim
 
@@ -408,8 +438,9 @@ vitest will not try to collect it.
  *
  * Not for production use — no Worker source may import this file.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Vite cannot resolve the `node:sqlite` builtin (it postdates the bundler's
@@ -417,14 +448,30 @@ import { fileURLToPath } from "node:url";
 // Requires Node >= 22.13; an older runtime fails loudly here by design.
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite");
 
-const MIGRATIONS = Object.freeze({
-  catalog: ["catalog/0001_catalog.sql"],
-  account: ["account/0001_account.sql"],
-  ops: ["ops/0001_ops.sql", "ops/0002_pipeline_control.sql"],
-});
+// The migrations root is overridable so a mutation drill can point the shim at
+// a THROWAWAY COPY of migrations/d1 instead of editing the real files. Nothing
+// in normal use sets it.
+const MIGRATIONS_ROOT =
+  process.env.IMMI_TEST_D1_MIGRATIONS_DIR ||
+  fileURLToPath(new URL("../../../migrations/d1/", import.meta.url));
 
-function migrationPath(relative) {
-  return fileURLToPath(new URL(`../../../migrations/d1/${relative}`, import.meta.url));
+export const DATABASES = Object.freeze(["catalog", "account", "ops"]);
+
+/**
+ * Every `*.sql` in the database's directory, in filename order.
+ *
+ * Discovered from disk rather than hardcoded, on purpose: a hardcoded list
+ * silently ignores a newly added migration, and if no test happens to query
+ * the new tables the whole suite stays green against a stale schema. Reading
+ * the directory means a new migration enters the tests the moment it is
+ * committed. Wrangler orders migrations by the `NNNN_` filename prefix, so a
+ * plain lexicographic sort matches how they are applied in production.
+ */
+export function migrationFiles(database) {
+  const dir = join(MIGRATIONS_ROOT, database);
+  const files = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort();
+  if (files.length === 0) throw new Error(`No migrations found for '${database}' in ${dir}`);
+  return files.map((name) => join(dir, name));
 }
 
 function isReadStatement(sql) {
@@ -463,10 +510,9 @@ class SqliteD1Statement {
 
 /** Build one migrated in-memory D1 binding: "catalog" | "account" | "ops". */
 export function createSqliteD1(database) {
-  const files = MIGRATIONS[database];
-  if (!files) throw new Error(`Unknown D1 database '${database}'`);
+  if (!DATABASES.includes(database)) throw new Error(`Unknown D1 database '${database}'`);
   const db = new DatabaseSync(":memory:");
-  for (const file of files) db.exec(readFileSync(migrationPath(file), "utf8"));
+  for (const file of migrationFiles(database)) db.exec(readFileSync(file, "utf8"));
   return {
     /** Test-only escape hatch for seeding fixture rows directly. */
     exec(sql) { db.exec(sql); },
@@ -489,8 +535,14 @@ export function createSqliteD1(database) {
 }
 ```
 
-Three details that matter and must not be "simplified":
+Four details that matter and must not be "simplified":
 
+- **Migrations are discovered from disk, never hardcoded.** A frozen
+  `MIGRATIONS = { catalog: ["catalog/0001_catalog.sql"], ... }` map looks tidier
+  and is wrong: adding `0002_*.sql` and forgetting to append it leaves the shim
+  applying a stale schema, and unless a test happens to query the new tables the
+  suite stays fully green. `readdirSync(...).sort()` makes a new migration enter
+  the tests the moment it lands.
 - `bind()` returns a **new** statement, matching real D1. The old fake mutates
   and returns `this`.
 - `first()` maps `undefined` → `null`; `workers/storage/cloudflare.js:1307`
@@ -505,17 +557,36 @@ Three details that matter and must not be "simplified":
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 node --input-type=module -e "
-const { createSqliteD1 } = await import('./workers/__tests__/helpers/d1-sqlite.js');
-for (const name of ['catalog','account','ops']) {
-  const db = createSqliteD1(name);
+const m = await import('./workers/__tests__/helpers/d1-sqlite.js');
+for (const name of m.DATABASES) {
+  // Prove the shim loads EVERY .sql on disk for this database, by identity —
+  // not by counting. A count check passes while silently loading the wrong set.
+  const loaded = m.migrationFiles(name).map((p) => p.split('/').pop());
+  const db = m.createSqliteD1(name);
   const n = (await db.prepare(\"SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table'\").first()).n;
-  console.log(name, n);
+  console.log(name, JSON.stringify(loaded), 'tables=' + n);
 }"
+
+# Independent ground truth for the same question:
+for d in catalog account ops; do printf '%s ' "$d"; ls migrations/d1/$d | sort | tr '\n' ' '; echo; done
 ```
 
-→ prints `catalog 30`, `account 10`, `ops 10` (plus one `ExperimentalWarning`).
-`make test-workers` still reports `Tests  345 passed (345)` — the helper is not
-collected.
+→ the two outputs must name **the same files in the same order** for each
+database. On the planning machine the first command printed
+`catalog ["0001_catalog.sql"] tables=30`, `account ["0001_account.sql"] tables=10`,
+`ops ["0001_ops.sql","0002_pipeline_control.sql"] tables=10` (plus one
+`ExperimentalWarning`); your table counts may differ if a migration landed since.
+The load-bearing assertion is the **file-set identity**, not the table count.
+
+Then confirm the helper is not collected as a suite:
+
+```bash
+set -o pipefail
+make test-workers 2>&1 | tail -3; echo "exit=$?"
+```
+
+→ `exit=0`, and the reported test count is still exactly `BEFORE_TESTS` from
+Step 1 (the helper does not end in `.test.js`, so vitest ignores it).
 
 ### Step 3: Test the real read path and the tenant boundary against the real schema
 
@@ -894,51 +965,268 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __t
 
 → `Test Files  1 passed (1)` / `Tests  5 passed (5)`.
 
-### Step 6: Run the drift drill, then the full gate
+### Step 5b: Prove one tenant-scoped route enforces membership end to end
 
-First prove the new tests actually bite. Break the schema on purpose, confirm a
-loud failure, then restore:
+Steps 3–5 test `assertMembership()` as a **method**. They do not prove that any
+route actually calls it — a handler could skip it entirely and the suite would
+still be green. This step closes the smallest honest version of that gap: a
+four-cell deny matrix (**absent / revoked / wrong-tenant / wrong-role**) driven
+through the real entrypoint against a real route.
 
-```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-cp migrations/d1/account/0001_account.sql /tmp/immi-acc.bak
-python3 - <<'PY'
-p = "migrations/d1/account/0001_account.sql"
-s = open(p).read()
-open(p, "w").write(s.replace("  revoked_at TEXT,\n", "", 1))
-PY
-(cd workers && npx vitest run __tests__/d1-schema-contract.test.js) 2>&1 | tail -4
-cp /tmp/immi-acc.bak migrations/d1/account/0001_account.sql
-git diff --stat -- migrations/d1
+`GET /api/v1/admin/pipeline-runs` is the right route to use, because it is the
+only manifest route that exercises all four cells with no CSRF token and no
+request body. Read `workers/admin/cloudflare_handlers.js:14-24` before writing
+this — the branch order there is exactly what you are asserting:
+
+```js
+export async function handleAdminPipelineRuns(request, env, url) {
+  if (env.AUTH_ENABLED === "false") return json({ error: "Admin auth is disabled", code: "admin_auth_disabled" }, 403);
+  const auth = await requireAuth(request, env, verifyJwt);
+  if (auth instanceof Response) return auth;
+  try {
+    const stores = createCloudflareStores(env);
+    const membership = await stores.identityStore.assertMembership(auth.claims);
+    if (!isAdmin({ role: membership.role })) return json({ error: "Admin access required", code: "admin_required" }, 403);
 ```
 
-Expected: the vitest run reports `Tests  4 failed | 3 passed (7)` — all four
-tests in the "tenant isolation against the shipped account schema" block fail
-with `no such column: revoked_at`, while the three catalog tests still pass
-because only the account migration was broken. `git diff --stat -- migrations/d1`
-must print **nothing** after the restore. If the drill run passes all 7, the
-tests are not touching the schema — **STOP and report**.
+and it is dispatched from `workers/cloudflare-native.js:223-225`.
 
-Then the real gate:
+Create `workers/__tests__/route-tenant-matrix.test.js`:
 
-```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-make test-workers 2>&1 | tail -4
-npm run test:workers 2>&1 | tail -4
-node scripts/check_cloudflare_native_bundle.mjs
-python3 scripts/check_native_effective_references.py --json
-.venv/bin/pytest tests/test_cloudflare_route_manifest.py -q
-git status --porcelain
+```js
+/**
+ * Route-level tenant enforcement.
+ *
+ * d1-schema-contract.test.js proves assertMembership() denies correctly.
+ * This file proves a REAL ROUTE reaches it: the request goes through
+ * workers/cloudflare-native.js with a genuinely signed JWT, and the four deny
+ * cells are asserted by response code, not by inspecting the handler.
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { signJwt } from "../auth/jwt.js";
+import { VECTOR_DIMENSIONS } from "../storage/contracts.js";
+import { createSqliteD1 } from "./helpers/d1-sqlite.js";
+
+vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
+
+const worker = (await import("../cloudflare-native.js")).default;
+
+const USER_ID = "11111111-2222-4333-8444-555555555555";
+const TENANT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const OTHER_TENANT_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+const ADMIN_PATH = "/api/v1/admin/pipeline-runs";
+const ctx = { waitUntil() {}, passThroughOnException() {} };
+
+let env;
+
+function baseEnv() {
+  return {
+    IMMI_STORAGE_MODE: "cloudflare",
+    AUTH_ENABLED: "true",
+    JWT_SECRET_CURRENT: "test-secret-not-a-real-credential",
+    JWT_KID_CURRENT: "test-kid",
+    IMMI_CATALOG_DB: createSqliteD1("catalog"),
+    IMMI_ACCOUNT_DB: createSqliteD1("account"),
+    IMMI_OPS_DB: createSqliteD1("ops"),
+    IMMI_CONTENT: { put: vi.fn(), get: vi.fn(async () => null), head: vi.fn(async () => null), delete: vi.fn() },
+    CASE_VECTORS: {
+      queryById: vi.fn(async () => ({ matches: [] })), query: vi.fn(async () => ({ matches: [] })),
+      upsert: vi.fn(), deleteByIds: vi.fn(),
+    },
+    AI: { run: vi.fn(async () => ({ data: [Array(VECTOR_DIMENSIONS).fill(0)] })) },
+    ASSETS: { fetch: vi.fn(async () => new Response("spa", { status: 200 })) },
+  };
+}
+
+function seedTenancy() {
+  const now = "2026-08-27T00:00:00.000Z";
+  env.IMMI_ACCOUNT_DB.exec(`
+    INSERT INTO tenants (tenant_id,kind,name,created_at,updated_at)
+    VALUES ('${TENANT_ID}','individual','Workspace','${now}','${now}'),
+           ('${OTHER_TENANT_ID}','organisation','Other','${now}','${now}');
+    INSERT INTO users (user_id,telegram_id,created_at,updated_at)
+    VALUES ('${USER_ID}','42','${now}','${now}');
+  `);
+  return now;
+}
+
+function grant(role, tenantId = TENANT_ID, revokedAt = null) {
+  const now = "2026-08-27T00:00:00.000Z";
+  env.IMMI_ACCOUNT_DB.exec(
+    `INSERT INTO memberships (tenant_id,user_id,role,created_at,revoked_at) VALUES ` +
+    `('${tenantId}','${USER_ID}','${role}','${now}',${revokedAt ? `'${revokedAt}'` : "NULL"})`,
+  );
+}
+
+async function callAdmin(tenantId = TENANT_ID) {
+  const token = await signJwt(
+    { sub: USER_ID, tenant_id: tenantId, tenants: [tenantId], exp: Math.floor(Date.now() / 1000) + 300 },
+    env,
+  );
+  const response = await worker.fetch(
+    new Request(`https://immi.example${ADMIN_PATH}`, { headers: { Authorization: `Bearer ${token}` } }),
+    env,
+    ctx,
+  );
+  return { status: response.status, body: await response.json().catch(() => null) };
+}
+
+beforeEach(() => {
+  env = baseEnv();
+  seedTenancy();
+});
+
+describe("GET /api/v1/admin/pipeline-runs enforces membership at the route", () => {
+  it("401s with no bearer token at all", async () => {
+    const response = await worker.fetch(new Request(`https://immi.example${ADMIN_PATH}`), env, ctx);
+    expect(response.status).toBe(401);
+    expect((await response.json()).code).toBe("auth_required");
+  });
+
+  it("403 tenant_membership_denied when the user has no membership row", async () => {
+    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "tenant_membership_denied" } });
+  });
+
+  it("403 tenant_membership_denied after the membership is revoked", async () => {
+    grant("owner", TENANT_ID, "2026-08-27T00:00:00.000Z");
+    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "tenant_membership_denied" } });
+  });
+
+  it("403 tenant_membership_denied for a tenant the user is not a member of", async () => {
+    grant("owner", TENANT_ID);
+    expect(await callAdmin(OTHER_TENANT_ID)).toMatchObject({
+      status: 403, body: { code: "tenant_membership_denied" },
+    });
+  });
+
+  it("403 admin_required for a live membership with an insufficient role", async () => {
+    grant("viewer");
+    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "admin_required" } });
+  });
+
+  it("serves the route for a live owner membership", async () => {
+    grant("owner");
+    const result = await callAdmin();
+    expect(result.status).toBe(200);
+    expect(result.body).not.toBeNull();
+  });
+});
+
+describe("case mutations stay fail-closed", () => {
+  it("returns case_mutations_disabled while IMMI_CASE_MUTATIONS_ENABLED is unset", async () => {
+    // wrangler.toml ships this flag as "false" by design; prove the freeze is
+    // observable rather than assumed.
+    const response = await worker.fetch(
+      new Request("https://immi.example/api/v1/cases", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      }),
+      env,
+      ctx,
+    );
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("case_mutations_disabled");
+  });
+});
 ```
 
 **Verify**:
-- `make test-workers` and `npm run test:workers` → `Test Files  28 passed (28)`,
-  `Tests  430 passed (430)` (345 baseline + 7 + 73 + 5).
-- `check_cloudflare_native_bundle.mjs` → `Cloudflare-native bundle closure passed`, exit 0.
-- `check_native_effective_references.py --json` → `"ok": true`, exit 0.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/route-tenant-matrix.test.js
+```
+
+→ `Test Files  1 passed (1)` / `Tests  7 passed (7)`.
+
+If the `403 admin_required` case instead returns `200`, or the no-membership
+case returns anything other than 403, **STOP and report** — that is a live
+cross-tenant or privilege-escalation defect, and Worker source is out of scope
+for this plan.
+
+**What this step deliberately does not do**: it covers *one* route out of the
+five modules that call `assertMembership()`
+(`workers/case-api/cloudflare_mutations.js:70`,
+`workers/case-api/cloudflare_actions.js:47`,
+`workers/pipeline/control_handlers.js:51`,
+`workers/admin/cloudflare_handlers.js:20`,
+`workers/llm-council/storage.js` ×5 and
+`workers/llm-council/cloudflare_handlers.js:79`). A full per-route matrix over
+all 72 manifest routes needs CSRF minting and per-route request bodies and is a
+follow-up — recorded in "Maintenance notes", not silently dropped.
+
+### Step 6: Run the drift drill, then the full gate
+
+First prove the new tests actually bite. **Mutate a throwaway copy of the
+migration tree — never the checked-in files.** The shim reads
+`IMMI_TEST_D1_MIGRATIONS_DIR` (Step 2) precisely so this drill cannot corrupt
+the working tree, cannot race a parallel agent that is reading
+`migrations/d1/**`, and cannot leave a broken migration behind if you Ctrl-C
+halfway through:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+DRILL="$(mktemp -d)"
+trap 'rm -rf "$DRILL"' EXIT INT TERM
+cp -R migrations/d1/. "$DRILL/"
+python3 - "$DRILL" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1]) / "account" / "0001_account.sql"
+s = p.read_text()
+assert "  revoked_at TEXT,\n" in s, "anchor not found — re-read the migration"
+p.write_text(s.replace("  revoked_at TEXT,\n", "", 1))
+PY
+
+# Capture the REAL exit status. `... | tail` would report tail's status (always
+# 0) and turn a silent pass into a "successful" drill.
+( cd workers && IMMI_TEST_D1_MIGRATIONS_DIR="$DRILL" npx vitest run __tests__/d1-schema-contract.test.js ) > /tmp/immi-038-drill.txt 2>&1
+DRILL_STATUS=$?
+tail -6 /tmp/immi-038-drill.txt
+echo "drill exit=$DRILL_STATUS"
+grep -c "no such column: revoked_at" /tmp/immi-038-drill.txt
+
+# The real tree was never touched — prove it, in the working tree, not just HEAD:
+git status --short -- migrations/d1
+git diff --stat -- migrations/d1
+git diff --cached --stat -- migrations/d1
+```
+
+Expected: `drill exit` is **non-zero**; the run reports
+`Tests  4 failed | 3 passed (7)` — all four tests in the "tenant isolation
+against the shipped account schema" block fail with `no such column:
+revoked_at`, while the three catalog tests still pass because only the account
+copy was broken; the `grep -c` prints a number **≥ 1**; and all three git
+commands print **nothing**.
+
+If the drill exits 0, the tests are not really reaching the schema and the whole
+plan is worthless as written — **STOP and report**.
+
+Then the real gate. Every command's status is captured explicitly; nothing is
+piped into `tail` and then trusted:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+set -o pipefail
+make test-workers 2>&1 | tee /tmp/immi-038-after.txt | tail -4; echo "make test-workers exit=$?"
+npm run test:workers 2>&1 | tail -4; echo "npm run test:workers exit=$?"
+node scripts/check_cloudflare_native_bundle.mjs; echo "bundle exit=$?"
+python3 scripts/check_native_effective_references.py --json; echo "refs exit=$?"
+.venv/bin/pytest tests/test_cloudflare_route_manifest.py -q; echo "manifest exit=$?"
+git status --porcelain
+
+AFTER_FILES=$(grep -oE 'Test Files +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-038-after.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+AFTER_TESTS=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-038-after.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "files: $BEFORE_FILES -> $AFTER_FILES ; tests: $BEFORE_TESTS -> $AFTER_TESTS"
+```
+
+**Verify** (all deltas against the Step 1 baseline, never absolute totals):
+- every `exit=` line prints `0`.
+- `AFTER_FILES == BEFORE_FILES + 4` and `AFTER_TESTS == BEFORE_TESTS + 92`
+  (7 schema-contract + 73 manifest + 5 fall-through + 7 tenant-matrix).
+- `npm run test:workers` reports the same counts as `make test-workers`.
+- `check_cloudflare_native_bundle.mjs` → `Cloudflare-native bundle closure passed`.
+- `check_native_effective_references.py --json` → `"ok": true`.
 - `pytest tests/test_cloudflare_route_manifest.py -q` → `4 passed`.
-- `git status --porcelain` → exactly four `??` lines, all under
-  `workers/__tests__/`.
+- `git status --porcelain` → exactly five `??` lines, all under
+  `workers/__tests__/`, and nothing else.
 
 ## Test plan
 
@@ -949,10 +1237,11 @@ New files and what they cover:
 
 | File | Tests | Covers |
 |---|---|---|
-| `workers/__tests__/helpers/d1-sqlite.js` | 0 (helper) | Applies `migrations/d1/**` to in-memory SQLite; implements prepare/bind/all/first/run/batch. |
+| `workers/__tests__/helpers/d1-sqlite.js` | 0 (helper) | Discovers and applies **every** `migrations/d1/<db>/*.sql` on disk to in-memory SQLite; implements prepare/bind/all/first/run/batch; `IMMI_TEST_D1_MIGRATIONS_DIR` redirects the root for mutation drills. |
 | `workers/__tests__/d1-schema-contract.test.js` | 7 | `listPage` (unfiltered + `court` filter + relation projection + `date` alias), `countCompat`, `exportCases`, `searchLexical` (FTS5 + bm25 + relevance ordering), `rebuildAggregates` → `getStats` / `analyticsFilterOptions` / `getFilterOptions` / `analyticsOutcomes`; `assertMembership` no-row deny, live-role propagation, post-revocation deny, cross-tenant deny. |
 | `workers/__tests__/route-manifest-coverage.test.js` | 73 | Each of the 72 manifest `implemented` routes reaches a handler rather than the fail-closed 503; plus a non-vacuous-manifest guard. |
 | `workers/__tests__/entry-fallthrough.test.js` | 5 | `AUTH_ENABLED=false` disables auth routes (503); `AUTH_ENABLED` unset keeps them live; unmatched `/api/*` → 503 and never reaches ASSETS; non-API path → `env.ASSETS.fetch`; missing ASSETS binding → 503. |
+| `workers/__tests__/route-tenant-matrix.test.js` | 7 | `GET /api/v1/admin/pipeline-runs` through the real entrypoint with a genuinely signed JWT: no token → 401; absent membership / revoked membership / wrong tenant → 403 `tenant_membership_denied`; live `viewer` → 403 `admin_required`; live `owner` → 200. Plus `POST /api/v1/cases` → 503 `case_mutations_disabled` while the write freeze is on. |
 
 Structural pattern to follow:
 `workers/__tests__/cloudflare-storage-contracts.test.js` for the store-level
@@ -962,33 +1251,50 @@ tests (`vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }))` befo
 importing the Worker).
 
 Regression guarded: the drift drill in step 6 is the standing proof that a schema
-change breaks the suite. Re-run it whenever a migration is added.
+change breaks the suite. Re-run it whenever a migration is added. Because the
+shim now discovers migrations from disk, a **new** migration enters the suite
+automatically — the previous hardcoded list would have let a new file be ignored
+while everything stayed green.
 
-Verification: `make test-workers` → `Tests  430 passed (430)`, i.e. the 345
-pre-existing tests plus 85 new ones.
+Verification: `make test-workers` exits 0 and its test count equals
+`BEFORE_TESTS + 92` from the Step 1 baseline.
 
 ## Done criteria
 
-ALL must hold:
+ALL must hold. Note there are **no absolute suite totals** here on purpose: a
+sibling plan landing in the same window moves them, and a plan that pins a total
+teaches its executor to edit the yardstick.
 
 - [ ] `node -e "const s=require('node:sqlite'); if(!s.DatabaseSync) process.exit(1); console.log('ok')"` prints `ok`
-- [ ] `make test-workers` exits 0 with `Test Files  28 passed (28)` and `Tests  430 passed (430)`
-- [ ] `npm run test:workers` exits 0 with the same counts
+- [ ] `make test-workers` exits 0, and its `Test Files` / `Tests` counts equal
+      `BEFORE_FILES + 4` / `BEFORE_TESTS + 92` recorded in Step 1
+- [ ] `npm run test:workers` exits 0 with the same counts as `make test-workers`
 - [ ] `cd workers && npx vitest run __tests__/d1-schema-contract.test.js` → `Tests  7 passed (7)`
 - [ ] `cd workers && npx vitest run __tests__/route-manifest-coverage.test.js` → `Tests  73 passed (73)`
 - [ ] `cd workers && npx vitest run __tests__/entry-fallthrough.test.js` → `Tests  5 passed (5)`
+- [ ] `cd workers && npx vitest run __tests__/route-tenant-matrix.test.js` → `Tests  7 passed (7)`
+- [ ] `cd workers && npx vitest run __tests__/route-tenant-matrix.test.js -t "403 tenant_membership_denied after the membership is revoked"` → passes
 - [ ] `node scripts/check_cloudflare_native_bundle.mjs` exits 0
 - [ ] `python3 scripts/check_native_effective_references.py --json` exits 0 and prints `"ok": true`
 - [ ] `.venv/bin/pytest tests/test_cloudflare_route_manifest.py -q` → `4 passed`
-- [ ] `grep -rln "migrations/d1" workers/__tests__/` returns `workers/__tests__/helpers/d1-sqlite.js`
-- [ ] The drift drill in step 6 produced `Tests  4 failed | 3 passed (7)` with `no such column: revoked_at`, and `git diff --stat -- migrations/d1` is empty afterwards
-- [ ] `git status --porcelain` lists exactly these four paths and nothing else:
+- [ ] The shim loads the **same file set** the filesystem holds, checked by identity
+      (not by count) with the two commands in Step 2's Verify block
+- [ ] The drift drill in step 6 exited **non-zero**, reported
+      `Tests  4 failed | 3 passed (7)` with `no such column: revoked_at`, and
+      `git status --short -- migrations/d1`, `git diff --stat -- migrations/d1`
+      and `git diff --cached --stat -- migrations/d1` were all empty afterwards
+- [ ] `git status --porcelain` lists exactly these five paths and nothing else:
       `workers/__tests__/helpers/d1-sqlite.js`,
       `workers/__tests__/d1-schema-contract.test.js`,
       `workers/__tests__/route-manifest-coverage.test.js`,
-      `workers/__tests__/entry-fallthrough.test.js`
-- [ ] `git diff --stat 42826a3..HEAD -- workers/storage workers/cloudflare-native.js migrations/d1 workers/vitest.config.js .github Makefile` is empty
-- [ ] `plans/README.md` status row updated (skip if the file does not exist)
+      `workers/__tests__/entry-fallthrough.test.js`,
+      `workers/__tests__/route-tenant-matrix.test.js`
+- [ ] All three of these print nothing:
+      `git diff --stat 42826a3..HEAD -- workers/storage workers/cloudflare-native.js workers/admin workers/case-api workers/auth migrations/d1 workers/vitest.config.js .github Makefile`,
+      the same command with `--cached` and no revision range, and the same
+      command with no revision range at all (unstaged)
+- [ ] `plans/README.md` status row updated (skip if the file does not exist; if
+      a coordinator told you they maintain the index, skip it too)
 
 ## STOP conditions
 
@@ -1006,8 +1312,14 @@ Stop and report back (do not improvise) if:
   `workers/storage/cloudflare.js` and `migrations/d1/**` have genuinely diverged
   in production — exactly the bug this plan was written to expose. Report the
   statement and the column; do not "fix" it by editing the migration.
-- The drift drill in step 6 passes all 7 tests instead of failing 4. The tests
+- The drift drill in step 6 exits 0 instead of failing 4 tests. The tests
   are not really reaching the schema and the whole plan is worthless as written.
+- The drift drill leaves anything under `migrations/d1/` modified. It operates on
+  a `mktemp -d` copy with a `trap` cleanup and must never touch the real tree; if
+  it did, another agent may already have read a corrupt migration. Report
+  immediately and do **not** `git checkout --` the tree yourself.
+- A route in `route-tenant-matrix.test.js` returns 200 where the matrix expects
+  401/403. That is a live authorization defect, not a test bug.
 - `check_cloudflare_native_bundle.mjs` or `check_native_effective_references.py`
   starts failing. Your test files should be nowhere near the Worker's bundle
   closure; if they are, a Worker source file imported the test helper.
@@ -1022,16 +1334,26 @@ Stop and report back (do not improvise) if:
 
 For whoever owns this next:
 
-- **Adding a D1 migration**: append its filename to `MIGRATIONS` in
-  `workers/__tests__/helpers/d1-sqlite.js`. If you forget, the new tables simply
-  will not exist and the schema-contract tests fail with `no such table` — which
-  is the intended alarm, not a bug in the helper.
-- **The shim is not D1.** It implements only prepare/bind/all/first/run/batch and
-  is backed by SQLite 3.51.3, not Cloudflare's fork. It does not model D1's
-  100-bound-parameter limit (`bindAll` at `workers/storage/cloudflare.js:54`
-  enforces that in production code and is covered separately), the 256 KiB row
-  guard, or per-query billing metadata beyond `meta.changes` /
+- **Adding a D1 migration**: nothing to do. `migrationFiles()` reads the
+  directory, so a new `NNNN_*.sql` is applied by the shim from the moment it is
+  committed. (This is deliberate: the first draft of this plan hardcoded the
+  filenames and claimed "if you forget, the tests fail with `no such table`" —
+  which is only true if some test happens to query the new tables. A migration
+  adding tables nothing queries would have been ignored with the suite fully
+  green.)
+- **The shim is not D1, and this plan does not close the D1 runtime gap.** It
+  implements only prepare/bind/all/first/run/batch and is backed by SQLite
+  3.51.3, not Cloudflare's fork. It does not model D1's 100-bound-parameter limit
+  (`bindAll` at `workers/storage/cloudflare.js:54` enforces that in production
+  code and is covered separately), the 256 KiB row guard, batch/transaction
+  semantics as D1 implements them, or per-query metadata beyond `meta.changes` /
   `meta.last_row_id`. Do not use it to reason about D1 limits.
+  **The missing gate**, which should be its own plan: a Wrangler/Miniflare
+  *local D1* integration suite (`wrangler d1 migrations apply --local`, then
+  drive the store methods against the real D1 implementation) covering
+  migrations, FTS5 behaviour, `batch()` atomicity, bound-parameter limits and
+  the row-size guard. Until that exists, a green suite here proves the SQL is
+  consistent with the schema — not that D1 accepts it.
 - **What a reviewer should scrutinise in the PR**: (1) that no file outside
   `workers/__tests__/` changed; (2) that `PARAM_VALUES` in
   `route-manifest-coverage.test.js` still satisfies each handler's validator —
@@ -1053,6 +1375,20 @@ For whoever owns this next:
   is now covered by `d1-schema-contract.test.js` → "denies after the membership
   is revoked". Deleting or porting that file is out of this plan's territory
   (`tests/**`); it belongs to whichever plan owns dead-code removal.
+- **The route security matrix is started, not finished.** Step 5b covers one
+  route (`GET /api/v1/admin/pipeline-runs`) across absent / revoked /
+  wrong-tenant / wrong-role. Seven other entrypoints call `assertMembership()`
+  and are still unproven at the route level:
+  `workers/case-api/cloudflare_mutations.js:70`,
+  `workers/case-api/cloudflare_actions.js:47`,
+  `workers/pipeline/control_handlers.js:51`,
+  `workers/llm-council/cloudflare_handlers.js:79` and the five call sites in
+  `workers/llm-council/storage.js`. Extending the matrix needs CSRF minting
+  (`workers/auth/csrf.js` `getCsrfToken` + the `__Host-csrf` cookie) and a body
+  per route. Also still missing: refresh-token rotation and replay tested against
+  the real `immi_refresh_sessions` schema rather than a mocked
+  `rotateRefreshSession()`. Both belong in a follow-up plan that owns
+  `workers/__tests__/`.
 - **Natural next step**: the same harness makes it cheap to cover the write path
   (`updateCaseFields`, `deleteCase`, `batchDeleteCases`, `batchAddTag`, the
   refresh-session rotation methods at

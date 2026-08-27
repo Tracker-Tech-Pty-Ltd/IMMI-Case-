@@ -7,24 +7,58 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff cannot
+> see uncommitted, staged or untracked work, so on a dirty tree it gives a false
+> all-clear:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
->   git diff --stat 42826a3..HEAD -- workers/storage/cloudflare.js workers/case-api/cloudflare.js workers/__tests__/case-api-cloudflare.test.js
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="workers/storage/cloudflare.js workers/case-api/cloudflare.js workers/__tests__/case-api-cloudflare.test.js"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P     # landed since this plan was written
+> git diff --stat -- $P                   # unstaged
+> git diff --cached --stat -- $P          # staged
 > ```
-> Expected at the time of writing: **no output** (nothing changed). If any
-> in-scope file changed since this plan was written, compare the "Current
-> state" excerpts against the live code before proceeding; on a mismatch,
-> treat it as a STOP condition.
+> **This plan runs second in its lane** (see "Integration order" below), so
+> `git diff --stat 42826a3..HEAD` is *expected* to list
+> `workers/storage/cloudflare.js` once `plans/009-*.md` has landed — that is not
+> drift. What matters is the analytics regions this plan owns. Re-read the
+> verbatim excerpts in "Current state" against the live file before editing and
+> re-derive the line numbers; on a mismatch in those regions, STOP. Anything
+> appearing in the **unstaged** or **staged** diffs is a STOP condition
+> regardless. Never run `git checkout --` or `git clean` to tidy the tree — the
+> operator may have work in progress.
 
 ## Status
 
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: `plans/009-make-the-mutation-queue-safe.md`. Not because this
+  plan needs anything 009 produces, but because 009 rewrites three methods in
+  `workers/storage/cloudflare.js` wholesale and every line number in this plan is
+  taken from `42826a3`. Landing 010 first would force 009 to re-locate its own
+  targets. Rebase on 009's HEAD, then re-derive the line numbers below.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+### Integration order
+
+```
+009  →  010 (this plan)  →  013  →  014  →  012
+```
+
+All five edit `workers/storage/cloudflare.js` and/or
+`workers/case-api/cloudflare.js`; integrate them serially in that order, each
+rebased on the previous one's HEAD. `plans/011-*.md` is independent and may run
+in parallel.
+
+**Note for whoever integrates 012 and 014 after this plan**: this plan modifies
+`workers/__tests__/case-api-cloudflare.test.js` (the store mock in Step 5).
+Plans 012 and 014 both declare that file must stay *unmodified* as their
+regression signal. That is a contradiction only if it is read as "unmodified
+since `42826a3`"; the correct reading after this plan lands is "unmodified **by
+you**, relative to the branch you started from". Make that explicit when you
+hand 012/014 to their executors.
 
 ## Why this matters
 
@@ -323,14 +357,25 @@ Run every command from the repository root
 `/Users/d/Developer/Active Projects/IMMI-Case-` unless the command itself
 changes directory.
 
+**Record your own baselines before you change anything.** Four sibling plans add
+tests to the same Worker suite, so a hard-coded suite total is wrong the moment
+one of them lands and trains you to edit the yardstick instead of the code:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+BEFORE_WORKER=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_WORKER=$BEFORE_WORKER"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+BEFORE_FE=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_FE=$BEFORE_FE"
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker test suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0; baseline at `42826a3` is `Test Files 25 passed (25)` / `Tests 345 passed (345)`; after this plan `26 passed (26)` / `350 passed (350)` |
-| One Worker test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/analytics-win-rate.test.js` | exit 0, 5 tests passed |
+| Worker test suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0, **zero failures**; final total equals `BEFORE_WORKER + 8` |
+| One Worker test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/analytics-win-rate.test.js` | exit 0, `Tests 8 passed (8)` — a per-file count, stable regardless of sibling plans |
 | Same via Makefile | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers` | identical to the first row |
-| Frontend tests (regression check only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | exit 0, 490 passed, 55 files |
+| Frontend tests (regression check only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | exit 0, zero failures, total equal to `BEFORE_FE` — this plan changes no frontend file |
 | Grep check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -rn "analyticsOutcomes\|analyticsScope" workers/ scripts/ immi_case_downloader/ tests/` | no output |
-| Changed-file check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only the four in-scope files |
+| Changed-file check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short` | only the four in-scope files, plus anything already dirty before you started (record that list first) |
 
 There is no TypeScript or lint gate over `workers/` — it is plain ESM
 JavaScript. `make typecheck` and `make lint` cover `frontend/` and Python only;
@@ -545,21 +590,38 @@ Then change the tail of `analyticsConceptScope` (lines 689–694) from the
 verbatim block quoted in "Current state" to:
 
 ```js
+    // Read one row past the cap so truncation can be DETECTED rather than
+    // guessed: `length >= LIMIT` cannot tell "exactly 10,000 rows exist" from
+    // "more than 10,000 exist and we truncated", and would report the honest
+    // full-corpus case as truncated forever. Fetching LIMIT+1 makes
+    // `length > LIMIT` an exact test; the extra row is then discarded.
     const results = rows(await bindAll(this.db, `
       SELECT s.concept_id, c.label AS concept, s.court_code, s.year, s.outcome, s.case_count AS cnt
       FROM aggregate_concept_scope s JOIN concepts c ON c.concept_id = s.concept_id
       ${where}
-      ORDER BY s.case_count DESC LIMIT ${CONCEPT_SCOPE_ROW_LIMIT}
+      ORDER BY s.case_count DESC LIMIT ${CONCEPT_SCOPE_ROW_LIMIT + 1}
     `, params).all());
-    return { rows: results, truncated: results.length >= CONCEPT_SCOPE_ROW_LIMIT };
+    const truncated = results.length > CONCEPT_SCOPE_ROW_LIMIT;
+    return { rows: truncated ? results.slice(0, CONCEPT_SCOPE_ROW_LIMIT) : results, truncated };
 ```
 
 `CONCEPT_SCOPE_ROW_LIMIT` is a module constant, never caller input, so
-interpolating it into the SQL introduces no injection surface — the pattern
-matches the existing `${where}` interpolation of internally-built clauses on the
-line above. Do **not** add a `limit` parameter.
+interpolating it (and `+ 1`) into the SQL introduces no injection surface — the
+pattern matches the existing `${where}` interpolation of internally-built clauses
+on the line above. Do **not** add a `limit` parameter.
 
-**4b — the three callers**, all in `workers/case-api/cloudflare.js`:
+Note the row cap the *callers* see is unchanged at 10,000; only the read is one
+row wider. `ORDER BY s.case_count DESC` with no tiebreaker means which rows land
+at the boundary is not deterministic, but that was already true before this
+change and is not made worse by it.
+
+**4b — all three callers surface the flag**, all in
+`workers/case-api/cloudflare.js`. A flag that only one of three affected
+endpoints reports is not a fix: `/api/v1/analytics/success-rate` and
+`/api/v1/analytics/concept-effectiveness` derive numbers from the *same* capped
+sample and would keep presenting them as complete. Adding a top-level key is
+additive JSON; the SPA ignores unknown fields, and the frontend tests confirm it
+(`BEFORE_FE` must not move).
 
 `handleAnalyticsSuccessRate` (lines 706–709) becomes:
 
@@ -573,6 +635,14 @@ line above. Do **not** add a `limit` parameter.
   const conceptRows = conceptScope.rows;
 ```
 
+and its `jsonOk({ ... })` response object gains `concepts_truncated: conceptScope.truncated`
+as a new top-level key. Do not rename or restructure anything already in that
+object; add one key. (It is named `concepts_truncated` rather than `truncated`
+here because only the *concept* half of this response is capped — the
+success-rate numbers themselves come from `analyticsRateRows`, which is not
+truncated. Saying plain `truncated: true` on this endpoint would overstate the
+problem.)
+
 `handleAnalyticsConceptEffectiveness` (lines 754–757) becomes:
 
 ```js
@@ -582,6 +652,10 @@ line above. Do **not** add a `limit` parameter.
   ]);
   const conceptRows = conceptScope.rows;
 ```
+
+and its response object likewise gains `truncated: conceptScope.truncated` —
+plain `truncated` here, because this endpoint's entire payload is derived from
+the capped concept sample.
 
 In both handlers every later use of `conceptRows` stays exactly as it is.
 
@@ -597,13 +671,21 @@ and its response (line 876) gains the flag:
   return jsonOk({ series, emerging, declining, truncated }, "public, max-age=600, stale-while-revalidate=120");
 ```
 
-Everything between those two lines is unchanged. Adding a key to the JSON is
-additive; the SPA ignores unknown fields.
+Everything between those two lines is unchanged.
 
-**Verify**:
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -n "analyticsConceptScope" workers/case-api/cloudflare.js workers/storage/cloudflare.js`
+**Verify** (a `grep` for the word `truncated` is not enough — a comment or an
+unrelated identifier matches it. Assert on the actual responses instead, which
+Step 6 does; here just confirm the wiring):
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -n "analyticsConceptScope" workers/case-api/cloudflare.js workers/storage/cloudflare.js
+```
 → four hits total: the definition in storage plus the three call sites, and each
 of the three call sites destructures or reads `.rows`.
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -c "conceptScope.truncated" workers/case-api/cloudflare.js
+```
+→ `2` (success-rate and concept-effectiveness; concept-trends destructures
+instead).
 
 ### Step 5: Update the existing store mock so the suite reflects the new API
 
@@ -649,8 +731,9 @@ is in `COURT_CODES` and `Allowed` is in `COURT_WIN`.
 
 ### Step 6: Add the regression and reconciliation tests
 
-Create `workers/__tests__/analytics-win-rate.test.js` with exactly the content
-below. It contains **5** `it(...)` blocks. The module mock uses
+Create `workers/__tests__/analytics-win-rate.test.js` with the content
+below **plus the three additional tests specified after it**, for **8**
+`it(...)` blocks in total. The module mock uses
 `importOriginal` so the real `createCloudflareCaseStore` is still available for
 the SQL-shape test (Vitest 2.1.9 is installed at the repo root and supports
 this).
@@ -779,9 +862,54 @@ describe("analytics win rate", () => {
 });
 ```
 
+Then add these three tests to the same `describe` block:
+
+6. **`reports truncation only when more rows exist than the cap`** — the guard
+   against the off-by-one that Step 4a fixes. Build the real store with
+   `createCloudflareCaseStore` and a fake catalog binding whose `all()` returns
+   a synthetic result set, and drive `analyticsConceptScope()` three times:
+   ```js
+   function conceptStore(rowCount) {
+     const results = Array.from({ length: rowCount }, (_, index) => ({
+       concept_id: `c${index}`, concept: "x", court_code: "FCA", year: 2024, outcome: "Allowed", cnt: 1,
+     }));
+     return createCloudflareCaseStore({
+       IMMI_STORAGE_MODE: "cloudflare",
+       IMMI_CATALOG_DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results }) }) }) },
+     });
+   }
+   ```
+   Assert:
+   - `(await conceptStore(9999).analyticsConceptScope())` → `truncated === false`
+     and `rows.length === 9999`;
+   - `(await conceptStore(10000).analyticsConceptScope())` → `truncated === false`
+     and `rows.length === 10000` — **this is the case the old `>=` test got
+     wrong**, and it fails against the pre-change code;
+   - `(await conceptStore(10001).analyticsConceptScope())` → `truncated === true`
+     and `rows.length === 10000` (the probe row is dropped, not returned).
+7. **`flags a truncated concept sample on concept-effectiveness`** — with
+   `stores({ conceptTruncated: true })`, `GET /api/v1/analytics/concept-effectiveness`
+   returns a body with `truncated === true`; with `conceptTruncated: false` it
+   returns `false`. Guards the endpoint the original plan left silent.
+8. **`flags a truncated concept sample on success-rate`** — same two states
+   against `/api/v1/analytics/success-rate`, asserting on
+   `body.concepts_truncated` (the deliberately-different key name; see Step 4b),
+   and additionally that `body.success_rate.overall` is unchanged between the two
+   states — the flag must not perturb the numbers.
+
 **Verify**:
 `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/analytics-win-rate.test.js`
-→ exit 0, `Tests 5 passed (5)`.
+→ exit 0, `Tests 8 passed (8)`.
+
+Prove test 6 is a real regression guard, not a tautology:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git stash push -- workers/storage/cloudflare.js
+cd workers && npx vitest run __tests__/analytics-win-rate.test.js -t "reports truncation only when more rows exist than the cap"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git stash pop
+```
+→ reports `1 failed` while stashed (the pre-change code has no
+`analyticsConceptScope` envelope at all, so it fails loudly), and passes after
+`stash pop`.
 
 Sanity check that the first test is a real regression guard: temporarily change
 `{ court_code: "AATA", year_key: 2024, outcome: "Allowed", cnt: 10 }` in
@@ -794,13 +922,13 @@ afterwards and re-run to confirm it passes again.
 **Verify (both must pass)**:
 
 1. `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run`
-   → exit 0, `Test Files 26 passed (26)`, `Tests 350 passed (350)`.
-   (Baseline at `42826a3` was 25 files / 345 tests; this plan adds one file with
-   five tests and changes no existing test count. If another branch has landed
-   more tests since, the requirement is: zero failures and the five new tests
-   present.)
+   → exit 0, **zero failures**, and the `Tests … passed` total equals
+   `BEFORE_WORKER + 8`. This plan adds one file with eight tests and changes no
+   existing test count. Do not assert an absolute number: four sibling plans add
+   tests to this same suite.
 2. `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run`
-   → exit 0, `490 passed`, 55 files — proves the SPA needed no change.
+   → exit 0, zero failures, total equal to `BEFORE_FE` — proves the SPA needed no
+   change and that the three added JSON keys broke no consumer.
 
 ## Test plan
 
@@ -828,14 +956,17 @@ that file changes.
 
 ALL must hold:
 
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with zero failures
-- [ ] `workers/__tests__/analytics-win-rate.test.js` exists and its 5 tests pass
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` exits 0, 490 passed
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with zero failures and a total equal to `BEFORE_WORKER + 8`
+- [ ] `workers/__tests__/analytics-win-rate.test.js` exists and reports `Tests 8 passed (8)` on its own
+- [ ] Each of the eight tests reports `Tests 1 passed` when run with `-t "<title>"` (none reports `0 passed` or `No test files`)
+- [ ] The Step 6 stash check showed `reports truncation only when more rows exist than the cap` **failing** against the unmodified `workers/storage/cloudflare.js`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` exits 0 with zero failures and a total equal to `BEFORE_FE`
 - [ ] `grep -rn "analyticsOutcomes\|analyticsScope" workers/ scripts/ immi_case_downloader/ tests/` returns no matches
 - [ ] `grep -c "analyticsCourtYearOutcomes" workers/storage/cloudflare.js workers/case-api/cloudflare.js` returns `1` and `2`
 - [ ] `grep -n "SELECT court_code, year AS year_key, outcome, case_count AS cnt FROM aggregate_court_year_outcome" workers/storage/cloudflare.js` returns exactly one line
-- [ ] `grep -n "truncated" workers/case-api/cloudflare.js` shows the flag in the `handleAnalyticsConceptTrends` response
-- [ ] `git status --short` lists only: `workers/storage/cloudflare.js`, `workers/case-api/cloudflare.js`, `workers/__tests__/case-api-cloudflare.test.js`, `workers/__tests__/analytics-win-rate.test.js`, and this plan's row in `plans/README.md` if that file exists
+- [ ] `grep -c "CONCEPT_SCOPE_ROW_LIMIT + 1" workers/storage/cloudflare.js` returns `1` and `grep -c "results.length >= CONCEPT_SCOPE_ROW_LIMIT" workers/storage/cloudflare.js` returns `0` (the off-by-one detector is gone)
+- [ ] `grep -c "conceptScope.truncated" workers/case-api/cloudflare.js` returns `2`
+- [ ] `git status --short` lists only: `workers/storage/cloudflare.js`, `workers/case-api/cloudflare.js`, `workers/__tests__/case-api-cloudflare.test.js`, `workers/__tests__/analytics-win-rate.test.js`, this plan's row in `plans/README.md` if that file exists, and anything already dirty before you started
 - [ ] `plans/README.md` status row updated (only if that file exists)
 
 ## STOP conditions
@@ -855,8 +986,13 @@ Stop and report back (do not improvise) if:
   being `4`). That would mean the `by_court`/`by_year` response shape moved,
   which this refactor must not do. Do not "fix" the assertion — report it.
 - The monthly-trends or visa-families response gains or loses a top-level JSON
-  key. The only intended response change in this whole plan is the added
-  `truncated` boolean on `/api/v1/analytics/concept-trends`.
+  key. The only intended response changes in this whole plan are three added
+  booleans: `truncated` on `/api/v1/analytics/concept-trends` and
+  `/api/v1/analytics/concept-effectiveness`, and `concepts_truncated` on
+  `/api/v1/analytics/success-rate`.
+- The frontend suite total moves off `BEFORE_FE`. The three added keys are
+  additive and no frontend file is in scope; a change there means something else
+  moved.
 - You find yourself needing to edit `isWin`, a win set, `normaliseOutcome`,
   `wrangler.toml`, `workers/cloudflare-native.js`, `migrations/`, or anything
   under `frontend/` or `immi_case_downloader/`.
@@ -884,10 +1020,29 @@ For whoever owns this code next:
   table's primary key is `(concept_id, court_code, year, outcome)` — the exact
   grain the handlers read — so no `GROUP BY` can shrink it for free. The local
   Miniflare D1 has 0 rows, so this cannot be answered from a dev machine.
-- **`/api/v1/analytics/success-rate` and `/api/v1/analytics/concept-effectiveness`
-  also consume the capped concept sample** and do not surface `truncated`. That
-  was left out to keep this change tight; the storage method already returns the
-  flag, so surfacing it there is a two-line follow-up.
+- **The truncation flag is now on all three affected endpoints**, with two key
+  names on purpose: `/api/v1/analytics/concept-trends` and
+  `/api/v1/analytics/concept-effectiveness` report `truncated` (their whole
+  payload derives from the capped sample), while
+  `/api/v1/analytics/success-rate` reports `concepts_truncated` (only its
+  concept breakdown does; its headline rate comes from `analyticsRateRows` and
+  is not capped). Do not "tidy" these into one name without checking that the
+  consumer distinguishes them.
+- **REQUIRED follow-up: nothing renders any of these flags yet.** A JSON boolean
+  no UI reads does not inform the self-representing applicant reading the
+  emerging/declining badges — it only unblocks the person who adds the warning.
+  The frontend work is deliberately not in this plan's scope because
+  `frontend/src/**` is contested by several concurrent plans (`plans/015-*.md`
+  owns the error-state surfaces, `plans/018-*.md` owns the i18n catalogue), and a
+  drive-by edit here would conflict. The concrete follow-up, with the files
+  already located: add `truncated?: boolean` to `ConceptTrendData` in
+  `frontend/src/types/case.ts`; thread it through
+  `frontend/src/lib/api-analytics.ts` and `frontend/src/hooks/use-analytics.ts`;
+  render a warning above the emerging/declining badges on the analytics page when
+  it is true, with a new i18n key in both `en.json` and `zh-TW.json`; add a
+  frontend test asserting the warning appears only when the flag is set. Until
+  that lands, the flag is operator-visible (via the API and Logpush) but not
+  user-visible, and this plan's claim is exactly that and no more.
 - **The Flask copy at `immi_case_downloader/web/routes/api.py:2502-2530` is
   local-dev only and was already correct** — it passes `c.court_code or ""` with
   a real value. If the two implementations ever diverge again, the Flask one is
@@ -921,3 +1076,24 @@ For whoever owns this code next:
   (`migrations/d1/catalog/0001_catalog.sql:139`), so the fallback never fires on
   a null. Step 2c only reorders the two operands to read the column the query
   actually selects; behaviour is unchanged.
+
+## Review points not applied
+
+Everything the reviewer raised about this plan is applied above, with one
+scope-bounded exception recorded here rather than silently dropped.
+
+- **"The truncation must reach actual users: update `ConceptTrendData`, the
+  chart, the emerging/declining badges, the translations and the frontend
+  tests."** The diagnosis is correct and is not disputed: `ConceptTrendData`
+  (`frontend/src/types/case.ts`) has no `truncated` field, so today nothing in
+  the SPA can render the flag. This plan therefore now surfaces the flag on
+  **all three** affected endpoints instead of one (Step 4b), and fixes the
+  off-by-one that made the flag itself unreliable (Step 4a) — the server-side
+  half is fully applied. The **frontend half is deferred**, not rejected, on
+  file-territory grounds: `frontend/src/**` is claimed by concurrent plans
+  (`plans/015-*.md` for error surfaces, `plans/018-*.md` for the i18n
+  catalogue), and adding a warning banner plus two locale keys from inside an
+  analytics-correctness plan would produce a merge conflict in files this plan
+  does not own. The exact follow-up — file by file, including the i18n keys and
+  the test to add — is written out under "Maintenance notes", and the plan no
+  longer claims the truncation is user-visible.

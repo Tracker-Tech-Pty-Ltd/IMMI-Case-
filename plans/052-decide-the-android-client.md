@@ -8,11 +8,22 @@
 > and told you they maintain the index. (`plans/README.md` did not exist when
 > this plan was written; do not create it.)
 >
-> **Drift check (run first)**:
-> `git diff --stat 42826a3..HEAD -- docs/adr "immi android app"`
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**. A committed-history diff cannot see uncommitted,
+> staged or untracked work, so all four commands must run:
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- docs/adr "immi android app"   # committed
+> git diff --stat -- docs/adr "immi android app"                 # unstaged
+> git diff --cached --stat -- docs/adr "immi android app"        # staged
+> ```
+> Expected: the last three print nothing and no in-scope path appears in
+> `git status` — `docs/adr/` merely existing (because
+> `plans/044-retire-the-stale-planning-docs.md` owns and created it) is fine.
+> If any in-scope file appears in **any** of them, treat it as a STOP
+> condition: compare the "Current state" excerpts against the live code and
+> report. **Never** run `git checkout --` or `git clean -f` to force a clean
+> tree — the uncommitted work is the operator's.
 >
 > **This is a decision/spike plan.** The output is evidence plus one written
 > decision record plus a banner on one README. **There is no source-code
@@ -208,13 +219,27 @@ verified 2026-08-28:
 
 Tally: **21 served, 4 gated, 6 phantom.**
 
-"Never existed" is precise, not rhetorical. `/api/v1/saved-searches`,
-`/api/v1/search/guided`, `/api/v1/search/taxonomy` and `/api/v1/pipeline/start`
-appear in **no** Flask route decorator under `immi_case_downloader/web/routes/`
-and in **no** Worker path literal under `workers/`. Saved searches in the React
-SPA live in browser `localStorage`, which is why no server endpoint was ever
-written. These six were invented from the README's Phase plan, not from a real
-API.
+"Never existed" is precise, not rhetorical — **and it is a source claim, not a
+probe result**. `/api/v1/saved-searches`, `/api/v1/search/guided`,
+`/api/v1/search/taxonomy` and `/api/v1/pipeline/start` appear in **no** Flask
+route decorator under `immi_case_downloader/web/routes/` and in **no** Worker
+path literal under `workers/` (re-derive with the `git grep` loop in Step 2a;
+all four return zero on both sides). Saved searches in the React SPA live in
+browser `localStorage`, which is why no server endpoint was ever written. These
+six were invented from the README's Phase plan, not from a real API.
+
+Note carefully that three of the six declarations are **not GETs** —
+`POST saved-searches`, `DELETE saved-searches/{id}` and `POST pipeline/start`.
+A GET probe returning 503 cannot prove a POST route is absent (the Worker's
+terminal fallback 503s any unmatched `/api/` path whatever the method), and
+probing them for real would have side effects. The source inventory is what
+settles those three; the probes in Step 2b corroborate the GET ones and confirm
+the host. Any sentence in the ADR that rests on a probe must say so.
+
+The near misses are worth recording too, because they show the client was
+written against a plan rather than an API: the Worker does serve
+`/api/v1/taxonomy/guided-search` (not `search/guided`) and a `pipeline-action`
+route (not `pipeline/start`).
 
 Verbatim, `immi android app/app/src/main/java/au/gov/immi/cases/network/api/SearchApiService.kt:41-55`:
 
@@ -312,17 +337,20 @@ of the repository.
   `workers/austlii-scraper/scripts/rollback_run.ts` targeting legacy Supabase;
   the historical "Performance Baseline (2026-05-05)" section in `CLAUDE.md`.
 
-### ⚠ ADR numbering is contested — read this before Step 3
+### ADR numbering is centrally assigned — read this before Step 3
 
-`docs/adr/` does not exist yet, and **four separate plans create it**. Plans
-044, 047 and 050 each independently claim `docs/adr/0001-*.md` (with three
-different slugs) and each create `docs/adr/README.md`. Whichever runs first
-wins the number.
+`docs/adr/` was contested: four separate plans each created it and several
+claimed `0001`. That is resolved, and the assignment is fixed:
+**`plans/044-retire-the-stale-planning-docs.md` owns the directory**, including
+`docs/adr/README.md`, `docs/adr/TEMPLATE.md` and ADRs 0001–0003. Every other
+plan creates exactly one file named after its own plan number.
 
-This plan therefore deliberately uses **`0007`**, clear of the whole contested
-range, and its Step 3 is written to work whether or not `docs/adr/` and
-`docs/adr/README.md` already exist. Do not renumber to `0004`, and do not
-"tidy up" or renumber any ADR another plan wrote — they are out of scope.
+**This plan's file is `docs/adr/0052-android-client-disposition.md`** — nothing
+else. Do **not** create `docs/adr/README.md`, do not append a row to it, and do
+not renumber or "tidy" any ADR another plan wrote. `mkdir -p docs/adr` is fine;
+the directory already existing is the normal case and is **not** a STOP
+condition. The index row for 0052 is added by 044 when it lands (see
+"Maintenance notes").
 
 ## Commands you will need
 
@@ -345,9 +373,8 @@ affected. Do not run them; do not report on them.
 
 **In scope** (the only files you may create or modify):
 
-- `docs/adr/0007-android-client-status.md` (create)
-- `docs/adr/README.md` (create **only if absent**; otherwise append exactly one
-  table row)
+- `docs/adr/0052-android-client-disposition.md` (create — the **only** file you
+  may add under `docs/adr/`)
 - `immi android app/README.md` (modify: insert a banner at the top; change
   nothing below it)
 
@@ -366,22 +393,50 @@ affected. Do not run them; do not report on them.
 - `Makefile` and `.github/workflows/ci.yml` — adding an Android CI job is only
   justified on the "adopt" branch, which is not decided yet. Adding one now
   would spend CI minutes on a client that may be archived next week.
-- `docs/adr/0001-*.md`, `0002-*.md`, `0003-*.md` and any other ADR — written by
-  plans 044/047/050. Never rewrite or renumber another plan's ADR.
+- `docs/adr/README.md` and `docs/adr/TEMPLATE.md` — owned by `plans/044`. Do
+  not create them, append to them, or reformat them.
+- Any ADR other than `0052-android-client-disposition.md` — written by plans
+  044/047/048/049/050/051. Never rewrite or renumber another plan's ADR, and
+  never `git add docs/adr` as a directory.
+- **`POST`/`PUT`/`DELETE` requests to production.** Every probe in this plan is
+  a `GET` against a public read endpoint. Method-specific claims are derived
+  from the Worker source, not from side-effecting requests (Step 2a).
 - `frontend/`, `workers/`, `immi_case_downloader/`, `wrangler.toml` — untouched.
 - `plans/README.md` — did not exist at planning time; do not create it.
 
 ## Git workflow
 
-- Branch: `advisor/052-decide-the-android-client`
+- Branch: `advisor/052-decide-the-android-client`, **created in Step 0, before
+  any other step**. Creating it at the end (as an earlier draft did) means
+  every intermediate state — the Gradle run, the ADR draft, the README banner —
+  lands on whatever branch you happened to start on, and on a shared dirty tree
+  there is then no way to tell your changes from anyone else's.
 - One commit at the end is fine; this plan produces documentation only.
   Message: `docs: record the Android client's status as an ADR`
+- **Stage the three files by name. Never `git add docs/adr`** — that directory
+  is shared, and a sibling agent's in-flight ADR sitting untracked beside yours
+  would be swept into your commit.
 - Type must be one of `feat|fix|refactor|docs|test|chore|perf|ci`. No AI
   attribution lines, no `Co-Authored-By`.
 - **Do NOT push, do NOT open a PR, do NOT merge.** The operator commits and
   ships. Stop after the local commit.
 
 ## Steps
+
+### Step 0: Create the branch first
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git status --short --branch          # record what was ALREADY dirty; none of it is yours
+git checkout -b advisor/052-decide-the-android-client
+```
+
+Write down the pre-existing dirty paths. Every later `git status` check in this
+plan means "only my files, plus those". Do not clean them, do not stash them,
+and do not include them in your commit.
+
+**Verify**: `git rev-parse --abbrev-ref HEAD` prints
+`advisor/052-decide-the-android-client`.
 
 ### Step 1: Re-establish whether the client still builds and its tests still pass
 
@@ -439,7 +494,7 @@ Gradle writes only to gitignored `build/` and `.gradle/` directories; if a
 tracked file under `immi android app/` shows as modified, that is a STOP
 condition.
 
-### Step 2: Re-derive the endpoint gap against live production
+### Step 2: Re-derive the endpoint gap — **from source, method-aware**
 
 Confirm the client declares 31 endpoints:
 
@@ -448,8 +503,52 @@ grep -rn "@GET\|@POST\|@PUT\|@DELETE" \
   "immi android app/app/src/main/java/au/gov/immi/cases/network/api/" | wc -l
 ```
 
-Then probe production for the six paths this plan calls phantom, plus two
-controls that must succeed:
+**2a. Source inventory is the evidence. Probes are corroboration only.**
+
+Three of the six "phantom" declarations are not `GET`s — `POST saved-searches`,
+`DELETE saved-searches/{id}` and `POST pipeline/start`. A `GET` probe returning
+503 says nothing about whether a `POST` route exists at that path: a router
+that matches on method could serve the POST and 503 the GET, and this Worker's
+terminal fallback 503s *any* unmatched `/api/` path regardless of method. So
+the probe cannot distinguish "no route" from "no route for this method", and an
+earlier draft of this plan used it as if it could.
+
+**Do not resolve that by sending POST or DELETE to production.** Those have
+side effects by definition; a probe that might enqueue a pipeline run or delete
+a saved search is not a diagnostic. Derive the answer from source instead —
+the routing is a fixed dispatch chain in one file
+(`workers/cloudflare-native.js`), so the source *is* authoritative:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+for p in "saved-searches" "search/guided" "search/taxonomy" "pipeline/start"; do
+  printf "%-18s worker=" "$p"
+  git grep -c -- "$p" -- 'workers/*.js' 'workers/**/*.js' | grep -v __tests__ | wc -l | tr -d ' '
+  printf "%-18s flask =" "$p"
+  git grep -c -- "$p" -- 'immi_case_downloader/web/routes/*.py' | wc -l | tr -d ' '
+done
+```
+
+Every line must print `0`. Note `git grep` rather than `grep --include`: this
+repo's shell may alias `grep` to `ugrep`, which rejects `--include` with a
+warning **and exits 0** — making a negated check pass vacuously. That is
+exactly the kind of verification that cannot fail, and the previous version of
+this step used it for the Worker side while also omitting three of the four
+paths.
+
+Then confirm the two near-miss paths that *do* exist, so the ADR can say what
+the client should have called instead:
+
+```bash
+git grep -n -- "guided-search"   -- 'workers/**/*.js' | grep -v __tests__
+git grep -n -- "pipeline-action" -- 'workers/**/*.js' | grep -v __tests__
+```
+→ both return matches (`/api/v1/taxonomy/guided-search` in
+`workers/case-api/cloudflare_actions.js`, `pipeline-action` in the pipeline
+control handlers). This is what makes "phantom" precise: the *capability*
+partly exists under a different path; the *declared* path never did.
+
+**2b. Corroborating probes — GET only, and labelled as such.**
 
 ```bash
 for p in /api/v1/stats /api/v1/analytics/success-rate \
@@ -474,24 +573,21 @@ Observed 2026-08-28:
 A code of `000` means curl timed out, not that the endpoint is down — retry
 once with `--max-time 45` before recording anything.
 
-Then confirm the four phantom paths exist in no backend:
+**When you write these into the ADR, label them honestly**: "GET probe;
+`POST`/`DELETE` declarations were verified from source, not probed, because
+probing them would have side effects." The two controls returning 200 prove the
+host and path prefix are right, which is all a GET probe can establish for a
+non-GET declaration.
 
-```bash
-grep -rn "saved-searches\|search/guided\|search/taxonomy\|pipeline/start" \
-  immi_case_downloader/web/routes/ ; echo "flask-exit=$?"
-grep -rn "saved-search" workers/ --include="*.js" ; echo "worker-exit=$?"
-```
+Record the actual numbers. If the results differ from the table above (e.g.
+`/api/v1/saved-searches` now returns 200 because plan 050 landed), use **your**
+results and say so — do not copy this plan's table.
 
-Both must print no matches and `exit=1`.
+**Verify**: the endpoint count command prints `31`; every path in the 2a loop
+prints `0` for both worker and flask; the two near-miss greps return matches;
+and the 2b probes return `200 200 503 503 503 503`.
 
-Record the actual numbers. If the probe results differ from the table above
-(e.g. `/api/v1/saved-searches` now returns 200 because plan 050 landed), use
-**your** results in the ADR and say so — do not copy this plan's table.
-
-**Verify**: the endpoint count command prints `31`, and both greps print
-`flask-exit=1` / `worker-exit=1`.
-
-### Step 3: Write `docs/adr/0007-android-client-status.md`
+### Step 3: Write `docs/adr/0052-android-client-disposition.md`
 
 Create `docs/adr/` if it does not exist. Then write the ADR **in English**,
 in your own words, from the evidence you gathered in Steps 1–2 plus the
@@ -532,49 +628,53 @@ this order, with real content under each:
 6. `## Consequences` — what is true the moment this ADR lands: the directory
    stays in the tree but is banner-marked; nobody should treat it as a client;
    dependency bumps are known not to be validated against it.
-7. `## Operator sign-off` — an unchecked line the operator fills in, naming the
-   chosen option and the date, plus one line stating that the physical
-   archive/revive action is a follow-up and not performed by this plan.
+7. `## Operator sign-off` — this section must be actionable, not a wish. It
+   needs four things, and an ADR missing any of them leaves the directory in
+   exactly the limbo it is documenting:
+   - an unchecked line the operator fills in naming the chosen option, their
+     name and the date;
+   - a **named owner** for the decision — a person, not "the team";
+   - a **sign-off deadline** (a concrete date, e.g. 60 days from the ADR's
+     date) and what happens if it passes without a decision: the default is
+     Option A, because an unmaintained client in the default checkout is the
+     status quo this ADR exists to end, and "no decision" must not silently
+     resolve to "keep it forever";
+   - the **explicit conditions under which maintenance resumes** — that is, what
+     would have to become true for Option B to be worth its entry price. State
+     them concretely: a decision that mobile web is insufficient for the
+     primary user, backed by evidence; an owner willing to carry a Gradle CI
+     job; and plan 050 shipping a real server-side saved-search store (three of
+     the six phantom endpoints depend on it). Without these, "adopt" is
+     permanently available as a vague option and nobody ever closes the file.
+   - one line stating that the physical archive/revive action is a follow-up
+     and is not performed by this plan.
 
 Cite `file:line` for every code claim. Write no credentials, tokens, hostnames
 of private infrastructure, or IP addresses into the file.
 
-Then handle the index. **If `docs/adr/README.md` does not exist**, create it
-with exactly this content:
-
-```markdown
-# Architecture Decision Records
-
-One file per decision, `NNNN-slug.md`. Append-only: never rewrite an accepted
-ADR — supersede it with a new one and link both ways.
-
-| ADR | Title | Status |
-|-----|-------|--------|
-| [0007](0007-android-client-status.md) | Android client status | Proposed |
-```
-
-**If `docs/adr/README.md` already exists** (another plan created it), do not
-rewrite it — append exactly one row to its existing table:
-
-```markdown
-| [0007](0007-android-client-status.md) | Android client status | Proposed |
-```
+**Do not touch the index.** `docs/adr/README.md` and `docs/adr/TEMPLATE.md`
+belong to `plans/044`; do not create them, append to them, or reformat them.
+The 0052 row is added by 044 when it lands (see "Maintenance notes").
 
 **Verify**:
 
 ```bash
-test -f docs/adr/0007-android-client-status.md \
-  && grep -c "^## " docs/adr/0007-android-client-status.md \
-  && grep -c "^## Operator sign-off" docs/adr/0007-android-client-status.md \
-  && grep -c "au.gov.immi.cases" docs/adr/0007-android-client-status.md \
-  && grep -c "0007-android-client-status.md" docs/adr/README.md \
-  && ! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" \
-       docs/adr/0007-android-client-status.md \
+ADR=docs/adr/0052-android-client-disposition.md
+test -f "$ADR" \
+  && grep -c "^## " "$ADR" \
+  && grep -c "^## Operator sign-off" "$ADR" \
+  && grep -c "au.gov.immi.cases" "$ADR" \
+  && grep -qi "deadline" "$ADR" \
+  && ! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" "$ADR" \
+  && git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md \
   && echo ADR-OK
 ```
 
-→ prints `7` (heading count), then `1`, then a count ≥ 1, then a count ≥ 1,
-then `ADR-OK`.
+→ prints `7` (heading count), then `1`, then a count ≥ 1, then **nothing** from
+the `git status` (you did not touch plan 044's files), then `ADR-OK`. The
+secrets grep is scoped to your own file — another plan's ADR is not yours to
+police, and scanning the whole directory would make your check fail on their
+content.
 
 ### Step 4: Put a status banner at the top of the client's README
 
@@ -599,7 +699,7 @@ Insert exactly this, followed by a blank line, before line 1:
 > distribution.
 >
 > Whether this is archived or adopted is an open decision recorded in
-> **`docs/adr/0007-android-client-status.md`**. Read that before doing any work
+> **`docs/adr/0052-android-client-disposition.md`**. Read that before doing any work
 > here. Nothing below this banner has been revised since 2026-03-17.
 ```
 
@@ -610,7 +710,7 @@ block; every line begins with `>` (blank lines inside it are a bare `>`).
 
 ```bash
 head -1 "immi android app/README.md" | grep -c "UNMAINTAINED" \
-  && head -16 "immi android app/README.md" | grep -c "docs/adr/0007-android-client-status.md" \
+  && head -16 "immi android app/README.md" | grep -c "docs/adr/0052-android-client-disposition.md" \
   && grep -c "^# IMMI Android App" "immi android app/README.md" \
   && git diff --stat -- "immi android app" \
   && echo BANNER-OK
@@ -621,11 +721,43 @@ head -1 "immi android app/README.md" | grep -c "UNMAINTAINED" \
 --stat` shows **`immi android app/README.md`** and no other file, and
 `BANNER-OK` prints.
 
-### Step 5: Commit
+### Step 5: Stage explicitly, verify the staged set, then commit
+
+The branch already exists (Step 0). Stage the two files **by name** — never
+`git add docs/adr`, which would sweep in any sibling agent's untracked ADR
+sitting in that shared directory:
 
 ```bash
-git checkout -b advisor/052-decide-the-android-client
-git add docs/adr "immi android app/README.md"
+git add "docs/adr/0052-android-client-disposition.md" "immi android app/README.md"
+```
+
+**Check what is staged BEFORE committing.** After `git commit` the files leave
+the index and a "did I commit the right things?" check becomes far harder to
+read — which is why an earlier draft's post-commit audit was the wrong order:
+
+```bash
+git diff --cached --name-only
+git diff --cached --stat
+```
+
+→ `--name-only` lists **exactly** these two paths and nothing else:
+
+```
+docs/adr/0052-android-client-disposition.md
+immi android app/README.md
+```
+
+If a third path appears — especially `docs/adr/README.md` or another plan's
+`docs/adr/00NN-*.md` — run `git restore --staged <that path>` and re-check.
+`git restore --staged` unstages without touching the file, so it cannot destroy
+anyone's work. Do **not** proceed until the staged set is exactly two files.
+
+`--stat` must show only additions to `immi android app/README.md` (the banner)
+and a new file for the ADR — no deletions anywhere.
+
+Only then:
+
+```bash
 git commit -m "docs: record the Android client's status as an ADR"
 ```
 
@@ -633,12 +765,12 @@ git commit -m "docs: record the Android client's status as an ADR"
 
 ```bash
 git show --stat --format="%s" HEAD
+git log -1 --format=%B | grep -ci "co-authored-by"
 ```
 
 → subject line is exactly `docs: record the Android client's status as an ADR`;
-the changed-file list contains only `docs/adr/0007-android-client-status.md`,
-`docs/adr/README.md`, and `immi android app/README.md`. Nothing else. No
-`Co-Authored-By` line anywhere in `git show HEAD`.
+the changed-file list contains only `docs/adr/0052-android-client-disposition.md`
+and `immi android app/README.md`; the `grep -c` prints `0`.
 
 **Do not push. Do not open a PR.** Stop here and report.
 
@@ -661,20 +793,24 @@ you have modified something you should not have.
 
 Machine-checkable. ALL must hold:
 
-- [ ] `test -f docs/adr/0007-android-client-status.md` exits 0
-- [ ] `grep -c "^## " docs/adr/0007-android-client-status.md` prints `7`
-- [ ] `grep -q "^## Operator sign-off" docs/adr/0007-android-client-status.md` exits 0
-- [ ] `grep -q "^## Open question" docs/adr/0007-android-client-status.md` exits 0
-- [ ] `grep -q "au.gov.immi.cases" docs/adr/0007-android-client-status.md` exits 0
-- [ ] `grep -q "saved-searches" docs/adr/0007-android-client-status.md` exits 0
-- [ ] `grep -q "0007-android-client-status.md" docs/adr/README.md` exits 0
-- [ ] `! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" docs/adr/0007-android-client-status.md` exits 0
+- [ ] `test -f docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] `grep -c "^## " docs/adr/0052-android-client-disposition.md` prints `7`
+- [ ] `grep -q "^## Operator sign-off" docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] `grep -q "^## Open question" docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] `grep -q "au.gov.immi.cases" docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] `grep -q "saved-searches" docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] `grep -qi "deadline" docs/adr/0052-android-client-disposition.md` exits 0 (the sign-off has an owner, a date and a default outcome — not an open-ended "someone should decide")
+- [ ] `git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md` prints nothing (plan 044 owns both; you neither created nor edited them)
+- [ ] `! grep -rniE "cfut_|Bearer [A-Za-z0-9_-]{16,}|[0-9]{1,3}(\.[0-9]{1,3}){3}" docs/adr/0052-android-client-disposition.md` exits 0
+- [ ] The Step 2a source inventory printed `0` for **all four** phantom paths on **both** the worker and flask sides, using `git grep` (not `grep --include`, which this shell's `ugrep` alias rejects while exiting 0)
+- [ ] The ADR labels every production probe as GET-only and states that the `POST`/`DELETE` declarations were verified from source, not probed
 - [ ] `head -1 "immi android app/README.md" | grep -q "UNMAINTAINED"` exits 0
 - [ ] `grep -c "^# IMMI Android App" "immi android app/README.md"` prints `1`
 - [ ] `git ls-files "immi android app" | wc -l | tr -d ' '` prints `167` (no file added or removed)
 - [ ] `git ls-files "immi android app" | grep -c '\.kt$'` prints `135`
+- [ ] Checked **before** committing: `git diff --cached --name-only` listed exactly `docs/adr/0052-android-client-disposition.md` and `immi android app/README.md`
+- [ ] `git show --stat HEAD` lists exactly those two files
 - [ ] `git diff --stat 42826a3..HEAD -- "immi android app"` lists **only** `immi android app/README.md`
-- [ ] `git diff --name-only 42826a3..HEAD` lists only the three in-scope files
 - [ ] `git log -1 --format=%s` prints `docs: record the Android client's status as an ADR`
 - [ ] `git log -1 --format=%B | grep -ci "co-authored-by"` prints `0`
 - [ ] Nothing was pushed: `git status -sb | head -1` shows no `[ahead N]` against a remote-tracking branch
@@ -683,12 +819,18 @@ Machine-checkable. ALL must hold:
 
 Stop and report back (do not improvise) if:
 
-- **The drift check is non-empty.** `git diff --stat 42826a3..HEAD -- docs/adr "immi android app"`
-  shows changes. Someone else has touched this territory; the endpoint table and
-  file counts in Current state may be stale.
-- **`docs/adr/0007-android-client-status.md` already exists.** Another plan has
-  taken this number. Do not overwrite it and do not silently renumber — report
-  the collision so the reviewer can assign a number.
+- **Any of the four drift-check commands reports an in-scope path** (other than
+  `docs/adr/` merely existing). Someone else has touched this territory; the
+  endpoint table and file counts in Current state may be stale.
+- **`docs/adr/0052-android-client-disposition.md` already exists.** Another
+  agent has taken this plan's assigned file. Do not overwrite it and do not
+  renumber — report the collision.
+- **`docs/adr/README.md` or `docs/adr/TEMPLATE.md` appears in your
+  `git status` or `git diff --cached`.** Those belong to `plans/044`. Unstage
+  with `git restore --staged <path>` and, if you created them, delete only what
+  you created. Never commit them from here.
+- **You are about to run `git add docs/adr`** (the directory) rather than the
+  single ADR path. That would sweep in a sibling agent's untracked ADR.
 - **`git ls-files "immi android app" | wc -l | tr -d ' '` does not print `167`,**
   or the `.kt` count is not `135`. The directory has been added to or pruned since
   planning; the ADR's headline numbers would be wrong.
@@ -700,11 +842,21 @@ Stop and report back (do not improvise) if:
   job, touch `Makefile`, touch the root `README.md`/`CLAUDE.md`, or delete/move
   the `immi android app/` directory. All of these are out of scope. If the work
   seems to require one, that is the signal to stop, not to proceed.
-- **Production probes contradict Step 2 wholesale** — e.g. all six "phantom"
-  paths return 200, or the two controls (`/api/v1/stats`,
+- **The Step 2a source inventory contradicts the probes** — e.g. `git grep`
+  finds `saved-searches` in `workers/`, or a probe returns 200 for a path the
+  source says does not exist. The source is authoritative for routing; a
+  disagreement means one of your commands is wrong (check for a `ugrep`
+  `--include` warning, or a stale local checkout) or production is running code
+  that is not in this tree. Either is worth stopping for.
+- **Production probes contradict Step 2b wholesale** — e.g. all six paths
+  return 200, or the two controls (`/api/v1/stats`,
   `/api/v1/analytics/success-rate`) return anything other than 200. Either
   production changed materially or you are hitting the wrong host. Report the
   actual codes rather than writing a table you cannot defend.
+- **You are tempted to `curl -X POST` or `-X DELETE` against production** to
+  settle whether a non-GET route exists. Do not. Those requests have side
+  effects — `pipeline/start` would enqueue work, `saved-searches` DELETE would
+  destroy data if it existed. The source inventory in Step 2a is the answer.
 - **You conclude the client should simply be deleted and start deleting.** The
   archive/adopt decision is the operator's and is explicitly deferred to the
   `## Operator sign-off` line. This plan records the decision; it does not
@@ -715,18 +867,37 @@ Stop and report back (do not improvise) if:
 
 For the human or agent who owns this after the change lands:
 
-- **The ADR is a decision record, not a decision.** Its `## Status` is
-  `Proposed`. Somebody with authority over product direction must fill in
-  `## Operator sign-off`, and only then does the follow-up action happen:
-  Option A means physically moving `immi android app/` out of the default
-  checkout (tag the commit first so history is recoverable); Option B means
-  working through the entry-price list before any feature work.
+- **The ADR is a decision record, not a decision — and it has a clock.** Its
+  `## Status` is `Proposed`. Somebody with authority over product direction
+  must fill in `## Operator sign-off`, which names an owner, a deadline, and
+  what happens if the deadline passes (default: Option A). Only then does the
+  follow-up action happen: Option A means physically moving
+  `immi android app/` out of the default checkout (tag the commit first so
+  history is recoverable); Option B means working through the entry-price list
+  before any feature work, and only if the resume-maintenance conditions in the
+  sign-off section have actually become true. If you are the next reader and
+  the deadline has passed with no signature, that is itself the finding —
+  report it rather than quietly extending it.
 - **What a reviewer should scrutinise**: that the ADR's numbers were re-run by
   the executor and dated, not copied from this plan; that the banner is
   literally line 1 of the client README; that the diff contains zero Kotlin.
+- **`docs/adr/README.md` is owned by plan 044; add the index row there when 044
+  lands.** The row is
+  `| [0052](0052-android-client-disposition.md) | Android client disposition | Proposed |`.
+  This plan writes no index and no template.
 - **Deliberately deferred out of this plan**, with reasons:
-  - *A pointer from the root `README.md`.* Plans 042 and 043 own the root docs;
-    adding a line here would collide. Worth one line once those land.
+  - *A pointer from the root `README.md`.* This is the gap that matters most,
+    because the banner only helps someone who already opened
+    `immi android app/`. A newcomer reading the root README still sees a
+    directory listing with an Android app in it and no signal at all. **Owner:
+    whoever lands `plans/043-correct-the-readme.md`** (with
+    `plans/042-rewrite-the-agent-facing-docs.md` for `AGENTS.md`/`CLAUDE.md`) —
+    they own the root docs, and adding a line here would collide. The ask is
+    one line in the repository-layout section:
+    `immi android app/ — unmaintained Kotlin client, no CI; see docs/adr/0052-android-client-disposition.md before touching it.`
+    Hand it to them explicitly rather than leaving it as a note; a deferred
+    item with no named owner is how the directory got unmarked in the first
+    place.
   - *An Android CI job.* Only justified if Option B is chosen. Adding it now
     would burn CI minutes validating a client that may be archived — and it
     would fail immediately, because `gradlew` and `gradle-wrapper.jar` are
@@ -741,9 +912,11 @@ For the human or agent who owns this after the change lands:
     (`taxonomy/guided-search`, `pipeline-action`).
 - **What will interact with this**: if plan 050 lands a real
   `/api/v1/saved-searches`, the "6 phantom" count drops to 3 and the ADR should
-  be superseded rather than edited (`docs/adr/` is append-only). Likewise if
-  plans 044/047 land first, `docs/adr/README.md` will already exist and will
-  hold ADRs 0001–0003; leave them alone.
+  be superseded rather than edited (`docs/adr/` is append-only). Note 050 is
+  currently a *documents-only* decision plan, so that is not imminent —
+  do not write the ADR as though the endpoints are about to exist. When plan
+  044 lands, `docs/adr/README.md` and `TEMPLATE.md` will already be there
+  holding ADRs 0001–0003; leave them alone and let 044 add the 0052 row.
 
 ## Findings reconsidered
 

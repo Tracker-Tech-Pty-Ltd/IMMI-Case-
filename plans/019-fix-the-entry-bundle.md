@@ -3,20 +3,31 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` **only if that file already exists**; do not create it.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
 > All paths in this file are relative to the repository root
 > `/Users/d/Developer/Active Projects/IMMI-Case-`. Use absolute paths in
 > commands when your shell resets its working directory between calls.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 > ```bash
-> git diff --stat 42826a3..HEAD -- frontend/vite.config.ts frontend/index.html frontend/src/index.css frontend/src/i18n frontend/src/lib/council-celebrations.ts
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="frontend/vite.config.ts frontend/index.html frontend/src/index.css frontend/src/i18n frontend/src/lib/council-celebrations.ts frontend/scripts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts below against the live code
-> before proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three commands print nothing, and `git status --short`
+> lists no in-scope path. If any in-scope file appears in **any** of them,
+> compare the "Current state" excerpts below against the live code before
+> proceeding; on a mismatch, treat it as a STOP condition.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
@@ -26,6 +37,13 @@
 - **Depends on**: none. (Plan 001 repairs the repo's *typecheck gate*; this plan
   does not rely on it because every command below invokes the working
   `tsc -b` form directly rather than the broken `tsc --noEmit` form.)
+- **Must run BEFORE**: `plans/022-fix-contrast-tokens.md`. Both plans edit
+  `frontend/src/index.css`. This plan deletes its line 1 (the Google Fonts
+  `@import`); plan 022 inserts blocks around the `select { … }` rule near line
+  259. The hunks do not overlap, but each plan's drift check treats a modified
+  `index.css` as a STOP, so they cannot run concurrently and cannot run in the
+  other order without plan 022 re-pinning its line numbers. Land this plan
+  first, then rebase 022.
 - **Category**: perf
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -42,10 +60,30 @@ of JavaScript, of which ~40% is a charting library most routes never touch.
 The primary user of this product is a self-representing immigration applicant on
 an unknown connection, under stress, who needs to trust what they are looking
 at. A slow, blank, font-flashing first paint is a trust cost, not just a metric.
-After this plan the eager set drops to roughly 170 KB gzip, the fonts start
-downloading one round trip earlier with 6 fewer faces requested, and the LLM
-Council page stops shipping a confetti library before the user can type their
-first question.
+After this plan the eager set drops to roughly 170 KB gzip, the font stylesheet
+is **discovered one network round trip earlier** and is a third smaller (12
+`@font-face` declarations instead of 18), and the LLM Council page stops
+shipping a confetti library before the user can type their first question.
+
+**Precisely what the font change does and does not buy** (this was overstated in
+an earlier draft — read it before writing the commit message):
+
+- It does **not** make the font CSS non-blocking. A `<link rel="stylesheet">` in
+  `<head>` is still render-blocking; the win is that the browser's preload
+  scanner finds it while parsing HTML instead of only after the 94 KB app CSS
+  has downloaded and been parsed. That removes one serialised round trip from
+  the critical path, nothing more. Making fonts genuinely non-blocking means
+  self-hosting the WOFF2 files and `<link rel="preload" as="font" crossorigin>`
+  for the two faces above the fold, or an async-stylesheet swap — both are
+  behavioural changes with a FOUT trade-off and belong in their own plan. See
+  Maintenance notes.
+- It does **not** reliably remove six font-file downloads. Google Fonts returns
+  a stylesheet of `@font-face` rules; the browser fetches only the faces a
+  rendered element actually selects. `IBM Plex Sans` sits *behind* `DM Sans` in
+  `--font-data`, so on any machine where DM Sans loads it was never fetched
+  anyway. What shrinks with certainty is the **stylesheet itself** (18 face
+  declarations → 12) and the number of families the CSS request has to resolve.
+  Claim that, not a file-count saving.
 
 ## Current state
 
@@ -149,8 +187,9 @@ The bundler **preserves** this as the literal first rule of the emitted
 `index-*.css`, so the request chain is serialised:
 HTML → app CSS (94,891 B) → fonts.googleapis.com → fonts.gstatic.com.
 
-The URL requests 18 faces: Crimson Text 4 + DM Sans 5 + IBM Plex Sans 5 +
-Merriweather 4. Two of those families are waste:
+The URL asks for 18 face declarations: Crimson Text 4 + DM Sans 5 + IBM Plex
+Sans 5 + Merriweather 4. (Declarations, not downloads — the browser fetches only
+the faces something on the page selects.) Two of those families are waste:
 
 - `frontend/src/tokens/tokens.css:43` — `--font-data: "DM Sans", "IBM Plex Sans", system-ui, sans-serif;`
   IBM Plex Sans is a **fallback behind DM Sans**, never a selected design font.
@@ -305,9 +344,15 @@ Both outputs exhibit the same leak because they share `vite.config.ts`; only
 | Install deps (only if `frontend/node_modules` is missing) | `cd frontend && npm ci` | exit 0 |
 | Production build (gitignored output) | `cd frontend && npm run build:cloudflare` | exit 0, ends with `✓ built in …` |
 | Typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0, no output |
-| Frontend unit tests | `cd frontend && npx vitest run` | `Tests  490 passed (490)`, `Test Files  55 passed (55)` |
-| Frontend lint | `cd frontend && npm run lint` | exit 0; `✖ 25 problems (0 errors, 25 warnings)` at HEAD — **0 errors** is the gate, warning count may shift by ±1 |
+| Frontend unit tests | `cd frontend && npx vitest run` | **0 failed**, and the passed count equals the `FE_BEFORE` you record in Step 1 (this plan adds and removes zero tests) |
+| Frontend lint | `cd frontend && npm run lint` | exit 0 with **0 errors**. The warning count is *not* a gate — other plans land warnings in parallel |
 | Working-tree check | `git status --short` | only in-scope files listed |
+
+Absolute suite totals are deliberately absent from this table and from "Done
+criteria". Several frontend plans run in parallel; a hard-coded
+`490 passed / 55 files` turns any sibling plan landing first into a false STOP
+and teaches the executor to edit the yardstick. Record a baseline in Step 1 and
+compare against it.
 
 Baseline measured at HEAD (`42826a3`) in `frontend/dist/assets`, for comparison:
 
@@ -331,6 +376,8 @@ Baseline measured at HEAD (`42826a3`) in `frontend/dist/assets`, for comparison:
 - `frontend/src/index.css`
 - `frontend/src/i18n/index.ts`
 - `frontend/src/lib/council-celebrations.ts`
+- `frontend/scripts/check-bundle-budget.mjs` — **create** (Step 7). A standalone
+  Node script; no other plan creates it.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -353,7 +400,9 @@ Baseline measured at HEAD (`42826a3`) in `frontend/dist/assets`, for comparison:
   fallback is untouched, and `frontend/__tests__/css-tokens.test.ts` asserts
   against these files.
 - `frontend/package.json`, `Makefile`, `.github/workflows/**` — no build-script
-  or CI wiring in this plan (see Maintenance notes for the deferred guard).
+  or CI wiring in this plan. Step 7 ships the guard **script**; wiring it into
+  `npm run build:cloudflare` and CI is plan 001's territory and Step 7 hands it
+  the exact one-line snippet.
 - Any colour, font family, spacing token, or animation duration. This is a
   delivery-mechanics change; the "Legal Codex" design is not being revisited.
 
@@ -365,12 +414,13 @@ Baseline measured at HEAD (`42826a3`) in `frontend/dist/assets`, for comparison:
   - `perf: load google fonts from index.html and drop 6 unused faces`
   - `perf: load the zh-TW catalogue on demand instead of bundling it`
   - `perf: lazy-load canvas-confetti out of the council page chunk`
+  - `test: add a post-build guard for the eager critical path`
 - Do **NOT** push, open a PR, or merge. If the operator has said they will make
   the commits themselves, leave the changes uncommitted and report instead.
 
 ## Steps
 
-### Step 1: Establish the baseline build
+### Step 1: Establish the baseline build and record the test baseline
 
 Confirm the toolchain works and the leak is present before changing anything.
 
@@ -378,7 +428,22 @@ Confirm the toolchain works and the leak is present before changing anything.
 cd frontend && npm run build:cloudflare
 ```
 
-Then record the current state:
+**Record these three numbers before touching anything.** Every later gate is a
+comparison against them, not against a number hard-coded in this file:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run 2>&1 | tee /tmp/019-fe-before.txt | tail -5
+# FE_BEFORE  = the "Tests  N passed" number
+# FILES_BEFORE = the "Test Files  N passed" number
+wc -c < "$(ls dist/assets/LlmCouncilPage-*.js)"   # COUNCIL_BEFORE (bytes)
+```
+
+Write `FE_BEFORE`, `FILES_BEFORE` and `COUNCIL_BEFORE` into your working notes.
+This plan adds and removes zero tests, so both test numbers must be **unchanged**
+at the end; `COUNCIL_BEFORE` must **decrease** after Step 5.
+
+Then record the four bundle defects:
 
 ```bash
 cd frontend
@@ -432,7 +497,7 @@ cd frontend && npm run build:cloudflare \
 `entry-import:        0` (leading whitespace from `wc -l` is fine — the digit
 must be `0`).
 
-### Step 3: Move the Google Fonts request into the HTML and trim 6 dead faces
+### Step 3: Move the Google Fonts request into the HTML and trim 6 dead face declarations
 
 **3a.** Delete line 1 of `frontend/src/index.css` (the
 `@import url("https://fonts.googleapis.com/...")` line) entirely. The file must
@@ -456,13 +521,21 @@ existing preconnects, so `<head>` reads:
 ```
 
 Two deliberate differences from the old URL: `IBM+Plex+Sans` is gone entirely
-(it is a fallback in `--font-data`, never a selected design font, so 5 weights
-were being fetched for nothing), and Merriweather's `900` weight is gone (no
-`font-black`, no `font-weight: 900`, and no weight token above 700 exists).
-That takes the request from 18 faces to 12. Keep the family names, order and
-`display=swap` otherwise identical — the "Legal Codex" typography is unchanged.
+(it is a fallback in `--font-data`, never a selected design font, so 5 face
+declarations were being served for nothing), and Merriweather's `900` weight is
+gone (no `font-black`, no `font-weight: 900`, and no weight token above 700
+exists). That takes the stylesheet from 18 face declarations to 12. Keep the
+family names, order and `display=swap` otherwise identical — the "Legal Codex"
+typography is unchanged.
 
-**Verify**:
+**What this step is and is not.** It shortens *discovery* (HTML → font CSS
+instead of HTML → app CSS → font CSS) and shrinks the font stylesheet. The
+`<link rel="stylesheet">` is still render-blocking, and the browser still only
+downloads the faces it actually selects, so do not report a "6 fewer font files"
+result. If you measure and find no improvement, that is a reportable finding,
+not a reason to improvise a different approach.
+
+**Verify (artifact)**:
 
 ```bash
 cd frontend && npm run build:cloudflare \
@@ -482,6 +555,45 @@ head -c 24 frontend/dist/assets/index-*.css
 
 → prints `@layer` / `@theme` / `:root` / `*,:before` or similar Tailwind output —
 anything except `@import"https://fonts`.
+
+**Verify (waterfall — this is the claim's only real evidence)**. The greps prove
+the `<link>` moved; only a request timeline proves it is discovered earlier. Run
+after Step 4's preview server is available (or run this step's check again at
+Step 6 once the final artifact is built):
+
+```bash
+cd frontend
+npx vite preview --outDir dist --port 4173 --strictPort > /tmp/immi-preview.log 2>&1 &
+PREVIEW_PID=$!
+sleep 4
+node --input-type=module -e "
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await b.newPage();
+const t0 = Date.now();
+const marks = [];
+p.on('request', r => { const u = r.url();
+  if (/fonts\.googleapis\.com/.test(u)) marks.push(['fontcss', Date.now() - t0]);
+  if (/assets\/index-.*\.css/.test(u))  marks.push(['appcss',  Date.now() - t0]); });
+await p.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
+const font = marks.find(m => m[0] === 'fontcss');
+const app  = marks.find(m => m[0] === 'appcss');
+console.log('APP_CSS_MS=' + (app ? app[1] : 'none'));
+console.log('FONT_CSS_MS=' + (font ? font[1] : 'none'));
+console.log('FONT_NOT_AFTER_APP=' + (font && app ? font[1] <= app[1] + 5 : false));
+await b.close();
+"
+kill \$PREVIEW_PID
+```
+
+→ prints `FONT_NOT_AFTER_APP=true`. Before the change the font request starts
+only after the app CSS has been fetched *and parsed*, so it lands strictly
+later; after it, both are discovered in the same HTML parse. If it prints
+`false`, report the two timings — do not adjust the check.
+
+If Playwright cannot run in your environment, say so explicitly in your report
+and mark this sub-verification **not performed**. Do not claim the round-trip
+win without it.
 
 ### Step 4: Load the `zh-TW` catalogue on demand
 
@@ -547,35 +659,68 @@ i18n
   })
 
 /**
- * Fetch and register a lazily bundled catalogue. Idempotent: the
- * `hasResourceBundle` guard both avoids a second network request and stops the
- * `changeLanguage` call below from recursing through the `languageChanged`
- * listener.
+ * Fetch and register a lazily bundled catalogue.
+ *
+ * Idempotent: the `hasResourceBundle` guard both avoids a second network
+ * request and stops the `changeLanguage` call below from recursing through the
+ * `languageChanged` listener.
+ *
+ * Returns `true` when the catalogue is available afterwards, `false` when the
+ * chunk could not be fetched (offline, a 404 during a rolling deploy, a
+ * corporate proxy). The caller decides what to do; this function never throws
+ * and never leaves the app in a half-switched state.
  */
-async function ensureCatalogue(lng: string | undefined): Promise<void> {
-  if (!lng) return
+async function ensureCatalogue(lng: string | undefined): Promise<boolean> {
+  if (!lng) return true
   const load = LAZY_CATALOGUES[lng]
-  if (!load) return
-  if (i18n.hasResourceBundle(lng, 'common')) return
-  const mod = await load()
-  i18n.addResourceBundle(lng, 'common', mod.default, true, true)
+  if (!load) return true
+  if (i18n.hasResourceBundle(lng, 'common')) return true
+  try {
+    const mod = await load()
+    i18n.addResourceBundle(lng, 'common', mod.default, true, true)
+  } catch (error) {
+    // A failed locale chunk must NEVER blank the app. Report it and let the
+    // caller fall back; `fallbackLng: 'en'` means every key still resolves.
+    console.error(`[i18n] failed to load the "${lng}" catalogue`, error)
+    return false
+  }
   // Re-emit languageChanged so `resolvedLanguage` and any listener bound to
   // that event pick up the newly available catalogue.
   await i18n.changeLanguage(lng)
+  return true
 }
 
 // Sync <html lang> on every language switch (WCAG 3.1.1), and pull in the
 // catalogue when the user switches to a lazily bundled locale at runtime
 // (frontend/src/components/layout/Topbar.tsx:61).
+//
+// `previousLanguage` is captured before the switch so a failed fetch can put
+// the user back where they were instead of stranding them on a language whose
+// strings never arrived. Retry = switching language again, which re-enters
+// ensureCatalogue because hasResourceBundle is still false.
+let previousLanguage: string = i18n.language ?? 'en'
 i18n.on('languageChanged', (lng: string) => {
   syncHtmlLang(lng)
-  void ensureCatalogue(lng)
+  const priorLanguage = previousLanguage
+  previousLanguage = lng
+  void ensureCatalogue(lng).then((ok) => {
+    if (!ok && priorLanguage && priorLanguage !== lng) {
+      void i18n.changeLanguage(priorLanguage)
+    }
+  })
 })
 
 // Top-level await: `main.tsx` does a side-effect `import "./i18n"` before it
 // renders, so blocking here guarantees a zh-TW visitor never sees a frame of
 // English or of raw i18n keys. English visitors load nothing extra.
-await ensureCatalogue(i18n.language)
+//
+// If the fetch fails, fall back to English rather than rendering nothing:
+// `ensureCatalogue` has already logged, and every key resolves through
+// `fallbackLng`. A degraded-language app beats a white screen.
+const initialLoaded = await ensureCatalogue(i18n.language)
+if (!initialLoaded) {
+  await i18n.changeLanguage('en')
+}
 
 // Set initial value once the detected language is known
 if (i18n.language) {
@@ -585,7 +730,13 @@ if (i18n.language) {
 export default i18n
 ```
 
-Two things that may need a small, pre-authorised adjustment:
+Three things that may need a small, pre-authorised adjustment:
+
+- **If `npx eslint .` flags the `console.error`**: keep it. `frontend/eslint.config.js`
+  has no `no-console` rule at `42826a3`; if a sibling plan adds one, add a
+  targeted `// eslint-disable-next-line no-console` with the reason "a silently
+  failing locale fetch is unobservable in production". Do not delete the log —
+  the repo rule is "never silently swallow errors".
 
 - **If `npm run build:cloudflare` fails with "Top-level await is not available
   in the configured target environment"**, add `target: "es2022",` as the first
@@ -621,20 +772,37 @@ previously absent filename appears — then treat the step as verified and note
 the actual chunk name in your report.
 
 **Verify (runtime smoke — required)**: the artifact greps prove the catalogue
-moved; this proves it still *works*. Run from the repo root:
+moved; this proves it still *works*.
+
+⚠️ **`npx vite preview` alone serves the WRONG directory.** `vite preview` reads
+`build.outDir` from `frontend/vite.config.ts`, which is
+`"../immi_case_downloader/static/react"` — the tracked, local-dev Flask copy
+last regenerated at commit `18a5b0c` (2026-06-17). `npm run build:cloudflare`
+overrides the output directory on the command line
+(`vite build --outDir dist --emptyOutDir`), and that override does **not**
+persist into `preview`. Without `--outDir dist` you would be smoke-testing a
+two-month-old bundle and the check would pass or fail for reasons unrelated to
+your change. Always pass `--outDir dist`, and assert the served HTML is the one
+you just built.
 
 ```bash
 cd frontend
-npx vite preview --port 4173 --strictPort > /tmp/immi-preview.log 2>&1 &
+# Pin the artifact you just built, so a stale-directory mistake is detectable.
+EXPECTED_ENTRY=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1)
+echo "EXPECTED_ENTRY=$EXPECTED_ENTRY"
+
+npx vite preview --outDir dist --port 4173 --strictPort > /tmp/immi-preview.log 2>&1 &
 PREVIEW_PID=$!
 sleep 4
-node --input-type=module -e "
+EXPECTED_ENTRY="$EXPECTED_ENTRY" node --input-type=module -e "
 import { chromium } from '@playwright/test';
+const expected = process.env.EXPECTED_ENTRY;
 const b = await chromium.launch();
 const p = await b.newPage();
 const urls = [];
 p.on('request', r => urls.push(r.url()));
 await p.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
+console.log('SERVING_FRESH_BUILD=' + urls.some(u => u.includes(expected)));
 await p.evaluate(() => localStorage.setItem('i18nextLng', 'zh-TW'));
 await p.reload({ waitUntil: 'load' });
 await p.waitForTimeout(2000);
@@ -646,19 +814,57 @@ await b.close();
 kill $PREVIEW_PID
 ```
 
-→ prints `CJK_RENDERED=true` and `ZH_CHUNK_FETCHED=true`.
+→ prints `SERVING_FRESH_BUILD=true`, `CJK_RENDERED=true` and
+`ZH_CHUNK_FETCHED=true`. If `SERVING_FRESH_BUILD=false`, you are testing the
+wrong directory — re-read the warning above; the other two results are
+meaningless until it is `true`.
+
+**Verify (failed-chunk path — required)**: prove the app degrades instead of
+blanking when the locale chunk cannot be fetched. Same preview server, second
+browser run, with the zh-TW chunk request aborted:
+
+```bash
+cd frontend
+npx vite preview --outDir dist --port 4173 --strictPort > /tmp/immi-preview.log 2>&1 &
+PREVIEW_PID=$!
+sleep 4
+node --input-type=module -e "
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await b.newPage();
+const errors = [];
+p.on('pageerror', e => errors.push(String(e)));
+await p.route(/zh.?tw/i, route => route.abort());
+await p.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
+await p.evaluate(() => localStorage.setItem('i18nextLng', 'zh-TW'));
+await p.reload({ waitUntil: 'load' });
+await p.waitForTimeout(2000);
+const rootText = await p.evaluate(() => document.getElementById('root')?.textContent?.trim() ?? '');
+console.log('APP_STILL_RENDERS=' + (rootText.length > 0));
+console.log('NO_UNCAUGHT_PAGE_ERROR=' + (errors.length === 0));
+console.log('HTML_LANG=' + await p.evaluate(() => document.documentElement.lang));
+await b.close();
+"
+kill $PREVIEW_PID
+```
+
+→ prints `APP_STILL_RENDERS=true` and `NO_UNCAUGHT_PAGE_ERROR=true`. Without
+the try/catch and the English fallback this run produces an empty `#root` and an
+unhandled rejection — that is exactly the regression the error handling exists
+to prevent, so a `false` here means the code above was not applied faithfully.
 
 API calls will 404 against `vite preview` (there is no backend) — that is
-expected and does not affect this check; the navigation shell renders localised
-strings regardless.
+expected and does not affect either check; the navigation shell renders
+localised strings regardless.
 
 If Playwright's browser binary is missing, run `npx playwright install chromium`
 once and retry. If no browser can be installed in your environment, open
 `http://127.0.0.1:4173/` manually, run
 `localStorage.setItem('i18nextLng','zh-TW')` in the console, reload, and confirm
 the navigation is in Traditional Chinese with no flash of English or of raw keys
-like `nav.dashboard`. If you cannot run the smoke at all, say so explicitly in
-your report — do not mark this step verified.
+like `nav.dashboard`; then repeat with the network panel set to block
+`*zh-TW*` and confirm the app still renders in English. If you cannot run either
+smoke at all, say so explicitly in your report — do not mark this step verified.
 
 ### Step 5: Lazy-load `canvas-confetti` out of the Council chunk
 
@@ -803,32 +1009,155 @@ cd frontend && npx tsc -b --noEmit && npm run build:cloudflare \
 ```
 
 → typecheck and build exit 0; `confetti-in-council: 0`; `confetti-chunks: 1`
-(one standalone chunk now owns the library); `council-bytes` is **below
-231607** (expect roughly 224,000–228,000 — canvas-confetti is ~7 KB raw; the
-remaining bulk is `react-markdown` + `micromark`, deliberately out of scope).
+(one standalone chunk now owns the library); `council-bytes` is **strictly less
+than the `COUNCIL_BEFORE` you recorded in Step 1** (expect a drop of roughly
+4,000–8,000 bytes — canvas-confetti is ~7 KB raw; the remaining bulk is
+`react-markdown` + `micromark`, deliberately out of scope). Compare against your
+recorded number, not against a figure written into this plan — chunk sizes move
+whenever any sibling frontend plan lands.
 
 The existing unit test `frontend/__tests__/council-celebrations.test.ts` covers
 `playHaptic` only and must still pass — it imports this module, which after this
 change no longer pulls `canvas-confetti` into jsdom at import time.
 
-### Step 6: Full verification sweep
+### Step 6: Ship the durable bundle-regression guard
+
+The entry→charts edge is the whole point of this plan and it is *invisible* in
+source: it reappears the moment any tiny node_modules package is imported by
+both app code and recharts. A grep run once by hand does not prevent that. Ship
+a script that any build can run.
+
+Create `frontend/scripts/check-bundle-budget.mjs`:
+
+```js
+#!/usr/bin/env node
+/**
+ * Post-build guard for the eager critical path.
+ *
+ * Run AFTER `npm run build:cloudflare`:
+ *     node scripts/check-bundle-budget.mjs            # checks frontend/dist
+ *     node scripts/check-bundle-budget.mjs <dir>      # checks another outDir
+ *
+ * Exits non-zero (and prints why) when any of these regress:
+ *   1. index.html modulepreloads or references a charts-* chunk.
+ *   2. The entry chunk statically imports a charts-* chunk.
+ *   3. The entry chunk contains CJK (a locale catalogue got inlined again).
+ *   4. index.html has no Google Fonts <link> (the CSS @import came back).
+ *   5. The eager JS set exceeds the byte budget below.
+ *
+ * The budget is deliberately generous — it catches a 100 KB class of mistake,
+ * not a 2 KB one — and MUST be re-derived, with a comment saying why, if the
+ * app legitimately grows. Do not raise it to make a red build green.
+ */
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+const outDir = resolve(process.argv[2] ?? "dist");
+const assetsDir = join(outDir, "assets");
+const html = readFileSync(join(outDir, "index.html"), "utf8");
+const assets = readdirSync(assetsDir);
+
+const failures = [];
+const fail = (msg) => failures.push(msg);
+
+// 1 + 4 — HTML-level checks
+if (/charts-[A-Za-z0-9_-]+\.js/.test(html)) {
+  fail("index.html references a charts-* chunk: the entry is eager-loading Recharts + d3 again. See plan 019 Step 2 (manualChunks).");
+}
+if (!/fonts\.googleapis\.com\/css2/.test(html)) {
+  fail("index.html has no Google Fonts <link>: the render-blocking @import in src/index.css is probably back. See plan 019 Step 3.");
+}
+
+// 2 + 3 — entry-chunk checks
+const entry = assets.find((f) => /^index-[A-Za-z0-9_-]+\.js$/.test(f));
+if (!entry) {
+  fail(`no index-*.js entry chunk found in ${assetsDir}`);
+} else {
+  const src = readFileSync(join(assetsDir, entry), "utf8");
+  if (/from"\.\/charts-[A-Za-z0-9_-]+\.js"/.test(src)) {
+    fail(`${entry} statically imports a charts-* chunk.`);
+  }
+  if (/[一-鿿]/.test(src)) {
+    fail(`${entry} contains CJK: a locale catalogue was bundled into the entry. Add it to LAZY_CATALOGUES in src/i18n/index.ts.`);
+  }
+}
+
+// 5 — eager byte budget: every JS chunk index.html modulepreloads, plus entry.
+const EAGER_JS_BUDGET_BYTES = 620_000; // ~1.5x the post-plan-019 eager set
+const eager = new Set(
+  [...html.matchAll(/assets\/([A-Za-z0-9_-]+\.js)/g)].map((m) => m[1]),
+);
+let eagerBytes = 0;
+for (const name of eager) {
+  try {
+    eagerBytes += statSync(join(assetsDir, name)).size;
+  } catch {
+    fail(`index.html references assets/${name}, which does not exist`);
+  }
+}
+if (eagerBytes > EAGER_JS_BUDGET_BYTES) {
+  fail(`eager JS is ${eagerBytes} B, over the ${EAGER_JS_BUDGET_BYTES} B budget (chunks: ${[...eager].join(", ")}).`);
+}
+
+if (failures.length > 0) {
+  console.error("bundle-budget: FAIL");
+  for (const f of failures) console.error("  - " + f);
+  process.exit(1);
+}
+console.log(`bundle-budget: OK (eager JS ${eagerBytes} B across ${eager.size} chunks)`);
+```
+
+**Verify (it passes on the fixed build)**:
+
+```bash
+cd frontend && npm run build:cloudflare && node scripts/check-bundle-budget.mjs
+```
+
+→ prints `bundle-budget: OK (…)` and exits 0.
+
+**Verify (it actually bites — do this, then undo it)**. A guard that cannot fail
+is not a guard:
+
+1. In `frontend/vite.config.ts`, temporarily comment out the `clsx` rule added
+   in Step 2.
+2. `npm run build:cloudflare && node scripts/check-bundle-budget.mjs; echo "exit=$?"`
+   → prints `bundle-budget: FAIL`, a line naming the charts chunk, and
+   `exit=1`.
+3. Restore the rule, rebuild, and confirm `bundle-budget: OK` and `exit=0`
+   again. Do not commit the temporary revert.
+
+**Wiring is plan 001's job, not yours.** Hand the operator this exact snippet
+for `frontend/package.json` (do **not** apply it here — `package.json` is out of
+scope and plan 001 already edits it):
+
+```json
+"build:cloudflare": "npm run tokens && tsc -b && vite build --outDir dist --emptyOutDir && node scripts/check-bundle-budget.mjs"
+```
+
+### Step 7: Full verification sweep
 
 ```bash
 cd frontend && npx tsc -b --noEmit
 cd frontend && npx vitest run
 cd frontend && npm run lint
-cd frontend && npm run build:cloudflare
+cd frontend && npm run build:cloudflare && node scripts/check-bundle-budget.mjs
 git status --short
 ```
 
 **Verify**:
 - `tsc -b --noEmit` → exit 0, no output.
-- `vitest run` → `Test Files  55 passed (55)`, `Tests  490 passed (490)`.
-- `npm run lint` → exit 0, `0 errors` (warnings ≈ 25; the count is not a gate).
-- `build:cloudflare` → exit 0.
-- `git status --short` lists **only** the five in-scope files (plus this plan
-  file and any pre-existing `.claude/STATE.md` modification). In particular
-  nothing under `immi_case_downloader/static/react/` may appear.
+- `vitest run` → **0 failed**, and both `Tests N passed` and
+  `Test Files N passed` equal the `FE_BEFORE` / `FILES_BEFORE` you recorded in
+  Step 1. This plan creates no test file and deletes none, so any change in
+  either number means something broke or a sibling plan landed mid-run — stop
+  and report which.
+- `npm run lint` → exit 0 with **0 errors**. Do not gate on the warning count.
+- `build:cloudflare` → exit 0, and `check-bundle-budget.mjs` prints
+  `bundle-budget: OK`.
+- `git status --short` lists **only** the five modified in-scope files, the new
+  `frontend/scripts/check-bundle-budget.mjs`, and any pre-existing
+  `.claude/STATE.md` modification. In particular nothing under
+  `immi_case_downloader/static/react/` may appear.
 
 Then print the final eager-set comparison for the report:
 
@@ -840,7 +1169,7 @@ grep -o 'modulepreload' ../index.html | wc -l
 ```
 
 Expected: no `charts-*.js` in that list at all, and the modulepreload count is
-**3** (down from 4 — vendor, i18n, query remain; charts is gone).
+**one lower than at Step 1** (charts is gone; vendor, i18n and query remain).
 
 ## Test plan
 
@@ -870,24 +1199,44 @@ checks embedded in the steps:
 - `frontend/__tests__/i18n-hardcoded.test.ts` — reads
   `src/i18n/locales/en.json` and `src/i18n/locales/zh-TW.json` from disk. Step 4
   does not modify either JSON file, so it must still pass.
-- Step 4's Playwright smoke is the behavioural test for lazy locale loading.
-- The `grep` assertions in Steps 2–5 are the regression evidence for the four
-  bundle defects.
+- Step 4's two Playwright smokes are the behavioural tests for lazy locale
+  loading: the happy path (`CJK_RENDERED` / `ZH_CHUNK_FETCHED`) and the
+  **rejected-import path** (`APP_STILL_RENDERS` / `NO_UNCAUGHT_PAGE_ERROR`),
+  which is the one that proves a 404 on the zh-TW chunk degrades to English
+  instead of blanking the SPA.
+- Step 3's waterfall check is the only real evidence for the font claim; the
+  greps alone cannot distinguish "discovered earlier" from "moved".
+- Step 6's `check-bundle-budget.mjs`, together with its deliberate-failure
+  rehearsal, is the durable guard for all four bundle defects. The `grep`
+  assertions in Steps 2–5 are the one-shot evidence.
 
-Full-suite verification: `cd frontend && npx vitest run` → 490 passed, 55 files
-(identical to the HEAD baseline — this plan adds and removes zero tests).
+Full-suite verification: `cd frontend && npx vitest run` → **0 failed**, with
+`Tests` and `Test Files` both equal to the `FE_BEFORE` / `FILES_BEFORE` recorded
+in Step 1. This plan adds and removes zero tests, so equality — not a specific
+number — is the contract.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npx vitest run` → `Test Files 55 passed`, `Tests 490 passed`
-- [ ] `cd frontend && npm run lint` exits 0 with `0 errors`
+- [ ] `cd frontend && npx vitest run` → **0 failed**, and `Tests N passed` /
+      `Test Files N passed` both equal `FE_BEFORE` / `FILES_BEFORE` from Step 1
+- [ ] `cd frontend && npx vitest run __tests__/council-celebrations.test.ts` →
+      0 failed (importing the module no longer drags `canvas-confetti` into jsdom)
+- [ ] `cd frontend && npx vitest run __tests__/css-tokens.test.ts __tests__/i18n-hardcoded.test.ts`
+      → 0 failed (the two suites that read the files this plan touches)
+- [ ] `cd frontend && npm run lint` exits 0 with `0 errors` (warning count is
+      explicitly **not** a gate)
 - [ ] `cd frontend && npm run build:cloudflare` exits 0
+- [ ] `cd frontend && node scripts/check-bundle-budget.mjs` prints
+      `bundle-budget: OK` and exits 0
+- [ ] Step 6's deliberate-failure rehearsal was performed: with the `clsx` rule
+      commented out the script printed `bundle-budget: FAIL` and exited 1
 - [ ] `grep -o 'charts-[A-Za-z0-9_-]*\.js' frontend/dist/index.html | wc -l` → `0`
 - [ ] `grep -o 'from"\./charts-[A-Za-z0-9_-]*\.js"' frontend/dist/assets/index-*.js | wc -l` → `0`
-- [ ] `grep -o 'modulepreload' frontend/dist/index.html | wc -l` → `3`
+- [ ] `grep -o 'modulepreload' frontend/dist/index.html | wc -l` → exactly one
+      less than the count recorded in Step 1
 - [ ] `grep -c $'[一-鿿]' frontend/dist/assets/index-*.js` → `0`
 - [ ] `ls frontend/dist/assets/ | grep -ci 'zh-tw'` → `1` (a standalone locale
       chunk now exists)
@@ -895,20 +1244,28 @@ Machine-checkable. ALL must hold:
 - [ ] `grep -o 'fonts.googleapis.com/css2' frontend/dist/index.html | wc -l` → `1`
 - [ ] `grep -o 'IBM+Plex+Sans' frontend/dist/index.html | wc -l` → `0`
 - [ ] `grep -o '26ccff' frontend/dist/assets/LlmCouncilPage-*.js | wc -l` → `0`
-- [ ] `wc -c < $(ls frontend/dist/assets/LlmCouncilPage-*.js)` → less than `231607`
+- [ ] `wc -c < $(ls frontend/dist/assets/LlmCouncilPage-*.js)` → strictly less
+      than `COUNCIL_BEFORE` from Step 1
 - [ ] `grep -c '^import confetti from "canvas-confetti";' frontend/src/lib/council-celebrations.ts` → `0`
 - [ ] `grep -c 'import("canvas-confetti")' frontend/src/lib/council-celebrations.ts` → `1`
-- [ ] `grep -c "locales/zh-TW.json" frontend/src/i18n/index.ts` → `1`, and that
-      one occurrence is inside `import(...)`, not a static `import … from`
+- [ ] `grep -cE '^\s*import .* from .*locales/zh-TW\.json' frontend/src/i18n/index.ts`
+      → `0` (no static import survives), **and**
+      `grep -c "import('./locales/zh-TW.json')" frontend/src/i18n/index.ts` → `1`
+- [ ] `grep -c 'catch' frontend/src/i18n/index.ts` → at least `1` (the locale
+      fetch is guarded)
 - [ ] `git status --short` shows no modified file under
       `immi_case_downloader/static/react/`
-- [ ] `git status --short` shows no modified file outside the five In-scope paths
+- [ ] `git status --short` shows no modified file outside the In-scope paths
       (plus `plans/019-fix-the-entry-bundle.md` and any pre-existing
       `.claude/STATE.md` change)
-- [ ] Step 4's runtime smoke printed `CJK_RENDERED=true` and
-      `ZH_CHUNK_FETCHED=true` (or its manual-browser equivalent was performed
-      and is reported)
-- [ ] `plans/README.md` status row updated **if that file exists**
+- [ ] Step 4's happy-path smoke printed `SERVING_FRESH_BUILD=true`,
+      `CJK_RENDERED=true` and `ZH_CHUNK_FETCHED=true` (or its manual-browser
+      equivalent was performed and is reported)
+- [ ] Step 4's failed-chunk smoke printed `APP_STILL_RENDERS=true` and
+      `NO_UNCAUGHT_PAGE_ERROR=true`
+- [ ] Step 3's waterfall check printed `FONT_NOT_AFTER_APP=true`, or the report
+      states explicitly that it could not be run
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
@@ -928,14 +1285,21 @@ Stop and report back (do not improvise) if:
 - The Step 4 smoke shows raw i18n keys (`nav.dashboard`, `analytics.total`, …)
   or English text for a `zh-TW` session. The lazy catalogue is not reaching
   react-i18next; report and stop rather than papering over it with a timeout.
-- `npx vitest run` reports fewer than 490 passing tests, or any test that
-  currently passes starts failing.
+- The Step 4 smoke prints `SERVING_FRESH_BUILD=false`. You are previewing
+  `immi_case_downloader/static/react/` instead of `frontend/dist/` — add
+  `--outDir dist` and re-run. Every other result from that run is void.
+- The Step 4 failed-chunk smoke prints `APP_STILL_RENDERS=false`. The error
+  handling in `ensureCatalogue` is missing or the top-level fallback did not
+  land. Fix the code; do not relax the check.
+- `npx vitest run` reports any failure, or the passed/file counts differ from
+  the `FE_BEFORE` / `FILES_BEFORE` recorded in Step 1.
 - `npm run lint` reports any **error** (warnings are fine).
 - `git status --short` shows anything modified under
   `immi_case_downloader/static/react/` — that means `npm run build` was run
-  instead of `npm run build:cloudflare`. Run `git checkout --
-  immi_case_downloader/static/react` to restore it, then re-read the
-  "Two build outputs" note above before continuing.
+  instead of `npm run build:cloudflare`. **Stop and report.** Do not run
+  `git checkout --` or `git clean` to "restore" it: those commands cannot tell
+  your accidental rebuild from the operator's deliberate work, and this plan
+  does not own that directory. Report the file list and let the operator decide.
 - Fixing something appears to require editing `StreamingCouncilView.tsx`,
   `TurnCard.tsx`, `LlmCouncilPage.tsx`, `frontend/package.json`, the `Makefile`,
   or anything under `frontend/src/tokens/` — all out of scope.
@@ -950,12 +1314,19 @@ For the human/agent who owns this code next:
 - **The fragile invariant is the entry→charts edge.** Any future tiny
   node_modules package that is imported by both app code and by recharts (a new
   `cn`-style helper, an icon utility, a date formatter) will get folded into the
-  `charts` chunk again and silently re-eagerize 120 KB gzip. The cheap guard is
-  a post-build check that greps the emitted `dist/index.html` for
-  `modulepreload.*charts-` and fails the build on a hit. That guard was
-  **deliberately deferred** out of this plan because wiring it in means editing
-  `frontend/package.json` / CI, which is owned elsewhere and would collide with
-  parallel work. Wire it up in a follow-up.
+  `charts` chunk again and silently re-eagerize 120 KB gzip. Step 6 ships
+  `frontend/scripts/check-bundle-budget.mjs` for exactly this. **It is not yet
+  wired into the build** — plan 001 owns `frontend/package.json` and CI, and
+  Step 6 hands over the one-line `build:cloudflare` snippet. Until that lands
+  the guard only runs when someone invokes it, so the wiring is a real
+  outstanding item, not a nicety.
+- **Fonts are still render-blocking, on purpose.** Step 3 buys a discovery round
+  trip, not non-blocking delivery. The durable fix is to self-host the WOFF2
+  files under `frontend/public/fonts/` with `@font-face` in `tokens.css` and
+  `<link rel="preload" as="font" type="font/woff2" crossorigin>` for the two
+  above-the-fold faces (Crimson Text 600, DM Sans 400). That removes the
+  third-party origin entirely, but changes the FOUT behaviour and needs a design
+  sign-off on the swap window — its own plan.
 - **Deferred, and the bigger half of the Council win**: `react-markdown` +
   `remark-gfm` are still statically imported at
   `StreamingCouncilView.tsx:19-20` and `TurnCard.tsx:32-33`, and account for the
@@ -965,7 +1336,13 @@ For the human/agent who owns this code next:
   tweak, and belongs in its own plan.
 - **Adding a locale**: add it to `LAZY_CATALOGUES` in
   `frontend/src/i18n/index.ts` — never as a static `import`. `en` is the only
-  catalogue that may be static, because it is `fallbackLng`.
+  catalogue that may be static, because it is `fallbackLng`. The `try`/`catch`
+  in `ensureCatalogue` and the caller-side revert in the `languageChanged`
+  listener are load-bearing: a lazily loaded locale can 404 during a rolling
+  deploy, and without them the initial top-level `await` rejects and React never
+  mounts (white screen), while a runtime switch produces an unhandled rejection
+  and a half-English UI. Anyone simplifying that function should re-run Step 4's
+  failed-chunk smoke.
 - **`bindI18nStore: 'added'`** in the i18n init is load-bearing: without it,
   a runtime language switch to a lazily bundled locale registers the strings but
   never repaints. A reviewer should look specifically at that option and at the

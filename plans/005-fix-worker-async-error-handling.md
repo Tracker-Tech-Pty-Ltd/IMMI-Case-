@@ -7,34 +7,76 @@
 > in `plans/README.md` if that file exists; if it does not exist, do not
 > create it.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. Committed history alone
+> cannot see uncommitted, staged or untracked edits, so an executor starting
+> from a dirty tree would get a false all-clear from the first command.
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   workers/case-api/cloudflare.js \
->   workers/case-api/cloudflare_mutations.js \
->   workers/case-api/cloudflare_actions.js \
->   workers/llm-council/cloudflare_handlers.js \
->   workers/llm-council/session_do.js \
->   workers/auth/csrf.js
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS="workers/case-api/cloudflare.js
+>   workers/case-api/cloudflare_mutations.js
+>   workers/case-api/cloudflare_actions.js
+>   workers/llm-council/cloudflare_handlers.js
+>   workers/llm-council/session_do.js
+>   workers/storage/cloudflare.js
+>   workers/auth/csrf.js"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS   # committed since the plan was written
+> git diff --stat -- $PATHS                 # unstaged working-tree edits
+> git diff --cached --stat -- $PATHS        # staged but uncommitted edits
 > ```
-> Expected: no output (no in-scope file changed since this plan was written).
-> If any file is listed, compare the "Current state" excerpts below against the
-> live code before proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing and `git status --short` lists no
+> in-scope path. Any in-scope file appearing in **any** of them is a STOP
+> condition: compare the "Current state" excerpts below against the live code
+> and report before proceeding.
+>
+> **Two deliberate exceptions.** `workers/llm-council/cloudflare_handlers.js`
+> and `workers/storage/cloudflare.js` are shared with sibling plans:
+> - `plans/004-*.md` lands **before** this plan and changes
+>   `cloudflare_handlers.js` (`applyRateLimit`, a new `rateLimitFailure`, six
+>   rate-limit call sites, `handleDeleteSession`, `handleHealth`). If you see
+>   those, that is expected — rebase onto them and integrate hunk by hunk.
+>   Anything else in that file is real drift.
+> - `workers/storage/cloudflare.js` is edited by several plans in **disjoint
+>   regions**. This plan owns exactly one region:
+>   `CloudflareCouncilStore.createSession`. Scope your inspection to that
+>   method (`awk '/^export class CloudflareCouncilStore/,/^  async getSessionByCode/' workers/storage/cloudflare.js`)
+>   rather than treating any change to the file as drift.
+>
+> **Never** run `git checkout --`, `git restore` or `git clean` to clear a
+> dirty tree — those edits may be the operator's uncommitted work.
 
 ## Status
 
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: `plans/004-*.md` (file-level, not gate-level — see below)
+- **Runs before**: `plans/006-*.md` (006 takes over
+  `workers/case-api/cloudflare_mutations.js` and must update the tests this
+  plan adds) and `plans/007-*.md` (007 edits
+  `workers/case-api/cloudflare.js`, which this plan rewrites mechanically)
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
-**Why "Depends on: none"** — this plan's only verification gate is the Worker
-Vitest suite (`cd workers && npx vitest run`), which was run at commit `42826a3`
-and reported `Test Files 25 passed (25)` / `Tests 345 passed (345)`. This plan
-touches no TypeScript, no Python and no CI config, so it does not need any of
-the verification-gate repairs other plans make.
+**Why the toolchain gates are not a dependency** — this plan's only
+verification gate is the Worker Vitest suite (`cd workers && npx vitest run`),
+which is green at commit `42826a3`. It touches no TypeScript, no Python and no
+CI config, so it does not need the verification-gate repairs plans 001–003
+make.
+
+### Sequencing (cross-plan) — read before starting
+
+This plan shares files with three siblings. The order is not negotiable:
+
+| Plan | Shared file | Order | What the executor must do |
+|---|---|---|---|
+| `004` | `workers/llm-council/cloudflare_handlers.js` | **004 first** | 004 is a live outage hotfix. Rebase this plan onto it and expect `rateLimitFailure` + six rate-limit call sites to already exist. Steps 2, 4 and 5 here touch different hunks of the same file. |
+| `006` | `workers/case-api/cloudflare_mutations.js`, `workers/storage/cloudflare.js` | **this plan first** | 006 rewires `requireWriter` from `assertMembership` to `assertPlatformOperator`. That **breaks the mutation test this plan adds in Step 1** (its store double supplies only `assertMembership`). 006 owns updating it; this plan flags it, 006's own plan text now names it explicitly. |
+| `007` | `workers/case-api/cloudflare.js`, `workers/storage/cloudflare.js` | **this plan first** | Step 2 here rewrites every `return handle…(` line in `cloudflare.js`, including the two export dispatch lines 007 edits. 007 rebases. |
+
+Do **not** run these plans concurrently against one working tree. If you are
+executing this plan and find 006's `assertPlatformOperator` already present in
+`cloudflare_mutations.js`, the order was inverted — stop and report.
 
 ## Why this matters
 
@@ -428,12 +470,33 @@ does resume the same index, exactly as the comment at lines 51-55 promises.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `git diff --stat 42826a3..HEAD -- workers/case-api/cloudflare.js workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/llm-council/cloudflare_handlers.js workers/llm-council/session_do.js workers/auth/csrf.js` | no output |
-| Worker tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | baseline `Test Files 25 passed (25)` / `Tests 345 passed (345)`; final `Test Files 29 passed (29)` / `361 passed (361)` |
-| Worker tests (one file) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/<file>.test.js` | as stated per step |
+| Drift check | the four commands in the header block above | no in-scope path listed |
+| Worker tests (all) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | exit 0, **0 failed**; see "Baselines, not absolutes" |
+| Worker tests (one file) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/<file>.test.js` | as stated per step (per-file counts are stable) |
+| Worker test by name | `cd ".../workers" && npx vitest run __tests__/<file>.test.js -t "<test name>"` | that test passes |
 | Syntax check one file | `node --check "<absolute path>.js"` | exit 0, no output |
 | Same via make | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-workers` | same as "Worker tests (all)" |
 | Confirm scope | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain` | only the in-scope paths listed below |
+
+### Baselines, not absolutes
+
+**Never assert a whole-suite total.** Sibling plans (004, 006, 007, 008) add
+tests to the same Worker suite, so `Tests 345 passed (345)` stops being true
+the moment any of them lands — and an executor who "corrects" a mismatched
+total is editing the yardstick instead of the code. Record a baseline first:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+WORKER_BEFORE=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+')
+FILES_BEFORE=$(npx vitest run 2>&1 | grep -oE 'Test Files +[0-9]+ passed' | grep -oE '[0-9]+')
+echo "WORKER_BEFORE=$WORKER_BEFORE FILES_BEFORE=$FILES_BEFORE"
+```
+
+This plan adds **5 new test files** and **21 new tests**: Step 1 → 4,
+Step 3 → 3, Steps 4–5 → 8 (2 + 6), Step 5b → 2, Step 6 → 4. The final
+assertion is therefore `WORKER_BEFORE + 21` tests across `FILES_BEFORE + 5`
+files, with **0 failed**. Per-file counts stated in individual steps are stable
+and may be asserted as absolutes.
 
 All commands were run at commit `42826a3` while writing this plan. `node` here
 is v22.23.1; `npx vitest` resolves from the root `package.json`
@@ -450,22 +513,23 @@ wrangler).
 - `workers/llm-council/cloudflare_handlers.js` (modify)
 - `workers/llm-council/session_do.js` (modify)
 - `workers/auth/csrf.js` (modify)
+- `workers/storage/cloudflare.js` — **`CloudflareCouncilStore.createSession`
+  only** (the method at ~line 1528). Do not touch any other part of this
+  ~1900-line file; other plans own other regions of it.
 - `workers/__tests__/dispatcher-error-propagation.test.js` (create)
 - `workers/__tests__/csrf-malformed-token.test.js` (create)
 - `workers/__tests__/council-stream-persistence.test.js` (create)
+- `workers/__tests__/council-store-retrieve-code.test.js` (create)
 - `workers/__tests__/council-session-do-recovery.test.js` (create)
 
 **Out of scope** (do NOT touch, even though they look related):
 
 - `workers/pipeline/control_handlers.js` — it has the *same* missing-`await`
-  defect at line 109 (`return enqueueControl(...)`), but another plan owns that
-  file. Leave it alone so the two plans do not conflict.
-- `workers/storage/cloudflare.js` — the ideal fix for the retrieve-code
-  collision is an `INSERT ... ON CONFLICT(retrieve_code) DO NOTHING` plus a
-  changes-count check inside `CloudflareCouncilStore.createSession`
-  (line 1528). That file is owned elsewhere. Step 5 makes the *handler* side
-  forward-compatible with a typed `retrieve_code_conflict` error so the store
-  change can land later with no further handler edit.
+  defect, and not once but **four times**: `return enqueueControl(...)` at
+  lines 109, 119, 123 and 124, all inside the `try` whose catch is at line 129.
+  `plans/006-*.md` owns that file and now fixes all four explicitly. Leave it
+  alone so the two plans do not conflict. If 006 is cancelled, apply the
+  identical one-word fix to all four lines — not just the first.
 - `workers/llm-council/runner.js` — its three `return null` paths are the
   documented contract; the handler is what must honour them.
 - `workers/cloudflare-native.js` — adding an outer `try/catch` to `fetch()`
@@ -623,7 +687,8 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && for f in workers/case-api/
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run
 ```
-→ `Test Files 26 passed (26)` / `Tests 349 passed (349)`.
+→ **0 failed**, `Tests` == `WORKER_BEFORE + 4` (Step 1's four tests now pass),
+`Test Files` == `FILES_BEFORE + 1`.
 
 ### Step 3: Return 403 for a malformed CSRF token
 
@@ -690,8 +755,9 @@ Replace lines 44–48 of `verifyCsrf` with:
 
 **Verify**:
 `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/csrf-malformed-token.test.js __tests__/csrf.test.js`
-→ `Test Files 2 passed (2)` / `Tests 5 passed (5)` (3 new + the 2 pre-existing
-CSRF tests, which must still pass unchanged).
+→ `Test Files 2 passed (2)` / `Tests 5 passed (5)` — a two-file count, stable
+because no sibling plan owns either file (3 new + the 2 pre-existing CSRF
+tests, which must still pass unchanged).
 
 ### Step 4: Skip Council session persistence when the stream yields no result
 
@@ -759,16 +825,31 @@ Keep the rest of the callback (the membership recheck, `createSessionWithRetriev
 
 All three edits are in `workers/llm-council/cloudflare_handlers.js`.
 
+**Correction applied after review**: an earlier draft of this plan left the
+collision detection as a *narrowed* substring match on a D1 error message the
+project does not control, and deferred the real fix to "another plan". That was
+wrong on both counts. First, narrowing a regex does not repair the defect — the
+handler is still coupled to an English SQLite message whose wording D1 may
+change at any time. Second, a check of every plan file confirms **no other plan
+owns `CloudflareCouncilStore.createSession`**: `plans/013-*.md` lists the
+`CloudflareCaseStore` methods it owns and this is not among them, and
+`plans/009-*.md` owns `rebuildAggregates` / `updateCaseFields` /
+`putImportedCase`. So the region is unowned, and this plan takes it (Step 5b).
+The message-shape predicate survives only as a **transitional fallback**.
+
 **5a — explicit collision predicate.** Add above `createSessionWithRetrieveCode`:
 
 ```js
 /**
- * D1 surfaces a UNIQUE-constraint failure as a raw SQLite message, so a
- * retrieve_code collision can only be recognised by shape. Match narrowly — a
- * constraint failure that names the column — so an unrelated error is rethrown
- * on the first attempt instead of being retried three times. A typed
- * StorageBoundaryError is accepted too, so CloudflareCouncilStore.createSession
- * can start raising `retrieve_code_conflict` without touching this file.
+ * The authoritative signal is the typed error raised by
+ * CloudflareCouncilStore.createSession (Step 5b): a UNIQUE conflict on
+ * retrieve_code becomes StorageBoundaryError{code:"retrieve_code_conflict"}.
+ *
+ * The message-shape branch below is a TRANSITIONAL fallback for a Worker
+ * deployed against an older store build during a rolling deploy. It matches a
+ * SQLite message this project does not control, so it must never be the only
+ * detection path — if you find yourself relying on it, the store change did
+ * not land. Delete this branch once one full deploy cycle has passed.
  */
 function isRetrieveCodeConflict(err) {
   if (err instanceof StorageBoundaryError) return err.code === "retrieve_code_conflict";
@@ -814,6 +895,87 @@ callback (as edited in Step 4), capture the persisted code and compare:
 Do **not** log the retrieve code values themselves — a live retrieve code
 restores a session for anyone inside the tenant.
 
+**5b — raise a typed conflict from the store (the real fix).**
+
+In `workers/storage/cloudflare.js`, inside `CloudflareCouncilStore.createSession`
+**only**, replace the bare `INSERT ... .run()` with a conflict-targeted upsert
+plus a change-count check. The current code (verified verbatim) is a plain
+`INSERT INTO council_sessions (...) VALUES (...)` followed by a `SELECT`.
+It becomes:
+
+```js
+  async createSession(auth, { sessionId, caseId = null, title = "", retrieveCode = null }) {
+    const context = assertAuthContext(auth);
+    const now = utcNow();
+    // ON CONFLICT targets the `retrieve_code TEXT UNIQUE` constraint declared
+    // at migrations/d1/account/0001_account.sql:110. A collision then yields
+    // zero changes instead of a raw SQLite exception, so the caller gets a
+    // typed error rather than having to pattern-match D1's message text.
+    // NOTE: the conflict target is deliberately narrow — a session_id primary
+    // key collision still throws, because that is a genuine bug, not a
+    // re-rollable code clash.
+    const result = await this.db.prepare(`
+      INSERT INTO council_sessions (
+        session_id, tenant_id, created_by, case_id, title, status, retrieve_code,
+        total_turns, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'active', ?, 0, ?, ?)
+      ON CONFLICT(retrieve_code) DO NOTHING
+    `).bind(sessionId, context.tenantId, context.userId, caseId, title, retrieveCode, now, now).run();
+    if (changeCount(result) === 0) {
+      throw new StorageBoundaryError("Retrieve code already in use", {
+        code: "retrieve_code_conflict",
+        status: 409,
+      });
+    }
+    return this.db.prepare(`
+      SELECT session_id, case_id, title, status, retrieve_code, total_turns, created_at, updated_at
+      FROM council_sessions WHERE session_id = ? AND tenant_id = ?
+    `).bind(sessionId, context.tenantId).first();
+  }
+```
+
+`changeCount` (module-level, line ~50) and `StorageBoundaryError` (imported in
+the block at lines 10–29) are both already available in this file — do not add
+imports.
+
+**Two facts you must not get wrong**, because both would turn this into a
+silent data bug:
+
+- `retrieve_code` is nullable and `createSession` is called with
+  `retrieveCode = null` from paths that do not mint a code. SQLite's UNIQUE
+  treats each NULL as distinct, so `ON CONFLICT(retrieve_code) DO NOTHING`
+  **never** suppresses a NULL-code insert. Confirm this with test 2 below
+  rather than assuming it.
+- `ON CONFLICT(retrieve_code)` names a conflict *target*, so it only swallows
+  collisions on that one index. A duplicate `session_id` still raises, which is
+  what we want.
+
+Create `workers/__tests__/council-store-retrieve-code.test.js` with 2 tests,
+modelled on the fake-D1 helper in
+`workers/__tests__/cloudflare-storage-contracts.test.js:22-40` (extended so
+`run()` can return `{ meta: { changes: 0 } }` on demand) and the export-style
+assertions that inspect `value.IMMI_ACCOUNT_DB.calls`:
+
+1. `"raises a typed retrieve_code_conflict when the insert changes no rows"` —
+   a D1 double whose `run()` resolves `{ meta: { changes: 0 } }`; assert
+   `await expect(store.createSession(AUTH, { sessionId: "s1", retrieveCode: "ABCDEF" })).rejects.toMatchObject({ code: "retrieve_code_conflict", status: 409 })`,
+   and that the recorded INSERT statement's SQL contains
+   `ON CONFLICT(retrieve_code) DO NOTHING`.
+2. `"inserts a null retrieve code without tripping the conflict branch"` —
+   `run()` resolves `{ meta: { changes: 1 } }`; call with `retrieveCode`
+   omitted; assert it resolves and does not throw. This is the regression pin
+   for the nullable-column subtlety above.
+
+**Verify (5b)**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/council-store-retrieve-code.test.js
+```
+→ `Tests 2 passed (2)`.
+
+**Verify (5b, the assertion can fail)**: temporarily change the store's
+`changeCount(result) === 0` guard to `=== -1`, re-run, confirm test 1 fails,
+restore, re-run green. Do not commit the temporary change.
+
 **5c — rejection sampling in `generateRetrieveCode`** (replaces lines 47–51):
 
 ```js
@@ -836,15 +998,23 @@ function generateRetrieveCode() {
 
 Add these five tests to `workers/__tests__/council-stream-persistence.test.js`:
 
-3. `"retries a retrieve-code collision and then succeeds"` — on the
+3. `"retries a typed retrieve-code collision and then succeeds"` — on the
    non-streaming route `POST /api/v1/llm-council/sessions` with
-   `current.councilStore.createSession` rejecting twice with
-   `new Error("D1_ERROR: UNIQUE constraint failed: council_sessions.retrieve_code: SQLITE_CONSTRAINT")`
-   then resolving; expect `status === 200` and `createSession` called 3 times.
+   `current.councilStore.createSession` rejecting twice with the **typed**
+   error the store now raises —
+   `new StorageBoundaryError("Retrieve code already in use", { code: "retrieve_code_conflict", status: 409 })`
+   — then resolving; expect `status === 200` and `createSession` called 3
+   times. This is the primary path after Step 5b.
+3b. `"still retries a legacy message-shaped collision during a rolling deploy"` —
+   the same test but rejecting twice with
+   `new Error("D1_ERROR: UNIQUE constraint failed: council_sessions.retrieve_code: SQLITE_CONSTRAINT")`.
+   This pins the transitional fallback branch only. Delete this test in the
+   same change that deletes the fallback branch.
 4. `"surfaces a typed retrieve_code_conflict when every attempt collides"` —
-   same error on all three attempts; expect `status === 503` and
-   `{ code: "retrieve_code_conflict" }`. (Before the fix this returns
-   `{ code: "council_unavailable" }`.)
+   the typed 409 on all three attempts; expect `status === 503` and
+   `{ code: "retrieve_code_conflict" }`. (The handler deliberately re-raises as
+   503, not 409: three independent collisions in a 31^6 space means the code
+   generator or the store is broken, which is a server fault, not a client one.)
 5. `"rethrows an unrelated error that merely mentions retrieve_code"` —
    `createSession` rejects with
    `new Error("D1_ERROR: no such column: retrieve_code_v2")`; expect
@@ -874,16 +1044,62 @@ Add these five tests to `workers/__tests__/council-stream-persistence.test.js`:
    than 6 characters, which is worse than the bias.
 
 **Verify**:
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/council-stream-persistence.test.js __tests__/cloudflare-council-handlers.test.js`
-→ `Test Files 2 passed (2)` / `Tests 15 passed (15)` (7 new + the 8 pre-existing
-Council handler tests, all still passing — in particular
-`"persists the exact retrieve code advertised by an SSE stream"`).
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run __tests__/council-stream-persistence.test.js
+```
+→ `Tests 8 passed (8)` (a per-file count: 2 from Step 4 + 6 here).
 
-### Step 6: Re-seed the CouncilSessionDO schema and guard turn allocation
+```bash
+npx vitest run __tests__/cloudflare-council-handlers.test.js
+```
+→ **0 failed**, and the same per-file count you recorded before starting.
+Do not assert a fixed number here: if `plans/004-*.md` landed first it added
+6 tests to this file. In particular
+`"persists the exact retrieve code advertised by an SSE stream"` must still
+pass — check it by name:
+```bash
+npx vitest run __tests__/cloudflare-council-handlers.test.js -t "persists the exact retrieve code advertised by an SSE stream"
+```
+
+### Step 6: Re-seed the CouncilSessionDO schema, guard turn allocation, and refuse to write to a deleted session
+
+**Read this before writing any code — an earlier draft of this step was wrong.**
+
+Re-seeding the schema is necessary but **not sufficient**, and on its own it is
+actively harmful. Here is the full sequence for an `appendTurn` that races a
+completed `deleteSession`, verified against the live code:
+
+1. `deleteSession` (`workers/llm-council/session_do.js`) calls
+   `stores.councilStore.deleteSession(...)`, which is a **soft delete** — it
+   sets `deleted_at` on the `council_sessions` row (verified verbatim in
+   `CloudflareCouncilStore.deleteSession`). It then calls
+   `this.ctx.storage.deleteAll()`, dropping the DO's SQL tables.
+2. A racing `appendTurn` with only `ensureSchema()` added would: recreate the
+   tables, allocate `turn_index = 0`, then call
+   `stores.objectStore.putCouncilPayload(...)` — **an R2 write** — and only
+   *then* call `stores.councilStore.appendTurnMetadata(...)`.
+3. `appendTurnMetadata` guards its INSERT with
+   `WHERE EXISTS (SELECT 1 FROM council_sessions WHERE session_id = ? AND tenant_id = ? AND deleted_at IS NULL)`
+   and throws `StorageBoundaryError{code:"council_session_not_found", status:404}`
+   when both statements change zero rows (verified verbatim).
+
+So in production the append **fails with a 404 after the R2 object is already
+written**, leaving an orphan payload. A test double whose metadata write
+succeeds unconditionally would assert `{ turnIndex: 0, replayed: false }` and
+thereby **pin the wrong behaviour as correct**. Do not write that test.
+
+The correct shape of this step is therefore three changes, not one:
+
+- `ensureSchema()` so the tables exist (stops the "no such table" throw and
+  makes the failure a *typed* one instead of an opaque SQL error);
+- a null guard on the allocation (typed 404 instead of a `TypeError`);
+- **a session-liveness check before the R2 write**, so a deleted session is
+  rejected with the typed 404 and `putCouncilPayload` is never called.
 
 Edit `workers/llm-council/session_do.js`. Hoist the three schema statements out
-of the constructor so `appendTurn` can re-run them idempotently, and add the
-null guard.
+of the constructor so `appendTurn` can re-run them idempotently, add the null
+guard, and add the liveness check.
 
 Add above the class (after the `first` helper at lines 23-26):
 
@@ -938,6 +1154,39 @@ before the `SELECT`), and guard the allocation:
 404 (`workers/llm-council/cloudflare_handlers.js:286`), so this integrates with
 the existing contract.
 
+**Then add the liveness check**, immediately after the `stores` are created and
+**before** the `putCouncilPayload` call — i.e. between these two existing
+lines:
+
+```js
+    const stores = createCloudflareStores(this.env);
+    // A deleteSession that already committed leaves a soft-deleted D1 row
+    // (deleted_at set) while this DO's tables were wiped and have just been
+    // re-seeded by ensureSchema(). Writing the R2 payload first would strand
+    // an orphan object, because appendTurnMetadata refuses a soft-deleted
+    // session. Check liveness before spending the write.
+    const live = await stores.councilStore.getSessionMetadata(context, checkedSessionId);
+    if (!live) {
+      throw new StorageBoundaryError("Council session not found", {
+        code: "council_session_not_found",
+        status: 404,
+      });
+    }
+    const payloadPointer = await stores.objectStore.putCouncilPayload({
+```
+
+`getSessionMetadata` already filters on `deleted_at IS NULL` (verified in
+`CloudflareCouncilStore.getSessionMetadata`), so it returns falsy for a
+soft-deleted session and truthy otherwise — no new store method is needed.
+
+**Cost note, state it in the PR**: this adds one D1 SELECT to every
+`appendTurn`. `appendTurn` already performs an R2 write plus a two-statement D1
+batch, so one more indexed point read is not a meaningful regression, and it
+replaces an orphaned R2 object with a clean typed 404. If a future profile
+shows otherwise, the alternative is to move the liveness check into
+`appendTurnMetadata` and reorder the R2 write after it — a larger store-layer
+change.
+
 Create `workers/__tests__/council-session-do-recovery.test.js` with 2 tests.
 Model the mocks on `workers/__tests__/council-session-do.test.js:1-17` (mock
 `cloudflare:workers` with a stub `DurableObject` class and mock
@@ -985,39 +1234,171 @@ function makeState({ ledgerInsertReturnsNothing = false } = {}) {
 }
 ```
 
-Tests:
+**The `stores()` double must model the soft delete.** Copy the one at
+`workers/__tests__/council-session-do.test.js:55-79`, then make it stateful so
+`deleteSession` actually changes what `getSessionMetadata` returns — otherwise
+every test below passes vacuously:
 
-1. `"re-seeds its schema when a turn append races a completed deleteSession"` —
-   construct the DO with a `stores()` double (copy the one at
-   `workers/__tests__/council-session-do.test.js:55-79`), call
-   `await object.deleteSession(AUTH, { sessionId: "session-1" })`, then
-   `await object.appendTurn(AUTH, { sessionId: "session-1", turnId: "turn-1", role: "user", payload: { text: "hi" } })`
-   and expect it to resolve to `{ turnIndex: 0, replayed: false }`-shaped output
-   (`expect(result).toMatchObject({ turnIndex: 0, replayed: false })`).
-   Before the fix this rejects with `no such table: council_turn_ledger`.
-2. `"throws a typed 404 when the turn sequence allocates no row"` — build the
-   state with `makeState({ ledgerInsertReturnsNothing: true })` and expect
-   `await expect(object.appendTurn(AUTH, { sessionId: "session-1", turnId: "turn-1", role: "user", payload: {} })).rejects.toMatchObject({ code: "council_session_not_found", status: 404 })`.
+```js
+function stores() {
+  let deleted = false;
+  return {
+    councilStore: {
+      getSessionMetadata: vi.fn(async () => (deleted
+        ? null                                   // soft-deleted: deleted_at IS NOT NULL
+        : { session: { session_id: "session-1", total_turns: 0 }, turns: [] })),
+      deleteSession: vi.fn(async () => { deleted = true; }),
+      appendTurnMetadata: vi.fn(async () => {
+        // Mirrors the real store: the INSERT is guarded by
+        // `WHERE EXISTS (... deleted_at IS NULL)`, so a soft-deleted session
+        // changes zero rows and raises. A double that always succeeds would
+        // certify the exact bug this step exists to prevent.
+        if (deleted) {
+          throw new StorageBoundaryError("Council session not found", {
+            code: "council_session_not_found",
+            status: 404,
+          });
+        }
+      }),
+    },
+    objectStore: {
+      putCouncilPayload: vi.fn(async () => ({ key: "council/s1/t1.json", sha256: "a".repeat(64), size: 2, contentType: "application/json" })),
+      deleteVerified: vi.fn(async () => undefined),
+    },
+  };
+}
+```
+
+Import the real `StorageBoundaryError` from `../storage/contracts.js` (do not
+mock that module — `instanceof` checks depend on the real class).
+
+Tests (4):
+
+1. `"refuses a turn append that races a completed deleteSession, without
+   writing R2"` — construct the DO with the stateful `stores()` above, call
+   `await object.deleteSession(AUTH, { sessionId: "session-1" })`, then:
+   ```js
+   await expect(object.appendTurn(AUTH, {
+     sessionId: "session-1", turnId: "turn-1", role: "user", payload: { text: "hi" },
+   })).rejects.toMatchObject({ code: "council_session_not_found", status: 404 });
+   expect(current.objectStore.putCouncilPayload).not.toHaveBeenCalled();
+   ```
+   The `not.toHaveBeenCalled()` assertion is the load-bearing one: it is what
+   distinguishes "rejected cleanly" from "rejected after stranding an orphan R2
+   object". A test asserting only the rejection would pass without the liveness
+   check.
+   **Before the fix** this rejects with `no such table: council_turn_ledger`
+   (not the typed 404), so the test is red for the right reason — confirm the
+   failure message before writing the fix.
+2. `"appends normally when the session is still live"` — no `deleteSession`
+   call; expect `toMatchObject({ turnIndex: 0, replayed: false })` and
+   `putCouncilPayload` called once. This is the guard that the liveness check
+   did not break the happy path.
+3. `"re-seeds its schema so a post-delete append fails typed rather than on
+   missing tables"` — after `deleteSession`, assert the rejection's `code` is
+   `"council_session_not_found"` and **not** a message matching `/no such table/`.
+   This is what `ensureSchema()` buys: a typed contract error instead of an
+   opaque SQL error the dispatcher maps to a generic 503.
+4. `"throws a typed 404 when the turn sequence allocates no row"` — build the
+   state with `makeState({ ledgerInsertReturnsNothing: true })`, session live,
+   and expect
+   `rejects.toMatchObject({ code: "council_session_not_found", status: 404 })`.
    Before the fix this rejects with a `TypeError`.
 
 **Verify**:
-`cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run __tests__/council-session-do-recovery.test.js __tests__/council-session-do.test.js`
-→ `Test Files 2 passed (2)` / `Tests 5 passed (5)` (2 new + the 3 pre-existing
-DO tests, all still passing).
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run __tests__/council-session-do-recovery.test.js
+```
+→ `Tests 4 passed (4)` (per-file count).
 
-### Step 7: Full suite and scope check
+```bash
+npx vitest run __tests__/council-session-do.test.js
+```
+→ **0 failed**; in particular
+`npx vitest run __tests__/council-session-do.test.js -t "serializes a turn, writes R2 before metadata, then replays idempotently"`
+must still pass. That existing test asserts R2-before-metadata ordering for a
+**live** session, which the liveness check does not change — if it fails, your
+check ran in the wrong place or the double is not modelling liveness.
+
+### Step 7: Inventory (and offer to clean up) the rows the bug already created
+
+The JSCORR-03 defect has been live, so production D1 may already hold
+zero-turn `council_sessions` rows created by failed streams, each holding a
+retrieve code that was shown to a user and restores nothing. Fixing the code
+does not remove them. This step is **read-only for you**; the cleanup is an
+operator action with a dry run in front of it.
+
+**7a. Produce the read-only inventory query** and put it in the PR description.
+Do not run it — it needs production D1 credentials you do not have and must
+not seek:
+
+```sql
+-- Zero-turn sessions: the fingerprint of a stream that failed after the
+-- session row was written. Read-only. Run first, on its own, and read the
+-- output before considering any DELETE.
+SELECT COUNT(*) AS zero_turn_sessions,
+       MIN(created_at) AS oldest,
+       MAX(created_at) AS newest
+FROM council_sessions
+WHERE total_turns = 0 AND deleted_at IS NULL;
+
+-- Same rows, bounded sample for eyeballing. Never select retrieve_code into a
+-- log or a ticket: a live code restores the session for anyone in the tenant.
+SELECT session_id, tenant_id, created_at, title
+FROM council_sessions
+WHERE total_turns = 0 AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT 51;
+```
+
+Use `LIMIT 51` and check whether 51 rows came back, not `LIMIT 50` and
+`>= 50` — the point is to detect truncation, and `>= 50` cannot distinguish
+"exactly 50" from "more than 50".
+
+**7b. Dry-run before any write.** The repo's standing production-cleanup rule
+(CLAUDE.md, "Production data cleanup rule") applies in full here: back the
+column up first, dry-run on a bounded sample, and eyeball the matches against
+ground truth. Concretely, before any soft-delete:
+
+```sql
+-- 1. Reversible: mark, do not delete. This is a soft delete the app already
+--    understands (getSessionMetadata filters on deleted_at IS NULL), so the
+--    rollback is `SET deleted_at = NULL` on the same predicate.
+UPDATE council_sessions
+SET deleted_at = <iso-timestamp>, updated_at = <iso-timestamp>
+WHERE total_turns = 0 AND deleted_at IS NULL AND created_at < <cutoff>;
+```
+
+State the exact row count from 7a in the PR **before** proposing this, and
+require the operator to confirm that number matches their expectation. A
+`created_at < <cutoff>` clause of at least 24 hours is mandatory so an
+in-flight stream that has not yet written its first turn is never swept.
+
+**7c. Rollback**: `UPDATE council_sessions SET deleted_at = NULL WHERE ...`
+restores them; nothing is destroyed. Record the exact predicate used, so the
+rollback can name the same rows.
+
+**Verify**: none of 7a–7c is machine-verifiable from this repo. The Done
+criterion is that the three SQL blocks appear verbatim in the PR description
+and that the operator has reported the 7a counts. Do not run any DELETE, and
+do not mark this step done by asserting it is "probably zero rows".
+
+### Step 8: Full suite and scope check
 
 **Verify** (all three):
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run
 ```
-→ `Test Files 29 passed (29)` / `Tests 361 passed (361)`.
+→ **0 failed**, `Tests` == `WORKER_BEFORE + 21`, `Test Files` ==
+`FILES_BEFORE + 5` (the baselines from "Baselines, not absolutes"). Do not
+hard-code either number: sibling plans move both.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain -- workers/ | sort
 ```
-→ exactly these ten lines and nothing else:
+→ exactly these twelve lines and nothing else:
 ```
  M workers/auth/csrf.js
  M workers/case-api/cloudflare.js
@@ -1025,32 +1406,47 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain -- 
  M workers/case-api/cloudflare_mutations.js
  M workers/llm-council/cloudflare_handlers.js
  M workers/llm-council/session_do.js
+ M workers/storage/cloudflare.js
 ?? workers/__tests__/council-session-do-recovery.test.js
+?? workers/__tests__/council-store-retrieve-code.test.js
 ?? workers/__tests__/council-stream-persistence.test.js
 ?? workers/__tests__/csrf-malformed-token.test.js
 ?? workers/__tests__/dispatcher-error-propagation.test.js
 ```
 If any other `workers/` path appears, you modified something out of scope —
-revert it. Outside `workers/`, the only path this plan may add is
+revert **that path specifically**; never run a blanket `git checkout --` or
+`git clean`. Outside `workers/`, the only path this plan may add is
 `plans/005-fix-worker-async-error-handling.md` (this file). Note that
 `.claude/STATE.md` was already modified in the working tree at commit `42826a3`
 — that is pre-existing, not yours; leave it alone and do not commit it.
 
+Confirm your `workers/storage/cloudflare.js` diff touches only
+`CloudflareCouncilStore.createSession`:
+
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- workers/pipeline/control_handlers.js workers/storage/cloudflare.js workers/llm-council/runner.js workers/cloudflare-native.js wrangler.toml
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff -U0 -- workers/storage/cloudflare.js | grep '^@@'
 ```
-→ no output (you did not touch the out-of-scope Worker files).
+→ every hunk header must fall inside that method. If a hunk lands anywhere
+else, you edited a region another plan owns — revert that hunk.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain -- workers/pipeline/control_handlers.js workers/llm-council/runner.js workers/cloudflare-native.js wrangler.toml
+```
+→ no output (you did not touch the out-of-scope Worker files). Run this against
+the **working tree**, not `git diff 42826a3..HEAD`: a committed-range diff
+cannot see the uncommitted edit you are trying to catch.
 
 ## Test plan
 
-New tests, 16 total, all under `workers/__tests__/`:
+New tests, 21 total, all under `workers/__tests__/`:
 
 | File | Tests | Covers |
 |---|---|---|
 | `dispatcher-error-propagation.test.js` (new) | 4 | A `StorageBoundaryError` thrown inside a handler returns a typed status+code from each of the four dispatchers (read 404, mutation 503, action 404, council 403) instead of escaping as a rejection |
 | `csrf-malformed-token.test.js` (new) | 3 | Malformed payload segment → 403; malformed signature segment → 403; crafted malformed token through the action dispatcher → 403 `csrf` not 503 `cloudflare_action_unavailable` |
-| `council-stream-persistence.test.js` (new) | 7 | Null stream result → no session row, no turn, `council.stream.skipped_persist` logged; real result still persists; collision retried then succeeds; three collisions → typed 503 `retrieve_code_conflict`; unrelated `retrieve_code` error rethrown after one attempt; advertise/persist skew logged; rejection sampling drops bytes >= 248 |
-| `council-session-do-recovery.test.js` (new) | 2 | `appendTurn` re-seeds schema after `deleteSession` wiped storage; unallocatable turn → typed 404 rather than `TypeError` |
+| `council-stream-persistence.test.js` (new) | 8 | Null stream result → no session row, no turn, `council.stream.skipped_persist` logged; real result still persists; typed 409 collision retried then succeeds; legacy message-shaped collision also retried (transitional); three collisions → typed 503 `retrieve_code_conflict`; unrelated `retrieve_code` error rethrown after one attempt; advertise/persist skew logged; rejection sampling drops bytes >= 248 |
+| `council-store-retrieve-code.test.js` (new) | 2 | `createSession` raises typed `retrieve_code_conflict` when the `ON CONFLICT` insert changes no rows; a NULL retrieve code still inserts |
+| `council-session-do-recovery.test.js` (new) | 4 | Post-delete append rejects with a typed 404 **and never writes R2**; live append still succeeds; the failure is typed rather than "no such table"; unallocatable turn → typed 404 rather than `TypeError` |
 
 Structural patterns to copy:
 
@@ -1068,23 +1464,34 @@ Existing tests that must keep passing unchanged (do not edit them):
 `cloudflare-mutations.test.js`, `case-api-cloudflare.test.js`, `csrf.test.js`,
 `council-session-do.test.js`, `cloudflare-native-entry.test.js`.
 
-Verification: `cd workers && npx vitest run` →
-`Test Files 29 passed (29)` / `Tests 361 passed (361)` (345 baseline + 16).
+Verification: `cd workers && npx vitest run` → **0 failed**,
+`Tests` == `WORKER_BEFORE + 21`, `Test Files` == `FILES_BEFORE + 5`.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] `cd workers && npx vitest run` prints `Test Files 29 passed (29)` and `Tests 361 passed (361)`
+- [ ] `cd workers && npx vitest run` exits 0 with **0 failed**, `Tests` equal to `WORKER_BEFORE + 21` and `Test Files` equal to `FILES_BEFORE + 5` (baselines recorded before you started)
+- [ ] `cd workers && npx vitest run __tests__/dispatcher-error-propagation.test.js` reports `4 passed`
+- [ ] `cd workers && npx vitest run __tests__/csrf-malformed-token.test.js` reports `3 passed`
+- [ ] `cd workers && npx vitest run __tests__/council-stream-persistence.test.js` reports `8 passed`
+- [ ] `cd workers && npx vitest run __tests__/council-store-retrieve-code.test.js` reports `2 passed`
+- [ ] `cd workers && npx vitest run __tests__/council-session-do-recovery.test.js` reports `4 passed`
+- [ ] `cd workers && npx vitest run __tests__/council-session-do-recovery.test.js -t "refuses a turn append that races a completed deleteSession"` passes
+- [ ] `cd workers && npx vitest run __tests__/council-session-do.test.js -t "serializes a turn, writes R2 before metadata, then replays idempotently"` still passes
 - [ ] `grep -rnE "return handle[A-Za-z0-9_]*\(" workers/case-api/cloudflare.js workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/llm-council/cloudflare_handlers.js` returns no matches (exit 1)
-- [ ] `grep -c "return await handle" workers/case-api/cloudflare.js workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/llm-council/cloudflare_handlers.js` prints `34`, `4`, `3`, `10` respectively
+- [ ] `grep -c "return await handle" workers/case-api/cloudflare.js workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/llm-council/cloudflare_handlers.js` prints `34`, `4`, `3`, `10` respectively — **unless `plans/004-*.md` landed first**, in which case the council file's count may be higher; verify by re-running the `grep -rnE` above rather than by adjusting this number
 - [ ] `grep -c "b64urlDecodeOrNull" workers/auth/csrf.js` is `3` (one definition, two call sites)
 - [ ] `grep -c "council.stream.skipped_persist" workers/llm-council/cloudflare_handlers.js` is `1`
 - [ ] `grep -c "isRetrieveCodeConflict" workers/llm-council/cloudflare_handlers.js` is `2` (definition + call site)
+- [ ] `grep -c "ON CONFLICT(retrieve_code) DO NOTHING" workers/storage/cloudflare.js` is `1`
 - [ ] `grep -c "ensureSchema" workers/llm-council/session_do.js` is `3` (definition + constructor + appendTurn)
-- [ ] `node --check` exits 0 for all six modified source files
-- [ ] `git status --porcelain -- workers/` lists exactly the ten in-scope `workers/` paths and nothing else
-- [ ] `git diff --stat 42826a3..HEAD -- workers/pipeline/control_handlers.js workers/storage/cloudflare.js workers/llm-council/runner.js workers/cloudflare-native.js wrangler.toml` returns no output
+- [ ] `grep -c "getSessionMetadata" workers/llm-council/session_do.js` is `2` (the pre-existing `deleteSession` call + the new liveness check in `appendTurn`)
+- [ ] `node --check` exits 0 for all seven modified source files
+- [ ] `git status --porcelain -- workers/` lists exactly the twelve in-scope `workers/` paths and nothing else
+- [ ] `git diff -U0 -- workers/storage/cloudflare.js | grep '^@@'` shows hunks only inside `CloudflareCouncilStore.createSession`
+- [ ] `git status --porcelain -- workers/pipeline/control_handlers.js workers/llm-council/runner.js workers/cloudflare-native.js wrangler.toml` returns no output (working-tree check, not a committed-range diff)
+- [ ] Step 7's three SQL blocks appear verbatim in the PR description, and the operator has reported the 7a zero-turn-session count
 
 ## STOP conditions
 
@@ -1110,10 +1517,21 @@ Stop and report back (do not improvise) if:
   `"serializes a turn, writes R2 before metadata, then replays idempotently"`
   (`council-session-do.test.js:88`) are the two most likely to break from
   Steps 4–6. Report the failure rather than editing the existing test.
-- You find yourself wanting to change `workers/storage/cloudflare.js`,
-  `workers/llm-council/runner.js`, `workers/pipeline/control_handlers.js`, or
-  add a `try/catch` around the dispatch chain in `workers/cloudflare-native.js`.
-  All four are deliberately out of scope.
+- You find yourself wanting to change `workers/storage/cloudflare.js` **outside
+  `CloudflareCouncilStore.createSession`**, or `workers/llm-council/runner.js`,
+  or `workers/pipeline/control_handlers.js`, or to add a `try/catch` around the
+  dispatch chain in `workers/cloudflare-native.js`. All are deliberately out of
+  scope; only that one store method is yours.
+- `plans/006-*.md` has already landed and `requireWriter` in
+  `workers/case-api/cloudflare_mutations.js` calls `assertPlatformOperator`.
+  The order was inverted (see "Sequencing"); the Step 1 mutation test's store
+  double will need `assertPlatformOperator` instead of `assertMembership`.
+  Report the inversion rather than silently adapting — 006 was written on the
+  assumption that it inherits and updates this plan's tests.
+- Step 6 test 1 passes **before** you make the code change. That means the
+  store double is not modelling the soft delete, so the test is certifying the
+  bug. Fix the double (`getSessionMetadata` must return falsy after
+  `deleteSession`) before writing any production code.
 - The assumption "every `return handle…(` in the four in-scope files sits inside
   its dispatcher's `try` block, and every one of those dispatchers is declared
   `async`" turns out to be false for any file.
@@ -1123,21 +1541,33 @@ Stop and report back (do not improvise) if:
 
 For whoever owns this code next:
 
-- **The same defect still exists in `workers/pipeline/control_handlers.js:109`**
-  (`return enqueueControl(...)` inside a `try` whose catch is at line 129, with
-  a deliberate `StorageBoundaryError` thrown at line 88). It is out of scope
-  here only because another plan owns that file. If that plan does not land,
-  apply the identical one-word fix there.
-- **The retrieve-code collision fix is half-done by design.** The robust version
-  is an `INSERT ... ON CONFLICT(retrieve_code) DO NOTHING` plus a
-  changes-count check in `CloudflareCouncilStore.createSession`
-  (`workers/storage/cloudflare.js:1528`), throwing
-  `new StorageBoundaryError("retrieve code already in use", { code: "retrieve_code_conflict", status: 409 })`.
-  `isRetrieveCodeConflict` already accepts that typed error, so the store change
-  can land later with no edit to `cloudflare_handlers.js`. Until then, the
-  handler still pattern-matches a D1 message it does not control — narrowly, and
-  with a structured `council.retrieve_code_conflict` log line per retry so the
-  path is at least observable.
+- **The same defect still exists in `workers/pipeline/control_handlers.js`, in
+  four places, not one**: `return enqueueControl(...)` at lines 109, 119, 123
+  and 124, all inside the `try` whose catch is at line 129, with a deliberate
+  `StorageBoundaryError` thrown at line 88. `plans/006-*.md` owns that file and
+  now fixes all four. If that plan does not land, apply the identical one-word
+  fix to **all four** lines — an earlier draft of this note said "line 109",
+  which would have left three of them broken.
+- **The retrieve-code collision fix is now complete on both sides.** Step 5b
+  raises a typed `retrieve_code_conflict` from
+  `CloudflareCouncilStore.createSession`; Step 5a's handler predicate consumes
+  it. The message-shape branch in `isRetrieveCodeConflict` is a **transitional
+  fallback for a rolling deploy only** — delete it (and its dedicated test
+  `"still retries a legacy message-shaped collision during a rolling deploy"`)
+  once one full deploy cycle has passed, so the handler stops depending on a
+  D1 message string entirely.
+- **Unresolved risk, stated plainly: advertise/persist retrieve-code skew.**
+  `handleStream` still hands the client a retrieve code *before* any D1 write.
+  If that exact code collides, the session persists under a different one and
+  the code the user was shown restores nothing. Step 5 makes this **observable**
+  (`council.stream.retrieve_code_reissued`) and much rarer (rejection sampling
+  removes the modulo bias) — it does **not** eliminate it. Do not describe this
+  plan as fixing JSCORR-17. Eliminating it needs a code *reservation* before the
+  stream opens, which conflicts with the Step 4 fix (reserving means writing a
+  row, which is the zero-turn row Step 4 removes); the clean version is a
+  separate `council_retrieve_codes` reservation table with its own TTL. Estimated
+  exposure at current volume: ~N/887M per session. Alert on the reissue event;
+  if it ever fires more than once a month, build the reservation table.
 - **A reviewer should scrutinise**: that no `await` was added to a `return` in a
   non-`async` function (would be a syntax error — `node --check` covers it);
   that the `handleStream` persist callback still performs the membership
@@ -1148,19 +1578,26 @@ For whoever owns this code next:
   bodyless 500 now emit `{error, code}` JSON with the handler's real status.
   Any dashboard counting 5xx on `/api/v1/*` will see counts move from 500 to
   403/404/503. That is the intended outcome.
-- **Deferred out of this plan**: an `appendTurn` that runs after a
-  `deleteSession` still uploads its R2 payload before
-  `appendTurnMetadata` rejects with the typed 404
-  (`workers/storage/cloudflare.js:1603-1605`), leaving one orphan R2 object.
-  Fixing that means checking session liveness before the R2 write, which is a
-  store-layer change and belongs with the `ON CONFLICT` work above.
-- **Not fixed, deliberately**: the streaming path can still, in principle,
-  advertise a retrieve code that a collision forces it to re-roll. Truly fixing
-  it means reserving the code in D1 before the stream opens, which would
-  re-create the zero-turn session row that Step 4 removes. The skew is now
-  logged (`council.stream.retrieve_code_reissued`) and its probability is
-  ~N/887M; if session volume ever makes that non-negligible, the right fix is a
-  store-level code reservation, not a reordering here.
+- **No longer deferred — the orphan-R2 race is fixed here.** An earlier draft
+  deferred it on the mistaken belief that it needed a store-layer change. It
+  does not: `CloudflareCouncilStore.getSessionMetadata` already filters on
+  `deleted_at IS NULL`, so `appendTurn` can check liveness with an existing
+  method before spending the R2 write. Step 6 does exactly that, and the
+  regression pin is
+  `expect(current.objectStore.putCouncilPayload).not.toHaveBeenCalled()`.
+  The residual is a TOCTOU window of one D1 round-trip — a `deleteSession`
+  committing between the liveness check and the R2 write can still strand one
+  object. That is now a genuinely narrow race rather than the guaranteed
+  outcome it was before, and closing it entirely needs a store-layer
+  conditional write.
+- **Not fixed, deliberately** — see the "Unresolved risk" bullet above; it is
+  the same item and is stated there in full.
+- **Also update the Step 2 git-workflow commit list** if you add commits:
+  Step 5b is a store change and deserves its own commit
+  (`fix: raise a typed retrieve_code_conflict from the Council store`), and
+  Step 6's liveness check belongs in the same commit as the rest of Step 6.
+- **Steps 7 and 8 produce no commits.** Step 7 is operator handoff text;
+  Step 8 is verification only.
 
 ## Findings reconsidered
 
@@ -1197,9 +1634,31 @@ one fix sketch was rejected:
   Done literally, that re-creates the zero-turn session row on every failed
   stream — precisely the JSCORR-03 defect this plan removes, and JSCORR-03 fires
   on a real, documented path (all experts failed) while JSCORR-17 needs a
-  ~N/887M collision. A genuine reservation needs a store-layer change to
-  `workers/storage/cloudflare.js`, which is out of this plan's file territory.
-  Step 5 therefore delivers the two parts that fit: a structured
+  ~N/887M collision. A genuine reservation needs a *separate* reservation table
+  with its own TTL, which is a schema change beyond this plan. Step 5 therefore
+  delivers the parts that fit: a structured
   `council.stream.retrieve_code_reissued` log so the skew stops being silent,
   and rejection sampling to remove the ~12.5% modulo bias the finding also
-  flagged. The residual is documented in "Maintenance notes".
+  flagged. **The skew itself is not fixed** and is recorded as an explicit
+  unresolved risk in "Maintenance notes" — not as a closed finding.
+
+- **Two claims in the first draft of this plan were wrong and are corrected
+  above.** Recorded here so a reader of the diff can see what changed and why:
+  1. *"`workers/storage/cloudflare.js` is owned elsewhere"* — no plan owns
+     `CloudflareCouncilStore.createSession`. `plans/013-*.md` enumerates the
+     `CloudflareCaseStore` methods it owns (`listPage`, `countCompat`,
+     `guidedPrecedents`, `relatedCompat`, `searchLexical`) and `plans/009-*.md`
+     owns `rebuildAggregates` / `updateCaseFields` / `putImportedCase`. The
+     region was simply unclaimed, so deferring the real fix to a phantom plan
+     would have left the handler pattern-matching a D1 message indefinitely.
+     Step 5b now takes it.
+  2. *"`ensureSchema()` plus a null guard fixes the delete/append race"* — it
+     does not. `CloudflareCouncilStore.deleteSession` is a soft delete and
+     `appendTurnMetadata` guards on `deleted_at IS NULL`, while `appendTurn`
+     writes R2 **before** calling it. Re-seeding the schema alone converts a
+     "no such table" throw into a successful R2 write followed by a 404 — an
+     orphan object. The first draft's test double made the metadata write
+     succeed unconditionally, so it would have asserted `{ turnIndex: 0,
+     replayed: false }` and certified that behaviour as correct. Step 6 now
+     adds a liveness check before the R2 write and asserts
+     `putCouncilPayload` was never called.

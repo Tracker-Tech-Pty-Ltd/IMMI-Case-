@@ -9,28 +9,53 @@
 > when this plan was written; if it is still absent, skip that update
 > silently).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff is blind to uncommitted,
+> staged and untracked work, so all four commands are required; a dirty tree
+> would otherwise hand you a false all-clear.
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   requirements.txt requirements-app.txt requirements-test.txt \
->   requirements-extractor.txt \
->   Makefile .github/workflows/ci.yml Dockerfile Dockerfile.extractor
+> PATHS='requirements.txt requirements-app.txt requirements-test.txt
+> requirements-extractor.txt constraints.txt constraints-extractor.txt
+> pyproject.toml requirements-llm.txt
+> Makefile .github/workflows/ci.yml Dockerfile'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
 > ```
 >
-> **Expected**: `Makefile` and `.github/workflows/ci.yml` **will** appear in
-> that diff, because this plan's two dependencies
-> (`plans/002-fix-test-collection-and-install.md` and
-> `plans/003-lint-the-test-suite.md`) both edit them. That is normal. The
-> section "What plans 002 and 003 change before you start" below lists exactly
-> what they change so you can tell an expected difference from real drift.
+> **Expected drift you should NOT stop for** (this plan runs after three others):
 >
-> `requirements.txt`, `requirements-app.txt`, `requirements-test.txt`,
-> `requirements-extractor.txt`, `Dockerfile` and `Dockerfile.extractor` must be
-> **unchanged** since `42826a3`. If any of those six shows a diff, compare the
-> "Current state" excerpts against the live files before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> - `Makefile` and `.github/workflows/ci.yml` — edited by
+>   `plans/002-fix-test-collection-and-install.md` and
+>   `plans/003-lint-the-test-suite.md`. The section "What plans 002 and 003
+>   change before you start" lists exactly what, so you can tell an expected
+>   difference from real drift.
+> - `Makefile` again — `plans/030-delete-dead-supabase-era-code.md` replaces the
+>   `migrate:` recipe (lines 107-108) and its help line (line 39). That is a
+>   different region from this plan's, which touches only the `install:`
+>   recipe's pip arguments. Narrow your judgement to the region you own:
+>
+>   ```bash
+>   git diff 42826a3..HEAD -- Makefile | grep -E '^[-+].*pip install'
+>   ```
+>
+>   If that prints only what plans 002/003 documented, proceed.
+> - `Dockerfile` — edited by `plans/032-consolidate-the-extraction-scripts.md`
+>   (its Step 5 changes the `COPY` line). Compare against 032's stated result,
+>   not against `42826a3`.
+> - `Dockerfile.extractor` — **must no longer exist.** Plan 032 deletes it. If
+>   it is still present, plan 032 has not landed and you must stop: see
+>   "Ordering" in Status.
+>
+> `requirements*.txt` must be **unchanged** since `42826a3`. If any shows a
+> diff, compare the "Current state" excerpts against the live files before
+> proceeding; on a mismatch, treat it as a STOP condition.
+>
+> **Never** run an unconditional `git checkout -- …`, `git restore …` or
+> `git clean -f` to clear a dirty tree — those changes may be the operator's.
 >
 > **Every edit in this plan is anchored on unique text, never on a line
 > number.** Re-read each file with `Read` immediately before editing it. Line
@@ -42,10 +67,29 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: `plans/002-fix-test-collection-and-install.md`,
+- **Depends on**: `plans/032-consolidate-the-extraction-scripts.md` (**hard**),
+  `plans/002-fix-test-collection-and-install.md`,
   `plans/003-lint-the-test-suite.md`
 - **Category**: migration
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+**Ordering — 032 must land first, and this is not negotiable.** An earlier draft
+of this plan edited **both** `Dockerfile` and `Dockerfile.extractor` and listed
+`grep -c 'constraints-extractor.txt' Dockerfile.extractor → 2` in its Done
+criteria. `plans/032-consolidate-the-extraction-scripts.md` **deletes**
+`Dockerfile.extractor` (it is byte-identical to `Dockerfile` apart from a
+comment header, and only one file in the repo named it). Run in either order
+without this correction and one of the two plans fails. The resolution: 032
+first, and this plan now touches only the surviving `Dockerfile`.
+
+Confirm before you start:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+test ! -e Dockerfile.extractor && echo "032 has landed"
+```
+
+If that prints nothing, **stop** and run plan 032 first.
 
 ## Why this matters
 
@@ -89,7 +133,7 @@ and the four undeclared imports have a home.
 | `Makefile` | Developer entry points. `install:` pip-installs the app + test manifests; `lint:` runs ruff. |
 | `.github/workflows/ci.yml` | Three jobs. `test-python` creates a venv, pip-installs the two manifests, runs ruff, runs pytest. |
 | `Dockerfile` | Active Cloudflare Container image (extraction only). Installs `requirements-extractor.txt`. |
-| `Dockerfile.extractor` | Byte-identical to `Dockerfile` apart from `Dockerfile`'s 3-line header comment. |
+| `Dockerfile.extractor` | Existed at `42826a3`, byte-identical to `Dockerfile` apart from a 3-line header comment. **Deleted by `plans/032-consolidate-the-extraction-scripts.md`, which runs before this plan.** Every reference to it below describes the `42826a3` state; do not act on them. |
 | `constraints.txt` | **Does not exist yet.** You create it in Step 3. |
 | `constraints-extractor.txt` | **Does not exist yet.** You create it in Step 5. |
 | `pyproject.toml` | **Does not exist yet.** You create it in Step 6. |
@@ -159,8 +203,12 @@ Verified: the only in-repo consumers of any requirements file are
 `.github/workflows/ci.yml:29` (all `requirements-app.txt` +
 `requirements-test.txt`). One documentation file, `frontend/e2e/README.md:138`,
 still tells readers to `pip install -r requirements.txt` — which today installs
-Flask and nothing else. **Nothing builds from `requirements.txt`**, so
-repointing it is safe.
+Flask and nothing else. **Nothing *in this repository* builds from
+`requirements.txt`.** That is necessary but not sufficient grounds for
+repointing it: the file exists for consumers outside this repository, whose
+absence a repo grep cannot demonstrate. Step 8 therefore decides and states an
+explicit contract for the file, and records the change as user-visible, rather
+than resting on "nothing breaks".
 
 ### `Makefile:100-105` (verbatim; recipe lines are TAB-indented)
 
@@ -221,11 +269,12 @@ EXPOSE 8080
 CMD ["python", "extract_container.py"]
 ```
 
-`Dockerfile.extractor` is the same file without the first three comment lines,
-so its `COPY requirements-extractor.txt .` is line 4 and its
-`RUN pip install --no-cache-dir -r requirements-extractor.txt` is line 5.
+At `42826a3`, `Dockerfile.extractor` was the same file without the first three
+comment lines. **It no longer exists once `plans/032-consolidate-the-extraction-scripts.md`
+lands, which is a hard prerequisite of this plan** — Step 5 edits `Dockerfile`
+only.
 
-### The guard rail on the two Dockerfiles — read this before Step 5
+### The guard rail on the container image — read this before Step 5
 
 `tests/test_extraction_container_boundary.py:9-15` (verbatim):
 
@@ -239,7 +288,11 @@ def test_extraction_image_and_source_have_no_database_runtime_markers() -> None:
         assert marker not in source, marker
 ```
 
-Any text you add to either Dockerfile or to `requirements-extractor.txt` is
+(That is the `42826a3` text. `plans/032-consolidate-the-extraction-scripts.md`
+removes `"Dockerfile.extractor"` from the tuple — a filename, not a test — so
+the file still has **three** `test_*` functions and still reports `3 passed`.)
+
+Any text you add to the Dockerfile or to `requirements-extractor.txt` is
 concatenated and lowercased by this test. It must not contain the substrings
 `supabase`, `postgres`, `hyperdrive`, `database_url` or `service_role`. This is
 **the** reason Step 5 gives the extraction image its own
@@ -335,20 +388,37 @@ All commands run from `/Users/d/Developer/Active Projects/IMMI-Case-`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python unit tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` (unchanged by this plan — you install nothing). The 3 failures are the environmental `pyexpat` ones described above. |
-| One test file | `.venv/bin/pytest tests/test_extraction_container_boundary.py -q` | `2 passed` |
+| Python unit tests | `make test-py` | **unchanged from the baseline you record in Step 0** — this plan installs nothing into `.venv` and touches no `.py` file. Do not quote an absolute total; sibling plans move it. The failures must remain exactly the 3 named `pypdf` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`. |
+| One test file | `.venv/bin/pytest tests/test_extraction_container_boundary.py -q` | `3 passed` |
 | Python lint | `make lint` | `All checks passed!` |
 | Ruff with an explicit config | `.venv/bin/ruff check --no-cache immi_case_downloader/ scripts/ *.py` | `All checks passed!`, exit 0 |
-| Whole-repo ruff statistics | `.venv/bin/ruff check --no-cache --statistics .` | after plan 003: `All checks passed!`. Before plan 003: `Found 43 errors.` |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed`, 55 files (untouched by this plan) |
-| Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files (untouched by this plan) |
-| Create the scratch venv | `rm -rf /tmp/immi-dep-check && python3 -m venv /tmp/immi-dep-check` | exit 0 |
+| Whole-repo ruff statistics | `.venv/bin/ruff check --no-cache --statistics .` | identical to `RUFF_ALL_BEFORE`, the value you record in Step 0 (`All checks passed!` after plan 003; `Found 43 errors.` before it) |
+| Frontend tests | `cd frontend && npx vitest run` | untouched by this plan — identical to your Step 0 record |
+| Worker tests | `cd workers && npx vitest run` | untouched by this plan — identical to your Step 0 record |
+| Create a scratch venv | `rm -rf /tmp/immi-dep-check && python3 -m venv /tmp/immi-dep-check` | exit 0 |
 | Prove the scratch venv is healthy | `/tmp/immi-dep-check/bin/python -c "import xml.parsers.expat; print('expat OK')"` | `expat OK` |
-| Resolve under constraints (pip) | see Step 3 | exit 0, no output |
-| Resolve under constraints (uv, Python 3.12) | see Step 3 | exit 0 |
+| Real install under constraints (3.14) | see Step 3 | exit 0, then an import smoke passes |
+| Real install under constraints (3.12, the CI target) | see Step 3 | exit 0, then an import smoke passes |
+
+**Step 0 — record your baseline before touching anything:**
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u   # → PY_FAIL_NAMES
+make test-py 2>&1 | tail -3                                # → PY_PASS_BEFORE / PY_SKIP_BEFORE
+.venv/bin/ruff check --no-cache --statistics . 2>&1 | tail -1   # → RUFF_ALL_BEFORE
+(cd frontend && npx vitest run 2>&1 | tail -3)             # → FE_BEFORE
+(cd workers  && npx vitest run 2>&1 | tail -3)             # → WORKER_BEFORE
+```
+
+`PY_FAIL_NAMES` must be exactly the three
+`tests/test_backfill_judge_overrides_from_pdf.py` entries (or empty on an
+interpreter with a working `pypdf`). Anything else and this plan cannot start.
+At `42826a3` the numbers were 1141/7 — informational only; **every expectation
+below is "identical to your Step 0 record", never an absolute.**
 
 **Never** run `pip install` against `.venv`. **Never** run `.venv/bin/pip
-freeze`.
+freeze`. Scratch venvs under `/tmp` are where installs happen.
 
 ## Scope
 
@@ -366,8 +436,9 @@ freeze`.
 - `.github/workflows/ci.yml` — the `test-python` job's "Install Python
   dependencies" step only (and its `cache-dependency-path` list if plan 002
   created one)
-- `Dockerfile` — the `COPY` and `RUN pip install` lines only
-- `Dockerfile.extractor` — the `COPY` and `RUN pip install` lines only
+- `Dockerfile` — the `COPY` and `RUN pip install` lines only. **There is no
+  `Dockerfile.extractor` to edit**; `plans/032-consolidate-the-extraction-scripts.md`
+  deletes it and is a hard prerequisite of this plan.
 - `plans/README.md` — status row for this plan only, and only if that file
   exists
 
@@ -399,8 +470,12 @@ freeze`.
   reconsidered" for why each is deliberately excluded.
 - **`README.md`, `CLAUDE.md`, `frontend/e2e/README.md`.** `README.md:118` and
   `frontend/e2e/README.md:138` will both be stale after this plan (neither
-  mentions `constraints.txt`). Documentation is another plan's territory —
-  report the staleness in your handoff instead of editing.
+  mentions `constraints.txt`, and both predate the `requirements.txt` contract
+  decided in Step 8). Documentation is another plan's territory — report the
+  staleness in your handoff, naming both files and the new contract, instead of
+  editing them. This is a required handoff item, not an optional note: the
+  Step 8 change is user-visible for anyone outside this repository who installs
+  from the root manifest.
 
 ## Git workflow
 
@@ -667,43 +742,80 @@ If your generated block differs from this list, the environment has changed
 since this plan was written — that is a **STOP condition**, not something to
 paper over by pasting the list above. Report the diff.
 
-Now prove the pinned set actually resolves, on both interpreters CI cares
-about. First with pip, on a healthy scratch interpreter outside the repo:
+Now prove the pinned set actually **installs and imports**, on both interpreters
+that matter. Two corrections to an earlier form of this check, both of which
+made it unable to fail for the reasons that matter:
+
+- `pip install --dry-run` resolves; it does not build, install, or import
+  anything. A pin set that resolves cleanly and then fails to build a wheel, or
+  installs a package whose top-level import raises, passes a dry-run.
+- The Python 3.12 leg was written as "if `uv` is on PATH". **3.12 is CI's hard
+  target** (`.github/workflows/ci.yml`) and the extraction image's
+  (`FROM python:3.12-slim`), so it cannot be optional: a constraints file
+  verified only on the local 3.14 says nothing about the environment that will
+  actually run it.
+
+**Leg 1 — the local interpreter, real install + import smoke:**
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  rm -rf /tmp/immi-dep-check && python3 -m venv /tmp/immi-dep-check && \
-  /tmp/immi-dep-check/bin/python -c "import xml.parsers.expat; print('expat OK')" && \
-  /tmp/immi-dep-check/bin/python -m pip install --dry-run --quiet \
-    --disable-pip-version-check \
-    -c constraints.txt -r requirements-app.txt -r requirements-test.txt
-echo "pip dry-run exit=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+rm -rf /tmp/immi-dep-check && python3 -m venv /tmp/immi-dep-check
+/tmp/immi-dep-check/bin/python -c "import xml.parsers.expat; print('expat OK')"
+/tmp/immi-dep-check/bin/python -m pip install --quiet --disable-pip-version-check \
+  -c constraints.txt -r requirements-app.txt -r requirements-test.txt
+echo "install exit=$?"
+/tmp/immi-dep-check/bin/python - <<'PY'
+import importlib
+mods = ["flask", "requests", "bs4", "lxml", "pandas", "dateutil", "flask_wtf",
+        "flask_limiter", "supabase", "psycopg2", "dotenv", "fuzzywuzzy",
+        "numpy", "PIL", "pypdf", "jwt", "pytest", "responses", "freezegun"]
+bad = []
+for m in mods:
+    try:
+        importlib.import_module(m)
+    except Exception as exc:            # noqa: BLE001 - we want every failure
+        bad.append(f"{m}: {type(exc).__name__}: {exc}")
+print("import failures:", bad or "none")
+raise SystemExit(1 if bad else 0)
+PY
+echo "import smoke exit=$?"
 ```
 
-Then, if `uv` is on PATH, the Python 3.12 leg that CI and the container image
-both run (this is the stronger check — pip's dry-run uses the *local*
-interpreter's version, uv can target 3.12 directly):
+**Leg 2 — Python 3.12, the CI and container target. Required.** Get a 3.12
+interpreter by whichever of these is available, in order of preference:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  uv pip compile --quiet --python-version 3.12 --constraints constraints.txt \
-    requirements-app.txt requirements-test.txt -o /tmp/immi-resolved-312.txt && \
-  grep -cE '^[A-Za-z0-9_.-]+==' /tmp/immi-resolved-312.txt
+# (a) an existing python3.12 on PATH
+python3.12 -m venv /tmp/immi-dep-check-312
+# (b) uv, which can fetch and pin one
+uv venv --python 3.12 /tmp/immi-dep-check-312
 ```
 
-If `uv` is not installed, skip this second command and say so in your handoff —
-do not install uv.
+Then repeat the exact install + import smoke above against
+`/tmp/immi-dep-check-312/bin/python`.
 
-**Verify**: three results, all required.
+If **neither** route is available on this machine, do **not** silently skip and
+do **not** substitute `uv pip compile` (which resolves without installing).
+Stop, and report that `constraints.txt` could not be validated on the
+interpreter CI runs — the pins may still be wrong there, and shipping a lockfile
+nobody installed on the target interpreter is the failure this plan exists to
+prevent.
+
+**Verify**: five results, all required.
 
 1. `grep -c '==' constraints.txt` → `84`
-2. `pip dry-run exit=0` and no error output from the pip command
-3. `uv pip compile` (when available) exits 0 and prints `84`
+2. Leg 1 `install exit=0` and `import smoke exit=0` with `import failures: none`
+3. Leg 2 `install exit=0` and `import smoke exit=0` with `import failures: none`
+4. `/tmp/immi-dep-check-312/bin/python -m pip check` → `No broken requirements found.`
+5. `/tmp/immi-dep-check-312/bin/python -m pip freeze | grep -c '=='` equals
+   `84` — the 3.12 resolution needed *exactly* the pinned set: no package fell
+   outside a pin, and no pin was left unused. If the number differs, list the
+   symmetric difference against `constraints.txt` and report it; do not edit
+   either side to make them match.
 
-Result 3 printing `84` means the resolver needed *exactly* the pinned set on
-Python 3.12 — no package fell outside a pin, and no pin was left unused.
-(Verified on 2026-08-27: both commands succeed and the 3.12 resolution is
-set-identical to `constraints.txt`.)
+(Verified on 2026-08-27 that the pin set resolves on both 3.12 and 3.14; the
+install-and-import legs were **not** run then, so treat their first run as new
+information rather than a re-confirmation.)
 
 ### Step 4: Make `make install` and CI install through the constraints file
 
@@ -764,6 +876,13 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 `make -n` prints the recipe without executing it — it must **not** actually run
 pip. If `make -n install` errors or attempts a real install, STOP.
 
+**What `make -n` does and does not prove.** It proves the recipe *text* now
+contains `-c constraints.txt`. It does **not** prove the install works, because
+nothing runs. The evidence that the constrained install works is Step 3's two
+real installs in scratch venvs; the evidence that CI's form works is the first
+CI run on this branch. Say both plainly in your handoff rather than presenting
+`make -n` as a passing install.
+
 If `python3 -c "import yaml"` fails because PyYAML is absent from the python.org
 interpreter, use `/tmp/immi-dep-check/bin/python` after installing nothing —
 or fall back to
@@ -797,8 +916,9 @@ MarkupSafe==3.0.3
 Werkzeug==3.1.8
 ```
 
-Then edit **both** `Dockerfile` and `Dockerfile.extractor`. In each, replace the
-two-line block:
+Then edit `Dockerfile` — **the only one; `Dockerfile.extractor` was deleted by
+`plans/032-consolidate-the-extraction-scripts.md`, which is a hard prerequisite
+of this plan.** Replace the two-line block:
 
 ```dockerfile
 COPY requirements-extractor.txt .
@@ -812,9 +932,9 @@ COPY requirements-extractor.txt constraints-extractor.txt ./
 RUN pip install --no-cache-dir -c constraints-extractor.txt -r requirements-extractor.txt
 ```
 
-If that exact two-line block is not present verbatim in either file, STOP —
-`plans/032-consolidate-the-extraction-scripts.md` also edits these files and
-may have restructured them.
+If that exact two-line block is not present verbatim, STOP — plan 032 also edits
+this file (its Step 5 changes the `COPY extract_container.py …` line) and may
+have restructured the region.
 
 **Verify**:
 
@@ -822,28 +942,49 @@ may have restructured them.
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   grep -c '^[A-Za-z]' constraints-extractor.txt; \
   grep -c 'constraints-extractor.txt' Dockerfile; \
-  grep -c 'constraints-extractor.txt' Dockerfile.extractor; \
+  test ! -e Dockerfile.extractor && echo "no Dockerfile.extractor (032 landed)"; \
   grep -ciE 'supabase|postgres|hyperdrive|database_url|service_role' constraints-extractor.txt; \
   .venv/bin/pytest tests/test_extraction_container_boundary.py -q 2>&1 | tail -2
 ```
 
-→ `7`, `2`, `2`, `0`, and `2 passed`.
+→ `7`, `2`, `no Dockerfile.extractor (032 landed)`, `0`, and **`3 passed`**.
 
-Then prove the extractor pin set resolves:
+`3 passed`, not 2: `tests/test_extraction_container_boundary.py` defines three
+`test_*` functions at `42826a3` — `test_extraction_image_and_source_have_no_database_runtime_markers`,
+`test_extraction_service_has_no_durable_storage_binding` and
+`test_container_bridge_has_no_legacy_storage_terms` — and plan 032's edit to its
+line-12 tuple removes a *filename from a tuple*, not a test. An earlier draft of
+this plan said `2 passed` throughout, which would have produced a false STOP at
+every one of its three occurrences.
+
+Then prove the extractor pin set **installs**, not merely resolves:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  /tmp/immi-dep-check/bin/python -m pip install --dry-run --quiet \
-    --disable-pip-version-check \
-    -c constraints-extractor.txt -r requirements-extractor.txt
-echo "extractor dry-run exit=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+rm -rf /tmp/immi-extractor-check
+python3.12 -m venv /tmp/immi-extractor-check || uv venv --python 3.12 /tmp/immi-extractor-check
+/tmp/immi-extractor-check/bin/python -m pip install --quiet --disable-pip-version-check \
+  -c constraints-extractor.txt -r requirements-extractor.txt
+echo "extractor install exit=$?"
+/tmp/immi-extractor-check/bin/python -c "import flask; print('flask', flask.__version__)"
+/tmp/immi-extractor-check/bin/python -m pip check
+/tmp/immi-extractor-check/bin/python -m pip freeze | sort > /tmp/immi-extractor-freeze.txt
+diff <(grep -v '^#' constraints-extractor.txt | sort) /tmp/immi-extractor-freeze.txt \
+  && echo "extractor closure is exactly the pin set"
 ```
 
-→ `extractor dry-run exit=0`, no error output.
+→ `extractor install exit=0`; `flask 3.1.3`; `No broken requirements found.`;
+and the `diff` prints nothing. Use Python **3.12** here specifically — the image
+is `FROM python:3.12-slim`, so a 3.14 install proves the wrong thing. If no 3.12
+interpreter is obtainable, report that rather than substituting the local one.
 
 Note: nothing in CI builds this image (`.github/workflows/deploy-worker.yml`
-contains no `docker build`), so the boundary test above and the dry-run are the
-only gates. Do not add a Docker build step.
+contains no `docker build`), so the boundary test plus this real install are the
+only gates here. `plans/032-consolidate-the-extraction-scripts.md` Step 10 does
+build and run the image once; if you are running these plans in sequence, that
+step has already exercised the `Dockerfile` you are editing — re-run it after
+this edit if a container runtime is available, since you have just changed the
+`RUN pip install` line.
 
 ### Step 6: Create `pyproject.toml` and declare the ruff rule set explicitly
 
@@ -925,26 +1066,66 @@ import sites at `42826a3`:
 | `google-genai` (the current SDK — a **different** package) | `scripts/fetch_judge_bios.py:346` (`from google.genai import types`) and `:571` (`from google import genai`) |
 | `PyJWT` | `tests/integration/test_revoke_member.py:20` — already handled in Step 2 |
 
-Create `requirements-llm.txt` at the repo root:
+**A manifest whose versions were never resolved is a guess dressed as a
+decision.** An earlier draft shipped this file with the comment "the versions
+below are UNVALIDATED" while also telling the reader to
+`pip install -r requirements-llm.txt`. Two concrete problems with that:
+
+1. Several of the scripts it serves also need **app** dependencies —
+   `extract_structured_fields_llm.py:34`, `fill_country_gemini.py:33` and
+   `fill_outcomes_gemini.py:35` all import `dotenv`, and the extraction scripts
+   use `pandas`/`csv` paths from the app closure. A reader who installs only
+   this file into a clean venv gets `ModuleNotFoundError`, not a working job.
+2. `anthropic>=0.40,<2` and `google-genai>=1.47,<3` each span **multiple
+   unverified majors**. An upper bound you have not tested is not a bound; it is
+   an invitation to install a rewritten API.
+
+So resolve, install and import-smoke it before writing the ceilings, then write
+the ceilings you actually tested.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+rm -rf /tmp/immi-llm-check
+python3.12 -m venv /tmp/immi-llm-check || uv venv --python 3.12 /tmp/immi-llm-check
+/tmp/immi-llm-check/bin/python -m pip install --quiet --disable-pip-version-check \
+  -c constraints.txt -r requirements-app.txt \
+  anthropic google-generativeai==0.8.6 google-genai
+echo "llm install exit=$?"
+/tmp/immi-llm-check/bin/python - <<'PY'
+import anthropic, google.generativeai as legacy_genai
+from google import genai
+print("anthropic", anthropic.__version__)
+print("google-generativeai", legacy_genai.__version__)
+print("google-genai", genai.__version__ if hasattr(genai, "__version__") else "n/a")
+PY
+/tmp/immi-llm-check/bin/python -m pip freeze | grep -E '^(anthropic|google-genai|google-generativeai)=='
+```
+
+Write the **major you just installed** as the ceiling — e.g. if the resolve
+gives `anthropic==0.7x`, the bound is `<1`, not `<2`. Never widen a ceiling past
+a major you have not imported.
+
+Create `requirements-llm.txt` at the repo root, substituting the versions your
+resolve actually produced for the `<CEILING>` placeholders:
 
 ```
 # Optional dependencies for the ad-hoc LLM extraction / audit batch jobs.
 #
 # NOT installed by `make install`, NOT installed in CI, and NOT covered by any
 # test — these scripts run by hand against the local downloaded_cases/ catalog.
-# Install on demand:
-#   pip install -r requirements-llm.txt
 #
-# The versions below are UNVALIDATED in this repository: `pip install` cannot
-# run inside this project's .venv (Homebrew python@3.14 pyexpat/libexpat ABI
-# defect), so none of these has been resolved into the working environment.
-# Treat a first install as an experiment, not a reproduction.
+# These scripts ALSO need the application closure (python-dotenv, pandas, ...),
+# so this file includes it rather than pretending to be self-sufficient.
+# Install on demand:
+#   pip install -c constraints.txt -r requirements-llm.txt
+-r requirements-app.txt
 
 # extract_llm_fields.py, extract_with_llm.py, extract_llm_structured.py,
 # extract_structured_fields_llm.py — direct Anthropic API calls.
 # Note: the LLM Council feature does NOT use this package; it routes through
 # the Cloudflare AI Gateway with CF_AIG_TOKEN and needs no per-provider SDK.
-anthropic>=0.40,<2
+# Ceiling = the major actually installed and imported on <YYYY-MM-DD>.
+anthropic>=0.40,<CEILING
 
 # scripts/run_gemini_audit.py, fill_country_gemini.py, fill_outcomes_gemini.py.
 # Deprecated SDK line, deliberately capped: fill_outcomes_gemini.py:168 documents
@@ -955,23 +1136,34 @@ google-generativeai>=0.8.6,<0.9
 # scripts/fetch_judge_bios.py — the current SDK (`from google import genai`).
 # A different distribution from google-generativeai above; both are needed
 # until fetch_judge_bios.py's siblings are migrated.
-google-genai>=1.47,<3
+# Ceiling = the major actually installed and imported on <YYYY-MM-DD>.
+google-genai>=1.47,<CEILING
 ```
 
 Do **not** add these three to `constraints.txt`. That file is the snapshot of
 the environment that passes the test suite, and none of them is installed in
-it; adding unverified pins there would make the lockfile lie.
+it; adding pins there would make the lockfile claim an environment nobody ran
+the suite in.
+
+If the resolve or the import smoke **fails**, do not ship the ceilings anyway.
+Report which package failed and on what, and leave `requirements-llm.txt`
+uncreated — an unvalidated manifest that looks validated is worse than the
+current state, where the dependencies are simply undeclared.
 
 **Verify**:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   grep -cE '^[A-Za-z]' requirements-llm.txt; \
-  grep -cE 'anthropic|google-generativeai|google-genai' constraints.txt; \
+  grep -c '^-r requirements-app.txt' requirements-llm.txt; \
+  grep -c 'CEILING' requirements-llm.txt; \
+  grep -cE '^(anthropic|google-generativeai|google-genai)' constraints.txt; \
   grep -c 'requirements-llm.txt' requirements-app.txt
 ```
 
-→ `3`, `0`, `1` (the last one is the pointer comment added in Step 1).
+→ `3`, `1`, **`0`** (no unfilled placeholder survives — an unfilled template is
+a STOP, not a nicety), `0`, `1` (the last one is the pointer comment added in
+Step 1).
 
 ### Step 8: Repoint the `requirements.txt` shim at the real dependency set
 
@@ -981,9 +1173,38 @@ resolves to a single Flask line, so the first Dependabot / pip-audit / Snyk
 setup pointed at the repository default would report a clean one-package
 project and give a false all-clear over 16 unpinned app dependencies.
 
-Nothing builds from it: both Dockerfiles read `requirements-extractor.txt`
-directly, `Makefile` and CI read `requirements-app.txt` +
-`requirements-test.txt`. Verify that yourself before editing:
+**Decide the contract first, and state it.** A repo-wide grep can prove that no
+file *in this repository* reads bare `requirements.txt`; it cannot prove no
+**external** consumer does, and the file's whole stated purpose is external
+tooling. So repointing it is a behaviour change for anyone outside this repo who
+runs `pip install -r requirements.txt`, and it needs a decided contract rather
+than a "nothing breaks" argument.
+
+The contract this plan adopts, and which the file's header must state:
+
+> **`requirements.txt` = the application runtime closure, pinned.** Not tests,
+> not the extractor image, not the LLM batch jobs. Each of those has its own
+> named manifest, and a scanner that wants them must be pointed at them
+> explicitly.
+
+That is the conventional, least-surprising meaning of a root `requirements.txt`,
+and it keeps `pip install -r requirements.txt` from dragging `pytest` and `ruff`
+into a production environment — which the earlier `-r requirements-test.txt`
+draft would have done. It does leave test dependencies outside the default
+scanner view; that is why the header names the other manifests, and why the
+scanner recommendation is to add them (most scanners, Dependabot included,
+discover every `requirements*.txt` in a repository anyway).
+
+Record the change in your handoff as a **behaviour change for external
+consumers** — bare `requirements.txt` goes from "Flask only" to "the full
+pinned app closure" — and note that `README.md:118` and
+`frontend/e2e/README.md:138` still describe the old installation story and are
+owned by the documentation plan.
+
+Nothing *in this repository* builds from it: the Dockerfile reads
+`requirements-extractor.txt` directly, `Makefile` and CI read
+`requirements-app.txt` + `requirements-test.txt`. Verify that yourself before
+editing:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
@@ -1000,36 +1221,49 @@ leading hyphen segment). If this prints a build file that reads bare
 Replace the whole file with:
 
 ```
-# Compatibility shim for external tooling that expects a root requirements.txt
-# — dependency scanners above all. It resolves to the project's real Python
-# dependency set so a scanner pointed at the repository default sees all of it.
+# The project's APPLICATION runtime closure, pinned — and the compatibility
+# entry point for external tooling that expects a root requirements.txt
+# (dependency scanners above all). Previously this resolved to Flask alone,
+# so a scanner pointed at the repository default reported a clean one-package
+# project over 16 unpinned application dependencies.
+#
+# CONTRACT: application runtime only. Tests, the extraction Container image and
+# the ad-hoc LLM batch jobs each have their own manifest and are deliberately
+# NOT pulled in here — installing this file must never drag pytest or ruff into
+# a production environment.
 #
 # Humans and build files must name a manifest explicitly instead:
-#   application / CLI / local dev  → requirements-app.txt
+#   application / CLI / local dev  → requirements-app.txt   (this file's target)
 #   tests                          → requirements-test.txt
 #   extraction Container image     → requirements-extractor.txt (Dockerfile)
 #   ad-hoc LLM batch jobs          → requirements-llm.txt
 #
-# When configuring a scanner (Dependabot, pip-audit, Snyk), point it at
-# constraints.txt as well — that is the pinned closure and the only file that
-# says which versions are actually installed.
+# When configuring a scanner (Dependabot, pip-audit, Snyk), add the other three
+# manifests explicitly, and point it at constraints.txt as well — that is the
+# pinned closure and the only file that says which versions are installed.
 -c constraints.txt
 -r requirements-app.txt
--r requirements-test.txt
 ```
 
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  grep -cE '^-' requirements.txt; \
-  /tmp/immi-dep-check/bin/python -m pip install --dry-run --quiet \
-    --disable-pip-version-check -r requirements.txt
-echo "shim dry-run exit=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+grep -cE '^-' requirements.txt
+grep -c 'requirements-test.txt' requirements.txt
+rm -rf /tmp/immi-shim-check && python3 -m venv /tmp/immi-shim-check
+/tmp/immi-shim-check/bin/python -m pip install --quiet --disable-pip-version-check \
+  -r requirements.txt
+echo "shim install exit=$?"
+/tmp/immi-shim-check/bin/python -c "import flask, pandas, supabase; print('app closure ok')"
+/tmp/immi-shim-check/bin/python -m pip list --format=freeze | grep -cE '^(pytest|ruff)=='
 ```
 
-→ `3`, then `shim dry-run exit=0` with no error output. That proves the shim now
-resolves to the full constrained set rather than to Flask alone.
+→ `2`; `1` (only the comment line naming it, never an `-r`); `shim install
+exit=0`; `app closure ok`; and **`0`** — no test tooling reached the
+environment, which is the contract the header just declared. A real install
+rather than `--dry-run` here, for the same reason as Step 3: a dry-run cannot
+tell you what actually landed in `site-packages`.
 
 ## Test plan
 
@@ -1038,37 +1272,37 @@ installs nothing into `.venv`, and touches no `.py` file — so every existing
 suite must come out numerically identical to the baseline.
 
 - **Existing coverage that already guards this work**:
-  `tests/test_extraction_container_boundary.py` (2 tests) reads `Dockerfile`,
-  `Dockerfile.extractor`, `extract_container.py` and
-  `requirements-extractor.txt` and asserts that no database-runtime marker
-  appears in any of them. Step 5 edits two of those four files, so this file is
-  the regression gate for the container change and must be run explicitly.
-- **The real integration test is CI itself.** Step 4 changes how CI installs
-  Python dependencies. The first CI run after this branch is what proves the
-  pinned closure installs on ubuntu-latest / Python 3.12. Steps 3 and 5
-  pre-verify that by resolving the same manifests with `pip --dry-run` in a
-  healthy scratch venv and (when `uv` is present) with
-  `uv pip compile --python-version 3.12`, both of which were confirmed to
-  succeed on 2026-08-27.
+  `tests/test_extraction_container_boundary.py` (**3** tests — see Step 5) reads
+  `Dockerfile`, `extract_container.py` and `requirements-extractor.txt` and
+  asserts that no database-runtime marker appears in any of them. Step 5 edits
+  one of those, so this file is the regression gate for the container change and
+  must be run explicitly.
+- **The real integration tests are the scratch-venv installs, then CI.** Step 4
+  changes how CI installs Python dependencies; the first CI run after this
+  branch is what proves the pinned closure installs on ubuntu-latest /
+  Python 3.12. Steps 3, 5 and 7 pre-verify that by **actually installing** the
+  same manifests into clean scratch venvs on both 3.14 and 3.12 and running an
+  import smoke over every declared top-level module. `pip install --dry-run` and
+  `uv pip compile` were the earlier form of these checks; both only resolve, and
+  a set that resolves can still fail to build a wheel or fail on import. They
+  are no longer accepted as evidence here.
 - **Verification commands, in order**:
 
   ```bash
   cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-  .venv/bin/pytest tests/test_extraction_container_boundary.py -q   # 2 passed
+  .venv/bin/pytest tests/test_extraction_container_boundary.py -q   # 3 passed
   make lint                                                        # All checks passed!
-  make test-py                                                     # 1141 passed, 3 failed, 7 skipped
-  cd frontend && npx vitest run                                    # 490 passed, 55 files
-  cd ../workers && npx vitest run                                  # 345 passed, 25 files
+  make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u          # == PY_FAIL_NAMES
+  make test-py 2>&1 | tail -3                                      # == PY_PASS_BEFORE / PY_SKIP_BEFORE
+  cd frontend && npx vitest run                                    # == FE_BEFORE
+  cd ../workers && npx vitest run                                  # == WORKER_BEFORE
   ```
 
-  The **3 failures** in `make test-py` are the pre-existing environmental
-  `pyexpat` ones in `tests/test_backfill_judge_overrides_from_pdf.py`. If the
-  failure count is anything other than 3, or the pass count is anything other
-  than 1141, STOP — this plan cannot change either number.
-
-  If plan 002 has landed, its own changes shift the frontend Vitest count from
-  490 to 518 and add worker/E2E targets. Use the counts plan 002 documents in
-  that case; the requirement is that **this** plan changes none of them.
+  This plan installs nothing into `.venv` and touches no `.py` file, so **every
+  suite must come out identical to your Step 0 record**. Do not quote absolute
+  totals — plans 002, 003, 030–034 all move them, and an executor who edits the
+  expected number to match has removed the only thing this check was testing.
+  The Python failures must remain exactly `PY_FAIL_NAMES`.
 
 ## Done criteria
 
@@ -1087,19 +1321,23 @@ Machine-checkable. ALL must hold. Run from
 - [ ] `grep -c 'pip install -c constraints.txt -r requirements-app.txt' Makefile` → `1`
 - [ ] `grep -c 'pip install --quiet -c constraints.txt -r requirements-app.txt' .github/workflows/ci.yml` → `1`
 - [ ] `grep -c 'constraints-extractor.txt' Dockerfile` → `2`
-- [ ] `grep -c 'constraints-extractor.txt' Dockerfile.extractor` → `2`
+- [ ] `test ! -e Dockerfile.extractor` (plan 032 deleted it; this plan must not recreate it)
 - [ ] `grep -c 'select = \["E4", "E7", "E9", "F"\]' pyproject.toml` → `1`
 - [ ] `grep -c 'tool.pytest' pyproject.toml` → `0`
-- [ ] `grep -cE '^[A-Za-z]' requirements-llm.txt` → `3`
-- [ ] `grep -cE 'anthropic|google-generativeai|google-genai' constraints.txt` → `0`
-- [ ] `grep -cE '^-' requirements.txt` → `3`
+- [ ] `grep -cE '^[A-Za-z]' requirements-llm.txt` → `3`, and `grep -c CEILING requirements-llm.txt` → `0`
+- [ ] `grep -c '^-r requirements-app.txt' requirements-llm.txt` → `1`
+- [ ] `grep -cE '^(anthropic|google-generativeai|google-genai)' constraints.txt` → `0`
+- [ ] `grep -cE '^-' requirements.txt` → `2`, and `grep -c 'requirements-test.txt' requirements.txt` → `1` (a comment, never an `-r`)
 - [ ] `.venv/bin/ruff check --no-cache immi_case_downloader/ scripts/ *.py` exits 0 and prints `All checks passed!`
+- [ ] `.venv/bin/ruff check --no-cache --statistics . 2>&1 | tail -1` is identical to `RUFF_ALL_BEFORE`
 - [ ] `make lint` prints `All checks passed!`
-- [ ] `.venv/bin/pytest tests/test_extraction_container_boundary.py -q` → `2 passed`
-- [ ] `make test-py` → `1141 passed, 3 failed, 7 skipped` (unchanged)
-- [ ] `/tmp/immi-dep-check/bin/python -m pip install --dry-run --quiet --disable-pip-version-check -c constraints.txt -r requirements-app.txt -r requirements-test.txt` exits 0
-- [ ] `/tmp/immi-dep-check/bin/python -m pip install --dry-run --quiet --disable-pip-version-check -c constraints-extractor.txt -r requirements-extractor.txt` exits 0
-- [ ] `make -n install | grep -c constraints.txt` → ≥ `1`, and `make -n` performed no install
+- [ ] `.venv/bin/pytest tests/test_extraction_container_boundary.py -q` → `3 passed`
+- [ ] `make test-py` → passed `= PY_PASS_BEFORE`, skipped `= PY_SKIP_BEFORE`, failing test **names** `= PY_FAIL_NAMES`
+- [ ] A **real** constrained install succeeded on the local interpreter, with `import failures: none` (Step 3 leg 1)
+- [ ] A **real** constrained install succeeded on **Python 3.12**, with `import failures: none`, `pip check` clean, and a `pip freeze` set-identical to `constraints.txt` (Step 3 leg 2) — **or** the handoff states that no 3.12 interpreter was obtainable and the pins are unvalidated on CI's target
+- [ ] A real install of `-c constraints-extractor.txt -r requirements-extractor.txt` on Python 3.12 succeeded and its `pip freeze` equals `constraints-extractor.txt` exactly (Step 5)
+- [ ] A real install of `-r requirements.txt` succeeded and pulled in **no** `pytest`/`ruff` (Step 8)
+- [ ] `make -n install | grep -c constraints.txt` → ≥ `1`, and `make -n` performed no install (this proves the recipe text only, not that the install works — Step 3 is what proves that)
 - [ ] `.venv/bin/python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); print('ok')"` → `ok`
 - [ ] `git status --short` lists only files from the "In scope" list (plus
       `plans/036-bound-the-python-dependencies.md` itself and any pre-existing
@@ -1115,18 +1353,28 @@ Stop and report back (do not improvise) if:
   snapshot" premise is void. Do not paste the listed block over your generated
   one — report the diff instead. A pin nobody ran the suite against is worse
   than no pin.
-- **`make test-py` reports anything other than `1141 passed, 3 failed, 7
-  skipped`** at any point (or, if plan 002 landed, anything other than the
-  counts plan 002 documents). This plan installs nothing; a changed count means
-  something else moved.
-- **`make test-py` reports a *different* set of 3 failures** — i.e. failures
-  outside `tests/test_backfill_judge_overrides_from_pdf.py`.
-- **`.venv/bin/ruff check --no-cache --statistics .` reports a count other than
-  0 or 43 after Step 6.** The pyproject config is supposed to be a provable
-  no-op; any other number means `select` was widened or ruff is not 0.15.18.
+- **`make test-py` reports anything other than your Step 0 record.** This plan
+  installs nothing; a changed count means something else moved.
+- **`make test-py` reports a failing test whose name was not in
+  `PY_FAIL_NAMES`.**
+- **`.venv/bin/ruff check --no-cache --statistics .` reports anything other than
+  `RUFF_ALL_BEFORE` after Step 6.** The pyproject config is supposed to be a
+  provable no-op; any other value means `select` was widened or ruff is not
+  0.15.18.
+- **`Dockerfile.extractor` still exists.** Plan 032 is a hard prerequisite and
+  deletes it; if it is present, 032 has not landed. Stop — do not edit both
+  files, and do not delete it yourself (that is 032's change, with its own test
+  edit).
 - **The two-line `COPY`/`RUN pip install` block in Step 5 is not present
-  verbatim in `Dockerfile` or `Dockerfile.extractor`.**
-  `plans/032-consolidate-the-extraction-scripts.md` also owns those files.
+  verbatim in `Dockerfile`.**
+  `plans/032-consolidate-the-extraction-scripts.md` also edits that file.
+- **No Python 3.12 interpreter is obtainable for Step 3 leg 2 or Step 5.** Do
+  not fall back to the local 3.14 and call the pins verified: CI and the
+  container image both run 3.12, and that is the environment the constraints
+  file exists for. Report it as an unvalidated gate.
+- **The Step 7 resolve or import smoke fails.** Do not write
+  `requirements-llm.txt` with untested ceilings anyway — leave the file
+  uncreated and report which package failed.
 - **`tests/test_extraction_container_boundary.py` fails after Step 5.** You have
   introduced a forbidden marker into the extraction image's source set.
 - **The Step 8 grep finds a build file that reads bare `requirements.txt`.**
@@ -1217,10 +1465,14 @@ behaviour change, so it needs its own plan.
 **What will interact with this**
 
 - `plans/032-consolidate-the-extraction-scripts.md` rewrites `Dockerfile`,
-  `Dockerfile.extractor` and several `extract_*.py` / `fill_*_gemini.py`
-  scripts. If it lands after this plan, it must preserve the
-  `-c constraints-extractor.txt` argument, and it should prune
-  `requirements-llm.txt` for any script it deletes.
+  **deletes** `Dockerfile.extractor`, and archives four `extract_*.py` /
+  `merge_*.py` scripts. It is a **hard prerequisite** of this plan and must land
+  first (see Status): running it afterwards would delete a file this plan's Done
+  criteria referenced, and running it in parallel guarantees a conflict on
+  `Dockerfile`. After both land, prune `requirements-llm.txt` for any script 032
+  archived — `extract_with_llm.py` and `extract_llm_structured.py` move to
+  `archive/extraction/`, so `anthropic` is still needed by the two surviving
+  scripts but the comment listing four consumers should be trimmed to two.
 - If `requirements-e2e.txt` (plan 002) ever grows a package that also appears
   in `constraints.txt`, the pin wins — which is the intent, but it means a
   playwright-driven dependency bump has to go through the constraints
@@ -1281,11 +1533,30 @@ rather than silently dropped, so nobody re-audits it.
 - **`requirements.txt` resolving to Flask alone is a bug.** Corrected: the shim
   is documented and intentional (`requirements.txt:1-2` say so, and it points
   at `requirements-extractor.txt` because that file historically *was* the
-  Container's dependency set — `Dockerfile:7-8` and `Dockerfile.extractor:4-5`
-  still install it). `Makefile:101` not reading `requirements.txt` is the
-  design, not a defect. What survives is the *scanner* consequence, and Step 8
-  addresses that by repointing the shim at the real set after proving no build
-  file reads it.
+  Container's dependency set — `Dockerfile:7-8` installs it). `Makefile:101`
+  not reading `requirements.txt` is the design, not a defect. What survives is
+  the *scanner* consequence, and Step 8 addresses it.
+
+- **"No build file reads it, so repointing is safe" was not sufficient
+  grounds — Step 8 now decides a contract instead.** The file's stated purpose
+  is external tooling, and an in-repo grep cannot enumerate external consumers,
+  so "safe" was unprovable. Two things changed: (1) the target is
+  `requirements-app.txt` **only**, not app + test — an earlier draft would have
+  made `pip install -r requirements.txt` drag `pytest` and `ruff` into whatever
+  environment an outside consumer was building; (2) the header states the
+  contract explicitly and names the other three manifests, and the change is
+  recorded as user-visible in the handoff alongside the two stale docs
+  (`README.md:118`, `frontend/e2e/README.md:138`).
+
+- **`pip install --dry-run` and an optional `uv` leg were treated as proof that
+  the pinned closure works — corrected.** A dry-run resolves without building,
+  installing or importing anything, and Python 3.12 is CI's and the container
+  image's hard target, so an optional 3.12 check verified the wrong thing on the
+  days it was skipped. Steps 3, 5 and 7 now perform **real installs** into clean
+  scratch venvs on both 3.14 and 3.12, run an import smoke over every declared
+  top-level module, and compare `pip freeze` against the pin set. If no 3.12
+  interpreter is obtainable, the plan requires declaring the gap rather than
+  substituting the local interpreter.
 
 - **Add `playwright` / `pytest-playwright` so `make test-e2e` runs.** Real, but
   owned by `plans/002-fix-test-collection-and-install.md`, which creates
@@ -1317,4 +1588,15 @@ original audit was wrong, the corrected reference is what appears in the steps.
   ImportError because `pip` imports `xml.parsers.expat` via `xmlrpc.client`.
   That is why `make install` cannot currently run on this machine and why
   Step 3 generates `constraints.txt` from `importlib.metadata` instead of
-  `pip freeze`.
+  `pip freeze`. It does **not** excuse skipping a real install: the scratch
+  venvs under `/tmp` are built from a healthy interpreter and are where every
+  install verification in this plan happens.
+- **`tests/test_extraction_container_boundary.py` has 3 tests, not 2.** An
+  earlier draft of this plan wrote `2 passed` in its command table, in Step 5's
+  verification, in the Test plan and in the Done criteria. The file defines
+  `test_extraction_image_and_source_have_no_database_runtime_markers` (line 9),
+  `test_extraction_service_has_no_durable_storage_binding` (line 18) and
+  `test_container_bridge_has_no_legacy_storage_terms` (line 26) — three, both at
+  `42826a3` and after `plans/032-consolidate-the-extraction-scripts.md` removes
+  a filename from the line-12 tuple. All four occurrences now say `3 passed`;
+  the old value would have fired a false STOP every time.

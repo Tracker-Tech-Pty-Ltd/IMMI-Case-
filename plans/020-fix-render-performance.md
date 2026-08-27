@@ -3,42 +3,65 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan in
-> `plans/README.md` **only if that file exists** — at planning time it does
-> not, and creating it is out of scope.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 >
 > ```bash
-> git diff --stat 42826a3..HEAD -- \
->   frontend/src/components/shared/GlobalSearch.tsx \
->   frontend/src/components/cases/CaseTextViewer.tsx \
->   frontend/src/components/cases/CasesTable.tsx \
->   frontend/src/pages/DashboardPage.tsx \
->   frontend/src/components/analytics/SuccessRateCalculator.tsx \
->   frontend/src/components/analytics/OutcomeAnalysisSection.tsx \
->   frontend/src/hooks/use-cases.ts \
->   frontend/src/hooks/use-analytics.ts
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="frontend/src/components/shared/GlobalSearch.tsx \
+>    frontend/src/components/cases/CaseTextViewer.tsx \
+>    frontend/src/components/cases/CasesTable.tsx \
+>    frontend/src/pages/DashboardPage.tsx \
+>    frontend/src/components/analytics/SuccessRateCalculator.tsx \
+>    frontend/src/components/analytics/OutcomeAnalysisSection.tsx \
+>    frontend/src/hooks/use-cases.ts \
+>    frontend/src/hooks/use-analytics.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
 >
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing, and `git status --short` lists no
+> in-scope path. If any in-scope file appears in **any** of them, compare the
+> "Current state" excerpts against the live code before proceeding; on a
+> mismatch, treat it as a STOP condition.
+>
+> **`CasesTable.tsx` is the known collision.** `plans/023-fix-accessibility-semantics.md`
+> also edits it (Step 8: `scope="col"` on the `<thead>` `<th>`s and an `sr-only`
+> `<caption>`), in the same `return` block this plan's Step 5 restructures. The
+> two changes are compatible but **must not be applied concurrently**: land this
+> plan's Step 5 first, then plan 023's Step 8 on top, or give both files to a
+> single executor who applies them in that order. If the drift check shows
+> `CasesTable.tsx` already carries `scope=` or `<caption`, plan 023 landed first
+> — stop and report rather than reverting its work.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md` — **soft, but
+  real.** Every command below invokes the working `npx tsc -b --noEmit` form, so
+  this plan is executable standalone. What 001 adds is
+  `frontend/tsconfig.test.json`: without it, files under `frontend/__tests__/`
+  are **not** type-checked by any project, so the four new test files this plan
+  creates compile only inside Vitest's esbuild transform (which strips types
+  without checking them). A type error in a new test file is therefore invisible
+  until 001 lands. Prefer running after 001; if you run before it, say so in
+  your report so the type-check gap is known.
+- **Sequencing with 023**: this plan and `plans/023-fix-accessibility-semantics.md`
+  both edit `frontend/src/components/cases/CasesTable.tsx`. See the drift-check
+  note above — single owner, this plan's Step 5 first.
 - **Category**: perf
 - **Planned at**: commit `42826a3`, 2026-08-27
-
-> On "Depends on: none": plan 001 restores the frontend compile gate
-> (`make typecheck` currently runs a form of `tsc` that loads zero files). This
-> plan does **not** wait for it, because every command below invokes the
-> working form (`npx tsc -b --noEmit`) directly. If plan 001 has already
-> landed when you run this, `make typecheck` will also work — either is fine.
 
 ## Why this matters
 
@@ -478,11 +501,17 @@ Environment facts:
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Frontend typecheck (**working form**) | `cd frontend && npx tsc -b --noEmit` | exit 0, no output |
-| Frontend unit tests | `cd frontend && npx vitest run` | baseline 490 passed / 55 files; after this plan **more** passed, 0 failed |
+| Frontend unit tests | `cd frontend && npx vitest run` | **0 failed**, and `Tests passed` == `FE_BEFORE + <your new test count>` (both recorded in Step 0) |
 | Single frontend test file | `cd frontend && npx vitest run __tests__/<file>` | all pass |
-| Worker tests (must stay green) | `cd workers && npx vitest run` | 345 passed, 25 files |
-| Python unit tests (must stay green) | `make test-py` | 1141 passed, 3 failed, 7 skipped — **the 3 failures are pre-existing and environmental** (Homebrew Python 3.14.7 pyexpat/libexpat ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`). Not caused by, and not fixable in, this plan. |
+| Worker tests (must stay green) | `cd workers && npx vitest run` | 0 failed, count unchanged from `WK_BEFORE` recorded in Step 0 |
+| Python unit tests (must stay green) | `make test-py` | 0 new failures. The **only** failures allowed are the 3 pre-existing environmental ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py` (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaking `pypdf`). Assert them **by name**, not by count. |
 | Confirm nothing outside scope changed | `git status --short` | only files listed in Scope |
+
+Absolute suite totals are deliberately absent from this table and from "Done
+criteria". Several frontend plans run in parallel; a hard-coded
+`490 passed / 55 files` turns any sibling plan landing first into a false STOP
+and teaches the executor to edit the yardstick. Record baselines in Step 0 and
+compare deltas.
 
 Do **not** use `make typecheck` as your gate: `Makefile:95-96` runs
 `cd frontend && npx tsc --noEmit`, which exits 0 while loading **zero** files
@@ -503,7 +532,9 @@ is plan 001's job, not this plan's.
 - `frontend/__tests__/global-search-debounce.test.tsx` — **create**
 - `frontend/__tests__/cases-table-responsive.test.tsx` — **create**
 - `frontend/__tests__/render-perf-guards.test.ts` — **create**
-- `plans/020-fix-render-performance.md` — this file, status line only
+- `frontend/__tests__/render-perf-measured.test.tsx` — **create**
+
+Nothing else. In particular `plans/README.md` is **not** in scope for this plan.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -548,6 +579,34 @@ is plan 001's job, not this plan's.
 - Do **NOT** push, open a PR, or merge. The operator commits and ships.
 
 ## Steps
+
+### Step 0: Record the baselines every later gate compares against
+
+Run before touching anything and write the numbers into your working notes.
+None of the gates in this plan use a number hard-coded in this file.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
+#   FE_BEFORE    = "Tests  N passed"
+#   FEFILES_BEFORE = "Test Files  N passed"
+
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -5
+#   WK_BEFORE = "Tests  N passed"   (this plan touches no Worker code — must not move)
+
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -3
+#   PY_BEFORE = "N passed"
+# Then capture the failing test IDs by name, not by count:
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -E '^FAILED' | sort > /tmp/020-py-failures-before.txt
+cat /tmp/020-py-failures-before.txt
+```
+
+**Verify**: `/tmp/020-py-failures-before.txt` contains **only** lines naming
+`tests/test_backfill_judge_overrides_from_pdf.py` (three of them — the pyexpat /
+pypdf ImportErrors). If any other test is listed, the tree is already red for a
+reason this plan did not cause; report it and stop.
+
+At the end of the plan you will regenerate that file and `diff` it. Identity of
+the failing set is the gate, not its size.
 
 ### Step 1: Add a shared `useDebouncedValue` hook
 
@@ -975,7 +1034,13 @@ Then `cd frontend && npx vitest run` → 0 failed.
 
 ### Step 7: Add the regression tests
 
-Create four files under `frontend/__tests__/`.
+Create **five** files under `frontend/__tests__/`.
+
+Read this before writing them: **7d alone does not measure the finding.** A
+source-string grep proves a `useMemo` was typed, not that render work went down,
+and it says nothing about the chart/table toggle. 7e is the file that actually
+measures behaviour; 7d is only a cheap anti-drift net around it. If you have to
+choose, 7e is the one that matters.
 
 **7a. `frontend/__tests__/use-debounced-value.test.ts`** — model the imports and
 `renderHook` usage on `frontend/__tests__/use-llm-council-sessions.test.ts`.
@@ -1032,14 +1097,105 @@ guard file in the style of `frontend/__tests__/no-as-any.test.tsx`. Use
    `overflow-x-auto` (the E2E assertion in
    `tests/e2e/react/test_react_responsive.py:104` depends on that class).
 
+**7e. `frontend/__tests__/render-perf-measured.test.tsx`** — the tests that
+actually measure the finding rather than describing it. Three groups.
+
+*Group 1 — dashboard chart re-renders on a view toggle (FEPERF-07).* This is the
+finding: five `memo()`-wrapped charts recompute because their dataset props get
+fresh object identities on every render, so flipping chart↔table replays every
+animation. Mock each chart component with a counting stub and assert the count.
+
+- Mock the five chart modules the dashboard renders with stubs that increment a
+  shared counter and record the identity of the data prop, e.g.
+
+  ```tsx
+  const renders = vi.hoisted(() => ({ court: 0, trend: 0, nature: 0, subclass: 0, sparkline: 0 }));
+  const lastProps = vi.hoisted(() => ({} as Record<string, unknown>));
+  vi.mock("@/components/dashboard/CourtChart", () => ({
+    CourtChart: (props: { data: unknown }) => {
+      renders.court += 1;
+      lastProps.court = props.data;
+      return <div data-testid="court-chart" />;
+    },
+  }));
+  ```
+
+  Repeat for the other four. Read the real import paths and prop names out of
+  `frontend/src/pages/DashboardPage.tsx` before writing the mocks — do not guess
+  them; if a name does not match, the mock silently does nothing and the test
+  passes vacuously. Assert the stub rendered at least once *before* asserting
+  anything about counts, so a broken mock fails loudly.
+- Mock `@/hooks/use-stats` and `@/hooks/use-trends` to return fixed data (copy
+  the shape from `frontend/__tests__/dashboard-page.test.tsx`), then render
+  `DashboardPage` inside the same provider wrapper that file uses.
+- Test: **"toggling chart/table view does not re-render the chart components"**.
+  Record `{...renders}` after the initial render, click the table-view control,
+  `await` the re-render, then click back to chart view. Assert the counts for
+  the charts that stay mounted are unchanged, and — the load-bearing part —
+  assert the data-prop identity is stable:
+  `expect(lastProps.court).toBe(courtDataAfterFirstRender)`.
+  Identity (`toBe`, not `toEqual`) is the whole point: `useMemo` keeps the same
+  object, so `memo()` bails out. Without Step 4 this assertion fails.
+- Test: **"changing the filters does re-render the charts"** — the guard against
+  "fixed" it by memoising on `[]`. Change a filter that feeds the datasets and
+  assert the counts *do* increase and the identity *does* change. A memo with an
+  empty dependency array would pass the first test and fail this one.
+
+*Group 2 — the full-text reader stops rebuilding the judgment tree (FEPERF-03).*
+`renderSmartLines` is module-private in `CaseTextViewer.tsx`, so count its work
+indirectly and deterministically:
+
+- Render `CaseTextViewer` with a synthetic `text` of ~2,000 lines containing a
+  known term. With `vi.useFakeTimers()`, type three characters into the in-text
+  search box one at a time **without** advancing timers, and assert the rendered
+  output still shows zero highlights — the debounce means no search-mode tree
+  was built yet.
+- Advance past 200 ms and assert highlights appear. Together these prove the
+  200 ms debounce is real, which is what stops the per-keystroke rebuild.
+- Test the cap explicitly: build a `text` containing the term **600** times,
+  search for it, advance the timers, and assert
+  `container.querySelectorAll("mark").length` (or whatever element the
+  highlight branch emits — read it out of the file, do not assume `<mark>`) is
+  exactly `500`, and that the counter element's text contains `600`. This is the
+  behavioural test for `MAX_HIGHLIGHTED_MATCHES` and for the
+  `components.case_text_viewer.match_cap_note` string added in Step 3.
+
+*Group 3 — the desktop case list mounts no `CaseCard` (FEPERF-09).* Already
+covered by 7c, which counts `queryAllByTestId("case-card")`. That **is** a mount
+count, so do not duplicate it here; just cross-reference it.
+
+**A note on what these tests can and cannot prove.** They measure React render
+counts and DOM output in jsdom. They do **not** measure wall-clock time, layout,
+or Recharts' internal scale computation, and they must not be described as
+doing so. Wall-clock evidence needs the browser harness that
+`plans/040-revive-the-e2e-suites.md` owns; see Maintenance notes.
+
 **Verify**:
 
 ```bash
-cd frontend && npx vitest run __tests__/use-debounced-value.test.ts __tests__/global-search-debounce.test.tsx __tests__/cases-table-responsive.test.tsx __tests__/render-perf-guards.test.ts
+cd frontend && npx vitest run \
+  __tests__/use-debounced-value.test.ts \
+  __tests__/global-search-debounce.test.tsx \
+  __tests__/cases-table-responsive.test.tsx \
+  __tests__/render-perf-guards.test.ts \
+  __tests__/render-perf-measured.test.tsx
 ```
 
-→ all pass. Then `cd frontend && npx vitest run` → 0 failed, and the total
-"passed" count is **greater than** the 490 baseline.
+→ all pass, 0 failed.
+
+**Verify the measured tests actually bite** (do this, then undo it). A render
+counter that passes against the *unfixed* code proves nothing:
+
+1. Temporarily revert Step 4 in `DashboardPage.tsx` — unwrap one distribution
+   from its `useMemo` so it is rebuilt on every render.
+2. `cd frontend && npx vitest run __tests__/render-perf-measured.test.tsx`
+   → the "toggling chart/table view does not re-render the chart components"
+   test **fails** on the identity assertion.
+3. Restore the `useMemo`, re-run → passes. Do not commit the temporary revert.
+
+Then `cd frontend && npx vitest run` → 0 failed, and `Tests passed` equals
+`FE_BEFORE` (Step 0) plus the number of `it` blocks you wrote across the five
+new files. State that arithmetic explicitly in your report.
 
 ### Step 8: Full gate
 
@@ -1048,12 +1204,25 @@ Run every gate and confirm nothing regressed elsewhere.
 **Verify**:
 
 ```bash
-cd frontend && npx tsc -b --noEmit          # exit 0
-cd frontend && npx vitest run               # 0 failed, >490 passed
-cd workers  && npx vitest run               # 345 passed, 25 files
-make test-py                                # 1141 passed, 3 failed (pre-existing pyexpat), 7 skipped
-git status --short                          # only files from "In scope"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx tsc -b --noEmit
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"  && npx vitest run 2>&1 | tail -5
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -E '^FAILED' | sort > /tmp/020-py-failures-after.txt
+diff /tmp/020-py-failures-before.txt /tmp/020-py-failures-after.txt; echo "py-failure-diff-exit=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ```
+
+- `tsc -b --noEmit` → exit 0, no output.
+- Frontend Vitest → 0 failed, and `Tests passed` == `FE_BEFORE` + the number of
+  `it` blocks added in Step 7.
+- Worker Vitest → 0 failed, `Tests passed` == `WK_BEFORE` (this plan touches no
+  Worker code, so it must not move at all).
+- `py-failure-diff-exit=0` — the set of failing Python tests is **identical** to
+  Step 0's, i.e. still exactly the three
+  `tests/test_backfill_judge_overrides_from_pdf.py` pyexpat/pypdf ImportErrors,
+  by name. Compare identity, never count: a count can stay at 3 while a real
+  regression replaces an environmental failure.
+- `git status --short` → only files from "In scope".
 
 ## Test plan
 
@@ -1063,8 +1232,9 @@ New tests, all under `frontend/__tests__/`:
 |---|---|---|
 | `use-debounced-value.test.ts` | the new hook | initial value; no update before the delay; rapid changes collapse to the last value |
 | `global-search-debounce.test.tsx` | FEPERF-02 | no query before the debounce; final query after it; 1-char query never issued |
-| `cases-table-responsive.test.tsx` | FEPERF-09 | desktop fallback renders table only; mobile renders table **and** cards |
-| `render-perf-guards.test.ts` | FEPERF-03, 07, 08, 09 | source-level guards so a future refactor cannot silently reintroduce any of the five defects |
+| `cases-table-responsive.test.tsx` | FEPERF-09 | desktop fallback renders table only (zero `CaseCard` mounts); mobile renders table **and** cards |
+| `render-perf-measured.test.tsx` | FEPERF-03, 07 (**the measurement**) | chart components do not re-render and their data props keep object identity across a chart/table toggle; they *do* re-render when filters change; the reader builds no search tree before the 200 ms debounce; the 500-match cap holds and the overflow note is shown |
+| `render-perf-guards.test.ts` | FEPERF-03, 07, 08, 09 (**anti-drift only**) | source-level guards. These cannot show that render work went down — they only stop the shape of the fix being deleted silently. Do not present them as evidence for the performance claim. |
 
 Structural patterns to copy:
 
@@ -1095,11 +1265,17 @@ change altered behaviour, not just performance.
 ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0 with no output
-- [ ] `cd frontend && npx vitest run` reports 0 failed and more than 490 passed
-- [ ] `cd workers && npx vitest run` reports 345 passed, 25 files
-- [ ] `make test-py` reports 1141 passed / 3 failed / 7 skipped — the same 3
-      pre-existing `tests/test_backfill_judge_overrides_from_pdf.py` failures,
-      no new ones
+- [ ] `cd frontend && npx vitest run` reports 0 failed, and `Tests passed`
+      equals `FE_BEFORE` (Step 0) plus the number of `it` blocks added in Step 7
+- [ ] `cd frontend && npx vitest run __tests__/render-perf-measured.test.tsx`
+      → 0 failed, and the deliberate-failure rehearsal in Step 7 was performed
+      (unwrapping one `useMemo` made the identity assertion fail)
+- [ ] `cd workers && npx vitest run` reports 0 failed with `Tests passed`
+      unchanged from `WK_BEFORE` (Step 0)
+- [ ] `diff /tmp/020-py-failures-before.txt /tmp/020-py-failures-after.txt`
+      exits 0 — the failing Python set is byte-identical, i.e. still exactly the
+      three `tests/test_backfill_judge_overrides_from_pdf.py` pyexpat/pypdf
+      ImportErrors **named individually**, with no substitutions
 - [ ] `cd frontend && grep -c "useLegalConcepts(filters, 18)" src/components/analytics/SuccessRateCalculator.tsx`
       returns `0`
 - [ ] `cd frontend && grep -c "const courtDistribution = toRenderableDistribution(" src/pages/DashboardPage.tsx`
@@ -1109,14 +1285,22 @@ ALL must hold:
 - [ ] `cd frontend && grep -c "overflow-x-auto" src/components/cases/CasesTable.tsx`
       returns `1`
 - [ ] `git status --short` lists only files named in the "In scope" list
-- [ ] `plans/README.md` status row updated **if** that file exists
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
 
-- The drift check at the top prints anything, or any excerpt in "Current state"
-  does not match the live file at the cited line.
+- The drift check at the top prints anything (committed, unstaged, staged or
+  untracked), or any excerpt in "Current state" does not match the live file at
+  the cited line.
+- The drift check shows `frontend/src/components/cases/CasesTable.tsx` already
+  carrying `scope=` or `<caption` — plan 023 landed there first. Report and
+  stop; do **not** revert its edits to make this plan's excerpts match.
+- `npx vitest run __tests__/render-perf-measured.test.tsx` passes even with the
+  Step 4 `useMemo` temporarily removed. That means the mocks are not wired to the
+  real chart components and the test is vacuous. Re-read the component's import
+  paths and prop names; do not accept a green result you cannot make fail.
 - Removing `useLegalConcepts(filters, 18)` changes which concept chips render in
   `SuccessRateCalculator`. This plan asserts it cannot, because the server sorts
   deterministically (`workers/case-api/cloudflare.js:566`,
@@ -1177,6 +1361,31 @@ For whoever owns this code next:
 - **`MAX_HIGHLIGHTED_MATCHES = 500`** is a judgement call, not a measurement.
   If users report missing highlights on common terms in long judgments, raise it
   — the counter already tells them the list is truncated.
+- **HANDOFF — one new i18n key ships untranslated.** Step 3 introduces
+  `components.case_text_viewer.match_cap_note`, which exists in **neither**
+  `frontend/src/i18n/locales/en.json` nor `zh-TW.json` (verified: `grep -c` → 0
+  in both). Locale JSON is owned by
+  `plans/018-complete-the-i18n-catalogue.md`, so this plan deliberately ships it
+  as `defaultValue`-only, which means **a zh-TW user sees English here**. That
+  is a real, if small, regression in translation coverage and it must not be
+  silently absorbed. Hand plan 018 exactly this:
+
+  | key | en | zh-TW |
+  |---|---|---|
+  | `components.case_text_viewer.match_cap_note` | `(first {{shown}} of {{total}})` | `(前 {{shown}} 筆，共 {{total}} 筆)` |
+
+  Note the interpolation placeholders: the call site in Step 3 passes `shown`
+  and `total`, and the `defaultValue` string in this plan is pre-interpolated
+  with template literals only because the test mock does not interpolate. The
+  catalogue entries must use the `{{shown}}` / `{{total}}` form.
+- **HANDOFF — wall-clock evidence is not in this plan.** Step 7's tests measure
+  React render counts and DOM output in jsdom. They cannot show input latency,
+  layout cost, or Recharts' scale recomputation. If the performance claim needs
+  to be defended with real numbers, the browser harness belongs to
+  `plans/040-revive-the-e2e-suites.md`: the two scenarios worth adding there are
+  (a) type 8 characters into Cmd+K at a throttled connection and assert exactly
+  one `/api/v1/cases/search` request fires, and (b) toggle the dashboard
+  chart/table view and assert no chart entry animation replays.
 
 ## Findings reconsidered
 

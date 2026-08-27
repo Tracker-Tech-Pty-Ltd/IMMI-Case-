@@ -7,13 +7,23 @@
 > in `plans/README.md` if that file exists — unless a reviewer dispatched you
 > and told you they maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. The committed-history diff cannot see uncommitted,
+> staged or untracked work, so all four commands must run:
 > ```bash
-> git diff --stat 42826a3..HEAD -- workers/cloudflare-native.js workers/llm-council/runner.js Makefile frontend/scripts/build-tokens.ts .gitignore
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE="workers/cloudflare-native.js workers/llm-council/runner.js Makefile
+>   frontend/scripts/build-tokens.ts .gitignore ruff.toml .editorconfig
+>   .pre-commit-config.yaml"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
+> git diff --stat -- $SCOPE                   # unstaged
+> git diff --cached --stat -- $SCOPE          # staged
 > ```
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing and no in-scope path appears in
+> `git status`. If any in-scope file appears in **any** of them, treat it as a
+> STOP condition: compare the "Current state" excerpts against the live code and
+> report. **Never** run `git checkout --` or `git clean -f` to force a clean
+> tree — that destroys the operator's uncommitted work.
 
 ## Status
 
@@ -43,12 +53,30 @@ as standing acceptance evidence, but it greps for `set_config(`, a pattern that
 no longer exists anywhere in `workers/`, so it prints OK unconditionally and is
 wired into nothing.
 
-After this plan: every response carries an `X-Request-Id`, every API request
-emits one access line with verified tenant/user attribution, provider error
-bodies are logged instead of returned, the dead RLS guard is replaced by one
-that actually asserts the invariant this stack depends on, and the repo has
-baseline tooling (`ruff.toml`, `.editorconfig`, `.pre-commit-config.yaml`) plus
-a design-token freshness gate.
+After this plan: every response **the Worker itself produces** carries an
+`X-Request-Id`, every API request emits one access line with verified
+tenant/user attribution — including requests whose handler throws — provider
+error bodies are logged (redacted) instead of returned, the dead RLS guard is
+replaced by one that asserts a real invariant, and the repo has baseline tooling
+(`ruff.toml`, `.editorconfig`, `.pre-commit-config.yaml`) plus a design-token
+freshness gate.
+
+Three limits, stated up front so nobody over-claims them later:
+
+- **Header coverage is not total.** If `handlers.fetch` throws, there is no
+  Response object to attach a header to, and this plan deliberately does not
+  synthesise one (`plans/005-fix-worker-async-error-handling.md` requires the
+  exception to keep propagating). Such a request produces Cloudflare's own 500,
+  with no `X-Request-Id`. It does get an access line — see Step 4.
+- **The tenant guard is module-granular, not route-granular.** It proves each
+  authenticating *file* reaches `assertMembership()`; a new unguarded handler
+  added to an already-compliant file passes. It is a floor, not a proof. The
+  route-level check is `plans/038-test-the-production-sql-layer.md`'s route
+  manifest.
+- **None of the new gates run in CI.** `.github/workflows/ci.yml` is another
+  plan's territory; until it is wired (exact steps in "Maintenance notes")
+  `make audit-tenant-guards` and `make tokens-check` only fire when a human
+  runs them locally. Do not describe them as CI gates.
 
 ## Current state
 
@@ -408,18 +436,32 @@ Run everything from the repo root, `/Users/d/Developer/Active Projects/IMMI-Case
 unless a command says otherwise. Never use a global `pip`/`python3` for this
 project — always `.venv/bin/…`.
 
+**Record baselines; do not assert totals.** Sibling plans add tests in parallel,
+so any absolute suite count written into this plan is wrong the moment one of
+them lands. Before changing anything, capture and name these:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+(cd workers  && npx vitest run 2>&1 | tail -3)   # -> WK_BEFORE  (passed count)
+(cd frontend && npx vitest run 2>&1 | tail -3)   # -> FE_BEFORE  (passed count)
+make test-py 2>&1 | tail -1                      # -> PY_BEFORE
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort   # -> PY_FAIL_BEFORE (the named failures)
+.venv/bin/ruff check . 2>&1 | tail -1            # -> RUFF_BEFORE
+cd frontend && npm run lint 2>&1 | tail -2       # -> LINT_BEFORE (error count must stay 0)
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker tests | `cd workers && npx vitest run` | `345 passed` in 25 files **before** your changes; `345 + N` after, 0 failed |
-| Python unit tests | `make test-py` | `1141 passed, 3 failed, 7 skipped`. The 3 failures are all in `tests/test_backfill_judge_overrides_from_pdf.py` and are a local Homebrew Python 3.14.7 pyexpat/libexpat ABI mismatch breaking the `pypdf` import. Pre-existing, environmental, **not yours** |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed`, 55 files |
-| Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0 (169 source files) |
-| Frontend lint | `cd frontend && npm run lint` | exit 0, `✖ 25 problems (0 errors, 25 warnings)` |
-| Python lint | `make lint` | `All checks passed!` |
-| Full ruff sweep | `.venv/bin/ruff check .` | `Found 43 errors.` — all under `tests/` (32 F401, 6 E712, 4 F841, 1 E741). If `plans/003` already ran, this will be `All checks passed!` instead; either baseline is fine, it just must not **change** |
+| Worker tests | `cd workers && npx vitest run` | `WK_BEFORE + 13` passed, 0 failed (6 from Step 3, 7 from Step 5) |
+| Python unit tests | `make test-py` | passed count = `PY_BEFORE` (this plan adds no Python test) and `make test-py 2>&1 \| grep -E "^(FAILED\|ERROR)" \| sort` identical to `PY_FAIL_BEFORE` — i.e. still exactly the three `pypdf` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`, **by name** |
+| Frontend tests | `cd frontend && npx vitest run` | passed count = `FE_BEFORE`, unchanged |
+| Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0 |
+| Frontend lint | `cd frontend && npm run lint` | exit 0, `0 errors`; warning count unchanged from `LINT_BEFORE` |
+| Python lint | `.venv/bin/ruff check immi_case_downloader/ scripts/ *.py` | `All checks passed!` (spelled out rather than `make lint`, because `plans/001` Step 3 turns `lint:` into `lint: lint-py lint-fe`; `make lint-py` is equivalent once 001 lands) |
+| Full ruff sweep | `.venv/bin/ruff check . 2>&1 \| tail -1` | byte-identical to `RUFF_BEFORE`. Whatever the baseline is, it must not **change** |
 | Token build | `cd frontend && npm run tokens` | `✓ tokens.css generated` / `✓ tokens.ts generated`, exit 0 |
-| Guard (new) | `make audit-tenant-guards` | `OK: every authenticating Worker module reaches assertMembership()` |
-| Token gate (new) | `make tokens-check` | `OK: generated design tokens match tokens.json` |
+| Guard (new) | `make audit-tenant-guards` | `OK: every authenticating Worker module reaches assertMembership() (module granularity only)` |
+| Token gate (new) | `make tokens-check` | `OK: generated design tokens match tokens.json` **and the working tree is unchanged afterwards** |
 
 Do **not** run `cd frontend && npx tsc --noEmit` as a gate: `frontend/tsconfig.json`
 is `{"files": [], "references": [...]}`, so that form exits 0 having loaded zero
@@ -527,8 +569,19 @@ flags: without them the loop matches vendored wrangler sources under
 # Tenant-isolation guard. This stack has no Postgres and no RLS, so
 # CloudflareIdentityStore.assertMembership() is the only thing between an
 # authenticated caller and another tenant's rows. Any Worker module that
-# authenticates a caller must therefore also reach it. The exemptions are
-# listed explicitly so that adding a fifth is a reviewable diff:
+# authenticates a caller must therefore also reach it.
+#
+# KNOWN LIMIT — READ BEFORE TRUSTING THIS: the check is MODULE-granular. It
+# proves the file mentions assertMembership( somewhere, not that the handler
+# you just added calls it. A new unguarded route in an already-compliant file
+# passes this guard. It is a floor that catches a whole new authenticating
+# module written without any membership check; it is NOT a proof of
+# per-route isolation. The route-level complement is the route manifest in
+# plans/038-test-the-production-sql-layer.md. Do not cite this target as
+# evidence that a specific route is tenant-isolated.
+#
+# The exemptions are listed explicitly so that adding a fifth is a reviewable
+# diff:
 #   request_auth.js          defines requireAuth; it is not a route handler
 #   auth/cloudflare_handlers.js  login/me/logout/refresh/switch-tenant operate
 #                                on the caller's own identity, before a tenant
@@ -549,7 +602,7 @@ audit-tenant-guards:
 	if [ -n "$$MISSING" ]; then \
 	  echo "ERROR: module(s) authenticate without reaching assertMembership() (cross-tenant leak risk):$$MISSING"; \
 	  exit 1; \
-	else echo "OK: every authenticating Worker module reaches assertMembership()"; fi
+	else echo "OK: every authenticating Worker module reaches assertMembership() (module granularity only)"; fi
 ```
 
 **1d.** Wire it into `make test` so it is not another guard nobody runs. Change
@@ -562,30 +615,49 @@ test: audit-tenant-guards test-py test-fe test-workers
 **1e.** In the `help:` recipe, after the `make typecheck` line, add:
 
 ```make
-	@echo "  make audit-tenant-guards  Assert authenticating Workers reach assertMembership()"
+	@echo "  make audit-tenant-guards  Assert authenticating Workers reach assertMembership() (module-level)"
 ```
 
-**Verify** (all four must hold):
+**Verify** (all five must hold):
 
 ```bash
 make audit-tenant-guards
 ```
-→ prints `OK: every authenticating Worker module reaches assertMembership()`, exit 0.
+→ prints `OK: every authenticating Worker module reaches assertMembership() (module granularity only)`, exit 0.
+
+**The guard must be able to fail.** A green run over a compliant tree proves
+nothing about the guard itself, so force a failure with a throwaway module and
+delete it immediately:
 
 ```bash
-grep -c audit-rls-guards Makefile
+printf 'import { requireAuth } from "./auth/request_auth.js";\nexport const x = requireAuth;\n' \
+  > workers/zz-guard-probe.js
+make audit-tenant-guards; echo "probe-exit=$?"
+rm -f workers/zz-guard-probe.js
+make audit-tenant-guards; echo "clean-exit=$?"
 ```
-→ `0`
+→ `probe-exit=2` (make propagates the recipe's `exit 1` as 2) with an `ERROR:`
+line naming `workers/zz-guard-probe.js`, then `clean-exit=0`. If `probe-exit`
+is 0, the loop is not scanning what you think it is — STOP. Confirm
+`git status --short -- workers/` is clean afterwards.
 
 ```bash
-grep -n "set_config(" Makefile
+git grep -c -- audit-rls-guards -- Makefile; echo "exit=$?"
 ```
-→ no output, exit 1.
+→ no output, `exit=1` (no occurrences left).
 
 ```bash
-make -n test | head -1
+git grep -n -- "set_config(" -- Makefile; echo "exit=$?"
 ```
-→ exit 0 (the target still resolves).
+→ no output, `exit=1`.
+
+```bash
+make -n test | grep -c "assertMembership"
+```
+→ at least `1`. (`make -n test | head -1` was the previous check and proved
+nothing — it exits 0 whether or not the guard is a prerequisite. This form
+fails if 1d was not applied. `make -n` still only proves the recipe is
+*scheduled*; the `probe-exit` check above is what proves it *runs*.)
 
 ### Step 2: Stop returning upstream AI-gateway error bodies to Council clients
 
@@ -597,6 +669,41 @@ closing `}` on line 103 at `42826a3`, before the
 banner that introduces the system prompts):
 
 ```js
+const UPSTREAM_DETAIL_MAX_CHARS = 400;
+
+/**
+ * Extract only allow-listed diagnostic fields from an upstream error body.
+ *
+ * The body comes from a third-party provider and is NOT a safe thing to log
+ * wholesale: on some providers it echoes part of the request, which for this
+ * product means user question text and retrieved case content. Log the fields
+ * an operator actually triages on — type, code, param, and a truncated message
+ * — and drop everything else. A body that is a bare string (an HTML error page,
+ * a proxy banner) is truncated hard rather than parsed.
+ *
+ * Retention: these lines go to Cloudflare Workers Trace Events / Logpush and
+ * inherit whatever retention the operator configured there. Because the
+ * allow-list can still carry a provider-authored `message`, treat
+ * `council.upstream_error` as operational data, not as something to forward
+ * into a third-party analytics sink.
+ */
+function redactUpstreamDetail(detail) {
+  if (detail == null) return {};
+  if (typeof detail === "string") {
+    return { detail_text: detail.slice(0, UPSTREAM_DETAIL_MAX_CHARS) };
+  }
+  const err = (typeof detail === "object" && detail.error) || detail;
+  const pick = {};
+  for (const key of ["type", "code", "param"]) {
+    const value = err?.[key];
+    if (typeof value === "string" || typeof value === "number") pick[key] = value;
+  }
+  if (typeof err?.message === "string") {
+    pick.message = err.message.slice(0, UPSTREAM_DETAIL_MAX_CHARS);
+  }
+  return Object.keys(pick).length ? { detail_fields: pick } : { detail_shape: "unrecognised" };
+}
+
 /**
  * Build a client-safe Error for a non-OK upstream gateway response.
  *
@@ -604,21 +711,25 @@ banner that introduces the system prompts):
  * state, so it never becomes part of `err.message`. `err.message` is exactly
  * `HTTP <status>` — which is what classifyError() matches on ("http 4" /
  * "http 5"), and what ends up in the user-visible opinions[].error string and
- * in the SSE <provider>.error event. The body is logged instead, so the
- * information is still available to an operator via Logpush.
+ * in the SSE <provider>.error event. An allow-listed, truncated projection of
+ * the body is logged instead, so an operator can still triage a 429 or a model
+ * rename without the raw body reaching either the client or the log.
+ *
+ * `err.upstreamDetail` carries the same redacted projection — deliberately not
+ * the raw body, so that a future handler that decides to surface the Error
+ * cannot re-open the leak this function exists to close.
  */
 function upstreamGatewayError(status, detail, context = {}) {
-  let body;
+  let redacted;
   try {
-    body = typeof detail === "string" ? detail : JSON.stringify(detail);
+    redacted = redactUpstreamDetail(detail);
   } catch (_) {
-    body = "[unserializable upstream body]";
+    redacted = { detail_shape: "unserializable" };
   }
-  body = String(body == null ? "" : body).slice(0, 800);
-  logCouncilEvent({ event: "council.upstream_error", status, ...context, detail: body });
+  logCouncilEvent({ event: "council.upstream_error", status, ...context, ...redacted });
   const err = new Error(`HTTP ${status}`);
   err.upstreamStatus = status;
-  err.upstreamDetail = body;
+  err.upstreamDetail = redacted;
   return err;
 }
 ```
@@ -648,22 +759,30 @@ render `String(err)`, which now yields `Error: HTTP 429` instead of
 **Verify**:
 
 ```bash
-grep -c 'throw upstreamGatewayError(res.status, detail, { model });' workers/llm-council/runner.js
+git grep -c -- 'throw upstreamGatewayError(res.status, detail, { model });' -- workers/llm-council/runner.js
 ```
 → `4`
 
 ```bash
-grep -c 'JSON.stringify(detail).slice(0, 800)' workers/llm-council/runner.js
+git grep -c -- 'JSON.stringify(detail).slice(0, 800)' -- workers/llm-council/runner.js; echo "exit=$?"
 ```
-→ `1` (only the new helper's own truncation remains)
+→ no output, `exit=1`. **Zero, not one.** (An earlier draft of this plan
+expected `1` on the theory that the helper kept the same truncation
+expression. It does not: the helper never calls
+`JSON.stringify(detail).slice(...)` — it slices individual allow-listed fields.
+Any remaining occurrence means a `throw` site was missed.)
+
+The greps above only prove the text changed. The behaviour is proved by the
+Step 3 tests — in particular `keeps the upstream body out of the thrown Error
+message` and the truncation case. Do not treat the grep alone as evidence.
 
 ```bash
 cd workers && npx vitest run
 ```
-→ `345 passed`, 0 failed. In particular
-`llm-council-runner.test.js` must still pass: its failure assertions are
-`expect(openaiOp.error).toBeTruthy()` and retry-count behaviour, neither of
-which depends on the message body.
+→ `WK_BEFORE` passed, 0 failed — **unchanged**, because Step 2 adds no test.
+In particular `llm-council-runner.test.js` must still pass: its failure
+assertions are `expect(openaiOp.error).toBeTruthy()` and retry-count behaviour,
+neither of which depends on the message body.
 
 ### Step 3: Add the upstream-redaction regression test
 
@@ -722,9 +841,68 @@ describe("upstream gateway errors are redacted before they reach a client", () =
     expect(caught).toBeInstanceOf(Error);
     expect(caught.message).toBe("HTTP 429");
     expect(String(caught)).not.toContain(SECRET_MARKER);
-    // The detail survives on the Error for operators, just not in the message.
+    // A redacted projection survives on the Error for operators, never the
+    // raw body, and never in the message.
     expect(caught.upstreamStatus).toBe(429);
-    expect(caught.upstreamDetail).toContain(SECRET_MARKER);
+    expect(caught.upstreamDetail).toEqual({
+      detail_fields: { type: "insufficient_quota", message: SECRET_MARKER },
+    });
+  });
+
+  it("keeps non-allow-listed body fields out of the log and the Error", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      makeResponse(
+        {
+          error: { message: "over quota", type: "insufficient_quota" },
+          echoed_prompt: "APPLICANT-PII-SHOULD-NEVER-BE-LOGGED",
+        },
+        429,
+      ),
+    );
+
+    await gatewayChatCompletion({
+      env: mockEnv,
+      model: "openai/gpt-5-mini",
+      systemPrompt: "system",
+      userPrompt: "user",
+    }).catch(() => {});
+
+    const logged = logSpy.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(logged).not.toContain("APPLICANT-PII-SHOULD-NEVER-BE-LOGGED");
+    expect(logged).toContain("insufficient_quota");
+  });
+
+  it("truncates a long provider message before it reaches the log", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const long = "z".repeat(5000);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      makeResponse({ error: { message: long, type: "server_error" } }, 500),
+    );
+
+    let caught;
+    try {
+      await gatewayChatCompletion({
+        env: mockEnv,
+        model: "openai/gpt-5-mini",
+        systemPrompt: "system",
+        userPrompt: "user",
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught.upstreamDetail.detail_fields.message).toHaveLength(400);
+    const entry = logSpy.mock.calls
+      .map(([line]) => {
+        try {
+          return JSON.parse(line);
+        } catch (_) {
+          return null;
+        }
+      })
+      .find((e) => e && e.event === "council.upstream_error");
+    expect(entry.detail_fields.message).toHaveLength(400);
   });
 
   it("keeps the upstream body out of the 200 runCouncil response", async () => {
@@ -741,7 +919,7 @@ describe("upstream gateway errors are redacted before they reach a client", () =
     }
   });
 
-  it("still logs the upstream body so operators do not lose the signal", async () => {
+  it("still logs the allow-listed upstream fields so operators do not lose the signal", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(globalThis, "fetch").mockResolvedValue(upstream429());
 
@@ -759,7 +937,11 @@ describe("upstream gateway errors are redacted before they reach a client", () =
 
     expect(events.length).toBeGreaterThan(0);
     expect(events[0].status).toBe(429);
-    expect(events[0].detail).toContain(SECRET_MARKER);
+    expect(events[0].detail_fields.type).toBe("insufficient_quota");
+    // The provider's `message` IS allow-listed (it is what an operator triages
+    // on) — the marker is a quota string here, not user content. The
+    // non-allow-listed-field case is covered by its own test above.
+    expect(events[0].detail_fields.message).toBe(SECRET_MARKER);
   });
 
   it("still classifies a redacted 429 as a non-retryable client error", async () => {
@@ -779,12 +961,12 @@ describe("upstream gateway errors are redacted before they reach a client", () =
 ```bash
 cd workers && npx vitest run __tests__/llm-council-upstream-redaction.test.js
 ```
-→ `4 passed`, 0 failed.
+→ `6 passed`, 0 failed.
 
 ```bash
 cd workers && npx vitest run
 ```
-→ `349 passed` (345 + 4), 0 failed.
+→ `WK_BEFORE + 6` passed, 0 failed.
 
 ### Step 4: Add request correlation ids and an access log to the Worker entrypoint
 
@@ -886,32 +1068,65 @@ export default {
   async fetch(request, env, ctx) {
     const requestId = requestIdFor(request);
     const startedAt = Date.now();
-    const response = await handlers.fetch(request, env, ctx);
     const { pathname } = new URL(request.url);
     // Static-asset fetches are deliberately not logged: Trace Events already
     // carry their URL and status, and they would dominate Logpush volume.
-    if (pathname.startsWith("/api/") || pathname === "/health") {
+    const logged = pathname.startsWith("/api/") || pathname === "/health";
+    let response;
+    let failure = null;
+    try {
+      response = await handlers.fetch(request, env, ctx);
+    } catch (err) {
+      // Record, then RE-THROW unchanged. This is not an error-handling
+      // try/catch and must never become one: plans/005 requires an unhandled
+      // rejection to keep surfacing as an unhandled rejection, and Cloudflare
+      // still produces its own 500 for this request. Without this branch a
+      // failing request produced NO access line at all, which is the one case
+      // an operator most needs to find.
+      failure = err;
+    }
+    if (logged) {
       const principal = await accessLogPrincipal(request, env);
       console.log(JSON.stringify({
         event: "cloudflare.request",
         request_id: requestId,
         method: request.method,
         path: pathname,
-        status: response.status,
+        // No Response exists on the throw path, so there is no status to
+        // report and no header to attach — see outcome.
+        status: failure ? null : response.status,
+        outcome: failure ? "handler_threw" : "ok",
+        error: failure ? String(failure?.message || failure).slice(0, 200) : undefined,
         duration_ms: Date.now() - startedAt,
         ...principal,
       }));
     }
+    if (failure) throw failure;
     return withRequestId(response, requestId);
   },
 };
 ```
 
 Make **no other change**. In particular: do not move, re-indent, or edit the
-body of `handlers.fetch`; do not add a `catch`; do not remove the existing
+body of `handlers.fetch`; do not remove the existing
 `export { AuthNonce } …` / `export { CouncilSessionDO } …` lines at 31-32. The
 `handlers.fetch` body uses no `this` (verified), so calling it as
 `handlers.fetch(...)` is safe.
+
+**On the `try/catch` and `plans/005`.** That plan forbids an outer try/catch
+that would "mask exactly the bug this plan fixes". This one masks nothing: it
+binds the error, emits one log line, and rethrows the *same* object. The
+runtime still sees an unhandled rejection with the original stack. What it must
+never become is a `catch` that returns a Response — that would swallow the bug
+`plans/005` is chasing. If you find yourself writing
+`return new Response(..., { status: 500 })` inside that catch, stop.
+
+**Honest scope of the header.** A thrown request gets an access line but **no**
+`X-Request-Id`, because there is no Response to attach one to. Synthesising a
+500 here to carry the header would be exactly the masking `plans/005` forbids,
+so it is deliberately not done. State this limitation wherever the feature is
+described; do not claim "every response carries X-Request-Id" without the
+qualifier.
 
 **Verify**:
 
@@ -939,7 +1154,8 @@ directly; they exercise the new wrapper.)
 ```bash
 cd workers && npx vitest run
 ```
-→ `349 passed`, 0 failed.
+→ `WK_BEFORE + 6` passed (Step 3's six only; Step 4 adds no test of its own),
+0 failed.
 
 ### Step 5: Cover the request id and access-log attribution
 
@@ -1089,6 +1305,31 @@ describe("Worker request correlation", () => {
     expect(accessLines()).toHaveLength(0);
     expect(assetResponse.headers.get("X-Request-Id")).toBeTruthy();
   });
+
+  it("still logs — and still rethrows — when the handler throws", async () => {
+    // The regression this covers: the first draft of the wrapper awaited
+    // handlers.fetch() with no catch, so a throwing handler produced NO access
+    // line at all — the one case an operator most needs to find.
+    const boom = new Error("dispatcher exploded");
+    mockCaseRead.mockRejectedValue(boom);
+
+    await expect(
+      worker.fetch(
+        new Request("https://immi.example/api/v1/cases", { headers: { "cf-ray": "ray-boom" } }),
+        baseEnv,
+      ),
+    ).rejects.toBe(boom); // same object, unwrapped — plans/005 depends on this
+
+    const lines = accessLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      request_id: "ray-boom",
+      path: "/api/v1/cases",
+      outcome: "handler_threw",
+      status: null,
+    });
+    expect(lines[0].error).toContain("dispatcher exploded");
+  });
 });
 ```
 
@@ -1097,12 +1338,12 @@ describe("Worker request correlation", () => {
 ```bash
 cd workers && npx vitest run __tests__/cloudflare-native-observability.test.js
 ```
-→ `6 passed`, 0 failed.
+→ `7 passed`, 0 failed.
 
 ```bash
 cd workers && npx vitest run
 ```
-→ `355 passed` (345 + 4 + 6), 0 failed.
+→ `WK_BEFORE + 13` passed (6 from Step 3 + 7 here), 0 failed.
 
 ### Step 6: Make design-token validation fatal under `--strict`
 
@@ -1188,18 +1429,33 @@ Edit `Makefile` only.
 # tokens first, so production and the dev server are never stale — but
 # `npx vitest run` does not, so a tokens.json edit committed without
 # regenerating leaves the frontend suite asserting against stale token values.
-# Comparing checksums (rather than `git diff`) keeps this correct regardless of
-# what is staged: it answers "does the generated output match tokens.json?",
-# and when the answer is no it has already fixed the files for you.
+#
+# NON-DESTRUCTIVE BY CONSTRUCTION. build-tokens.ts writes to fixed paths, so
+# this target snapshots the two generated files, regenerates, compares, and
+# then RESTORES the snapshot unconditionally. A check that rewrites the
+# working tree on failure is not a check — and because `test-fe` depends on
+# this, `make test` would otherwise be able to modify tracked files.
+# Regenerating for real is `make tokens-fix`, which is explicit about it.
 tokens-check:
 	@cd "$(REPO_ROOT)/frontend" || exit 1; \
-	BEFORE=$$(cksum src/tokens/tokens.css src/tokens/tokens.ts); \
+	SNAP=$$(mktemp -d) || exit 1; \
+	trap 'cp -p "$$SNAP/tokens.css" src/tokens/tokens.css 2>/dev/null; \
+	      cp -p "$$SNAP/tokens.ts"  src/tokens/tokens.ts  2>/dev/null; \
+	      rm -rf "$$SNAP"' EXIT INT TERM; \
+	cp -p src/tokens/tokens.css src/tokens/tokens.ts "$$SNAP/" || exit 1; \
+	BEFORE=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
 	npm run --silent tokens -- --strict || exit 1; \
-	AFTER=$$(cksum src/tokens/tokens.css src/tokens/tokens.ts); \
+	AFTER=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
 	if [ "$$BEFORE" != "$$AFTER" ]; then \
-	  echo "ERROR: frontend/src/tokens/{tokens.css,tokens.ts} were stale and have just been regenerated from tokens.json. Review and commit them."; \
+	  echo "ERROR: frontend/src/tokens/{tokens.css,tokens.ts} are stale relative to tokens.json."; \
+	  echo "       The working tree was left UNCHANGED. Run 'make tokens-fix', review the diff, and commit."; \
 	  exit 1; \
 	else echo "OK: generated design tokens match tokens.json"; fi
+
+# The write half, deliberately separate and never a prerequisite of anything.
+tokens-fix:
+	cd "$(REPO_ROOT)/frontend" && npm run tokens -- --strict
+	@echo "Regenerated frontend/src/tokens/. Review 'git diff -- frontend/src/tokens/' and commit."
 ```
 
 **7b.** Make the frontend suite depend on it. Change:
@@ -1219,25 +1475,43 @@ test-fe: tokens-check
 **7c.** In `help:`, after the `make test-e2e` line, add:
 
 ```make
-	@echo "  make tokens-check Verify frontend/src/tokens/ is in sync with tokens.json"
+	@echo "  make tokens-check Verify frontend/src/tokens/ is in sync with tokens.json (read-only)"
+	@echo "  make tokens-fix   Regenerate frontend/src/tokens/ from tokens.json"
 ```
+
+**7d.** Add both to the `.PHONY` line alongside the tokens targets already
+added in Step 1a (`tokens-check` was listed there; add `tokens-fix`).
 
 **Verify**:
 
 ```bash
 make tokens-check
-```
-→ `OK: generated design tokens match tokens.json`, exit 0.
-
-```bash
 git status --short -- frontend/src/tokens/
 ```
-→ no output.
+→ `OK: generated design tokens match tokens.json`, exit 0, then **no output**
+from `git status`.
+
+**The check must be able to fail, and must fail without touching the tree.**
+Perturb a generated file, confirm the failure, confirm restoration:
+
+```bash
+cp -p frontend/src/tokens/tokens.css /tmp/tokens.css.orig
+printf '\n/* deliberate staleness probe */\n' >> frontend/src/tokens/tokens.css
+make tokens-check; echo "probe-exit=$?"
+git diff --stat -- frontend/src/tokens/tokens.css     # must still show the probe line, nothing more
+cp -p /tmp/tokens.css.orig frontend/src/tokens/tokens.css && rm -f /tmp/tokens.css.orig
+make tokens-check; echo "clean-exit=$?"
+git status --short -- frontend/src/tokens/
+```
+→ `probe-exit` is non-zero with the `ERROR: … stale …` line; the `git diff`
+shows **only** your probe line, proving the target did not overwrite the file;
+then `clean-exit=0` and `git status` is empty.
 
 ```bash
 make test-fe
 ```
-→ the `OK: generated design tokens…` line, then `490 passed`, exit 0.
+→ the `OK: generated design tokens…` line, then the frontend suite at
+`FE_BEFORE` passed, exit 0, and `git status --short -- frontend/` still empty.
 
 ### Step 8: Pin the ruff rule selection in `ruff.toml`
 
@@ -1293,18 +1567,24 @@ line-ending = "lf"
 ```bash
 .venv/bin/ruff check . 2>&1 | tail -1
 ```
-→ **identical to B**. If the count changed, revert `ruff.toml` and STOP.
+→ **identical to B** (= `RUFF_BEFORE`). If the count changed, revert
+`ruff.toml` and STOP.
 
 ```bash
-make lint
+.venv/bin/ruff check immi_case_downloader/ scripts/ *.py
 ```
 → `All checks passed!`, exit 0.
 
 ```bash
-.venv/bin/ruff check --show-settings . 2>&1 | grep -m1 "target_version"
+.venv/bin/ruff check --show-settings . 2>&1 | grep -c 'py314'
 ```
-→ shows the configured target version (exact formatting varies by ruff build;
-any non-empty line is fine — this only confirms the file was picked up).
+→ at least `1`. (The previous form grepped for the *word* `target_version` and
+accepted "any non-empty line", which matches whether or not `ruff.toml` was
+read — ruff prints that key from its defaults too. Matching the configured
+**value** `py314` is what actually distinguishes "file picked up" from "file
+ignored". If your ruff build formats the value differently, find the real
+string in the full `--show-settings` output and assert on that, not on the key
+name.)
 
 ### Step 9: Add `.editorconfig`
 
@@ -1346,7 +1626,7 @@ test -f .editorconfig && grep -c "indent_style = tab" .editorconfig
 → `2`
 
 ```bash
-make lint && make audit-tenant-guards
+.venv/bin/ruff check immi_case_downloader/ scripts/ *.py && make audit-tenant-guards
 ```
 → both exit 0 (confirms nothing about the build reads `.editorconfig`).
 
@@ -1453,11 +1733,10 @@ dashboard.png
 with:
 
 ```
-# Local scratch screenshots. Anchored to the repo root: an unanchored
-# `dashboard.png` matches at any depth, and was silently hiding
+# Local scratch screenshot at the repo root. Anchored deliberately: an
+# unanchored `dashboard.png` matches at ANY depth, and was silently hiding
 # audit/ui/dashboard.png from `git status` entirely.
 /dashboard.png
-/audit/
 
 # Stray files left by a mistyped shell redirect (`pip install foo >=1.0.0`).
 # The files still exist at the repo root; these entries keep them out of git.
@@ -1465,12 +1744,32 @@ with:
 =2.0.0
 ```
 
+**Do NOT add an `/audit/` rule.** An earlier draft of this plan anchored
+`dashboard.png` and then added `/audit/` in the same edit — which re-hides
+`audit/ui/dashboard.png` through a different rule and cancels the entire point
+of the change. The visibility of that file is the *outcome*, not a side effect
+to be tidied away.
+
+Consequence you must expect and must not "fix": after this edit,
+`audit/ui/dashboard.png` appears as a new untracked path in `git status`. That
+is correct. It has been invisible; now the operator can see it and decide.
+Report it in your hand-off with the two options (commit it as a tracked audit
+artefact, or add a *deliberate, commented* ignore rule for the audit output
+directory) and let them choose. Do not choose for them, and do not delete it.
+
 **Verify**:
 
 ```bash
 git check-ignore -v design/exports/dashboard.png; echo "rc=$?"
 ```
-→ no output, `rc=1` (a design asset with that name would no longer be swallowed).
+→ no output, `rc=1` (a design asset with that name is no longer swallowed).
+
+```bash
+git check-ignore -v audit/ui/dashboard.png; echo "rc=$?"
+```
+→ no output, `rc=1`. **This is the assertion that proves the fix landed.** If
+it prints a `.gitignore` line, some rule is still hiding the file and the edit
+achieved nothing.
 
 ```bash
 git check-ignore -v dashboard.png
@@ -1480,30 +1779,36 @@ git check-ignore -v dashboard.png
 ```bash
 git status --short
 ```
-→ shows only files this plan modified. `audit/` must **not** appear (the new
-`/audit/` rule covers it).
+→ the files this plan modified, **plus** `?? audit/` — that new entry is the
+expected result of the fix, not a scope violation.
 
 ## Test plan
 
 New tests, both in new files so no parallel plan's test file is touched:
 
-1. `workers/__tests__/llm-council-upstream-redaction.test.js` — 4 tests:
+1. `workers/__tests__/llm-council-upstream-redaction.test.js` — 6 tests:
    - the thrown `Error.message` is exactly `HTTP 429` and `String(err)` does not
-     contain the upstream body, while `err.upstreamDetail` does (the operator
-     path survives);
+     contain the upstream body, while `err.upstreamDetail` carries the
+     **redacted projection** (the operator path survives, the raw body does not);
+   - non-allow-listed body fields (e.g. an echoed prompt) reach neither the log
+     nor the Error, while the allow-listed `type` still does;
+   - a 5,000-character provider `message` is truncated to 400 in both the Error
+     and the log line;
    - `JSON.stringify(runCouncil(...))` contains no upstream body, and every
      `opinions[].error` says `HTTP 429` and nothing more;
-   - a `council.upstream_error` structured log **is** emitted carrying the full
-     body and status (redaction must not become a blind spot);
+   - a `council.upstream_error` structured log **is** emitted carrying status
+     and the allow-listed fields (redaction must not become a blind spot);
    - the redacted 429 is still classified non-retryable — exactly 4 fetches for
      3 experts + 1 moderator, which only holds while `classifyError` can still
      see `http 4`.
-2. `workers/__tests__/cloudflare-native-observability.test.js` — 6 tests:
+2. `workers/__tests__/cloudflare-native-observability.test.js` — 7 tests:
    `cf-ray` echoed as `X-Request-Id`; a generated id when absent; exactly one
    `cloudflare.request` access line with method/path/status/duration_ms;
    verified-token attribution (`user_id`, `tenant_id`); **no** attribution from
    a forged token; `/health` logged, static assets not logged but still
-   carrying `X-Request-Id`.
+   carrying `X-Request-Id`; and a throwing handler that still emits one access
+   line (`outcome: "handler_threw"`, `status: null`) while rethrowing the
+   identical Error object.
 
 Structural patterns to copy: `workers/__tests__/llm-council-runner.test.js`
 (lines 31-53 for `makeResponse` / `mockEnv`) and
@@ -1515,49 +1820,61 @@ only frontend change (`build-tokens.ts`) is a build script that
 `frontend/tsconfig.node.json` does not even include — it is covered by
 `make tokens-check` instead.
 
-Full-suite verification:
+Full-suite verification — **deltas against the baselines recorded in "Commands
+you will need", never absolute totals**:
 
 ```bash
-cd workers && npx vitest run          # 355 passed (345 + 10), 0 failed
-cd frontend && npx vitest run         # 490 passed, 55 files
+cd workers && npx vitest run          # WK_BEFORE + 13 passed, 0 failed
+cd frontend && npx vitest run         # FE_BEFORE passed, unchanged
 cd frontend && npx tsc -b --noEmit    # exit 0
-cd frontend && npm run lint           # exit 0, 0 errors
-make test-py                          # 1141 passed, 3 failed (pyexpat, pre-existing), 7 skipped
-make lint                             # All checks passed!
-make audit-tenant-guards              # OK: every authenticating Worker module reaches assertMembership()
-make tokens-check                     # OK: generated design tokens match tokens.json
+cd frontend && npm run lint           # exit 0, 0 errors, warning count = LINT_BEFORE
+make test-py                          # PY_BEFORE passed; failure set identical to PY_FAIL_BEFORE
+                                      # (still exactly the three pypdf ImportErrors in
+                                      #  tests/test_backfill_judge_overrides_from_pdf.py, by name)
+.venv/bin/ruff check immi_case_downloader/ scripts/ *.py   # All checks passed!
+.venv/bin/ruff check . 2>&1 | tail -1 # byte-identical to RUFF_BEFORE
+make audit-tenant-guards              # OK: … (module granularity only)
+make tokens-check                     # OK: …  AND git status -s -- frontend/src/tokens/ empty
 ```
 
 ## Done criteria
 
 All must hold:
 
-- [ ] `grep -c audit-rls-guards Makefile` → `0`
+- [ ] `git grep -c -- audit-rls-guards -- Makefile` returns no output (exit 1)
 - [ ] `make audit-tenant-guards` exits 0 and prints
-      `OK: every authenticating Worker module reaches assertMembership()`
-- [ ] `make -n test | grep -c audit-tenant-guards` → at least `1`
+      `OK: every authenticating Worker module reaches assertMembership() (module granularity only)`
+- [ ] The Step 1 failure probe (`workers/zz-guard-probe.js`) made
+      `make audit-tenant-guards` exit non-zero, and the probe file was deleted
+- [ ] `make -n test | grep -c "assertMembership"` → at least `1`
       (the guard is wired into `make test`)
-- [ ] `grep -c 'throw upstreamGatewayError(res.status, detail, { model });' workers/llm-council/runner.js` → `4`
-- [ ] `grep -c 'JSON.stringify(detail).slice(0, 800)' workers/llm-council/runner.js` → `1`
+- [ ] `git grep -c -- 'throw upstreamGatewayError(res.status, detail, { model });' -- workers/llm-council/runner.js` → `4`
+- [ ] `git grep -c -- 'JSON.stringify(detail).slice(0, 800)' -- workers/llm-council/runner.js` returns no output (exit 1) — **zero occurrences**
 - [ ] `node --check workers/cloudflare-native.js` exits 0
-- [ ] `grep -c '"X-Request-Id"' workers/cloudflare-native.js` → `2`
-- [ ] `grep -c '"cloudflare.request"' workers/cloudflare-native.js` → `1`
-- [ ] `cd workers && npx vitest run` → `355 passed`, 0 failed
-- [ ] `cd frontend && npx vitest run` → `490 passed`, 0 failed
+- [ ] `cd workers && npx vitest run __tests__/llm-council-upstream-redaction.test.js` → `6 passed`
+- [ ] `cd workers && npx vitest run __tests__/cloudflare-native-observability.test.js` → `7 passed`
+- [ ] `cd workers && npx vitest run` → `WK_BEFORE + 13` passed, 0 failed
+- [ ] `cd frontend && npx vitest run` → `FE_BEFORE` passed, 0 failed
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npm run lint` exits 0 with `0 errors`
-- [ ] `make lint` prints `All checks passed!`
-- [ ] `.venv/bin/ruff check . 2>&1 | tail -1` is byte-identical to the baseline
-      recorded at the start of Step 8
+- [ ] `cd frontend && npm run lint` exits 0 with `0 errors` and the same warning count as `LINT_BEFORE`
+- [ ] `.venv/bin/ruff check immi_case_downloader/ scripts/ *.py` prints `All checks passed!`
+- [ ] `.venv/bin/ruff check . 2>&1 | tail -1` is byte-identical to `RUFF_BEFORE`
 - [ ] `make tokens-check` exits 0 and `git status --short -- frontend/src/tokens/`
-      is empty
-- [ ] `make test-py` → `1141 passed, 3 failed, 7 skipped`, and all 3 failures are
-      in `tests/test_backfill_judge_overrides_from_pdf.py`
+      is empty; the Step 7 staleness probe made it exit non-zero **without**
+      modifying either generated file
+- [ ] `make test-py` passed count = `PY_BEFORE`, and
+      `make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort` is identical to
+      `PY_FAIL_BEFORE` — still exactly the three `pypdf` ImportErrors in
+      `tests/test_backfill_judge_overrides_from_pdf.py`, by name
 - [ ] `test -f ruff.toml && test -f .editorconfig && test -f .pre-commit-config.yaml`
       exits 0
 - [ ] `.venv/bin/pre-commit validate-config .pre-commit-config.yaml` exits 0
 - [ ] `git check-ignore -q design/exports/dashboard.png; test $? -eq 1` exits 0
-- [ ] `git status --short` lists only files from the In-scope list
+- [ ] `git check-ignore -q audit/ui/dashboard.png; test $? -eq 1` exits 0 — the
+      audit screenshot is no longer hidden, and no `/audit/` rule was added
+- [ ] `git grep -c -- '^/audit/' -- .gitignore` returns no output (exit 1)
+- [ ] `git status --short` lists only files from the In-scope list, plus the
+      expected new `?? audit/` entry and any path already dirty at the drift check
 - [ ] `plans/README.md` status row updated (if that file exists)
 
 ## STOP conditions
@@ -1569,10 +1886,10 @@ Stop and report back — do not improvise — if:
   `grep -c '^      throw new Error(\`HTTP ${res.status}: ${JSON.stringify(detail).slice(0, 800)}\`);$' workers/llm-council/runner.js`
   returns anything other than `4`, or `workers/cloudflare-native.js` no longer
   contains a single top-level `export default {`.
-- **The Worker baseline is not 345.** Before Step 2, `cd workers && npx vitest run`
-  must report `345 passed, 0 failed`. A higher pass count with 0 failures means a
-  sibling plan added tests — record the new baseline and continue. **Any failure
-  at all** means stop.
+- **The Worker baseline is not clean.** Before Step 2, `cd workers && npx vitest run`
+  must report **0 failed**. Whatever the passed count is, that is `WK_BEFORE`
+  — record it and continue. **Any failure at all** means stop; do not treat a
+  pre-existing failure as "not mine" and proceed.
 - **A ruff config already exists.** If `ruff.toml`, `.ruff.toml`,
   `pyproject.toml` or `setup.cfg` is present at the repo root when you reach
   Step 8, a sibling plan added Python config. Do not overwrite or merge it —
@@ -1621,17 +1938,48 @@ For whoever owns this code next:
   ever shows up in latency profiles, the fix is to have the handlers publish
   their resolved auth context onto a per-request object rather than to weaken
   the verification.
-- **Failed requests get no access line.** If `handlers.fetch` throws, the
-  wrapper returns nothing and logs nothing — by design, because catching would
-  mask the bug `plans/005` fixes. Cloudflare Trace Events still records the
-  invocation, its exception and its Ray ID.
+- **Failed requests get an access line but no `X-Request-Id`.** The wrapper
+  catches, logs `outcome: "handler_threw"` with `status: null`, and rethrows the
+  identical Error — so the request is findable in Logpush, but there is no
+  Response object to hang a header on and this plan deliberately does not
+  synthesise one (that would be the masking `plans/005` forbids). If a future
+  change wants the header on error responses too, it must first decide who owns
+  producing that 500, and it must not swallow the exception to do it.
+- **Observability data policy — read before adding a field.** The access line
+  carries only `request_id`, `method`, `path`, `status`, `outcome`,
+  `duration_ms`, a ≤200-char `error` message, and the verified `user_id` /
+  `tenant_id`. It carries **no** query string, **no** request body, and **no**
+  case content — several of these routes take a free-text legal question, and
+  `path` alone is safe where `url` would not be. `council.upstream_error`
+  carries only the allow-listed provider fields (`type`, `code`, `param`, and a
+  400-char `message`) via `redactUpstreamDetail`, never the raw body. Both
+  streams land in Cloudflare Trace Events / Logpush and inherit whatever
+  retention the operator configured there; neither is safe to forward verbatim
+  into a third-party analytics sink. If you add a field, ask what it looks like
+  when the user pasted their own visa history into the question box.
+- **`X-Request-Id` is not surfaced to the user.** It is a response header only.
+  A self-represented applicant who hits an error has no way to see or copy it,
+  which is most of the value the header was supposed to buy. Displaying it in
+  the error UI belongs to `plans/015-surface-frontend-errors.md` (that plan owns
+  the frontend error surfaces); the concrete ask is: read
+  `response.headers.get("X-Request-Id")` in `frontend/src/lib/api.ts`, carry it
+  on the thrown error, and render it as copyable text in the error state. Until
+  that lands, do not describe this as "the user can quote an id".
 - **CI wiring is deliberately not done here** (`.github/workflows/ci.yml` is
-  another plan's territory). Hand these to whoever owns it:
+  another plan's territory — see `plans/001`, `plans/002`, `plans/003`, which
+  all edit it). **Until it is wired, none of this plan's gates run anywhere but
+  a developer's laptop.** Hand these to whoever owns that file:
   - in `test-python`, after "Lint with ruff":
     `- name: Tenant-isolation guard` / `run: make audit-tenant-guards`
   - in `test-frontend`, before "Run Vitest tests":
-    `- name: Design-token freshness` / `run: npm run tokens -- --strict && git diff --exit-code -- src/tokens/`
-    with `working-directory: frontend`
+    `- name: Design-token freshness` / `run: make tokens-check`
+    (use the Make target, not a raw `npm run tokens && git diff --exit-code`:
+    the target is the non-destructive form, and a raw regenerate-then-diff both
+    dirties the runner's tree and misses the `--strict` exit code)
+  - in `test-frontend`, the typecheck step must be `npx tsc -b --noEmit`, not
+    `npx tsc --noEmit`. The latter loads **zero** files in this repo
+    (`frontend/tsconfig.json` is a `files: []` project-references stub) and is a
+    false green; `plans/001-restore-the-frontend-compile-gate.md` owns that fix.
 - **`.omc/plans/auth-multitenant-jwt-rls.md:24`** still claims
   `✅ workers/db/getSqlAsUser.js + make audit-rls-guards` as acceptance evidence
   for row 4. Both artifacts are now gone. That file is under `.omc/` and out of
@@ -1655,7 +2003,13 @@ For whoever owns this code next:
 - **Interactions.** If a new authenticated route is added to
   `workers/cloudflare-native.js`, `make audit-tenant-guards` catches it only at
   *module* granularity — a new handler in an already-compliant file slips
-  through. `plans/038`'s route-manifest test is the finer-grained complement.
+  through. `plans/038`'s route-manifest test is the finer-grained complement,
+  and is the thing to cite when someone asks "is route X tenant-isolated?".
+  This target answers only "does this file know about `assertMembership` at
+  all?". The exemption list makes the gap worse in one specific way worth
+  knowing: `workers/auth/cloudflare_handlers.js` is exempt as a whole, so a new
+  *tenant-scoped* route added to that file would be invisible to the guard.
+  When 038 lands, that is the first file its manifest should cover.
 
 ## Findings reconsidered
 
@@ -1724,3 +2078,44 @@ For whoever owns this code next:
   `workers/austlii-scraper/node_modules/` — confirmed by running the equivalent
   loop, which matched `wrangler/wrangler-dist/cli.js`. The replacement in Step 1
   excludes `node_modules`, `dist` and `__tests__`.
+
+## Review points not applied
+
+Two sub-recommendations from the cross-plan review were deliberately **not**
+implemented here. Both underlying findings were confirmed and their *primary*
+remedy is applied above; what is rejected is the specific extra step, with the
+evidence for rejecting it.
+
+- **"If you want the error response to carry `X-Request-Id` too, have the
+  wrapper produce a standard 500 and test that behaviour change."** The first
+  half of this finding is correct and is applied: the old wrapper logged
+  nothing when `handlers.fetch` threw, and Step 4d now catches, logs
+  `outcome: "handler_threw"`, and rethrows the identical Error. The 500-
+  synthesising half is refused, because it is forbidden by a sibling plan that
+  owns the file: `plans/005-fix-worker-async-error-handling.md:535-536` states
+  *"`workers/cloudflare-native.js` — adding an outer `try/catch` to `fetch()`
+  would mask exactly the bug this plan fixes. Do not add one."* A catch that
+  returns a Response **is** that masking — the unhandled rejection stops
+  surfacing, which is precisely the signal 005 is chasing. The residual gap is
+  documented instead of hidden: a thrown request gets an access line and no
+  `X-Request-Id`, stated in "Why this matters" and in Maintenance notes, so
+  nobody claims total header coverage.
+
+- **"Replace the module-level tenant guard with a route/handler manifest, AST
+  analysis, or per-route behavioural tests."** The finding is correct —
+  `grep -l "requireAuth(" … && grep -q "assertMembership("` passes a file that
+  contains one guarded handler and one unguarded one, so the guard cannot
+  prove per-route isolation. It is not implemented here for two reasons.
+  (1) File territory: a route manifest belongs to
+  `plans/038-test-the-production-sql-layer.md`, which owns the route-level
+  tests; building a second, competing one in a `Makefile` recipe would collide
+  with it. (2) An AST analyser for this stack is not a Make target — the routes
+  are dispatched through a chain of `dispatchCloudflare*()` functions across
+  eight modules, so "which handler serves which path" is not recoverable from a
+  syntax tree without modelling that dispatch. What is applied instead: the
+  guard's own output and comment now say **"module granularity only"**, the
+  limitation is stated in "Why this matters", Maintenance notes names
+  `workers/auth/cloudflare_handlers.js` as the specific blind spot the manifest
+  should cover first, and Step 1 adds a failure probe so the guard is at least
+  proven to be able to fail. The claim is demoted to what the check can prove;
+  it is no longer described as a cross-tenant-leak gate.

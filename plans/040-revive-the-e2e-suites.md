@@ -7,19 +7,34 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. `42826a3..HEAD` sees only
+> committed history; an executor starting from a dirty tree would otherwise get a
+> false all-clear:
 >
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   tests/e2e \
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="tests/e2e \
 >   frontend/e2e \
 >   frontend/playwright.config.ts \
+>   frontend/package.json \
 >   .github/workflows/ci.yml \
 >   requirements-test.txt \
 >   workers/austlii-scraper/src/__tests__ \
 >   workers/austlii-scraper/src/parser.ts \
->   workers/austlii-scraper/src/index.ts
+>   workers/austlii-scraper/src/index.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
+> git diff --stat -- $IN_SCOPE                 # unstaged
+> git diff --cached --stat -- $IN_SCOPE        # staged
 > ```
+>
+> Treat any in-scope file appearing in the **unstaged or staged** diffs as a STOP
+> condition — those are someone's uncommitted work, and this plan deletes files.
+> Never run `git checkout --` or `git clean -f` to clear it.
+>
+> **Parallel execution**: this plan deletes 14 tracked files and asserts on
+> `git status --short`. Run it in its own `git worktree` or clone, or serialise it
+> against everything else.
 >
 > **Expected drift, which is NOT a stop condition** (these are the plans this
 > one depends on; see "Status"):
@@ -52,16 +67,27 @@
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: `plans/002-fix-test-collection-and-install.md` (hard — it
-  creates `requirements-e2e.txt` and the `make install-e2e` / `make test-e2e`
-  recipes this plan builds on). Run after
-  `plans/001-restore-the-frontend-compile-gate.md` and
-  `plans/003-lint-the-test-suite.md` as well, to avoid merge churn in
-  `.github/workflows/ci.yml` and `tests/`.
+- **Depends on**: `plans/001` → `plans/002` → `plans/003` → **this plan**, in
+  that exact order, all hard.
+  - `plans/002-fix-test-collection-and-install.md` creates
+    `requirements-e2e.txt` and the `make install-e2e` / `make test-e2e` recipes
+    this plan builds on, and adds `make test-pipeline` to `make test`.
+  - `plans/001` and `plans/003` also edit `.github/workflows/ci.yml`. Their edits
+    are inside existing jobs and this plan only appends new ones, but three
+    agents patching one YAML file in one checkout still collide. Do not run them
+    concurrently in a shared checkout — serialise, or give each a worktree.
+  - `plans/001` splits `make lint` into `lint` (aggregate) + `lint-py` + `lint-fe`.
+    **This plan uses `make lint-py`**, not `make lint`, because post-001
+    `make lint` also runs ESLint and prints 25 pre-existing warnings.
   Prefer to run **before** `plans/033-single-source-the-domain-vocabulary.md`,
   which rewrites the judge regexes in
   `workers/austlii-scraper/src/parser.ts`; if 033 has already landed, follow
   "Re-deriving Step 7's expected values" instead of using this plan's literals.
+  Run **before** `plans/043-correct-the-readme.md`: 043 documents
+  `frontend/e2e/` and `npm run e2e`, which this plan deletes, and 043 must
+  describe the post-deletion reality. Run **before** the
+  `tests/e2e/README.md` edits in `plans/044-retire-the-stale-planning-docs.md`
+  for the same reason (both plans touch that one file; see Step 6).
 - **Category**: tests
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -331,15 +357,39 @@ up automatically and **must import `describe`/`it`/`expect` from `"vitest"`**.
 | Install E2E deps (from plan 002) | `make install-e2e` | exit 0; chromium downloaded |
 | Collect Python E2E | `.venv/bin/pytest tests/e2e --collect-only -q --no-cov 2>&1 \| tail -1` | a line ending `tests collected in …` with **no** `error` in it |
 | Run E2E smoke subset | `.venv/bin/pytest tests/e2e/test_smoke.py tests/e2e/react/test_react_smoke.py -q --no-cov --timeout=180` | `100 passed` |
-| Run full E2E (nightly command) | `.venv/bin/pytest tests/e2e -q --no-cov --timeout=300 --ignore=tests/e2e/playwright` | `… passed`, 0 failed |
-| Python unit tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` (the 3 are a pre-existing local `pypdf`/`pyexpat` ABI failure — see STOP conditions) |
-| Ruff (repo scope) | `make lint` | `All checks passed!` |
-| Ruff (tests scope) | `.venv/bin/ruff check tests/e2e/` | no *new* findings vs. baseline |
-| Scraper Worker tests | `cd workers/austlii-scraper && npm test` | `Test Files 8 passed (8)` / `Tests 50 passed (50)` after Steps 7–8 |
+| Run full E2E (nightly command) | `.venv/bin/pytest tests/e2e -q --no-cov --timeout=300 --ignore=tests/e2e/playwright` | exit 0 |
+| Python unit tests | `make test-py` | exit status and **which** files fail must be unchanged from the Step 0 baseline — see below |
+| Ruff (Python source) | `make lint-py` (post-001; `make lint` before it) | `All checks passed!` |
+| Ruff (tests scope) | `.venv/bin/ruff check tests/e2e/` | no *new* findings vs. the Step 0 baseline |
+| Scraper Worker tests | `cd workers/austlii-scraper && npm test` | exit 0; count checked as a delta |
 | Scraper Worker typecheck | `cd workers/austlii-scraper && npm run typecheck` | exit 0, no output |
-| Main Worker tests | `npm run test:workers` | `345 passed` |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed`, 55 files |
+| Main Worker tests | `npm run test:workers` | exit 0; count unchanged by this plan |
+| Frontend tests | `cd frontend && npx vitest run` | exit 0; count unchanged by this plan |
 | YAML sanity | `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && echo YAML_OK` | `YAML_OK` |
+
+**Step 0 — record the baselines before touching anything.** No absolute suite
+total appears anywhere in this plan's checks, because plans 002, 038, 039 and 041
+all move them and a pinned total teaches you to edit the yardstick:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+set -o pipefail
+cd workers/austlii-scraper && npm test 2>&1 | tee /tmp/immi-040-scraper-before.txt | tail -4; echo "exit=$?"
+SCRAPER_BEFORE=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-040-scraper-before.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py > /tmp/immi-040-py-before.txt 2>&1; echo "make test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-040-py-before.txt | sort > /tmp/immi-040-pyfail-before.txt
+tail -2 /tmp/immi-040-py-before.txt; echo "--- failing set ---"; cat /tmp/immi-040-pyfail-before.txt
+```
+
+`SCRAPER_BEFORE` is the delta anchor for Steps 7–8.
+`/tmp/immi-040-pyfail-before.txt` is the anchor for `make test-py`: what matters
+is the **identity** of the failing tests, not a count. On the planning machine it
+held exactly 3 lines, all in
+`tests/test_backfill_judge_overrides_from_pdf.py`, all `ImportError` from the
+Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch that breaks `pypdf`.
+Those 3 are environmental and are not this plan's problem; **any other file
+appearing in that set is.**
 
 Note: `pytest.ini` sets `addopts = -v --cov=immi_case_downloader
 --cov-report=term-missing`. Every E2E command above passes `--no-cov` because
@@ -353,7 +403,9 @@ coverage of a Flask server running in a daemon thread is meaningless and slow.
   Do not edit the existing `test-python`, `test-frontend` or `test-worker` jobs.
 - `frontend/e2e/**` — **delete all 13 tracked files** (Step 5).
 - `frontend/playwright.config.ts` — **delete** (Step 5).
-- `tests/e2e/README.md` — **create** (Step 6).
+- `tests/e2e/README.md` — **extend, append-only** (Step 6). The file already
+  exists; its `## Credentialed Auth Smoke` section belongs to plan 044 and must
+  survive byte-identical.
 - `tests/e2e/test_smoke.py` — modify **only** if Step 3 finds a stale assertion.
 - `tests/e2e/react/test_react_smoke.py` — same.
 - `workers/austlii-scraper/src/__tests__/parser.test.ts` — **create** (Step 7).
@@ -521,6 +573,16 @@ on:
 **4b.** Append these two jobs at the end of the file, after the existing
 `test-worker` job. Keep the two-space job indentation the file already uses.
 
+Both jobs **must build the SPA from the PR's own `frontend/src`** before running
+pytest. This is load-bearing and was missing from the first draft of this plan.
+`tests/e2e/conftest.py` starts Flask via `create_app()`, which serves the
+**committed** bundle in `immi_case_downloader/static/react/` (93 tracked files,
+`frontend/vite.config.ts:34` writes there). Without a build step, an E2E job on a
+PR that breaks `frontend/src` still tests the *previous* bundle and passes — the
+suite would be green about code that is not in the PR. `npm run build` in CI
+dirties those tracked files, which is fine and expected on an ephemeral runner;
+do not add a `git checkout` afterwards.
+
 ```yaml
   e2e-smoke:
     # Blocking PR gate. Runs the two E2E files proven green in plan 040 Step 3.
@@ -534,6 +596,12 @@ on:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install Python + E2E dependencies
         run: |
           python3 -m venv .venv
@@ -542,9 +610,32 @@ on:
       - name: Install Playwright chromium
         run: .venv/bin/python -m playwright install --with-deps chromium
 
-      # The built SPA bundle is committed under immi_case_downloader/static/react/,
-      # so no `npm run build` is needed here. tests/e2e/conftest.py launches Flask
-      # in-process on a free port with 10 seeded cases.
+      # Build THIS PR's SPA over the committed bundle. Without this the Flask
+      # fixture serves the bundle that was committed on main, so a frontend
+      # regression in the PR cannot fail the E2E job.
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Mark the pre-build state
+        run: touch "$RUNNER_TEMP/pre-build-marker"
+
+      - name: Build the SPA under test
+        run: npm run build
+        working-directory: frontend
+
+      - name: Assert the served bundle is this PR's build
+        run: |
+          test -f immi_case_downloader/static/react/index.html
+          # Fails if the build step is ever removed or silently no-ops: the
+          # served directory must contain assets written AFTER the marker.
+          if ! find immi_case_downloader/static/react -type f -newer "$RUNNER_TEMP/pre-build-marker" | grep -q .; then
+            echo "::error::E2E would run against the committed bundle, not this PR's build"
+            exit 1
+          fi
+
+      # tests/e2e/conftest.py launches Flask in-process on a free port with 10
+      # seeded cases; no external server is required.
       - name: Run E2E smoke subset
         run: >-
           .venv/bin/pytest
@@ -566,6 +657,12 @@ on:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install Python + E2E dependencies
         run: |
           python3 -m venv .venv
@@ -574,12 +671,38 @@ on:
       - name: Install Playwright chromium
         run: .venv/bin/python -m playwright install --with-deps chromium
 
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build the SPA under test
+        run: npm run build
+        working-directory: frontend
+
       - name: Run full E2E suite
         run: >-
           .venv/bin/pytest
           tests/e2e
           -q --no-cov --timeout=300
           --ignore=tests/e2e/playwright
+```
+
+**Runner choice.** Both jobs use `runs-on: ubuntu-latest` and
+`actions/setup-python@v5` deliberately: that is what all three existing jobs in
+this repo do (`.github/workflows/ci.yml:17,22-24` `test-python`; `:47,49-54`
+`test-frontend`; `:71,73-77` `test-worker`). Matching them is the convention
+here. Do **not** retarget these to a `[self-hosted, Linux, X64, wsl, ubuntu]`
+runner — see "Review points not applied".
+
+**Local rehearsal of the CI build step.** Because `npm run build` rewrites ~93
+tracked files under `immi_case_downloader/static/react/`, do **not** run it in
+the working checkout while doing this plan. If you want to rehearse the job
+locally, do it in a throwaway clone:
+
+```bash
+DRILL="$(mktemp -d)"; trap 'rm -rf "$DRILL"' EXIT INT TERM
+git clone --quiet --no-hardlinks "/Users/d/Developer/Active Projects/IMMI-Case-" "$DRILL/repo"
+( cd "$DRILL/repo/frontend" && npm ci && npm run build )
 ```
 
 Now run the **exact** nightly command locally:
@@ -594,14 +717,46 @@ The `tests/e2e/react/` directory last changed on 2026-04-27 while
 expected to be stale. Triage them with the **same three rules as Step 3**
 (assertion drift → fix the assertion; real app defect → STOP; flaky → STOP).
 
-**Bounded escape hatch**: if, after triage, one or more *whole files* are
-irrecoverably red for a reason that is not an app defect (for example they
-assert against a feature that was intentionally removed), add each one as an
-explicit `--ignore=` line in the `Run full E2E suite` step **and** record the
-file plus its one-line reason in the README you write in Step 6. Silent
-`pytest.mark.skip` is not acceptable — the ignore must be visible in the
-workflow file. Never ignore more than 5 files; if you need a sixth, **STOP** and
-report.
+**Bounded escape hatch — and it is a quarantine, not a deletion.** If, after
+triage, one or more *whole files* are irrecoverably red for a reason that is not
+an app defect (for example they assert against a feature that was intentionally
+removed), you may add each one as an explicit `--ignore=` line in the
+`Run full E2E suite` step. Silent `pytest.mark.skip` is not acceptable — the
+ignore must be visible in the workflow file. Never ignore more than 5 files; if
+you need a sixth, **STOP** and report.
+
+Every ignored file must get a row in a **quarantine manifest**, which is a
+required section of the README you write in Step 6. A bare `--ignore=` with no
+owner and no date is how a suite quietly shrinks to nothing. Each row carries:
+
+| File | Tests lost | Why it is red | Owner | Re-enable by |
+|---|---:|---|---|---|
+
+- **Tests lost** — get the real number, do not estimate:
+  `grep -c "def test_" <file>`.
+- **Owner** — a person or a plan number, never "TBD".
+- **Re-enable by** — a date, never "later". Default to 90 days out.
+
+Then record the quarantine's total size so it cannot grow unnoticed:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+IGNORED=$(grep -oE '\-\-ignore=tests/e2e/[^ ]+' .github/workflows/ci.yml | sed 's/--ignore=//' | grep -v '^tests/e2e/playwright$' | sort -u)
+echo "quarantined files:"; echo "$IGNORED"
+TOTAL=0; for f in $IGNORED; do n=$(grep -c "def test_" "$f"); echo "  $f $n"; TOTAL=$((TOTAL+n)); done
+echo "QUARANTINED_TESTS=$TOTAL"
+# The manifest in the README must name exactly the same files:
+grep -oE 'tests/e2e/[A-Za-z0-9_/.-]+\.py' tests/e2e/README.md | sort -u
+```
+
+**Verify**: the file list printed from `ci.yml` and the file list printed from
+`tests/e2e/README.md` must match by **identity** (same paths), not merely by
+count, and `QUARANTINED_TESTS` must be recorded in your handoff. If the two
+lists differ, the manifest is lying and that is a STOP condition.
+
+`tests/e2e/playwright` is excluded from this accounting on purpose — it is
+excluded from CI for a different reason (it calls production and costs LLM
+credits), and it is not quarantined work waiting to be fixed.
 
 **Verify**, all three:
 
@@ -616,11 +771,15 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 (PyYAML parses the bare key `on` as the boolean `True`; that is expected.)
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  .venv/bin/pytest tests/e2e -q --no-cov --timeout=300 --ignore=tests/e2e/playwright 2>&1 | tail -1
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+.venv/bin/pytest tests/e2e -q --no-cov --timeout=300 --ignore=tests/e2e/playwright > /tmp/immi-040-nightly.txt 2>&1
+echo "nightly exit=$?"
+tail -3 /tmp/immi-040-nightly.txt
 ```
 
-→ a summary line containing `passed` and **not** containing `failed` or `error`.
+→ `nightly exit=0`. Read the exit status, not the tail: a piped
+`... | tail -1` reports `tail`'s status (always 0) and would call a failing run
+a pass.
 
 ### Step 5: Delete the duplicate TypeScript E2E suite
 
@@ -633,15 +792,39 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 
 That removes 13 + 1 = 14 tracked files.
 
+**This deletion is deliberately incomplete, and you must hand off the rest.**
+Ideally one change would remove the suite *and* its wiring atomically. It cannot,
+because `frontend/package.json` is edited by plans 001, 024 and 035 — a fourth
+editor guarantees a conflict — so this plan leaves behind:
+
+| Leftover | Where | Exact removal |
+|---|---|---|
+| `"e2e"`, `"e2e:ui"`, `"e2e:headed"` scripts | `frontend/package.json` `scripts` | delete the three lines |
+| `"@playwright/test": "^1.58.2"` | `frontend/package.json` `devDependencies` | delete the line, then `npm install` to drop it (and its transitive entries) from `frontend/package-lock.json` |
+| `"playwright.config.ts"` | `frontend/tsconfig.test.json` `include` (created by plan 001) | delete the array entry |
+
+Put that table verbatim in your handoff, name plan 001/024/035 (whichever lands
+last) as the owner, and record it in the README from Step 6. Until it is done,
+`npm run e2e` fails with "no config found" — loud, therefore acceptable, and the
+verification below pins that it is loud rather than silently doing something.
+
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  git ls-files frontend/e2e frontend/playwright.config.ts | wc -l && \
-  cd frontend && npx tsc -b --noEmit; echo "tsc=$?" && npx vitest run 2>&1 | tail -3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git ls-files frontend/e2e frontend/playwright.config.ts | wc -l          # -> 0
+test ! -e frontend/playwright.config.ts && test ! -d frontend/e2e && echo "removed from disk too"
+cd frontend
+npx tsc -b --noEmit; echo "tsc=$?"
+npx vitest run > /tmp/immi-040-fe.txt 2>&1; echo "vitest exit=$?"; tail -3 /tmp/immi-040-fe.txt
+# The dead script must FAIL, not silently succeed against some other config:
+npm run e2e > /tmp/immi-040-e2e-script.txt 2>&1; echo "npm run e2e exit=$?"
 ```
 
-→ `0`, then `tsc=0`, then `Tests  490 passed (490)`.
+→ `0`; `removed from disk too`; `tsc=0`; `vitest exit=0` with the **same** test
+count as before this step (this plan adds no frontend tests, so any movement is
+a signal); and `npm run e2e exit` **non-zero**. An `npm run e2e` that exits 0
+after the config is deleted means it found another config — **STOP and report**.
 
 Note: plan 001 creates `frontend/tsconfig.test.json` with
 `include: ["__tests__", "vitest.config.ts", "playwright.config.ts", "scripts"]`.
@@ -651,8 +834,23 @@ proof that the deletion is safe. If `tsc=0` does not hold, **STOP**.
 
 ### Step 6: Record the decision in `tests/e2e/README.md`
 
-Create `tests/e2e/README.md`. It exists so nobody re-adds a second E2E runner in
-six months. Include, in your own words but covering all of this:
+**`tests/e2e/README.md` already exists** — 47 lines at `42826a3`, documenting the
+opt-in credentialed auth smoke test (`test_credentialed_auth_smoke.py`) and its
+required env vars. **Do not create or overwrite it.** Read it first, then
+**append** your sections after the existing content, leaving the
+`## Credentialed Auth Smoke` section and its env-var block byte-identical.
+`plans/044-retire-the-stale-planning-docs.md` edits precisely that section (it
+adds a "the teardown targets the wrong database" warning) and anchors on its
+text; clobbering the file would delete 044's target and silently drop a real
+safety warning.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+wc -l tests/e2e/README.md          # confirm it exists before you start
+cp tests/e2e/README.md /tmp/immi-040-readme-before.md
+```
+
+Append, in your own words but covering all of this:
 
 - **One suite only.** `tests/e2e/` (pytest + `pytest-playwright`) is the
   project's only E2E suite. `frontend/e2e/` (TypeScript + `@playwright/test`)
@@ -674,19 +872,31 @@ six months. Include, in your own words but covering all of this:
   default and makes real LLM calls that cost Cloudflare AI Gateway credits. Run
   it by hand, after a deploy, only when you mean to.
 - **The collected test count** you recorded in Step 2.
-- **Any files you added to the nightly `--ignore=` list in Step 4**, one line of
-  reason each. Omit this section if the list is empty.
+- **The quarantine manifest** from Step 4 — the full table (File / Tests lost /
+  Why / Owner / Re-enable by) and the `QUARANTINED_TESTS` total. Write the
+  section with an explicit "none" row if the list is empty; do not omit the
+  section, because an absent section reads as "nobody checked".
+- **The leftover `frontend/package.json` wiring** from Step 5: the three dead
+  `e2e*` scripts, the `@playwright/test` devDependency and the
+  `tsconfig.test.json` include entry, with the named owner. State plainly that
+  `npm run e2e` now fails.
 
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  test -f tests/e2e/README.md && \
-  grep -c "local-dev" tests/e2e/README.md && \
-  grep -c "e2e-nightly" tests/e2e/README.md
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+test -f tests/e2e/README.md; echo "exists=$?"
+# The pre-existing credentialed-smoke section must survive untouched:
+grep -q "^## Credentialed Auth Smoke" tests/e2e/README.md; echo "smoke section kept=$?"
+grep -q "IMMI_AUTH_SMOKE_BASE_URL" tests/e2e/README.md; echo "smoke env kept=$?"
+# Every line of the old file must still be present (append-only, not rewrite):
+comm -23 <(sort -u /tmp/immi-040-readme-before.md) <(sort -u tests/e2e/README.md) | sed -n '1,20p'
+grep -c "local-dev" tests/e2e/README.md
+grep -c "e2e-nightly" tests/e2e/README.md
 ```
 
-→ exits 0 and prints a number ≥ 1 twice.
+→ `exists=0`, `smoke section kept=0`, `smoke env kept=0`, the `comm` prints
+**nothing** (no line of the original was lost), and the two `grep -c` print ≥ 1.
 
 ### Step 7: Add direct tests for the ingestion parser
 
@@ -768,42 +978,82 @@ Assert, one `it` per row:
 | 17 | `extractMetadata("")` | `toEqual` the all-empty-string object (all 7 keys `""`) |
 | 18 | `extractMetadata("Nothing useful here at all.")` | same all-empty object |
 
-**`describe("known defects — pinned, not endorsed")` — 4 tests**
+**`describe("known defects — expected-to-fail, NOT endorsed")` — 4 `it.fails` tests**
+
+These four must assert the **correct** value and be marked `it.fails(...)`.
+Do **not** write them as ordinary green assertions on the wrong value. An
+ordinary green assertion on wrong output turns data loss into the specification:
+it reads to the next maintainer as "this is how it should behave", and fixing
+the parser then looks like *breaking* a test. `it.fails` inverts that — the test
+passes today *because the code is wrong*, states the right answer in the source,
+and flips to a loud failure the moment the defect is fixed, forcing an
+intentional update. Vitest 4.1.8 (`workers/austlii-scraper/package.json`)
+supports `it.fails`.
 
 Put this comment above the block, verbatim:
 
 ```typescript
-// These four assertions pin behaviour that is WRONG. They exist so the defects
-// are visible in CI and so that fixing them produces an obvious, intentional
-// test failure rather than a silent change in ingested data.
+// EXPECTED-TO-FAIL BLOCK. Each assertion below states the CORRECT behaviour and
+// is marked it.fails because parser.ts is currently wrong. They exist so the
+// defects are visible in CI, so the right answer is written down next to the
+// wrong one, and so a fix produces an obvious it.fails->passes failure instead
+// of a silent change in ingested data.
 // parser.ts is owned by plans/033-single-source-the-domain-vocabulary.md — do
-// not "fix" it from here. See plans/040 "Maintenance notes" for D1/D2/D3.
+// not "fix" it from here. See plans/040 "Maintenance notes" for D1/D2/D3 and
+// for the remediation plan that must accompany any fix.
 ```
 
-| # | Name | Expression | `toBe(...)` |
+| # | Name | Expression | Asserted (correct) value |
 |---|---|---|---|
-| 19 | `D1: drops the text of a block element followed by another tag` | `` extractFullText(`<div id="page-main"><p>FIRST PARAGRAPH</p><p>SECOND PARAGRAPH ${FILLER_Y}</p></div>`) `` | `` `SECOND PARAGRAPH ${FILLER_Y}` `` — correct would keep `FIRST PARAGRAPH` |
-| 20 | `D1: drops the text before an inline <a> inside a block` | `` extractFullText(`<div id="page-main"><p>Text with an <a href="/l">inline link</a> inside ${FILLER_Y}</p></div>`) `` | `` `inline link inside ${FILLER_Y}` `` — correct would keep `Text with an ` |
-| 21 | `D2: outcome matches "decision" inside CATCHWORDS` | `extractMetadata(AATA_TEXT).outcome` | `"decision affirmed"` — correct would be `"The Tribunal affirms the decision under review."` |
-| 22 | `D3: legislation truncates at the first "."` | `extractMetadata(FCA_TEXT).legislation` | `"Migration Regulations 1994 (Cth) reg 2"` — correct would be `"Migration Regulations 1994 (Cth) reg 2.03"` |
+| 19 | `D1: keeps the text of a block element followed by another tag` | `` extractFullText(`<div id="page-main"><p>FIRST PARAGRAPH</p><p>SECOND PARAGRAPH ${FILLER_Y}</p></div>`) `` | `toContain("FIRST PARAGRAPH")` — today it returns only `` `SECOND PARAGRAPH ${FILLER_Y}` `` |
+| 20 | `D1: keeps the text before an inline <a> inside a block` | `` extractFullText(`<div id="page-main"><p>Text with an <a href="/l">inline link</a> inside ${FILLER_Y}</p></div>`) `` | `toContain("Text with an")` — today it returns only `` `inline link inside ${FILLER_Y}` `` |
+| 21 | `D2: outcome is the operative order, not a catchwords word` | `extractMetadata(AATA_TEXT).outcome` | `toBe("The Tribunal affirms the decision under review.")` — today `"decision affirmed"` |
+| 22 | `D3: legislation keeps a regulation number containing a "."` | `extractMetadata(FCA_TEXT).legislation` | `toBe("Migration Regulations 1994 (Cth) reg 2.03")` — today truncated to `reg 2` |
 
-Put the "correct would be" text in a trailing comment on each assertion.
-`FILLER_Y` is `"y".repeat(120)`.
+Shape (write all four like this):
+
+```typescript
+it.fails("D2: outcome is the operative order, not a catchwords word", () => {
+  // Today returns "decision affirmed" — the /i flag makes DECISION match the
+  // lowercase word inside the CATCHWORDS line (parser.ts:303).
+  expect(extractMetadata(AATA_TEXT).outcome).toBe(
+    "The Tribunal affirms the decision under review.",
+  );
+});
+```
+
+Put the "today returns …" text in a comment on each, as above. `FILLER_Y` is
+`"y".repeat(120)`.
+
+Tests 19 and 20 use `toContain`, not `toBe`, on purpose: the exact correct
+whitespace after a D1 fix is a choice the fixer makes, and pinning it here would
+force a needless second edit. What is not negotiable is that the leading text
+survives at all.
 
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && \
-  npm test 2>&1 | tail -5 && npm run typecheck; echo "tsc=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper"
+set -o pipefail
+npm test 2>&1 | tee /tmp/immi-040-scraper-after.txt | tail -6; echo "npm test exit=$?"
+npm run typecheck; echo "tsc=$?"
+npx vitest run src/__tests__/parser.test.ts; echo "parser file exit=$?"
+SCRAPER_AFTER=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-040-scraper-after.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "scraper tests: $SCRAPER_BEFORE -> $SCRAPER_AFTER"
 ```
 
-→ `Test Files  8 passed (8)` / `Tests  50 passed (50)`, then `tsc=0`.
+→ `npm test exit=0`, `tsc=0`, `parser file exit=0`,
+`SCRAPER_AFTER == SCRAPER_BEFORE + 22`, and
+`npx vitest run src/__tests__/parser.test.ts` reports `Tests  22 passed (22)`
+(vitest counts a passing `it.fails` as passed).
 
 If any of tests 1–18 fails, **STOP** — `parser.ts` has drifted from `42826a3`
 and these expectations are stale (unless the drift check flagged `parser.ts`, in
-which case re-derive below instead). If any of 19–22 fails, `parser.ts` has been
-*fixed* by another plan; also **STOP** and report which one, so the pin can be
-replaced with the correct expectation rather than deleted.
+which case re-derive below instead). If any of 19–22 fails — i.e. vitest reports
+`expected to fail, but passed` — `parser.ts` has been *fixed* by another plan.
+Also **STOP** and report which defect, so the `it.fails` marker can be dropped
+in the same change that fixes it (the assertion itself already states the
+correct value and needs no edit).
 
 #### Re-deriving Step 7's expected values
 
@@ -864,7 +1114,15 @@ changes inside the first `it(...)` block only.
 **8a.** Replace the stub HTML at lines 15-22 with one whose fields the parser
 can actually reach. `<br/>` becomes a newline in `stripHtmlTags`
 (`parser.ts:209`) and does not trigger defect D1, unlike consecutive `<p>`
-tags:
+tags.
+
+**Be honest about what this fixture proves.** A single `<p>` full of `<br/>`
+separators is *not* what AustLII serves — real pages use consecutive block
+elements and inline `<a>` links, which is exactly the shape D1 destroys. So this
+test proves "the scrape phase writes parsed fields to R2 rather than nulls"; it
+does **not** prove the pipeline round-trips realistic AustLII HTML. Step 8c adds
+the realistic-shape test as an `it.fails`, so the gap is written down instead of
+being engineered around:
 
 ```typescript
     vi.stubGlobal("fetch", vi.fn(async () => new Response(`
@@ -911,30 +1169,89 @@ passing through the job field.
     expect(typeof stored.scraped_at).toBe("string");
 ```
 
-Do **not** add a new `it` block — the count in Step 7's verification assumes
-this stays one test.
+**8c.** Add **one** new `it.fails` block to the same file, immediately after the
+existing test, driving the *realistic* AustLII shape end to end. This is the
+test that would catch D1 in the pipeline rather than only in the parser unit
+tests, and it is expected to fail until D1 is fixed:
+
+```typescript
+  // EXPECTED TO FAIL until parser.ts defect D1 is fixed (see plans/040
+  // "Maintenance notes"). Real AustLII pages use consecutive block elements and
+  // inline <a> links, not <br/>-separated single paragraphs. stripHtmlTags at
+  // parser.ts:211 eats everything between a block tag's own '>' and the next
+  // '>' anywhere in the document, so this shape loses the citation heading and
+  // the outcome sentence before extractMetadata ever sees them.
+  it.fails("round-trips realistic block-level AustLII HTML to R2", async () => {
+    // Same arrange/act as the test above, but with this fetch stub:
+    //   <div id="page-main">
+    //     <h1>Applicant v Minister [2026] FCA 42</h1>
+    //     <p>Coram: <a href="/j/brown">Brown J</a></p>
+    //     <p>CATCHWORDS: MIGRATION - protection visa - Subclass 866</p>
+    //     <p>Date of judgment: 3 February 2026</p>
+    //     <p>The Court orders that the application be dismissed.</p>
+    //     <p>This body is intentionally longer than fifty characters so extraction succeeds.</p>
+    //     <p>Migration Act 1958 (Cth) s 476.</p>
+    //   </div>
+    const stored = JSON.parse(puts.get(jsonKey) as string);
+    expect(stored).toMatchObject({
+      citation: "[2026] FCA 42",
+      title: "Applicant v Minister [2026] FCA 42",
+      judges: "Brown J",
+      outcome: "The Court orders that the application be dismissed.",
+    });
+  });
+```
+
+Write out the full arrange/act (queue, R2 stub, job) by copying the existing
+test's body — the sketch above only shows what differs. Keep it a **single**
+extra test so the delta arithmetic below holds.
 
 **Verify**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && \
-  npm test 2>&1 | tail -5 && npm run typecheck; echo "tsc=$?"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper"
+set -o pipefail
+npm test 2>&1 | tee /tmp/immi-040-scraper-final.txt | tail -6; echo "npm test exit=$?"
+npm run typecheck; echo "tsc=$?"
+SCRAPER_FINAL=$(grep -oE 'Tests +[0-9]+ passed \(([0-9]+)\)' /tmp/immi-040-scraper-final.txt | grep -oE '\([0-9]+\)' | tr -d '()')
+echo "scraper tests: $SCRAPER_BEFORE -> $SCRAPER_FINAL"
 ```
 
-→ `Test Files  8 passed (8)` / `Tests  50 passed (50)`, then `tsc=0`.
+→ `npm test exit=0`, `tsc=0`, and
+`SCRAPER_FINAL == SCRAPER_BEFORE + 23` (22 from Step 7 + 1 from 8c).
+
+If the 8c test reports `expected to fail, but passed`, D1 has been fixed —
+**STOP**, drop the `.fails` marker, and say so in your handoff.
 
 ### Step 9: Full regression pass
 
+Capture every exit status explicitly. `cmd | tail` reports `tail`'s status, so a
+`&&`-chained pipeline silently promotes a failing suite:
+
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint && make test-py 2>&1 | tail -2
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && npm run test:workers 2>&1 | tail -3
-cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -3 && npx tsc -b --noEmit; echo "tsc=$?"
-cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npm test 2>&1 | tail -3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make lint-py; echo "lint-py exit=$?"          # `make lint` before plan 001 lands
+make test-py > /tmp/immi-040-py-after.txt 2>&1; echo "test-py exit=$?"
+grep -E '^(FAILED|ERROR) ' /tmp/immi-040-py-after.txt | sort > /tmp/immi-040-pyfail-after.txt
+diff /tmp/immi-040-pyfail-before.txt /tmp/immi-040-pyfail-after.txt; echo "pyfail set unchanged=$?"
+npm run test:workers > /tmp/immi-040-workers.txt 2>&1; echo "workers exit=$?"; tail -3 /tmp/immi-040-workers.txt
+( cd frontend && npx vitest run > /tmp/immi-040-fe2.txt 2>&1; echo "fe exit=$?"; tail -3 /tmp/immi-040-fe2.txt )
+( cd frontend && npx tsc -b --noEmit; echo "tsc=$?" )
+( cd workers/austlii-scraper && npm test > /tmp/immi-040-scraper9.txt 2>&1; echo "scraper exit=$?"; tail -3 /tmp/immi-040-scraper9.txt )
 ```
 
-**Verify**: `All checks passed!`; `1141 passed, 3 failed, 7 skipped` (the 3 are
-the pre-existing `pypdf`/`pyexpat` ABI failures, unchanged); `345 passed`;
-`490 passed` and `tsc=0`; `Tests  50 passed (50)`.
+**Verify**:
+- `lint-py exit=0` with `All checks passed!`.
+- `pyfail set unchanged=0` — the `diff` is empty, i.e. **the same test files
+  fail, by name**, as in the Step 0 baseline. On the planning machine that set
+  is exactly the 3 `ImportError`s in
+  `tests/test_backfill_judge_overrides_from_pdf.py` caused by the Homebrew
+  Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch. Comparing the *set* rather
+  than a count is the point: a count check passes when one new real failure
+  replaces one environmental one.
+- `workers exit=0`, `fe exit=0`, `tsc=0` — and both counts unchanged from
+  before this plan, which adds no tests to either suite.
+- `scraper exit=0` with `SCRAPER_BEFORE + 23` tests.
 
 Then confirm nothing outside scope moved:
 
@@ -942,7 +1259,9 @@ Then confirm nothing outside scope moved:
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ```
 
-→ only the files listed in "Scope / In scope".
+→ only the files listed in "Scope / In scope". In particular
+`immi_case_downloader/static/react/` must **not** appear — if it does you ran
+`npm run build` in the working checkout; see Step 4's throwaway-clone recipe.
 
 ## Test plan
 
@@ -979,12 +1298,16 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 
 **Verification**
 
-- `cd workers/austlii-scraper && npm test` → `Test Files 8 passed (8)`,
-  `Tests 50 passed (50)` (was 7 / 28; +1 file, +22 tests).
+- `cd workers/austlii-scraper && npx vitest run src/__tests__/parser.test.ts` →
+  `Tests  22 passed (22)` — a per-file count, stable regardless of what else lands.
+- `cd workers/austlii-scraper && npm test` → exit 0 with
+  `SCRAPER_BEFORE + 23` tests (+1 new file, +22 parser tests, +1 `it.fails`
+  round-trip test in `pipeline-scrape.test.ts`). Delta, not an absolute total.
 - `.venv/bin/pytest tests/e2e/test_smoke.py tests/e2e/react/test_react_smoke.py -q --no-cov --timeout=180`
-  → `100 passed` (was: could not collect).
+  → `100 passed` (was: could not collect). That is a per-file pair, so the count
+  is stable.
 - `.venv/bin/pytest tests/e2e -q --no-cov --timeout=300 --ignore=tests/e2e/playwright`
-  → 0 failed.
+  → exit status 0, read from `$?` and not from a piped `tail`.
 
 ## Done criteria
 
@@ -1001,24 +1324,50 @@ Machine-checkable. ALL must hold:
 - [ ] `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));print(sorted(d[True]))"`
       → `['pull_request', 'push', 'schedule', 'workflow_dispatch']`
 - [ ] `grep -c 'ignore=tests/e2e/playwright' .github/workflows/ci.yml` → `1`
-- [ ] `git ls-files frontend/e2e frontend/playwright.config.ts | wc -l` → `0`
-- [ ] `test -f tests/e2e/README.md` exits 0
+- [ ] Both new jobs build the SPA before running pytest — check by structure,
+      not by grep:
+      `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci.yml'));`
+      `[print(j, [s.get('name') or s.get('uses') for s in d['jobs'][j]['steps']]) for j in ('e2e-smoke','e2e-nightly')]"`
+      → each job's step list contains `Build the SPA under test` **before** the
+      step that runs pytest
+- [ ] `git ls-files frontend/e2e frontend/playwright.config.ts | wc -l` → `0`,
+      and `test ! -e frontend/playwright.config.ts && test ! -d frontend/e2e`
+- [ ] `cd frontend && npm run e2e` exits **non-zero** (the dead script fails
+      loudly rather than silently finding another config)
+- [ ] `tests/e2e/README.md` still contains its original `## Credentialed Auth Smoke`
+      section and `IMMI_AUTH_SMOKE_BASE_URL` block, and
+      `comm -23 <(sort -u /tmp/immi-040-readme-before.md) <(sort -u tests/e2e/README.md)`
+      prints nothing (append-only, nothing lost)
+- [ ] The quarantine file list in `.github/workflows/ci.yml` and the one in
+      `tests/e2e/README.md` match by identity (Step 4's two commands)
 - [ ] `test -f workers/austlii-scraper/src/__tests__/parser.test.ts` exits 0
-- [ ] `cd workers/austlii-scraper && npm test` → `Test Files  8 passed (8)` and
-      `Tests  50 passed (50)`
+- [ ] `cd workers/austlii-scraper && npx vitest run src/__tests__/parser.test.ts` → `Tests  22 passed (22)`
+- [ ] `cd workers/austlii-scraper && npm test` exits 0 with
+      `SCRAPER_BEFORE + 23` tests (delta against the Step 0 baseline; no
+      absolute total is asserted)
 - [ ] `cd workers/austlii-scraper && npm run typecheck` exits 0
-- [ ] `grep -c 'JSON.parse' workers/austlii-scraper/src/__tests__/pipeline-scrape.test.ts` → `1`
+- [ ] `cd workers/austlii-scraper && grep -c 'it.fails' src/__tests__/parser.test.ts` → `4`
+      and `grep -c 'it.fails' src/__tests__/pipeline-scrape.test.ts` → `1`
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npx vitest run` → `490 passed`
-- [ ] `npm run test:workers` → `345 passed`
-- [ ] `make lint` → `All checks passed!`
+- [ ] `cd frontend && npx vitest run` exits 0 with the same test count as before
+      this plan (it adds none)
+- [ ] `npm run test:workers` exits 0 with the same test count as before this plan
+- [ ] `make lint-py` → `All checks passed!` (`make lint` if plan 001 has not landed)
 - [ ] `.venv/bin/ruff check tests/e2e/` reports no findings in
       `test_smoke.py` or `test_react_smoke.py`
-- [ ] `make test-py 2>&1 | tail -2` → `1141 passed, 3 failed, 7 skipped`
-      (unchanged; the 3 are the pre-existing `pypdf`/`pyexpat` ABI failures)
-- [ ] `git status --short` shows no file outside the "In scope" list
-- [ ] `git diff 42826a3..HEAD -- workers/austlii-scraper/src/parser.ts | wc -l` → `0`
-- [ ] `plans/README.md` status row for 040 updated
+- [ ] `diff /tmp/immi-040-pyfail-before.txt /tmp/immi-040-pyfail-after.txt` is
+      empty — the **same** test files fail by name as in the Step 0 baseline
+      (still exactly the 3 pyexpat/pypdf `ImportError`s in
+      `tests/test_backfill_judge_overrides_from_pdf.py`, by name, not merely
+      "3 failures")
+- [ ] `git status --short` shows no file outside the "In scope" list, and in
+      particular nothing under `immi_case_downloader/static/react/`
+- [ ] All three of these are empty:
+      `git diff --stat 42826a3..HEAD -- workers/austlii-scraper/src/parser.ts`,
+      `git diff --stat -- workers/austlii-scraper/src/parser.ts`,
+      `git diff --cached --stat -- workers/austlii-scraper/src/parser.ts`
+- [ ] `plans/README.md` status row for 040 updated (skip if a coordinator
+      maintains the index)
 
 ## STOP conditions
 
@@ -1054,19 +1403,59 @@ Stop and report back (do not improvise) if:
 - **`.venv/bin/python -m playwright install --with-deps chromium` fails on the
   GitHub runner.** Do not switch to a container image or a third-party action to
   work around it; report the error.
-- **`make test-py` changes from `1141 passed, 3 failed, 7 skipped`.** Installing
-  `pytest-playwright` registers new fixtures and CLI options; if that perturbs
-  the unit suite, that is a packaging problem worth reporting rather than
-  absorbing.
+- **The `make test-py` failing set changes.** Compare by identity, not count:
+  `diff /tmp/immi-040-pyfail-before.txt /tmp/immi-040-pyfail-after.txt` must be
+  empty. Installing `pytest-playwright` registers new fixtures and CLI options;
+  if that perturbs the unit suite, that is a packaging problem worth reporting
+  rather than absorbing. A count-only check would hide a new real failure that
+  replaced an environmental one.
+- **`git status` shows changes under `immi_case_downloader/static/react/`.** You
+  ran `npm run build` in the working checkout. Do not `git checkout --` it
+  reflexively if other work is in flight — report, and use the throwaway-clone
+  recipe in Step 4 for local rehearsal.
 
 ## Maintenance notes
 
 For the human/agent who owns this code after the change lands:
 
-- **Three real parser defects are pinned, not fixed.** All three live in
+- **Three real parser defects are marked expected-to-fail, not fixed — and a fix
+  alone is not enough.** All three live in
   `workers/austlii-scraper/src/parser.ts`, which
   `plans/033-single-source-the-domain-vocabulary.md` owns. Whoever fixes them
-  must update `parser.test.ts` tests 19–22 in the same commit:
+  drops the `it.fails` markers on tests 19–22 (and on Step 8c) in the same
+  commit — the assertions already state the correct values.
+
+  **Required remediation plan, to be written before any fix lands.** D1 has been
+  silently dropping content from ingested cases; fixing the parser changes what
+  *future* scrapes produce and leaves every already-ingested case wrong. A fix
+  without this plan swaps one silent inconsistency for another:
+  - **Owner**: whoever lands the `parser.ts` fix (today: plan 033). Not "TBD".
+  - **Blast-radius estimate, measured not guessed.** Every case whose source
+    HTML contains a block element immediately followed by another tag is
+    affected — which is essentially all of them, but the *amount* lost varies.
+    Quantify it: sample ≥ 500 stored source objects from R2 (`IMMI_CONTENT`,
+    `cases/<case_id>/source/<sha256>.txt`), run old and new `extractFullText`
+    over each, and report the distribution of length deltas plus the count where
+    `citation_extracted`, `outcome`, `judges` or `date` change from `""` to a
+    value.
+  - **Before/after quality diff** on that sample, checked in as an artefact, so
+    the fix is reviewable as a data change and not only as a regex change.
+  - **Reprocessing procedure**: the corrected parser must be re-run over the
+    stored R2 sources and the resulting fields written back to D1
+    `IMMI_CATALOG_DB`. Note that the raw HTML *is* retained in R2 (the scrape
+    phase writes both `.html` and `.json` under `runs/<run_id>/<court>/`), so
+    re-derivation does not require re-scraping AustLII — which matters, because
+    bulk re-scraping triggers the IP block documented in `CLAUDE.md`.
+  - **Versioning + rollback**: stamp reprocessed rows with a parser version, and
+    follow the D1 bulk-write discipline in `docs/ops/d1-migrations.md` (a
+    verified export before the write, a `LIMIT 100` dry run, and a rehearsal on a
+    staging database). The mutation flag `IMMI_CASE_MUTATIONS_ENABLED` gates the
+    Worker API only — it does **not** protect an operator running `wrangler d1
+    execute` directly.
+  - **Deadline**: set one when the plan is written; default 90 days from the
+    date these tests land.
+
+  The three defects themselves:
   - **D1 — content loss (highest severity).** `parser.ts:211`:
     `.replace(/<(?:p|div|h[1-6]|li|tr|blockquote|pre|section|article)[\s>][^>]*>/gi, "\n")`.
     `[\s>]` already eats the tag's own `>`, so `[^>]*` runs to the next `>`
@@ -1089,16 +1478,37 @@ For the human/agent who owns this code after the change lands:
     shares D2/D3 before fixing only one side.
 - **`frontend/package.json` still has dead E2E wiring** after Step 5: the
   `"e2e"`, `"e2e:ui"` and `"e2e:headed"` scripts and the `@playwright/test`
-  devDependency (`^1.58.2`). Removing them is a 4-line change for whichever plan
-  next edits that file (001, 024 or 035 all do). Until then `npm run e2e` fails
-  with "no config found", which is loud and therefore acceptable.
+  devDependency (`^1.58.2`), plus its `frontend/package-lock.json` entries and
+  the `"playwright.config.ts"` entry in plan 001's `frontend/tsconfig.test.json`.
+  Ideally the whole deletion would be atomic; it is not, because that file has
+  three other owners (001, 024, 035). The exact removal is tabulated in Step 5
+  and must appear in your handoff with a named owner. Until it is done
+  `npm run e2e` fails with "no config found" — loud, therefore acceptable, and
+  the Step 5 verification pins that it stays loud.
+- **No production-path E2E exists, and this plan does not create one.** Both
+  suites drive local Flask; production is `workers/cloudflare-native.js` over D1,
+  R2, Vectorize and Workers Static Assets, and *nothing* exercises it end to end.
+  `plans/038`'s `route-manifest-coverage.test.js` is the closest substitute — it
+  drives all 72 manifest routes through the real entrypoint in-process — but it
+  runs against a SQLite shim, not deployed infrastructure. The missing gate,
+  which needs its own plan: a post-deploy smoke against a **staging** Worker
+  covering at minimum (a) an SPA deep link returning `index.html` via Static
+  Assets, (b) one public read (`GET /api/v1/stats`) returning real data,
+  (c) an unauthenticated tenant-scoped route returning 401/403,
+  (d) an authenticated tenant route returning that tenant's data only, and
+  (e) `POST /api/v1/cases` returning `503 case_mutations_disabled` while the
+  freeze flag is off. It must be an **operator-gated** job, not a PR gate, since
+  it needs deployed infrastructure and real secrets.
 - **Plan 001's `frontend/tsconfig.test.json`** lists `"playwright.config.ts"` in
   its `include`. That entry is dead after Step 5. Harmless (TypeScript ignores
   non-matching `include` entries when others match) but worth tidying.
 - **`CLAUDE.md` is now stale** in two places: the test-count paragraph still
   counts `frontend/e2e/`, and `make test-e2e` is described as "requires running
-  server" when the pytest fixture launches its own. Fix in whichever plan owns
-  `CLAUDE.md`.
+  server" when the pytest fixture launches its own
+  (`tests/e2e/conftest.py:232-274` starts Flask in a daemon thread with 10
+  seeded cases; only setting `E2E_BASE_URL` switches it to an external server —
+  `conftest.py:229`, `:278-282`). `plans/042` owns `CLAUDE.md` and now fixes
+  both.
 - **What a reviewer should scrutinise**: (a) that the `e2e-nightly` job really is
   gated by `if: github.event_name == 'schedule' || …` — without it, every PR
   pays for the full suite; (b) that `--ignore=tests/e2e/playwright` is present in
@@ -1161,3 +1571,24 @@ For the human/agent who owns this code after the change lands:
   delta split mid-JSON, a keepalive, `data: [DONE]` and a mid-stream error frame,
   asserting the yielded sequence; and an RTL test for `StreamingCouncilView`
   with a mocked stream asserting incremental render and cleanup on unmount.
+
+## Review points not applied
+
+- **"The two new jobs use `ubuntu-latest` + `actions/setup-python`, which
+  violates this repo's convention of running general CI on a
+  `[self-hosted, Linux, X64, wsl, ubuntu]` runner."** — Rejected; the premise is
+  false for this repository. Every existing job in `.github/workflows/ci.yml`
+  runs on `ubuntu-latest`: `test-python` at `.github/workflows/ci.yml:17` with
+  `actions/setup-python@v5` at `:22-24`; `test-frontend` at `:47` with
+  `actions/setup-node@v5` at `:49-53`; `test-worker` at `:71` with
+  `actions/setup-node@v5` at `:73-76`. `grep -c 'self-hosted' .github/workflows/*.yml`
+  returns `0` — there is no self-hosted runner referenced anywhere in this repo.
+  The self-hosted-WSL guidance is a cross-project default that explicitly says to
+  confirm before reusing it, and confirming it here shows it does not apply. The
+  new jobs match the three that already work, which is the correct convention to
+  follow. Retargeting them at a runner this repo has never used would be an
+  untested change bundled into a test-restoration plan.
+
+  Everything else in that review point **was** applied: both jobs now `npm ci`
+  and `npm run build` the frontend before running pytest, plus an explicit guard
+  step that fails the job if the served bundle is not the one this run built.

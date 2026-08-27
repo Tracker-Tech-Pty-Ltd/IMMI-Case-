@@ -6,14 +6,23 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `plans/README.md` — if that file does not exist, skip that (do not create it).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A `42826a3..HEAD` diff is blind to uncommitted,
+> staged and untracked work, so run **all four** commands; a dirty tree would
+> otherwise hand you a false all-clear. Any in-scope path appearing in any of
+> them is a STOP condition, and you must **never** run an unconditional
+> `git checkout -- …`, `git restore …` or `git clean -f` to clear it — those
+> changes may be the operator's.
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- frontend/package.json frontend/package-lock.json
+> PATHS='frontend/package.json frontend/package-lock.json frontend/__tests__'
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS
+> git diff --stat               -- $PATHS   # unstaged
+> git diff --cached --stat      -- $PATHS   # staged
+> git status --short --untracked-files=all -- $PATHS
 > ```
-> Expected: **empty output**. If either file changed since this plan was
-> written, compare the "Current state" excerpts against the live files before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> On a mismatch, compare the "Current state" excerpts against the live files; if
+> they differ, STOP.
 
 ## Status
 
@@ -246,10 +255,28 @@ All frontend commands run from `/Users/d/Developer/Active Projects/IMMI-Case-/fr
 | Apply semver-compatible fixes | `npm audit fix` | exit 0 (never add `--force`) |
 | CI-parity install | `npm ci` | exit 0, `found 0 vulnerabilities` |
 | Typecheck (the working form) | `npx tsc -b --noEmit` | exit 0, no output |
-| Frontend unit tests | `npx vitest run` | `Test Files 55 passed (55)` / `Tests 490 passed (490)` |
+| Frontend unit tests | `npx vitest run` | **delta**: `FE_TESTS_BEFORE + N_NEW` across `FE_FILES_BEFORE + 1` (Step 6 adds one file) |
+| Named-test gate | `npx vitest run __tests__/router-open-redirect.test.tsx` | after Step 6: all pass |
 | Production bundle (safe outDir) | `npx vite build --outDir /tmp/immi-plan-035-build --emptyOutDir` | exit 0, ends `✓ built in …` |
-| Frontend lint | `npm run lint` | exit 0, `✖ 25 problems (0 errors, 25 warnings)` |
+| Frontend lint | `npm run lint` | exit 0, triple identical to `ESLINT_BEFORE`, `0 errors` |
 | Repo cleanliness | `git status --short` (from repo root) | only in-scope files listed |
+
+**Delta rule (Step 0 — before you change anything).** Sibling plans in this
+batch add and remove frontend tests, so absolute totals such as "490 passed" are
+not usable gates: they break the moment
+`plans/031-delete-dead-frontend-modules.md` (which removes 7) merges, and an
+executor who edits the expected number has destroyed the gate. Record:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run 2>&1 | tail -4     # → FE_FILES_BEFORE / FE_TESTS_BEFORE
+npm run lint 2>&1 | tail -2       # → ESLINT_BEFORE (the whole ✖ line)
+npm audit 2>&1 | grep -E "^[0-9]+ vulnerabilit"   # → AUDIT_BEFORE
+```
+
+Everything below is a delta from those. There is **no** ordering dependency on
+plan 031 once both plans use deltas; run them in either order, just not in
+parallel in the same `node_modules`.
 
 Note on `npx tsc --noEmit` (no `-b`): in this repo that form exits 0 while
 loading **zero** files, because `frontend/tsconfig.json` is
@@ -259,10 +286,13 @@ do not touch it here.
 
 ## Scope
 
-**In scope** (the only files you may modify):
+**In scope** (the only files you may modify or create):
 
-- `frontend/package.json`
+- `frontend/package.json` (including the new `engines` block, Step 4b)
 - `frontend/package-lock.json`
+- `frontend/__tests__/router-open-redirect.test.tsx` — **create** (Step 6). A
+  new file, so it collides with nothing;
+  `plans/031-delete-dead-frontend-modules.md` only deletes from `__tests__/`.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -271,9 +301,10 @@ do not touch it here.
   different plan and an audit step needs network access in CI, which has not been
   established. Recorded in "Maintenance notes".
 - Any Dependabot / Renovate config under `.github/` — same reason.
-- `frontend/src/**`, `frontend/__tests__/**`, `frontend/e2e/**` — if a test or a
-  source file breaks under the new dependency versions, that is a STOP
-  condition, not a licence to edit it.
+- `frontend/src/**`, `frontend/e2e/**`, and every **existing** file under
+  `frontend/__tests__/` — if a test or a source file breaks under the new
+  dependency versions, that is a STOP condition, not a licence to edit it. The
+  one new file created in Step 6 is the sole exception.
 - `immi_case_downloader/static/react/**` — tracked build output. Never
   regenerate it in this plan.
 - `frontend/src/tokens/tokens.css` and `frontend/src/tokens/tokens.ts` —
@@ -422,7 +453,29 @@ Never add `--force`. Every advisory in this tree reports `fixAvailable: true`
 allowed.
 
 This bumps lockfile entries only — it does **not** widen any range in
-`package.json`. Expected lockfile moves include: `react-router` and
+`package.json`.
+
+**`npm audit fix` is not deterministic, so the version list below is a
+prediction, not a gate.** It resolves against the registry at the moment you run
+it, so a patch published since this plan was written will land instead. Do not
+treat a different-but-still-clean result as a failure. What you must do instead
+is **review the lockfile diff**:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git diff --stat -- frontend/package-lock.json
+git diff -- frontend/package-lock.json | grep -E '^[-+]\s+"version"' | sort | uniq -c | head -40
+node -e "const l=require('./frontend/package-lock.json').packages;for(const k of ['node_modules/react','node_modules/react-dom','node_modules/recharts','node_modules/@tanstack/react-query','node_modules/@radix-ui/react-dialog','node_modules/i18next','node_modules/tailwindcss'])console.log(k.replace('node_modules/',''), l[k].version);"
+```
+
+The **allowlist** is: anything under `react-router*`, `vite`, `rollup`,
+`postcss`, `nanoid`, `picomatch`, `ws`, `form-data`, `flatted`, `minimatch`,
+`brace-expansion`, `ajv`, `@babel/*`, `esbuild`, and their transitives.
+`react`, `react-dom`, `recharts`, `@tanstack/react-query`,
+`@radix-ui/react-dialog`, `i18next` and `tailwindcss` **must not move** — that
+last command is the check, and a change in any of those is a STOP condition.
+
+Expected lockfile moves include: `react-router` and
 `react-router-dom` 7.13.0 → 7.18.2, `vite` 7.3.1 → 7.3.6, `rollup` 4.57.1 →
 4.63.0, `postcss` 8.5.6 → 8.5.26, `nanoid` 3.3.11 → 3.3.18, `picomatch` 4.0.3 →
 4.0.7, `ws` 8.19.0 → 8.21.3, `form-data` 4.0.5 → 4.0.6, `flatted` 3.3.3 →
@@ -451,22 +504,31 @@ exact peer constraints simultaneously:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
-npm install --save-dev "vitest@^4.1.11" "@vitest/ui@^4.1.11"
+npm install --save-dev vitest@4.1.11 "@vitest/ui@4.1.11"
 ```
 
-(The quotes matter — `^` is a shell metacharacter under some zsh configurations.)
+**Request the exact versions, not the caret range.** `npm install
+"vitest@^4.1.11"` asks npm for *the highest version satisfying `^4.1.11`*, which
+on any day after this plan was written may be 4.1.12, 4.2.0, … — and then
+Verify (a) below fails for a reason that has nothing to do with your work.
+Asking for `vitest@4.1.11` pins **this** resolution while npm's default
+`save-prefix` still writes `"^4.1.11"` into `package.json`, which is the range
+this plan wants recorded. If your npm is configured with
+`save-exact=true` (check with `npm config get save-exact`), pass
+`--save-prefix='^'` so the manifest still gets a caret.
 
-This rewrites `frontend/package.json` lines for `@vitest/ui` and `vitest` to
-`^4.1.11` and moves the lock to 4.1.11 for `vitest`, `@vitest/ui`, and the
+This moves the lock to 4.1.11 for `vitest`, `@vitest/ui`, and the
 `@vitest/{expect,mocker,pretty-format,runner,snapshot,spy,utils}` internals.
 
 **Verify (a)**:
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest --version
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest --version
+node -p "require('./package.json').devDependencies.vitest"
 ```
 
-→ starts with `vitest/4.1.11`
+→ the first starts with `vitest/4.1.11`; the second prints `^4.1.11`
 
 **Verify (b)**:
 
@@ -481,8 +543,13 @@ Windows-dev-server file-read advisory, cleared in Step 4).
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
-npm install --save-dev "tsx@^4.23.12"
+npm install --save-dev tsx@4.23.12
 ```
+
+Exact version for the same reason as Step 3: `"tsx@^4.23.12"` resolves to
+whatever the registry's newest 4.x is today, which would break Verify (b)'s
+`tsx 4.23.12` expectation without anything actually being wrong. npm's default
+save-prefix still records `"^4.23.12"` in the manifest.
 
 `tsx@4.21.0` requires `esbuild: ~0.27.0`; `tsx@4.23.12` requires `~0.28.0`,
 which lets the hoisted `esbuild` move to 0.28.2 (the advisory needs `>= 0.28.1`).
@@ -517,6 +584,43 @@ tailwindcss 4.2.0
 class-variance-authority ABSENT
 ```
 
+### Step 4b: Declare the Node floor this manifest actually needs
+
+The repo standardises on Node 22 and `plans/037-align-the-worker-toolchains.md`
+adds `"engines": {"node": ">=22"}` to the root and pipeline manifests — but it
+explicitly defers `frontend/package.json` to "whichever frontend plan touches
+that manifest next". That is this plan. Without it, "one declared Node version"
+is not true and npm has nothing to warn a contributor from.
+
+Add to `frontend/package.json`, as a sibling of `devDependencies`:
+
+```json
+  "engines": {
+    "node": ">=22.13"
+  }
+```
+
+**`>=22.13`, not `>=22`.** Read from the lockfile: `eslint@10.0.0` declares
+`"node": "^20.19.0 || ^22.13.0 || >=24"`, so Node 22.0–22.12 does **not**
+satisfy it; `vite@7.x` and `@vitejs/plugin-react` need `>=22.12`. A flat
+`>=22` here would declare a floor the toolchain does not actually accept. Say so
+in your handoff so plan 037's author knows the two numbers differ on purpose:
+root/pipeline are constrained by wrangler (`>=22`), frontend by eslint
+(`>=22.13`); both are satisfied by the Node 22 that CI pins.
+
+**Verify**:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+node -p "require('./package.json').engines.node"          # → >=22.13
+node -p "process.version"                                  # must satisfy it
+npm ci 2>&1 | grep -i "EBADENGINE" ; echo "engine-warn grep exit=$?"
+```
+
+→ `>=22.13`; your Node satisfies it; the grep exits `1` (no `EBADENGINE`
+warning). If it exits `0`, your local Node is below the declared floor — report
+that rather than lowering the floor to match your machine.
+
 ### Step 5: Re-run every gate from a clean, CI-identical install
 
 ```bash
@@ -540,11 +644,12 @@ configured `outDir` is the **tracked** directory
 
 - `npm ci` → exit 0, last line `found 0 vulnerabilities`
 - `npx tsc -b --noEmit` → exit 0, **no output at all**
-- `npx vitest run` → `Test Files  55 passed (55)` and `Tests  490 passed (490)`
+- `npx vitest run` → `FE_FILES_BEFORE + 1` files and `FE_TESTS_BEFORE + N_NEW`
+  tests, where `N_NEW` is the number of cases you wrote in Step 6
 - `npx vite build …` → exit 0, ends with `✓ built in …`; the emitted
   `assets/index-*.js` is ~267 kB and `assets/charts-*.js` is ~413 kB
   (same as before this plan — hashes will differ, sizes must not move materially)
-- `npm run lint` → exit 0, `✖ 25 problems (0 errors, 25 warnings)`
+- `npm run lint` → exit 0, triple identical to `ESLINT_BEFORE`, `0 errors`
 
 **Verify (repo cleanliness)**:
 
@@ -552,43 +657,102 @@ configured `outDir` is the **tracked** directory
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ```
 
-→ the only modified paths are `frontend/package.json` and
-`frontend/package-lock.json`. (An untracked `plans/` entry and a modified
-`.claude/STATE.md` may already have been present before you started; leave them
-as you found them. Anything else modified is a STOP condition.)
+→ the only modified paths are `frontend/package.json`,
+`frontend/package-lock.json` and the one new test file from Step 6. (An
+untracked `plans/` entry and a modified `.claude/STATE.md` may already have been
+present before you started; leave them as you found them. Anything else modified
+is a STOP condition.)
+
+### Step 6: Pin the two open-redirect fixes with regression tests
+
+This is the only part of this plan that produces durable value beyond a version
+bump. The two advisories it actually closes are behavioural — `react-router`
+before 7.18 treated a `<Link to="\\evil.com">` backslash path and a
+`//evil.com` protocol-relative path as same-origin navigations — and after this
+plan nothing in the repository would notice if a future bump, a downgrade, or a
+`resolutions` override reintroduced them. "83 `MemoryRouter` usages exercise
+routing" is not the same claim: none of them feeds a hostile path.
+
+Create `frontend/__tests__/router-open-redirect.test.tsx`. Read an existing
+router test in `frontend/__tests__/` first and copy its `MemoryRouter` +
+`@testing-library/react` idiom rather than inventing one. Cover, at minimum:
+
+1. `useNavigate()("//evil.example.com")` inside a `MemoryRouter` leaves the
+   router on a **same-origin** path — assert the resulting `location.pathname`
+   is the escaped/relative form, not that the app navigated off-site. (In a
+   `MemoryRouter` there is no real navigation; the assertion is on the location
+   the router resolves to.)
+2. The same for a backslash path, `"\\\\evil.example.com"`.
+3. `<Link to="//evil.example.com">` renders an `href` that is **not** a
+   protocol-relative URL — assert on `getAttribute("href")`.
+4. The same for a `<Link>` with a backslash path.
+
+Then prove the tests can fail: they must be red against the *pre-bump* router.
+You cannot easily downgrade mid-plan, so instead assert the exact resolved value
+(e.g. `expect(href).toBe("/evil.example.com")`) rather than a loose
+`not.toContain("//")` — an exact-value assertion fails if the resolution changes
+in either direction, which is what a regression test is for. State the values
+your router version actually produces; do not copy a guess from this plan.
+
+**Verify**:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run __tests__/router-open-redirect.test.tsx 2>&1 | tail -3
+npx tsc -b --noEmit; echo "tsc exit=$?"
+npm run lint 2>&1 | tail -2
+```
+
+→ all cases pass; `tsc exit=0`; the eslint triple is still identical to
+`ESLINT_BEFORE` (a new test file must not add a warning).
+
+**Also run a basename smoke pass.** `frontend/src/lib/router.ts`
+(`resolveRouterBasename()`) resolves `/` versus `/app/`, and the router bumped
+five minors, so basename resolution is exactly the surface a routing regression
+would hit. Run the Playwright suite against a local server for both basenames if
+you can (`make test-e2e`); if you cannot stand one up, say so explicitly in your
+handoff — do not silently omit it and do not claim navigation was verified.
 
 ## Test plan
 
-This plan writes **no new tests** — it changes no source code. The existing
-suites are the regression detector, and the one that matters is the frontend
-unit suite, because `react-router` moves five minors (7.13.0 → 7.18.2) and
-`vitest` moves one (4.0.18 → 4.1.11).
+This plan writes **one** new test file — `frontend/__tests__/router-open-redirect.test.tsx`
+(Step 6) — and otherwise relies on the existing suites as the regression
+detector. The one that matters most is the frontend unit suite, because
+`react-router` moves five minors (7.13.0 → 7.18.2) and `vitest` moves one
+(4.0.18 → 4.1.11).
 
-Coverage that already exists and exercises exactly the risky surface
-(counted in `frontend/__tests__` and `frontend/src`): `MemoryRouter` appears
-83 times, `useNavigate` 64, `BrowserRouter` 26, `useParams` 14,
-`useSearchParams` 8 — across 24 test files that import from
-`react-router-dom`. A routing regression from the react-router bump will
-surface here.
+**Why the new file is not optional.** The existing coverage is broad but not
+adversarial: `MemoryRouter` appears 83 times, `useNavigate` 64,
+`BrowserRouter` 26, `useParams` 14, `useSearchParams` 8, across 24 test files —
+and **none of them feeds a hostile path**. They prove ordinary navigation still
+works; they cannot prove that `//evil.example.com` and `\\evil.example.com` stop
+resolving off-origin, which is the entire security value of the react-router
+bump. Without Step 6, a future downgrade or `overrides` entry silently
+reintroduces both advisories with a fully green suite.
 
-- **Existing suite to run**: `npx vitest run` in `frontend/`.
-  Baseline at commit `42826a3`: `Test Files 55 passed (55)`,
-  `Tests 490 passed (490)`. **The count must not change.** A drop means a test
-  was silently skipped, not that the suite got smaller.
+- **Existing suite to run**: `npx vitest run` in `frontend/`. Required movement
+  is `FE_FILES_BEFORE + 1` / `FE_TESTS_BEFORE + N_NEW` against the Step 0
+  baseline you recorded — never an absolute total, because
+  `plans/031-delete-dead-frontend-modules.md` removes 7 tests from the same
+  suite. A drop below the baseline means a test was silently skipped, not that
+  the suite got smaller.
 - **Compile gate**: `npx tsc -b --noEmit` in `frontend/` → exit 0
   (169 source files). Catches any type-shape change in the bumped `@types` or
   in `react-router-dom`'s own d.ts.
 - **Bundle gate**: `npx vite build --outDir /tmp/immi-plan-035-build --emptyOutDir`
   → exit 0. Catches resolution/plugin breakage from moving `@tailwindcss/vite`
   and `tailwindcss` into `devDependencies` and from `vite` 7.3.1 → 7.3.6.
-- **Lint gate**: `npm run lint` → exit 0, 0 errors, 25 warnings.
-- **Not run here**: the Playwright E2E suites (`frontend/e2e/`, `tests/e2e/`)
-  need a running server and are outside this plan's gate set. Flagged for the
-  reviewer in "Maintenance notes".
+- **Lint gate**: `npm run lint` → exit 0, `0 errors`, warning count identical to
+  `ESLINT_BEFORE`.
+- **Security regression gate**: `npx vitest run __tests__/router-open-redirect.test.tsx`
+  → all cases pass, with exact-value assertions (see Step 6).
+- **Basename smoke**: Playwright against a local server for `/` and `/app/`, per
+  Step 6. If it cannot be run, that must be **declared**, not omitted.
 
-All five gates above were pre-verified against a clean `npm ci` of the exact
-post-Step-4 manifest and lockfile before this plan was written; all five passed
-with identical numbers to the `42826a3` baseline.
+The dependency gates above were pre-verified against a clean `npm ci` of the
+exact post-Step-4 manifest and lockfile before this plan was written; they
+passed with identical numbers to the `42826a3` baseline. The Step 6 test file
+did not exist then and has **not** been pre-verified — write it and prove it.
 
 ## Done criteria
 
@@ -600,13 +764,17 @@ Machine-checkable. ALL must hold. Run from
 - [ ] `node -e "const p=require('./package.json'); console.log(p.dependencies['class-variance-authority'] ?? 'absent')"` prints `absent`
 - [ ] `node -e "const p=require('./package.json'); console.log(['@tailwindcss/vite','tailwindcss','@types/canvas-confetti'].every(n=>p.devDependencies[n] && !p.dependencies[n]))"` prints `true`
 - [ ] `grep -c "class-variance-authority" package-lock.json` prints `0`
-- [ ] `npm ci` exits 0
+- [ ] `node -p "require('./package.json').engines.node"` prints `>=22.13`
+- [ ] `npm ci` exits 0 and emits no `EBADENGINE` warning
 - [ ] `npx tsc -b --noEmit` exits 0 with no output
-- [ ] `npx vitest run` reports `Test Files  55 passed (55)` and `Tests  490 passed (490)`
+- [ ] `npx vitest run` reports `FE_FILES_BEFORE + 1` files and `FE_TESTS_BEFORE + N_NEW` tests
+- [ ] `npx vitest run __tests__/router-open-redirect.test.tsx` passes, with at least four cases covering `//host` and backslash paths through both `useNavigate` and `<Link>`
 - [ ] `npx vite build --outDir /tmp/immi-plan-035-build --emptyOutDir` exits 0
-- [ ] `npm run lint` exits 0 with `0 errors`
+- [ ] `npm run lint` exits 0 with `0 errors` and a warning count identical to `ESLINT_BEFORE`
+- [ ] `node -e "const l=require('./package-lock.json').packages;for(const k of ['node_modules/react','node_modules/react-dom','node_modules/recharts','node_modules/@tanstack/react-query','node_modules/@radix-ui/react-dialog','node_modules/i18next','node_modules/tailwindcss'])console.log(k,l[k].version);"` shows every one of those seven **unchanged** from the pre-plan lockfile
 - [ ] From the repo root, `git status --short` shows no modified file other than
-      `frontend/package.json` and `frontend/package-lock.json`
+      `frontend/package.json`, `frontend/package-lock.json` and the new
+      `frontend/__tests__/router-open-redirect.test.tsx`
 - [ ] `git diff --stat -- immi_case_downloader/static/react frontend/src` is empty
 - [ ] `plans/README.md` status row updated (skip if that file does not exist)
 
@@ -620,13 +788,20 @@ Stop and report back — do not improvise — if any of these happen:
    registry state moved after 2026-08-27 and the plan needs re-planning. Never
    run `npm audit fix --force`.
 2. **The advisory counts do not match at a step boundary** — Step 1 verify (c)
-   is not `17 vulnerabilities (2 low, 1 moderate, 12 high, 2 critical)`, Step 2
-   is not `3 vulnerabilities (1 low, 2 critical)`, Step 3 is not
-   `1 low severity vulnerability`, or Step 4 is not `found 0 vulnerabilities`.
-   New advisories are published continuously; report the actual numbers and the
-   package names rather than inventing extra bumps.
-3. **`npx vitest run` fails, or reports anything other than 55 files / 490
-   tests passing.** The most likely cause is a `react-router` 7.13 → 7.18
+   is not `AUDIT_BEFORE`, Step 2 is not `3 vulnerabilities (1 low, 2 critical)`,
+   Step 3 is not `1 low severity vulnerability`, or Step 4 is not
+   `found 0 vulnerabilities`. New advisories are published continuously; report
+   the actual numbers and the package names rather than inventing extra bumps.
+   The **hard** gate is the final `found 0 vulnerabilities` on both audit
+   surfaces plus the allowlisted lockfile diff in Step 2 — not the intermediate
+   counts, and not the predicted version list.
+2b. **`npm audit fix` moved a package outside the Step 2 allowlist** — in
+   particular `react`, `react-dom`, `recharts`, `@tanstack/react-query`,
+   `@radix-ui/react-dialog`, `i18next` or `tailwindcss`. Report the diff; do not
+   accept it because the audit came out clean.
+3. **`npx vitest run` fails, or its delta against your Step 0 baseline is
+   anything other than `+1` file / `+N_NEW` tests.** The most likely cause is a
+   `react-router` 7.13 → 7.18
    behaviour change (the open-redirect fixes changed how backslash and `//`
    prefixed paths are normalised in `<Link>` / `useNavigate`). Report the failing
    test names and the assertion diff. **Do not edit any file under
@@ -655,20 +830,23 @@ Stop and report back — do not improvise — if any of these happen:
 For the human or agent who owns this next:
 
 - **What a reviewer should scrutinise in the diff.** `frontend/package.json`
-  should show exactly seven line-level changes: one deletion
-  (`class-variance-authority`), three moves (`@tailwindcss/vite`,
-  `@types/canvas-confetti`, `tailwindcss`), and three version bumps
-  (`@vitest/ui` and `vitest` to `^4.1.11`, `tsx` to `^4.23.12`). Nothing else.
+  should show exactly seven line-level changes plus one added block: one
+  deletion (`class-variance-authority`), three moves (`@tailwindcss/vite`,
+  `@types/canvas-confetti`, `tailwindcss`), three version bumps
+  (`@vitest/ui` and `vitest` to `^4.1.11`, `tsx` to `^4.23.12`), and the new
+  `"engines": {"node": ">=22.13"}`. Plus one new test file. Nothing else.
   In `frontend/package-lock.json` the only *runtime*-facing version change is
   `react-router` / `react-router-dom` 7.13.0 → 7.18.2; everything else is
   build/test tooling or a transitive of it. If you see `react`, `react-dom`,
   `recharts`, `@tanstack/react-query`, `@radix-ui/react-dialog`, `i18next` or
   `tailwindcss` move, something went wrong.
-- **The Playwright E2E suites were not run as part of this plan** (they need a
-  running server). Given `react-router` moved five minors, it is worth running
-  `make test-e2e` against a local server once before this ships, paying
-  particular attention to navigation, the `/app/` vs `/` basename resolution in
-  `frontend/src/lib/router.ts`, and any redirect assertions.
+- **The Playwright basename smoke is now part of Step 6, not a nice-to-have.**
+  Given `react-router` moved five minors, run `make test-e2e` against a local
+  server before this ships, paying particular attention to navigation, the
+  `/app/` vs `/` basename resolution in `frontend/src/lib/router.ts`, and any
+  redirect assertions. If it could not be run, the handoff must say so
+  explicitly — an omitted gate that nobody names is indistinguishable from a
+  passed one.
 - **The caret floors were intentionally left alone.** `react-router-dom` still
   declares `^7.13.0` and `vite` still declares `^7.3.1`, even though the lock
   now resolves 7.18.2 / 7.3.6. `npm ci` and `npm install` both honour the lock,
@@ -745,6 +923,24 @@ For the human or agent who owns this next:
   hygiene plus two real moderate open-redirects, not an active
   high-severity production exposure. Anyone reading the "12 high, 2 critical"
   headline as production risk is reading it wrong.
+
+- **This plan originally shipped two security fixes with no test behind
+  either — corrected.** It argued that 83 `MemoryRouter` and 64 `useNavigate`
+  usages already exercise the risky surface. They exercise *navigation*; none of
+  them feeds `//host` or a backslash path, so none of them can fail if the
+  open-redirect behaviour comes back. Step 6 adds four adversarial cases and a
+  basename smoke pass, and Step 4b adds the `engines` floor that
+  `plans/037-align-the-worker-toolchains.md` explicitly deferred to "whichever
+  frontend plan touches this manifest next".
+
+- **The version pins were requested as caret ranges — corrected to exact.**
+  `npm install "vitest@^4.1.11"` resolves to the newest 4.x on the day it runs,
+  so the plan's own `vitest --version → 4.1.11` and lockfile assertions could
+  fail for reasons unrelated to the work. Requesting `vitest@4.1.11` pins this
+  resolution while npm's default save-prefix still writes `^4.1.11`. Same for
+  `tsx@4.23.12`. `npm audit fix` is inherently non-deterministic and its
+  predicted version list has been demoted from a gate to a prediction, backed
+  instead by an allowlisted lockfile-diff review.
 
 - **Two items from the findings' fix sketches were moved out of scope, not
   rejected**: adding an `npm audit --omit=dev --audit-level=high` step to the

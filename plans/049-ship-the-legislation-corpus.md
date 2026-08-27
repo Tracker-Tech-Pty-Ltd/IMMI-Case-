@@ -7,18 +7,27 @@
 > in `plans/README.md` **if that file exists** (it did not at the time of
 > writing; if it is still absent, skip it — the advisor maintains the index).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. The committed-history diff cannot see
+> uncommitted, staged or untracked work, so all four commands must run:
 > ```bash
-> git diff --stat 42826a3..HEAD -- \
->   workers/case-api/cloudflare.js \
->   workers/__tests__/case-api-cloudflare.test.js \
->   frontend/src/pages/LegislationDetailPage.tsx \
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE="workers/case-api/cloudflare.js
+>   workers/__tests__/case-api-cloudflare.test.js
+>   frontend/src/pages/LegislationDetailPage.tsx
 >   frontend/__tests__/legislation-detail.test.tsx
+>   docs/adr/0049-legislation-corpus-publication.md"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
+> git diff --stat -- $SCOPE                   # unstaged
+> git diff --cached --stat -- $SCOPE          # staged
 > ```
-> Expected at the time of writing: **no output** (no in-scope file changed).
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing and no in-scope path appears in
+> `git status` — `docs/adr/` merely existing (because
+> `plans/044-retire-the-stale-planning-docs.md` owns and created it) is fine.
+> If any in-scope file appears in **any** of them, treat it as a STOP
+> condition: compare the "Current state" excerpts against the live code and
+> report. **Never** run `git checkout --` or `git clean -f` to force a clean
+> tree — the uncommitted work is the operator's.
 
 ## Status
 
@@ -314,22 +323,35 @@ read them:
 - Worker tests live in `workers/__tests__/`. There is **no**
   `workers/package.json`; `cd workers && npx vitest run` resolves against the
   root `node_modules` (see the comment in the `Makefile` `install` target).
-- Baseline at `42826a3`: `workers/__tests__/case-api-cloudflare.test.js`
-  = 20 tests passing; `frontend/__tests__/legislation-detail.test.tsx`
-  = 15 tests passing. Whole suites: workers 345 / 25 files, frontend 490 /
-  55 files.
+- Baseline at `42826a3`, **per file** — these are the numbers this plan asserts
+  on, because only this plan edits these two files:
+  `workers/__tests__/case-api-cloudflare.test.js` = 20 passing;
+  `frontend/__tests__/legislation-detail.test.tsx` = 15 passing.
+  Whole-suite totals at `42826a3` were workers 345 / 25 files and frontend
+  490 / 55 files, but **do not assert those** — several sibling plans add tests
+  to both suites, so record your own `WK_BEFORE` / `FE_BEFORE` and assert the
+  delta (see "Commands you will need").
 
 ## Commands you will need
 
+**Record baselines; do not assert absolute suite totals.** Sibling plans add
+tests to both suites in parallel, so any total written here is stale on arrival:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+(cd workers  && npx vitest run 2>&1 | tail -3)   # -> WK_BEFORE (passed count, 0 failed)
+(cd frontend && npx vitest run 2>&1 | tail -3)   # -> FE_BEFORE (passed count, 0 failed)
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Worker tests (this file) | `cd workers && npx vitest run __tests__/case-api-cloudflare.test.js` | 21 passed after step 3 (20 before) |
-| Worker tests (all) | `cd workers && npx vitest run` | 346 passed, 25 files |
-| Frontend tests (this file) | `cd frontend && npx vitest run __tests__/legislation-detail.test.tsx` | 18 passed after step 5 (15 before) |
-| Frontend tests (all) | `cd frontend && npx vitest run` | 493 passed, 55 files |
+| Worker tests (this file) | `cd workers && npx vitest run __tests__/case-api-cloudflare.test.js` | `22 passed` after step 3 (`20` before) |
+| Worker tests (all) | `cd workers && npx vitest run` | `WK_BEFORE + 2` passed, 0 failed |
+| Frontend tests (this file) | `cd frontend && npx vitest run __tests__/legislation-detail.test.tsx` | `19 passed` after step 5 (`15` before) |
+| Frontend tests (all) | `cd frontend && npx vitest run` | `FE_BEFORE + 4` passed, 0 failed |
 | Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0 |
 | Production probe (read-only, public) | `curl -s https://immi.trackit.today/api/v1/legislations/<id>` | JSON, HTTP 200 |
-| Drift check | see the block at the top of this file | no output |
+| Drift check | see the four-command block at the top of this file | no in-scope path in any of them |
 
 > **Do not use `make typecheck`.** It runs `cd frontend && npx tsc --noEmit`,
 > which exits 0 while loading **zero** files — `frontend/tsconfig.json` is a
@@ -338,11 +360,13 @@ read them:
 > the Makefile target; until it lands, use `npx tsc -b --noEmit` as written
 > above.
 
-> **`make test-py` reports 3 failures at `42826a3` and they are not yours.**
-> Homebrew Python 3.14.7 has a pyexpat/libexpat ABI mismatch that breaks the
-> `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`.
-> Baseline is 1141 passed / 3 failed / 7 skipped. This plan touches no Python;
-> you do not need to run it.
+> **`make test-py` has pre-existing failures that are not yours.** Homebrew
+> Python 3.14.7 has a pyexpat/libexpat ABI mismatch that breaks the `pypdf`
+> import in `tests/test_backfill_judge_overrides_from_pdf.py` — exactly three
+> ImportErrors, all in that one file. This plan touches no Python, so you do
+> not need to run it; if you do, check the failures **by name**
+> (`make test-py 2>&1 | grep -E "^(FAILED|ERROR)"`) rather than by counting a
+> total, which sibling plans move.
 
 ## Scope
 
@@ -351,14 +375,24 @@ read them:
 - `workers/case-api/cloudflare.js` — **the legislation region only**
   (`handleLegislationDetail`, lines 392-404). Do not touch any other handler
   in this 1,100+ line file.
-- `workers/__tests__/case-api-cloudflare.test.js` — add one test, add one
-  assertion to an existing test.
+- `workers/__tests__/case-api-cloudflare.test.js` — add two tests, add one
+  assertion to each of two existing tests.
 - `frontend/src/pages/LegislationDetailPage.tsx`
-- `frontend/__tests__/legislation-detail.test.tsx` — add three tests.
+- `frontend/__tests__/legislation-detail.test.tsx` — add four tests, and update
+  the `應正確顯示條款數` assertion (see Step 4a — the change is deliberate).
+- `docs/adr/0049-legislation-corpus-publication.md` (create — the **only** file
+  you may add under `docs/adr/`).
 - `plans/049-ship-the-legislation-corpus.md` — this file, status row only.
 
 **Out of scope** (do NOT touch, even though they look related):
 
+- `docs/adr/README.md` and `docs/adr/TEMPLATE.md` — owned by `plans/044`. Do
+  not create them, append to them, or reformat them. Your ADR's index row is
+  added by 044 when it lands (see "Maintenance notes").
+- `frontend/src/__mocks__/legislations.ts` — `mockLegislationWithSections`
+  declares `sections_count: 500` while carrying 2 sections. That mismatch is
+  *useful*: it is what makes the Step 4a assertion meaningful. Do not "fix" the
+  fixture to make the old assertion pass.
 - `workers/case-api/static.js` — `LEGISLATIONS_META` was checked against the
   corpus and every `sections_count` is correct. There is nothing to fix here.
 - `migrations/d1/catalog/` — the legislation corpus is an immutable R2
@@ -390,8 +424,9 @@ read them:
 - Branch: `advisor/049-ship-the-legislation-corpus`
 - Commit per logical unit. Suggested messages:
   - `fix: degrade legislation detail to metadata when the R2 import is unverifiable`
-  - `fix: stop advertising legislation section counts the page cannot show`
-  - `test: cover the legislation fallback cache and empty state`
+  - `fix: report the legislation sections actually served, not the declared count`
+  - `test: cover the legislation fallback cache, count honesty and empty state`
+  - `docs: record the legislation corpus publication decision as ADR 0049`
 - Do NOT push, do NOT open a PR, do NOT merge. The operator commits.
 
 ## Steps
@@ -461,11 +496,37 @@ everything above line 400 exactly as it is:
   if (!scraped) {
     return jsonOk({ success: true, data: { ...legislation, sections: [] } }, "public, max-age=60");
   }
-  return jsonOk({ success: true, data: scraped }, "public, max-age=3600");
+  // Shape + self-consistency check on the imported payload. The checksum in
+  // getLegislation() proves the bytes are the ones we uploaded; it says
+  // nothing about whether the JSON inside them is coherent. A payload that
+  // declares sections_count: 940 while carrying 2 sections would otherwise be
+  // served as authoritative. Serve the real sections and report the real
+  // count, and log the disagreement so a truncated import is discoverable.
+  const sections = Array.isArray(scraped.sections) ? scraped.sections : [];
+  if (scraped.sections_count !== sections.length) {
+    console.error(JSON.stringify({
+      event: "legislation.section_count_mismatch",
+      law_id: id,
+      declared: scraped.sections_count ?? null,
+      actual: sections.length,
+    }));
+  }
+  return jsonOk(
+    { success: true, data: { ...scraped, sections, sections_count: sections.length } },
+    "public, max-age=3600",
+  );
 ```
 
 `StorageBoundaryError` is already imported at
 `workers/case-api/cloudflare.js:12` — do not add another import.
+
+Note the response now reports `sections_count` as the number of sections it is
+actually returning. That is a deliberate contract choice: `sections_count` is a
+property of the payload being served, not a promise about a corpus the client
+cannot see. The frontend chip in Step 4a reads `sections.length` and so agrees
+with it either way; the two changes are belt and braces, not duplicates —
+this one fixes the API for every consumer, that one fixes the page even if a
+future payload bypasses this handler.
 
 **Verify**:
 ```bash
@@ -473,7 +534,11 @@ cd workers && npx vitest run __tests__/case-api-cloudflare.test.js
 ```
 → `20 passed` (unchanged; the existing tests exercise both branches and must
 not regress). If any test fails, re-read the excerpt above — you have almost
-certainly changed a line outside 400-403.
+certainly changed a line outside 400-403, or the existing
+"prefers a checksum-verified native legislation payload" test's fixture
+declares a `sections_count` that disagrees with its `sections` array, in which
+case the new normalisation is doing exactly its job and the fixture, not the
+code, is what to look at. Report before changing that test's fixture.
 
 ### Step 3: Cover both cache branches and the degrade path in the Worker suite
 
@@ -523,30 +588,82 @@ if it is not already present:
   });
 ```
 
+**(d)** Add a second new test, immediately after (c), covering the
+self-consistency normalisation:
+
+```js
+  it("reports the sections it actually returns, not the payload's declared count", async () => {
+    const current = mockCreateStores();
+    current.objectStore.getLegislation.mockResolvedValueOnce({
+      id: "migration-act-1958",
+      title: "Migration Act 1958",
+      sections_count: 940,                       // the payload lies
+      sections: [{ id: "s1", number: "1", title: "Short title", part: "", division: "", text: "x" }],
+    });
+    const result = await dispatchCloudflareCaseRead(
+      url("/api/v1/legislations/migration-act-1958"),
+      "/api/v1/legislations/migration-act-1958",
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+    expect(result.status).toBe(200);
+    const body = await result.json();
+    expect(body.data.sections).toHaveLength(1);
+    expect(body.data.sections_count).toBe(1);
+  });
+```
+
 **Verify**:
 ```bash
 cd workers && npx vitest run __tests__/case-api-cloudflare.test.js
 ```
-→ `21 passed`. Then `cd workers && npx vitest run` → `346 passed`, 25 files.
+→ `22 passed` (20 existing + 2 new). Then `cd workers && npx vitest run` →
+`WK_BEFORE + 2` passed, 0 failed. Record `WK_BEFORE` before you start; do not
+assert an absolute suite total, because sibling plans add tests to this suite
+in parallel.
 
 ### Step 4: Stop the detail page advertising a section count it cannot show, and give the reader AustLII
 
 Three edits in `frontend/src/pages/LegislationDetailPage.tsx`.
 
-**(a)** The sections chip (lines 218-223). Only claim a count when the sections
-are actually here. `sections` is already in scope at line 137
+**(a)** The sections chip (lines 218-223). Show **what is actually here**, not
+what the payload claims. `sections` is already in scope at line 137
 (`const sections = legislation.sections ?? [];`). Change `value` only:
 
 ```tsx
-              value={
-                sections.length > 0 ? legislation.sections_count : undefined
-              }
+              value={sections.length > 0 ? sections.length : undefined}
 ```
 
 `MetaChip` returns `null` when `value` is falsy and not `0` (line 35), so the
-chip disappears on the unpublished path. On the published path the count is
-unchanged — verified against the corpus, `sections.length === sections_count`
-for all five laws.
+chip still disappears on the unpublished path.
+
+**Why `sections.length` and not `legislation.sections_count`.** An earlier
+draft kept rendering `sections_count` and merely hid it when the array was
+empty. That fixes only the all-or-nothing case. If a payload declares 940 and
+carries 2 — a truncated import, a partial upload, a future paginated response —
+the page still advertises 940 above a list of 2, which is the exact failure
+this step exists to remove, in a form nobody would notice. `sections.length` is
+the number the reader can verify by scrolling. On a correctly published law the
+two are identical (verified against the corpus: `len(sections) ==
+sections_count` for all five laws), so nothing changes on the happy path.
+
+**This changes an existing test's expectation, deliberately.** The test
+`應正確顯示條款數` (`frontend/__tests__/legislation-detail.test.tsx:219`)
+asserts `"500"` renders, because `mockLegislationWithSections`
+(`frontend/src/__mocks__/legislations.ts`) declares `sections_count: 500` while
+carrying **2** section objects. That mock is itself an instance of the bug: it
+is a payload whose declared count and real content disagree. Update the
+assertion to expect `"2"` and rename nothing else:
+
+```tsx
+    // The chip reports the sections actually present (2 in the fixture), not
+    // the payload's declared sections_count (500). See plan 049 Step 4a.
+    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("500")).not.toBeInTheDocument();
+```
+
+`frontend/src/__mocks__/legislations.ts` is **out of scope** — do not "fix" the
+fixture to make the old assertion pass. Its mismatch is what makes the new
+assertion meaningful.
 
 **(b)** `NotScrapedState` (lines 65-89). Replace the whole function with:
 
@@ -632,9 +749,11 @@ Notes so you do not second-guess this:
 ```bash
 cd frontend && npx tsc -b --noEmit && npx vitest run __tests__/legislation-detail.test.tsx
 ```
-→ typecheck exits 0, `15 passed`. The existing "應正確顯示條款數" test
-(line 219) still passes because `mockLegislationDetail` carries two sections,
-so `sections.length > 0` holds and `"500"` still renders.
+→ typecheck exits 0, `15 passed` — with the `應正確顯示條款數` assertion
+updated as described in 4a (it now expects `"2"`, the real section count, and
+asserts `"500"` is absent). If you run this **before** updating that
+assertion, it will fail on exactly that test; that failure is the change
+working, not a mistake.
 
 ### Step 5: Cover the honest empty state in the frontend suite
 
@@ -687,6 +806,20 @@ Then add, inside the describe block:
     });
   });
 
+  // Test 16b: a partially-loaded law must advertise what it has, not what the
+  // payload claims. mockLegislationWithSections declares sections_count: 500
+  // and carries 2 sections — the regression this guards is showing "500".
+  it("條款數以實際載入的條文數為準", async () => {
+    mockUseLegislationDetail.mockReturnValue(
+      successQuery({ success: true as const, data: mockLegislationWithSections }),
+    );
+
+    renderWithProviders(<LegislationDetailPage />);
+
+    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("500")).not.toBeInTheDocument();
+  });
+
   // Test 17: the empty state sends the reader to AustLII, not to a dead end
   it("在條文尚未發佈時提供 AustLII 連結", async () => {
     mockUseLegislationDetail.mockReturnValue(successQuery(unpublishedDetail));
@@ -729,7 +862,76 @@ the English description text.
 ```bash
 cd frontend && npx vitest run __tests__/legislation-detail.test.tsx
 ```
-→ `18 passed`. Then `cd frontend && npx vitest run` → `493 passed`, 55 files.
+→ `19 passed` (15 existing — one of them with an updated assertion, see Step 4a
+— plus 4 new). Then `cd frontend && npx vitest run` → `FE_BEFORE + 4` passed,
+0 failed. Record `FE_BEFORE` before you start; do not assert an absolute suite
+total.
+
+### Step 6: Record the publication decision as ADR 0049
+
+The runbook below is the most perishable thing in this plan: it encodes a
+rollback story, an unverified upload mechanism and a provenance decision that
+somebody will need six months from now, and plan files are not where that
+survives. Create **exactly one** file:
+
+`docs/adr/0049-legislation-corpus-publication.md`
+
+**ADR numbering is centrally assigned.** `0049` is this plan's, and only this
+plan's. `plans/044-retire-the-stale-planning-docs.md` **owns** `docs/adr/` —
+including `docs/adr/README.md` and `docs/adr/TEMPLATE.md`. Do **not** create or
+edit either; `mkdir -p docs/adr` is fine and the directory already existing is
+normal, not a STOP condition.
+
+The ADR must contain, in English:
+
+1. `## Status` — `Proposed`, dated, with an unchecked operator sign-off line.
+   This ADR gates a publication that cannot be un-published cleanly; it must
+   not read as already decided.
+2. `## Context` — the corpus exists and is complete (the five-law table from
+   "Current state", with byte sizes and section counts); production serves
+   metadata-only 200s; `getLegislation` hard-requires `customMetadata.sha256`
+   (`workers/storage/cloudflare.js:407-412`) and `wrangler r2 object put` has
+   no flag that can set it, so the obvious upload command turns the route into
+   a 503.
+3. `## Decision — how the corpus is published` — the staging-key probe first,
+   then one law at a time smallest-first, each verified with `head-object`
+   before the next. Record that the S3 `--metadata` → `customMetadata` mapping
+   was **unverified at authoring time** and name the staging probe as the thing
+   that verifies it.
+4. `## Rollback` — the two cases from runbook step 1a, stated plainly: with no
+   prior object, rollback is `delete-object`; with a prior object, rollback is
+   re-uploading the saved bytes **with recomputed sha256 metadata**, and
+   deleting instead would be a silent downgrade. Record that R2 has no object
+   versioning here, so the local `/tmp/legis-prior-*.json` copies are the only
+   version that exists.
+5. `## Provenance and staleness` — **the operator's decision, recorded**: the
+   as-at date shown to users and where; the source (AustLII) and its
+   licence/attribution terms; what the page shows when `last_scraped` is beyond
+   some age. Record the measured facts that force the question: every law's
+   `last_scraped` is 2026-02-23, and `last_amended` is empty for **all five**
+   laws — the corpus carries no amendment date whatsoever. State that
+   publication is blocked until this section is filled in —
+   a self-represented applicant relying on superseded law is the worst outcome
+   available to this feature.
+6. `## Performance gate for the two large laws` — the `plans/020` precondition
+   and the measured TBT / longest-task numbers at 318 sections, with the actual
+   figures once measured.
+7. `## Consequences` — what publishing buys, and what it costs (a ~1.6 MB JSON
+   response for the Migration Act; `sections_count` in the API now reports what
+   is returned rather than what the payload claims).
+
+**Verify**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && ADR=docs/adr/0049-legislation-corpus-publication.md && \
+  test -f "$ADR" && \
+  grep -c "^## " "$ADR" && \
+  grep -q "Rollback" "$ADR" && \
+  grep -q "last_scraped" "$ADR" && \
+  grep -q "head-object" "$ADR" && \
+  git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md
+```
+→ a heading count `≥ 7`, the three greps exit 0, and the `git status` prints
+**nothing** (you did not touch plan 044's files).
 
 ## Operator publication runbook (hand this to the operator — do NOT run it yourself)
 
@@ -765,7 +967,66 @@ PY
 ```
 
 Record the five sha256 values. They are content hashes of public law text, not
-secrets.
+secrets. Keep `/tmp/legis-out` until step 5 — it is your rollback source.
+
+**1a. Record the prior state of every key you are about to write.** "Delete the
+object" is not a rollback; it is a second, different outcome. If a key already
+holds an object, you need its bytes and its metadata before you overwrite it:
+
+```bash
+for id in migration-act-1958 migration-regulations-1994 \
+          australian-citizenship-act-2007 australian-border-force-act-2015 \
+          administrative-review-tribunal-act-2024; do
+  echo "== $id"
+  aws s3api head-object --endpoint-url "$R2_ENDPOINT" \
+    --bucket immi-content --key "legislations/$id.json" 2>&1 | \
+    grep -E 'ETag|ContentLength|LastModified|sha256|Not Found' || true
+  aws s3api get-object --endpoint-url "$R2_ENDPOINT" \
+    --bucket immi-content --key "legislations/$id.json" \
+    "/tmp/legis-prior-$id.json" >/dev/null 2>&1 \
+    && echo "prior bytes saved to /tmp/legis-prior-$id.json" \
+    || echo "no prior object (rollback = delete the key)"
+done
+```
+
+Write the result down per key. There are exactly two rollback stories and you
+must know which one applies **before** you upload:
+
+- **No prior object** (the expected case today — production serves the static
+  catalogue, so nothing is in R2): rollback is `aws s3api delete-object` on
+  that key, which returns the route to today's metadata-only 200.
+- **A prior object exists**: rollback is re-uploading
+  `/tmp/legis-prior-<id>.json` **with its own recomputed sha256 metadata**, by
+  the same procedure as step 2. Deleting would be a silent downgrade, not a
+  restore. Note R2 does not give you object versioning by default, so the local
+  copy is the only version you have — do not delete `/tmp/legis-prior-*.json`
+  until the new object has been live and correct for a full day.
+
+**1b. Decide the provenance and staleness disclosure before publishing
+anything.** This is a legal-information product for self-represented
+applicants; publishing 1,796 sections with no as-at date is the highest-harm
+thing in this plan. Check what the corpus actually carries:
+
+```bash
+.venv/bin/python - <<'PY'
+import json, pathlib
+d = json.loads(pathlib.Path("immi_case_downloader/data/legislations.json").read_text(encoding="utf-8"))
+for law in d["legislations"]:
+    print(f"{law['id']:45s} last_scraped={law.get('last_scraped')!r:28s} last_amended={law.get('last_amended')!r}")
+PY
+```
+
+Measured at `42826a3`: `last_scraped` is 2026-02-23 for **every** law — six
+months stale at the time of writing — and `last_amended` is the empty string
+for **all five**, not just the Migration Act. So the corpus carries no
+amendment date at all for any law it would publish. Publishing that without
+disclosure invites an applicant to rely on superseded law. **Do not
+publish until the operator has decided and recorded, in
+`docs/adr/0049-legislation-corpus-publication.md` (Step 6):** the as-at date
+shown to users, where it is shown, the source and its licence/attribution
+terms (AustLII's terms of use apply to reproduced material), and what the page
+says when `last_scraped` is older than some threshold. That decision is the
+operator's; this runbook's job is to refuse to proceed without it.
 
 **2. Upload with custom metadata — `wrangler` cannot do this.**
 `npx wrangler r2 object put` has no custom/user-metadata flag (verified at
@@ -782,7 +1043,53 @@ they are write-capable:
 export AWS_ACCESS_KEY_ID=...        # R2 access key id
 export AWS_SECRET_ACCESS_KEY=...    # R2 secret access key
 export R2_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+```
 
+**2a. Prove the custom-metadata mechanism on a STAGING key first.** Whether
+`--metadata` survives into R2's `customMetadata` is **unverified** — no
+production R2 credentials were available when this plan was written, and the
+whole publication rests on it. Do not discover the answer by overwriting a live
+key. Use a key the Worker never reads:
+
+```bash
+ID=australian-border-force-act-2015
+SUM=$(shasum -a 256 "/tmp/legis-out/$ID.json" | cut -d' ' -f1)
+aws s3api put-object --endpoint-url "$R2_ENDPOINT" \
+  --bucket immi-content --key "staging/legislations/$ID.json" \
+  --body "/tmp/legis-out/$ID.json" \
+  --content-type application/json \
+  --metadata "sha256=$SUM"
+
+aws s3api head-object --endpoint-url "$R2_ENDPOINT" \
+  --bucket immi-content --key "staging/legislations/$ID.json"
+```
+
+**The head-object output must show `"Metadata": {"sha256": "<the same hex>"}`.**
+If `Metadata` is absent, empty, or the key is mangled (some S3 clients lowercase
+or prefix it), **stop — the mechanism does not work and no live key may be
+written.** Compare the returned value against `$SUM` character for character;
+"a metadata block is present" is not the assertion, "it carries this exact
+digest under this exact key" is. `getLegislation`
+(`workers/storage/cloudflare.js:407-412`) requires
+`customMetadata.sha256` to match `/^[0-9a-f]{64}$/` and to equal the recomputed
+digest of the bytes, so anything else produces a 503.
+
+If the staging probe fails, the fallback is the pattern in
+`docs/UPLOAD_JUDGE_PHOTOS.md`: a temporary, token-gated Worker `PUT` route that
+writes through the R2 binding with
+`env.IMMI_CONTENT.put(key, bytes, { customMetadata: { sha256 } })`, removed and
+its secret deleted immediately afterwards. **That runbook is stale in two
+ways** — it patches `workers/proxy.js`, which was deleted in commit `f91f45f`,
+and it predates the checksum requirement, so its `put()` call would produce
+exactly the 503 described above. Adapt, do not copy.
+
+Delete the staging object once the probe has answered the question:
+`aws s3api delete-object --endpoint-url "$R2_ENDPOINT" --bucket immi-content --key "staging/legislations/$ID.json"`.
+
+**2b. Promote one law at a time, verifying metadata before trusting it.** Only
+after 2a proved the mechanism, and only after 1a recorded the prior state:
+
+```bash
 for id in australian-border-force-act-2015 \
           administrative-review-tribunal-act-2024 \
           australian-citizenship-act-2007; do
@@ -792,19 +1099,19 @@ for id in australian-border-force-act-2015 \
     --body "/tmp/legis-out/$id.json" \
     --content-type application/json \
     --metadata "sha256=$SUM"
+  # Verify the metadata landed BEFORE moving to the next law.
+  GOT=$(aws s3api head-object --endpoint-url "$R2_ENDPOINT" \
+          --bucket immi-content --key "legislations/$id.json" \
+          --query 'Metadata.sha256' --output text)
+  [ "$GOT" = "$SUM" ] || { echo "METADATA MISMATCH on $id: got '$GOT' want '$SUM' — ROLL BACK NOW"; break; }
+  echo "$id ok"
 done
 ```
 
-> This S3-API path is **documented but not executed** by the plan author — no
-> production R2 credentials were available. Treat the first law as the
-> experiment. If `aws s3api` is unavailable or R2 rejects the metadata, the
-> fallback is the pattern in `docs/UPLOAD_JUDGE_PHOTOS.md`: a temporary,
-> token-gated Worker `PUT` route that writes through the R2 binding with
-> `env.IMMI_CONTENT.put(key, bytes, { customMetadata: { sha256 } })`, removed
-> and its secret deleted immediately afterwards. **That runbook is stale in two
-> ways** — it patches `workers/proxy.js`, which was deleted in commit
-> `f91f45f`, and it predates the checksum requirement, so its `put()` call
-> would produce exactly the 503 described above. Adapt, do not copy.
+There is no atomic swap in R2: `put-object` on a live key replaces it in place,
+so the window between "written" and "verified" is real. That is why each law is
+promoted and checked individually, smallest first, rather than looping over all
+five — a mistake costs one law, and the rollback recorded in 1a restores it.
 
 **3. Publish in ascending size order and check between each.** The three laws
 in the loop above are the small ones (90 KB, 91 KB, 163 KB). Verify each:
@@ -813,21 +1120,51 @@ in the loop above are the small ones (90 KB, 91 KB, 163 KB). Verify each:
 curl -s "https://immi.trackit.today/api/v1/legislations/australian-border-force-act-2015" \
   | python3 -c "import json,sys;d=json.load(sys.stdin)['data'];print(d['sections_count'], len(d['sections']))"
 ```
-Expected: `60 60`. Any 503 means the metadata did not land — delete the object
-and retry before touching another law.
+Expected: `60 60`. Any 503 means the metadata did not land — apply the rollback
+recorded in step 1a for that key before touching another law.
 
-**4. Only then consider the two large laws.**
+**4. The two large laws are gated on `plans/020`, not on a judgement call.**
 `migration-regulations-1994` is 958,901 bytes / 394 sections and
-`migration-act-1958` is 1,622,230 bytes / 940 sections. Publishing them makes
-the detail endpoint return a ~1.6 MB JSON body **and** makes
-`LegislationTextViewer` render 940 section cards in one non-virtualised
-`sections.map(...)` (line 909). Load the ARTA 2024 page (318 sections, the
-largest of the small three) on a mid-range phone first and judge from that
-before shipping the Migration Act. If it is already sluggish at 318, hold the
-big two until `plans/020-fix-render-performance.md` has landed.
+`migration-act-1958` is 1,622,230 bytes / 940 sections — 1,334 sections between
+them. Publishing them makes the detail endpoint return a ~1.6 MB JSON body
+**and** makes `LegislationTextViewer` render 940 section cards in one
+non-virtualised `sections.map(...)` (line 909), each running
+`stripAustliiHeader` + `mergeContiguousBodyLines` through `useMemo`.
 
-**5. Rotate the R2 access key pair** used in step 2 as soon as the upload is
-confirmed, and delete `/tmp/legis-out`.
+An earlier draft said to "load the ARTA 2024 page on a mid-range phone first
+and judge from that". That is not a gate — it has no threshold, no device
+definition, and no recorded result, so it always resolves to "seemed fine".
+Replace it with a hard precondition and a measurable one:
+
+- **Precondition**: `plans/020-fix-render-performance.md` has landed and
+  `LegislationTextViewer` renders sections virtualised. Confirm with
+  `git grep -n -- "virtual" -- frontend/src/components/legislation/LegislationTextViewer.tsx`
+  returning a match, or by reading the component. If it still does a bare
+  `sections.map(...)` over the whole array, **do not publish the big two.**
+- **Measurement, on the largest already-published law (ARTA 2024, 318
+  sections)**, recorded with numbers before and after:
+  Chrome DevTools → Performance, mid-tier mobile emulation with 4× CPU
+  throttling and "Fast 4G". Record Largest Contentful Paint, Total Blocking
+  Time, and the longest single task. Publish the big two only if **TBT < 600 ms
+  and no single task exceeds 200 ms** at 318 sections — at ~3× the section
+  count the Migration Act will not be better than linear in these.
+- If either bound fails at 318, the answer is not "try it and see": hold the
+  two large laws and hand the numbers to whoever owns `plans/020`.
+
+Write the measured numbers into
+`docs/adr/0049-legislation-corpus-publication.md` (Step 6) alongside the
+decision, so the next person inherits evidence rather than a vibe.
+
+**5. Post-publication checks and cleanup.**
+- Re-verify each published law's endpoint returns `N N` (declared == actual)
+  and **200**, not 503, an hour after publishing — long enough for the
+  `max-age=3600` response to have been cached and re-fetched at least once.
+- Keep `/tmp/legis-prior-*.json` (your only copy of any prior object) for at
+  least 24 hours after the last promotion. Only then delete them and
+  `/tmp/legis-out`.
+- **Rotate the R2 access key pair** used in step 2 as soon as the upload is
+  confirmed. They are write-capable credentials on the production content
+  bucket.
 
 ## Test plan
 
@@ -840,36 +1177,54 @@ existing legislation tests at lines 331 and 342):
 - *(new test)* a `StorageBoundaryError` from `getLegislation` yields HTTP 200
   with `sections: []` and the short cache header — **the regression this plan
   exists to prevent** (today it yields 503).
+- *(new test)* a payload declaring `sections_count: 940` while carrying 1
+  section is served with `sections_count: 1` — the API never reports a count it
+  is not delivering.
 
 **`frontend/__tests__/legislation-detail.test.tsx`** (model after the existing
 tests in the same file, which drive `mockUseLegislationDetail` directly):
-- *(new)* unpublished law → the sections `MetaChip` is absent (`queryByText("500")`).
+- *(assertion changed)* `應正確顯示條款數` now expects `"2"` (the sections
+  actually present) and asserts `"500"` (the fixture's declared count) is
+  absent. See Step 4a for why this is the fix, not a broken test.
+- *(new)* a partially-loaded law shows the real section count, not the declared
+  one — the same property, pinned as its own named test so a future revert of
+  4a fails loudly.
+- *(new)* unpublished law → the sections `MetaChip` is absent.
 - *(new)* unpublished law → exactly two AustLII links, both with the correct
   `href` and `rel="noopener noreferrer"`.
 - *(new)* unpublished law → the description is the AustLII-import copy and the
   string `Update Laws` appears nowhere.
 
 Regression surface to re-run in full: `cd workers && npx vitest run`
-(345 → 346) and `cd frontend && npx vitest run` (490 → 493). No Python file is
-touched, so `make test-py` is not required.
+(`WK_BEFORE + 2`) and `cd frontend && npx vitest run` (`FE_BEFORE + 4`), both
+with **0 failed**. No Python file is touched, so `make test-py` is not
+required.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd workers && npx vitest run` → `346 passed`, 25 files
-- [ ] `cd frontend && npx vitest run` → `493 passed`, 55 files
+- [ ] `cd workers && npx vitest run __tests__/case-api-cloudflare.test.js` → `22 passed`
+- [ ] `cd workers && npx vitest run` → `WK_BEFORE + 2` passed, 0 failed
+- [ ] `cd frontend && npx vitest run __tests__/legislation-detail.test.tsx` → `19 passed`
+- [ ] `cd frontend && npx vitest run` → `FE_BEFORE + 4` passed, 0 failed
 - [ ] `grep -c "Update Laws" frontend/src/pages/LegislationDetailPage.tsx` → `0`
+- [ ] `grep -c "sections_count" frontend/src/pages/LegislationDetailPage.tsx` → `0` (the chip reads `sections.length`; a surviving reference means Step 4a was half-applied)
 - [ ] `grep -c 'public, max-age=60' workers/case-api/cloudflare.js` → at least `1`
 - [ ] `grep -c "legislation.import_unverifiable" workers/case-api/cloudflare.js` → `1`
-- [ ] `git status --porcelain` lists only these paths:
+- [ ] `grep -c "legislation.section_count_mismatch" workers/case-api/cloudflare.js` → `1`
+- [ ] `test -f docs/adr/0049-legislation-corpus-publication.md` exits 0 and `grep -c "^## " ` on it prints `7` or more
+- [ ] `git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md` prints nothing (plan 044 owns both)
+- [ ] `git status --porcelain --untracked-files=all` lists only these paths:
       `workers/case-api/cloudflare.js`,
       `workers/__tests__/case-api-cloudflare.test.js`,
       `frontend/src/pages/LegislationDetailPage.tsx`,
       `frontend/__tests__/legislation-detail.test.tsx`,
-      and optionally `plans/049-ship-the-legislation-corpus.md`
-- [ ] `git diff --stat 42826a3..HEAD -- frontend/src/lib/api.ts frontend/src/i18n/locales workers/case-api/static.js migrations/d1/catalog` → no output
+      `docs/adr/0049-legislation-corpus-publication.md`,
+      optionally `plans/049-ship-the-legislation-corpus.md`,
+      plus anything already dirty at the drift check
+- [ ] For each of `frontend/src/lib/api.ts`, `frontend/src/i18n/locales`, `workers/case-api/static.js`, `frontend/src/__mocks__/legislations.ts`, `migrations/d1/catalog`: all three of `git diff --stat 42826a3..HEAD -- <path>`, `git diff --stat -- <path>` and `git diff --cached --stat -- <path>` produce no output (the committed-only form cannot see your own uncommitted edit)
 - [ ] Nothing was pushed, no PR opened, nothing uploaded to R2
 
 ## STOP conditions
@@ -894,9 +1249,18 @@ Stop and report back (do not improvise) if:
   the runbook's S3-API detour is that hard requirement. If it has been relaxed,
   re-derive the upload path before writing anything.
 - **`frontend/__tests__/legislation-detail.test.tsx` test 7 (`應正確顯示條款數`,
-  line 219) fails after step 4.** That means `mockLegislationWithSections` no
-  longer carries sections, and the chip conditional needs rethinking rather
-  than patching the assertion.
+  line 219) fails after step 4 with an expectation other than the documented
+  `"500"` → `"2"` change.** Step 4a deliberately changes that assertion; a
+  failure showing `"2"` where `"500"` was expected is the change working. Any
+  *other* failure there means `mockLegislationWithSections` no longer carries 2
+  sections, and the chip conditional needs rethinking rather than patching the
+  assertion.
+- **The staging-key probe in runbook step 2a shows `Metadata` absent or under a
+  different key.** The custom-metadata mechanism does not work as documented;
+  no live key may be written. Report the exact `head-object` output.
+- **The operator has not filled in the provenance/staleness section of
+  `docs/adr/0049-legislation-corpus-publication.md`.** Publication is blocked
+  on it; do not upload "just the small ones" to get moving.
 - **The i18n keys `legislations.not_scraped_title`,
   `legislations.not_scraped_description` or `legislations.back_button` are
   missing from `frontend/src/i18n/locales/en.json` or `zh-TW.json`.** This plan
@@ -909,11 +1273,23 @@ Stop and report back (do not improvise) if:
 
 For whoever owns this next:
 
-- **The unblocked follow-up is publication, not code.** After this lands, the
-  corpus can be published with zero further code changes by following the
-  runbook above. That runbook should be promoted out of this plan file into
-  `docs/ops/publish-legislation-corpus.md` by whoever first runs it — kept
-  here only because `docs/` belongs to other in-flight plans.
+- **`docs/adr/README.md` is owned by plan 044; add the index row there when 044
+  lands.** The row is
+  `| [0049](0049-legislation-corpus-publication.md) | Legislation corpus publication | Proposed |`.
+  This plan creates no index and no template.
+- **The unblocked follow-up is publication, not code — but it is gated.** After
+  this lands, the three small laws can be published with zero further code
+  changes by following the runbook. The two large laws are additionally gated
+  on `plans/020-fix-render-performance.md` landing virtualisation, plus the
+  measured TBT / longest-task bounds in runbook step 4. The runbook's durable
+  home is `docs/adr/0049-legislation-corpus-publication.md` (Step 6); whoever
+  first runs it should also copy the operational half into
+  `docs/ops/publish-legislation-corpus.md` and record the measured numbers back
+  into the ADR.
+- **`plans/020` is a hard dependency for the Migration Act, not a suggestion.**
+  940 non-virtualised section cards is the load-bearing risk of this whole
+  feature. If 020 is descoped or deferred, the big two stay unpublished; do not
+  substitute a subjective "seemed fine on my phone".
 - **`docs/UPLOAD_JUDGE_PHOTOS.md` is stale and dangerous to copy.** It patches
   `workers/proxy.js` (deleted in `f91f45f`) and its `put()` call omits the
   `customMetadata.sha256` that `getJudgePhoto`

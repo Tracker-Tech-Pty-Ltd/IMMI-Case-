@@ -10,27 +10,55 @@
 > **Drift check (run first)**:
 >
 > ```bash
-> git diff --stat 42826a3..HEAD -- \
->   immi_case_downloader/cases_pagination.py \
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="immi_case_downloader/cases_pagination.py \
 >   immi_case_downloader/sqlite_repository.py \
 >   immi_case_downloader/supabase_repository.py \
 >   immi_case_downloader/web/routes/api_cases.py \
+>   immi_case_downloader/web/routes/api.py \
 >   tests/test_cases_pagination.py \
->   tests/test_supabase_repository.py
+>   tests/test_supabase_repository.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed drift
+> git diff --stat -- $IN_SCOPE                 # unstaged drift
+> git diff --cached --stat -- $IN_SCOPE        # staged drift
 > ```
 >
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: all three `git diff` invocations print nothing, and
+> `git status --short --branch` lists no in-scope path. A committed diff means
+> a sibling plan landed — compare the "Current state" excerpts against the live
+> code before proceeding. **An in-scope file appearing as modified, staged or
+> untracked in `git status` is a STOP condition**: it is somebody's
+> work-in-progress and this plan's edits would collide with it. Never run
+> `git checkout --` or `git clean -f` to "clean up" — that destroys the
+> operator's work. Report and stop.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none. Every command this plan uses was verified working at commit `42826a3`. Two other plans interact with it if they land first, so read this before starting:
-  - `plans/002-fix-test-collection-and-install.md` changes `pytest.ini`, which changes how many tests `make test-py` collects. If 002 has landed, the absolute counts in this plan (`1141` at HEAD, `1158` after) will be higher. Judge by the **delta** instead: `make test-py` must gain exactly 17 passing tests and gain zero failures.
+- **Depends on**: `plans/027-fix-csv-data-integrity.md` and
+  `plans/028-fix-flask-analytics-fallback.md` **on the shared file
+  `immi_case_downloader/sqlite_repository.py` only**. All three plans edit that
+  file (026 Step 4 adds one class attribute, 027 Steps 6–7 rewrite `save_many`
+  and the schema, 028 Step 7 rewrites `get_statistics`). The agreed order is
+  **027 → 028 → 026**, with a single integrator owning the file and running its
+  whole test set once at the end. 026's edit to it is three lines in the class
+  attribute block, so it rebases cleanly onto either of the other two — but do
+  **not** run all three in the same checkout. Every one of these plans creates a
+  branch, so a shared checkout means they switch each other's branch out from
+  under them. **Work in your own git worktree**
+  (`git worktree add ../immi-026 -b advisor/026-fix-seek-pagination`).
+  Other plans that interact if they land first:
+  - `plans/002-fix-test-collection-and-install.md` changes `pytest.ini`, which changes how many tests `make test-py` collects. Never judge this plan by an absolute suite total: record your own baseline in Step 1 and judge by the **delta** (see "Commands you will need").
   - `plans/003-lint-the-test-suite.md` widens `make lint` to cover `tests/`. If 003 has landed, `make lint` alone also lints the new test file and the separate `ruff check tests/test_cases_pagination_correctness.py` step is redundant (harmless — run it anyway).
+  - `plans/028-fix-flask-analytics-fallback.md` also edits
+    `immi_case_downloader/web/routes/api.py`, but only inside the regions it
+    lists (268–302, 1074–1076, 1177–1186, 1282–1290, 1670–1911). This plan's
+    single edit to that file is inside `_invalidate_cases_cache()` (line 1059),
+    which is in none of them, so the two are textually disjoint. Flag it to the
+    integrator anyway.
   - This plan touches no frontend or Worker code, so `plans/001-restore-the-frontend-compile-gate.md` is irrelevant to it. `make typecheck` is not used by this plan.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
@@ -38,16 +66,20 @@
 ## Why this matters
 
 `/api/v1/cases` has a "seek pagination" planner that is supposed to serve deep
-pages without a large SQL `OFFSET`. Four independent defects make it return
+pages without a large SQL `OFFSET`. Six independent defects make it return
 **wrong rows with a 200 status**: the reverse tail walk hands back a shifted,
 full-size window for the last pages of any listing whose row count is not an
 exact multiple of the page size (so the genuinely final records are
 unreachable through the UI); the anchor cache key ignores `page_size`, so a
 client that changes page size gets a page of unrelated cases; `sort_by="date"`
 is admitted to a seek path that actually orders by `(year, case_id)`, so a
-date-sorted browse silently duplicates some cases and drops others; and
+date-sorted browse silently duplicates some cases and drops others;
 forward paging never records an anchor at all, so the optimisation the whole
-mechanism exists for never fires.
+mechanism exists for never fires; the cache key partitions only on the
+*backend kind* (the literal string `"sqlite"`), so two apps over two different
+databases in one process read each other's anchors; and no mutation path clears
+the anchor cache, so for up to 300 seconds after an insert or delete the seek
+path pages from a cursor that no longer describes the data.
 
 All of this is confined to the Flask/local-dev request path — production
 `/api/v1/cases` is served by the Cloudflare Worker (`workers/case-api/cloudflare.js`),
@@ -135,6 +167,58 @@ from it is `cases_pagination.py:111-112` (verbatim):
     def _cache_key(self, backend_kind: str, query: CaseListQuery) -> str:
         return f"{backend_kind}:{query.signature_hash()}:{query.sort_dir}"
 ```
+
+### The cache key has no dataset identity either
+
+`backend_kind` comes from `cases_pagination.py:82-87` (verbatim):
+
+```python
+def backend_kind_for_repo(repo: Any) -> str:
+    """Return a stable backend kind for cache partitioning."""
+    explicit = getattr(repo, "pagination_backend_kind", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().lower()
+    return type(repo).__name__.strip().lower()
+```
+
+For **every** `SqliteRepository` that returns the literal `"sqlite"`, whatever
+`db_path` it points at. The module-level `_ANCHOR_CACHE` is process-global
+(`cases_pagination.py`, instantiated once at import), so two apps created over
+two different databases in one process — the exact shape
+`tests/conftest.py` and `make api` in a dev loop produce — share one anchor
+namespace and can serve each other's cursors. This is the same class of defect
+as the judge-bio `lru_cache` in `plans/028-fix-flask-analytics-fallback.md`
+Step 6, in a different module.
+
+### No mutation clears the anchor cache
+
+`immi_case_downloader/web/routes/api.py:1059-1071` is the single invalidation
+hook every mutation funnels through (`api_cases.py:973`, `:1000`, `:1013`,
+`:1063` and `web/jobs.py:68-78` all call it) — verbatim:
+
+```python
+def _invalidate_cases_cache() -> None:
+    """Reset all in-memory caches so the next read fetches fresh data.
+
+    Clears the full-cases cache, the lightweight analytics-cases cache, and
+    the pre-computed analytics results cache so CRUD mutations are immediately
+    reflected across all endpoints (instead of serving stale data for up to
+    10 minutes).
+    """
+    global _all_cases_ts, _analytics_cases_ts
+    _all_cases_ts = 0.0
+    _analytics_cases_ts = 0.0
+    with _analytics_cache_lock:
+        _analytics_cache.clear()
+```
+
+It does not touch the anchor cache. The only caller of
+`clear_cases_anchor_cache()` in the whole repository is the autouse fixture at
+`tests/conftest.py:86` (verified by grep across `*.py` outside `.venv`). An
+anchor is a `(year, case_id)` cursor for "the end of page N"; inserting or
+deleting a row above that position moves every later row by one, so until the
+300-second TTL expires the seek path serves a window shifted against the offset
+path's answer. Step 5b closes it.
 
 ### The strategy choice — `cases_pagination.py:216-245` (verbatim)
 
@@ -400,20 +484,26 @@ Follow that convention for the new capability flag this plan adds.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python tests (all unit) | `make test-py 2>&1 \| grep -E '[0-9]+ passed'` | `1141 passed, 3 failed, 7 skipped` at HEAD — takes >10 min; see notes below |
-| Touched-test subset | `.venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q` | `185 passed` at HEAD |
+| Python tests (all unit) | `make test-py 2>&1 \| grep -E '[0-9]+ passed'` | judged as a **delta** against the baseline you record in Step 1 — takes >10 min; see notes below |
+| Touched-test subset | `.venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q` | same passed count as the `SUBSET_BEFORE` you record in Step 1 (this plan edits four assertions in that set and adds no test to those files) |
 | One test file | `.venv/bin/python -m pytest tests/test_cases_pagination_correctness.py -q` | see each step |
 | Lint (source) | `make lint` | `All checks passed!` |
 | Lint (new test file) | `.venv/bin/ruff check tests/test_cases_pagination_correctness.py` | `All checks passed!` |
 | Defect probe | `.venv/bin/python /tmp/immi-seek-probe.py` | see steps 1 and 8 |
 
-**About the 3 pre-existing failures**: at commit `42826a3`, `make test-py`
-reports `1141 passed, 3 failed, 7 skipped`. All 3 failures are in
+**Never assert an absolute suite total.** Sibling plans in this batch add tests
+to the same suite, so a hard-coded `1141`/`1158` is wrong the moment any of them
+lands and it trains you to edit the yardstick instead of the code. Step 1 has
+you record `SUITE_BEFORE` and `SUBSET_BEFORE`; every later check is stated
+against those.
+
+**About the 3 pre-existing failures**: `make test-py` reports **3 failed** on
+this machine before you change anything. All 3 are in
 `tests/test_backfill_judge_overrides_from_pdf.py` and are **environmental** — a
 Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf`
 import. They are not caused by repo code and are not this plan's problem. Do
-not try to fix them. Judge your work by the *delta*: after this plan the count
-must be `1141 + <new tests> passed, 3 failed, 7 skipped`.
+not try to fix them. The success condition is that after this plan the failing
+set is *still exactly those three, by name* — not merely "still 3".
 
 Always use the repo virtualenv: `.venv/bin/python`, `.venv/bin/pytest`,
 `.venv/bin/ruff`. Never global `pip`/`python3`.
@@ -426,6 +516,11 @@ Always use the repo virtualenv: `.venv/bin/python`, `.venv/bin/pytest`,
 - `immi_case_downloader/sqlite_repository.py`
 - `immi_case_downloader/supabase_repository.py`
 - `immi_case_downloader/web/routes/api_cases.py`
+- `immi_case_downloader/web/routes/api.py` — **only** the body of
+  `_invalidate_cases_cache()` (line 1059) and the import it needs (Step 5b).
+  This region is outside every region
+  `plans/028-fix-flask-analytics-fallback.md` edits; do not touch anything else
+  in this file.
 - `tests/test_cases_pagination.py` (edit two existing assertions)
 - `tests/test_supabase_repository.py` (edit two existing assertions)
 - `tests/test_cases_pagination_correctness.py` (create)
@@ -462,10 +557,15 @@ Always use the repo virtualenv: `.venv/bin/python`, `.venv/bin/pytest`,
 
 ## Git workflow
 
+- **Use your own worktree**, not a branch in the shared checkout:
+  `git worktree add ../immi-026 -b advisor/026-fix-seek-pagination`, then work
+  from `../immi-026`. Plans 026–029 all create branches and three of them edit
+  `immi_case_downloader/sqlite_repository.py`; run in parallel in one checkout
+  they switch each other's branch out mid-edit.
 - Branch: `advisor/026-fix-seek-pagination`
-  (`git switch -c advisor/026-fix-seek-pagination`)
-- One commit per step (steps 2–7), conventional-commit style, e.g.
-  `fix: stop routing date-sorted case lists through the year-ordered seek path`.
+- One commit per step (steps 2, 3, 4, 5, 5b, 6, 7), conventional-commit style,
+  e.g. `fix: stop routing date-sorted case lists through the year-ordered seek path`
+  and `fix: drop seek anchors when the case data changes`.
 - Do **not** push, do **not** open a PR, do **not** merge. The operator commits
   and ships.
 
@@ -620,22 +720,34 @@ DEFECTS PRESENT: 4/4 ['D1', 'D2', 'D3', 'D4']
 If the last line does not read `DEFECTS PRESENT: 4/4`, STOP — the code has
 drifted from what this plan describes.
 
-Also record the test baseline before you change anything, so Step 8 can be
-judged as a delta:
+Also record the test baselines before you change anything, so Step 8 can be
+judged as a delta. **Write both numbers into your working notes** — every later
+check in this plan is stated against them, and there is no correct absolute
+value:
 
 ```bash
+# SUBSET_BEFORE — the touched-test subset
+.venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py \
+  tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q \
+  2>&1 | grep -E '[0-9]+ passed'
+
+# SUITE_BEFORE — the whole unit suite (>10 min)
 make test-py 2>&1 | grep -E '[0-9]+ passed'
+
+# The names of the pre-existing failures, so Step 8 can prove the set is unchanged
+make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u
 ```
 
-→ `1141 passed, 3 failed, 7 skipped` at commit `42826a3`. Write the number down;
-if `plans/002-fix-test-collection-and-install.md` landed first it will be
-higher, and that is fine.
+The third command must print exactly
+`tests/test_backfill_judge_overrides_from_pdf.py` and nothing else. If it prints
+anything else, that failure is pre-existing but *not* the known environmental
+one — record it and say so in your report, because Step 8's "no new failures"
+check is then measured against a dirtier baseline than this plan assumed.
 
-Two practical notes: this suite takes **well over 10 minutes** on a laptop, so
-run it in the background or raise your tool timeout — and do **not** pipe it to
-`tail -1`, because `make` appends `make: *** [test-py] Error 1` after pytest's
-summary whenever the 3 pre-existing environment failures are present. Grep for
-the summary line instead, as above.
+Do **not** pipe `make test-py` to `tail -1`: `make` appends
+`make: *** [test-py] Error 1` after pytest's summary whenever those 3 failures
+are present. Grep for the summary line, as above. The suite takes **well over
+10 minutes** — run it in the background or raise your tool timeout.
 
 ### Step 2: Stop routing date-sorted queries into the year-ordered seek path
 
@@ -690,7 +802,7 @@ Leave `tests/test_cases_pagination.py:105`
 **Verify**: `.venv/bin/python -m pytest tests/test_cases_pagination.py -q`
 → all pass (no failures, no errors).
 
-### Step 3: Make `page_size` part of the anchor cache identity
+### Step 3: Give the anchor cache a complete identity (`page_size` + dataset)
 
 In `immi_case_downloader/cases_pagination.py`:
 
@@ -724,26 +836,93 @@ site can forget to pass it. The side effect is that the `query_signature_hash`
 value in the `cases_pagination` log line now also varies with page size — that
 is intended and harmless; nothing asserts on that value.
 
+**(3) Partition the cache on the dataset, not just the backend kind.**
+`backend_kind_for_repo()` returns the literal `"sqlite"` for every
+`SqliteRepository` regardless of `db_path` (see "Current state"), so the
+process-global `_ANCHOR_CACHE` currently lets two databases share cursors. Add,
+directly below `backend_kind_for_repo` in `cases_pagination.py`:
+
+```python
+def dataset_id_for_repo(repo: Any) -> str:
+    """Return a stable per-dataset identity for cache partitioning.
+
+    `backend_kind_for_repo` only says *what kind* of store this is; two
+    SqliteRepository instances over two different files both answer "sqlite".
+    The anchor cache is process-global, so without this two apps in one process
+    (tests, a dev loop that recreates the app) can serve each other's cursors.
+    Falls back to the object's identity, which is per-process and therefore
+    conservative: it never shares, it can only miss.
+    """
+    explicit = getattr(repo, "pagination_dataset_id", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    for attr in ("db_path", "base_dir"):
+        value = getattr(repo, attr, None)
+        if isinstance(value, str) and value.strip():
+            return os.path.abspath(value.strip())
+    return f"obj:{id(repo):x}"
+```
+
+`import os` at the top of the module if it is not already imported.
+
+Then thread it through `_AnchorCache`, **as a keyword argument with an empty
+default** so the direct `_ANCHOR_CACHE.store_anchor(backend_kind="t", ...)`
+calls in `tests/test_cases_pagination.py` (lines 156, 184, 190, 204, 221, 241
+and their `get_nearest_anchor` partners) keep working untouched:
+
+```python
+    def _cache_key(self, backend_kind: str, dataset_id: str, query: CaseListQuery) -> str:
+        return f"{backend_kind}:{dataset_id}:{query.signature_hash()}:{query.sort_dir}"
+```
+
+- `get_nearest_anchor(self, *, backend_kind, query, target_page, dataset_id="")`
+- `store_anchor(self, *, backend_kind, query, page, anchor, dataset_id="")`
+
+and pass `dataset_id=dataset_id_for_repo(repo)` from **both** call sites that
+have a repo: `choose_pagination_plan` (the `get_nearest_anchor` call at line
+226) and `remember_page_anchor` (the `store_anchor` call at line 260).
+
 **Verify**:
 
 ```bash
 .venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_cases_api.py -q
 ```
 
-→ all pass. Then:
+→ all pass (this is the check that the defaulted keyword really did keep the
+six direct-cache tests working). Then:
 
 ```bash
 .venv/bin/python -c "
-from immi_case_downloader.cases_pagination import CaseListQuery
+import os, tempfile
+from immi_case_downloader.cases_pagination import (
+    CaseListQuery, dataset_id_for_repo, _ANCHOR_CACHE, SeekAnchor)
 a = CaseListQuery(sort_by='year', page_size=10)
 b = CaseListQuery(sort_by='year', page_size=5)
-assert a.signature_hash() != b.signature_hash()
+assert a.signature_hash() != b.signature_hash(), 'page_size not in the signature'
 assert CaseListQuery().page_size == 0
-print('page_size participates in the signature')
+
+class Repo:
+    def __init__(self, p): self.db_path = p
+r1, r2 = Repo('/tmp/one/cases.db'), Repo('/tmp/two/cases.db')
+assert dataset_id_for_repo(r1) != dataset_id_for_repo(r2), 'dataset ids collide'
+
+# An anchor stored for dataset one must be invisible to dataset two.
+anchor = SeekAnchor(year=2024, case_id='c1')
+_ANCHOR_CACHE.clear()
+_ANCHOR_CACHE.store_anchor(backend_kind='sqlite', dataset_id=dataset_id_for_repo(r1),
+                           query=a, page=10, anchor=anchor)
+assert _ANCHOR_CACHE.get_nearest_anchor(backend_kind='sqlite',
+    dataset_id=dataset_id_for_repo(r1), query=a, target_page=10) is not None
+assert _ANCHOR_CACHE.get_nearest_anchor(backend_kind='sqlite',
+    dataset_id=dataset_id_for_repo(r2), query=a, target_page=10) is None
+print('cache identity covers page_size and dataset')
 "
 ```
 
-→ prints `page_size participates in the signature`.
+→ prints `cache identity covers page_size and dataset`. Each `assert` above
+fails loudly and specifically if the corresponding half of the change is
+missing, which is the point — a `grep` for the word `page_size` would pass on a
+comment.
 
 ### Step 4: Make the reverse tail walk return the true final page
 
@@ -951,6 +1130,85 @@ Then:
 
 ```bash
 .venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_cases_api.py -q
+```
+
+→ all pass.
+
+### Step 5b: Drop the anchors when the data underneath them changes
+
+Step 5 starts writing anchors from ordinary browsing, which makes a *stale*
+anchor reachable for the first time. An anchor is a `(year, case_id)` cursor
+meaning "the last row of page N"; insert or delete a row above that position and
+every later row shifts, so the seek path serves a window the offset path would
+not. Nothing currently clears the cache on a mutation — the only caller of
+`clear_cases_anchor_cache()` in the repository is the autouse test fixture
+(`tests/conftest.py:86`).
+
+Every mutation path already funnels through one hook. In
+`immi_case_downloader/web/routes/api.py`, extend `_invalidate_cases_cache()`
+(line 1059) — add the import at the top of the function body rather than at
+module level, because `api.py` importing `cases_pagination` at module scope
+would be a new import edge in a file another plan is editing:
+
+```python
+def _invalidate_cases_cache() -> None:
+    """Reset all in-memory caches so the next read fetches fresh data.
+
+    Clears the full-cases cache, the lightweight analytics-cases cache, the
+    pre-computed analytics results cache, and the /api/v1/cases seek-pagination
+    anchor cache, so CRUD mutations are immediately reflected across all
+    endpoints (instead of serving stale data for up to 10 minutes).
+    """
+    from ...cases_pagination import clear_cases_anchor_cache
+
+    global _all_cases_ts, _analytics_cases_ts
+    _all_cases_ts = 0.0
+    _analytics_cases_ts = 0.0
+    with _analytics_cache_lock:
+        _analytics_cache.clear()
+    # A seek anchor is a cursor into a specific row ordering. Any insert or
+    # delete above that cursor shifts every later row, so an anchor that
+    # outlives a mutation makes the seek path serve a window the offset path
+    # would not. Dropping the whole cache is the cheap, always-correct answer:
+    # it costs one uncached deep page.
+    clear_cases_anchor_cache()
+```
+
+Check the relative-import depth against the file's existing imports
+(`api.py:30-35` in `api_cases.py` uses `from ...cases_pagination import ...`;
+`api.py` lives at the same depth, so `...` is right — confirm by reading the
+file's existing relative imports before you write it).
+
+This is deliberately a whole-cache flush rather than a per-dataset one. The hook
+has no repo argument, per-dataset invalidation would need one, and the cache is
+a latency optimisation whose entire content can be rebuilt by browsing.
+
+**Verify**:
+
+```bash
+.venv/bin/python -c "
+import tempfile, os
+from immi_case_downloader.cases_pagination import (
+    CaseListQuery, SeekAnchor, _ANCHOR_CACHE)
+from immi_case_downloader.web.routes.api import _invalidate_cases_cache
+q = CaseListQuery(sort_by='year', page_size=10)
+_ANCHOR_CACHE.clear()
+_ANCHOR_CACHE.store_anchor(backend_kind='sqlite', dataset_id='d1', query=q,
+                           page=10, anchor=SeekAnchor(year=2024, case_id='c1'))
+assert _ANCHOR_CACHE.get_nearest_anchor(backend_kind='sqlite', dataset_id='d1',
+                                        query=q, target_page=10) is not None
+_invalidate_cases_cache()
+assert _ANCHOR_CACHE.get_nearest_anchor(backend_kind='sqlite', dataset_id='d1',
+                                        query=q, target_page=10) is None
+print('mutation invalidation clears the anchor cache')
+"
+```
+
+→ prints `mutation invalidation clears the anchor cache`. It raises
+`AssertionError` if the call is missing, so it cannot pass by accident.
+
+```bash
+.venv/bin/python -m pytest tests/test_cases_api.py tests/test_cases_pagination.py -q
 ```
 
 → all pass.
@@ -1235,6 +1493,155 @@ def test_anchors_are_not_shared_across_page_sizes(tmp_path):
     got, _strategy = _serve_page(repo, small, 11, 5, total)
 
     assert got == _offset_ids(repo, small, 11, 5)
+
+
+def test_anchors_are_not_shared_across_databases(tmp_path):
+    """Two SQLite databases in one process must not read each other's anchors.
+
+    backend_kind_for_repo() answers "sqlite" for both, so before the dataset id
+    was part of the cache key this served database B a cursor into database A.
+    """
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    repo_a = _build_repo(dir_a, 250)
+    repo_b = _build_repo(dir_b, 250)
+    page_size = 10
+    query = _query(page_size=page_size)
+    total = repo_a.count_cases()
+
+    # Warm A up to and past the anchor interval.
+    for page in range(1, 12):
+        _serve_page(repo_a, query, page, page_size, total)
+
+    # B has never been walked: page 11 must still be right.
+    got, _strategy = _serve_page(repo_b, query, 11, page_size, total)
+
+    assert got == _offset_ids(repo_b, query, 11, page_size)
+
+
+# ── The real endpoint ─────────────────────────────────────────────────────
+# Everything above drives the planner and loader directly. These drive
+# GET /api/v1/cases, which is the only way to catch list_cases() forgetting to
+# pass page_size or total, or its outer `except Exception` swallowing a failure
+# into an empty 200.
+
+
+def _sqlite_app(tmp_path, count):
+    """A Flask app whose SQLite repo holds `count` deterministic cases."""
+    from immi_case_downloader.web import create_app
+
+    repo = _build_repo(tmp_path, count)   # writes tmp_path/cases.db
+    repo.close()
+    app = create_app(str(tmp_path), backend="sqlite")
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    return app
+
+
+def _http_ids(client, page, page_size, sort_by="year", sort_dir="desc"):
+    resp = client.get(
+        f"/api/v1/cases?sort_by={sort_by}&sort_dir={sort_dir}"
+        f"&page={page}&page_size={page_size}"
+    )
+    assert resp.status_code == 200, resp.status_code
+    body = resp.get_json()
+    return [c["case_id"] for c in body["cases"]], body
+
+
+@pytest.mark.parametrize("page_size", [10, 50])
+def test_http_full_walk_matches_the_offset_path(tmp_path, page_size):
+    """Every page of a real HTTP walk equals the offset path's window."""
+    app = _sqlite_app(tmp_path, 250)
+    reference = SqliteRepository(os.path.join(str(tmp_path), "cases.db"))
+    query = _query(page_size=page_size)
+    total = reference.count_cases()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    seen = []
+    with app.test_client() as client:
+        for page in range(1, total_pages + 1):
+            got, body = _http_ids(client, page, page_size)
+            assert got == _offset_ids(reference, query, page, page_size), (
+                f"HTTP page {page}/{total_pages} does not match the offset path"
+            )
+            assert body["page_size"] == page_size
+            seen.extend(got)
+
+    assert len(seen) == total
+    assert len(set(seen)) == total
+
+
+def test_http_page_size_switch_returns_the_right_window(tmp_path):
+    """Walking at one page size then switching must not reuse those anchors."""
+    app = _sqlite_app(tmp_path, 250)
+    reference = SqliteRepository(os.path.join(str(tmp_path), "cases.db"))
+
+    with app.test_client() as client:
+        for page in range(1, 12):
+            _http_ids(client, page, 10)
+        got, _body = _http_ids(client, 11, 5)
+
+    assert got == _offset_ids(reference, _query(page_size=5), 11, 5)
+
+
+def test_http_pages_are_correct_after_an_insert(tmp_path):
+    """A row added mid-browse must not leave a stale anchor behind."""
+    from immi_case_downloader.web.routes.api import _invalidate_cases_cache
+
+    app = _sqlite_app(tmp_path, 250)
+    db_path = os.path.join(str(tmp_path), "cases.db")
+    reference = SqliteRepository(db_path)
+    page_size = 10
+    query = _query(page_size=page_size)
+
+    with app.test_client() as client:
+        for page in range(1, 12):
+            _http_ids(client, page, page_size)
+
+        writer = SqliteRepository(db_path)
+        writer.save_many([
+            ImmigrationCase(
+                case_id="c99999", citation="[2025] AATA 9999", title="Inserted",
+                court="AATA", court_code="AATA", date="2025", year=2025,
+                url="http://example.test/inserted",
+            )
+        ])
+        writer.close()
+        _invalidate_cases_cache()
+
+        total = reference.count_cases()
+        got, _body = _http_ids(client, 11, page_size)
+
+    assert total == 251
+    assert got == _offset_ids(reference, query, 11, page_size)
+
+
+def test_http_pages_are_correct_after_a_delete(tmp_path):
+    """Deleting a row above the cursor shifts every later row."""
+    from immi_case_downloader.web.routes.api import _invalidate_cases_cache
+
+    app = _sqlite_app(tmp_path, 250)
+    db_path = os.path.join(str(tmp_path), "cases.db")
+    reference = SqliteRepository(db_path)
+    page_size = 10
+    query = _query(page_size=page_size)
+
+    with app.test_client() as client:
+        first_page, _body = _http_ids(client, 1, page_size)
+        for page in range(2, 12):
+            _http_ids(client, page, page_size)
+
+        writer = SqliteRepository(db_path)
+        writer.delete(first_page[0])
+        writer.close()
+        _invalidate_cases_cache()
+
+        got, _body = _http_ids(client, 11, page_size)
+
+    assert reference.count_cases() == 249
+    assert got == _offset_ids(reference, query, 11, page_size)
 ```
 
 **Verify**:
@@ -1243,8 +1650,11 @@ def test_anchors_are_not_shared_across_page_sizes(tmp_path):
 .venv/bin/python -m pytest tests/test_cases_pagination_correctness.py -q
 ```
 
-→ `17 passed` (12 parametrised cases of `test_every_page_matches_the_offset_path`
-plus 5 named tests), 0 failed. Then:
+→ `23 passed` (12 parametrised cases of `test_every_page_matches_the_offset_path`,
+2 of `test_http_full_walk_matches_the_offset_path`, plus 9 named tests), 0
+failed. This is a per-file count, so it is stable no matter what sibling plans
+land; if it differs, count the tests you actually wrote and reconcile before
+moving on. Then:
 
 ```bash
 .venv/bin/ruff check tests/test_cases_pagination_correctness.py
@@ -1269,8 +1679,9 @@ do not weaken the test. See STOP conditions.
 .venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q
 ```
 
-→ `185 passed` (unchanged from the HEAD baseline — this plan edits four
-assertions in that set but adds none to those files).
+→ the same passed count as `SUBSET_BEFORE` from Step 1 — this plan edits four
+assertions in that set and adds no test to those files, so the number must not
+move at all.
 
 ```bash
 make lint
@@ -1279,14 +1690,18 @@ make lint
 → `All checks passed!`
 
 ```bash
-make test-py 2>&1 | grep -E '[0-9]+ passed|^FAILED'
+make test-py 2>&1 | grep -E '[0-9]+ passed'
+make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u
 ```
 
-→ `1158 passed, 3 failed, 7 skipped` (1141 + 17 new), and the only `FAILED`
-lines name `tests/test_backfill_judge_overrides_from_pdf.py` — the pre-existing
-`pypdf`/`pyexpat` environment failures described under "Commands you will need".
-This run takes over 10 minutes; give it a long timeout or run it in the
-background. If any *other* test fails, STOP.
+→ the passed count must equal `SUITE_BEFORE + 23` (the 23 tests in the new
+file), and the second command must print exactly the same list it printed in
+Step 1 — i.e. `tests/test_backfill_judge_overrides_from_pdf.py` alone, the
+pre-existing `pypdf`/`pyexpat` environment failures described under "Commands
+you will need". A count that matches but a failure list that grew is a
+regression, which is why both commands are run. This takes over 10 minutes;
+give it a long timeout or run it in the background. If any *other* test fails,
+STOP.
 
 Finally, confirm you touched nothing outside the scope list:
 
@@ -1294,13 +1709,13 @@ Finally, confirm you touched nothing outside the scope list:
 git status --short
 ```
 
-→ shows only the seven in-scope paths (plus `plans/README.md` if it exists).
+→ shows only the in-scope paths (plus `plans/README.md` if it exists).
 `/tmp/immi-seek-probe.py` must not appear.
 
 ## Test plan
 
 New file: `tests/test_cases_pagination_correctness.py` (full content in Step 7),
-17 tests total:
+23 tests total:
 
 | Test | Covers |
 |---|---|
@@ -1310,6 +1725,11 @@ New file: `tests/test_cases_pagination_correctness.py` (full content in Step 7),
 | `test_date_sorted_walk_is_complete_and_duplicate_free` | `sort_by="date"` stays on one ordering for the whole walk (pre-fix: 248 unique of 250). |
 | `test_forward_paging_populates_the_anchor_cache` | The deep-page optimisation actually fires after an ordinary forward walk. |
 | `test_anchors_are_not_shared_across_page_sizes` | An anchor recorded at `page_size=10` is not reused at `page_size=5`. |
+| `test_anchors_are_not_shared_across_databases` | Two SQLite files in one process do not share cursors (Step 3's dataset id). |
+| `test_http_full_walk_matches_the_offset_path` (2 params) | The same guarantee **through `GET /api/v1/cases`**, at two page sizes — the only check that catches `list_cases()` forgetting to pass `page_size`/`total`, or its outer `except Exception` turning a failure into an empty 200. |
+| `test_http_page_size_switch_returns_the_right_window` | Page-size switching over the real endpoint. |
+| `test_http_pages_are_correct_after_an_insert` | A mid-browse insert invalidates the anchors (Step 5b). |
+| `test_http_pages_are_correct_after_a_delete` | A mid-browse delete invalidates the anchors (Step 5b). |
 
 Structural pattern to follow: `tests/test_cases_pagination.py` (same imports
 style, same `_query()` helper idiom, plain `assert`). Anchor-cache isolation is
@@ -1334,16 +1754,18 @@ mocks). Noted deliberately.
 ALL must hold:
 
 - [ ] `.venv/bin/python /tmp/immi-seek-probe.py` prints `DEFECTS PRESENT: 0/4 []`
-- [ ] `.venv/bin/python -m pytest tests/test_cases_pagination_correctness.py -q` → `17 passed`
-- [ ] `.venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q` → `185 passed`
-- [ ] `make test-py` → `1158 passed, 3 failed, 7 skipped`, and the 3 failures are all in `tests/test_backfill_judge_overrides_from_pdf.py` (if `plans/002-fix-test-collection-and-install.md` landed first the absolute numbers are higher; then the criterion is +17 passed and +0 failed against the pre-plan baseline you recorded in Step 1)
+- [ ] `.venv/bin/python -m pytest tests/test_cases_pagination_correctness.py -q` → `23 passed` (a per-file count; stable regardless of sibling plans)
+- [ ] `.venv/bin/python -m pytest tests/test_cases_pagination_correctness.py -q -k "across_databases or after_an_insert or after_a_delete"` → `3 passed` (the three tests that only Steps 3 and 5b can make pass)
+- [ ] `.venv/bin/python -m pytest tests/test_cases_pagination.py tests/test_supabase_repository.py tests/test_cases_api.py tests/test_cursor_pagination.py tests/test_sqlite_repository.py -q` → the passed count equals `SUBSET_BEFORE` from Step 1, unchanged
+- [ ] `make test-py` passed count equals `SUITE_BEFORE + 23`, and `make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u` prints exactly `tests/test_backfill_judge_overrides_from_pdf.py` — the same three environmental `pypdf`/`pyexpat` ImportErrors, by name, that Step 1 recorded
 - [ ] `make lint` → `All checks passed!`
 - [ ] `.venv/bin/ruff check tests/test_cases_pagination_correctness.py` → `All checks passed!`
 - [ ] `grep -n 'SEEK_SORT_FIELDS = ' immi_case_downloader/cases_pagination.py` → `SEEK_SORT_FIELDS = frozenset({"year"})`
 - [ ] `grep -n 'TAIL_SEEK_WINDOW_PAGES = ' immi_case_downloader/cases_pagination.py` → `TAIL_SEEK_WINDOW_PAGES = 0`
-- [ ] `grep -c 'page_size' immi_case_downloader/cases_pagination.py` → at least 2 (field + canonical payload)
-- [ ] `grep -n 'counts_are_exact' immi_case_downloader/sqlite_repository.py immi_case_downloader/supabase_repository.py` → matches in `sqlite_repository.py` only
-- [ ] `grep -c 'order("case_id"' immi_case_downloader/supabase_repository.py` → `4` (it is `2` at HEAD — line 202 and line 598 — and Step 6 adds one to each of `filter_cases` and `list_cases_fast`)
+- [ ] The Step 3 `python -c` identity probe prints `cache identity covers page_size and dataset` (it asserts on behaviour; a `grep -c page_size` would also match a comment, which is why it is not used here)
+- [ ] The Step 5b `python -c` probe prints `mutation invalidation clears the anchor cache`
+- [ ] `grep -n 'counts_are_exact' immi_case_downloader/sqlite_repository.py` → at least one match, **and** `grep -c 'counts_are_exact' immi_case_downloader/supabase_repository.py` → `0`
+- [ ] `grep -c 'order("case_id"' immi_case_downloader/supabase_repository.py` → `4` (it is `2` at HEAD — line 202 and line 598 — and Step 6 adds one to each of `filter_cases` and `list_cases_fast`), **and** `.venv/bin/python -m pytest tests/test_supabase_repository.py -q -k "invalid_sort_defaults_to_year or date_sort_degrades_to_year_for_stability"` → `2 passed` (the count alone cannot tell you the two new calls landed in the right two methods; these tests can)
 - [ ] `git status --short` lists only files from the "In scope" list
 - [ ] `plans/README.md` status row updated (only if that file exists)
 
@@ -1370,7 +1792,17 @@ Stop and report back (do not improvise) if:
   date key" project, which this plan deliberately does not attempt — the plan's
   answer to date sorting is to route it to the offset path.
 - `make test-py` shows failures outside
-  `tests/test_backfill_judge_overrides_from_pdf.py`.
+  `tests/test_backfill_judge_overrides_from_pdf.py`, or the failure list from
+  Step 1 gains a name.
+- The drift check shows any in-scope file as modified, staged or untracked in
+  `git status --short --branch`. That is somebody's uncommitted work, and this
+  plan would collide with it. Do **not** `git checkout --` or `git clean` it.
+- Adding the `clear_cases_anchor_cache` import to `_invalidate_cases_cache()`
+  (Step 5b) produces an `ImportError` or a circular import. It is a
+  function-local import specifically to avoid that; if it still happens,
+  something else changed the module graph and the invalidation needs a different
+  home (the four `_api._invalidate_cases_cache()` call sites in `api_cases.py`
+  are the fallback) — report before improvising.
 - You conclude the right fix is to delete `cases_pagination.py` outright. That
   may well be the right long-term call, but it is a direction decision for the
   operator, not a step in a bug-fix plan. Report the reasoning and stop.
@@ -1400,10 +1832,21 @@ For whoever owns this code next:
   seek orderings are identical and `"date"` could be re-admitted for Supabase
   alone; SQLite is the backend that genuinely diverges.
 - **The anchor cache is process-local and unbounded in time only by TTL.**
-  Adding `page_size` to the query signature multiplies the number of distinct
-  cache keys by the number of page sizes clients use. `MAX_ANCHOR_SIGNATURES`
+  Adding `page_size` **and** the dataset id to the key multiplies the number of
+  distinct cache keys by (page sizes × datasets) in use. `MAX_ANCHOR_SIGNATURES`
   is 128 with LRU eviction, so this is bounded, but if the SPA ever exposes many
   page sizes the hit rate will drop and 128 may want raising.
+- **`dataset_id_for_repo()` falls back to `id(repo)`.** That is deliberately
+  conservative — a backend with neither `db_path` nor `base_dir` nor an explicit
+  `pagination_dataset_id` gets a per-instance namespace, so it can only *miss*
+  the cache, never read another dataset's cursor. If you add a backend where
+  cache hits matter, give it a `pagination_dataset_id` property (e.g. the
+  Supabase project ref plus schema) rather than widening the fallback.
+- **Step 5b flushes the whole anchor cache on every mutation.** That is one
+  uncached deep page per write, which is right for a local-dev tool. If writes
+  ever become frequent enough for that to matter, the fix is to give
+  `_invalidate_cases_cache()` the repo it is invalidating for and drop only that
+  dataset's bucket — not to remove the flush.
 - **`immi_case_downloader/hyperdrive_repository.py`** also declares
   `supports_seek_pagination = True` and is intentionally left without
   `counts_are_exact`, so its tail pages fall back to offset. If that module is
@@ -1453,3 +1896,26 @@ walk over 1,000 dated rows at `page_size=50` collected 1,000 ids with 993
 unique (7 duplicated, 7 unreachable) rather than the 75/75 originally reported;
 over 250 rows at `page_size=10` it is 248 unique of 250. The mechanism — the
 `seek_forward` → `offset_fallback` boundary at page 4 — is exactly as described.
+
+## Review points not applied
+
+One sub-claim from the cross-plan review was checked against the live code and
+does not hold as stated. Everything else it raised has been applied above.
+
+- **"026 Step 5 must hook into `api.py`'s cache invalidation, which *conflicts
+  with* plan 028 Steps 1–5; hand `api.py` to a single integrator rather than
+  letting either agent patch it."** The first half is right and is now Step 5b.
+  The "conflicts with 028 Steps 1–5" half is not: the two plans edit disjoint
+  regions of the same file. `_invalidate_cases_cache()` is
+  `immi_case_downloader/web/routes/api.py:1059-1071`, and every region
+  `plans/028-fix-flask-analytics-fallback.md` lists as in scope for that file is
+  outside it — lines 268–302 (`_load_judge_bios`,
+  `_load_judge_name_overrides`), 1028–1056 and 1089–1127 (the case caches and
+  warmup fillers, explicitly excluding 1059–1071), 1074–1076
+  (`_analytics_cache_key`), 1177–1186 (`_has_analytics_filters`), 1282–1290
+  (`_call_with_timeout`) and 1670–1911 (the four analytics endpoints). A
+  three-line edit inside 1059–1071 therefore produces no overlapping hunk with
+  028, and deferring it to an integrator would mean shipping this plan with the
+  stale-anchor defect it exists to close still open. The edit stays here; the
+  Depends-on section flags the shared file to the integrator, which is the part
+  of the recommendation that is genuinely needed.

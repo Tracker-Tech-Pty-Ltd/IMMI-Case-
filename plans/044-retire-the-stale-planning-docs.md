@@ -11,23 +11,55 @@
 > `.js`, `.ts`, `.tsx`, `.sql`, `.toml`, `.yml` file, nor the `Makefile`. If a
 > step seems to require that, it is a STOP condition.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff cannot
+> see uncommitted, staged or untracked changes, so it alone gives a false
+> all-clear on a dirty tree:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- docs IMPROVEMENT_PLAN.md tests/integration/README.md tests/e2e/README.md
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="docs IMPROVEMENT_PLAN.md tests/integration/README.md tests/e2e/README.md"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
+> git diff --stat -- $IN_SCOPE                 # unstaged
+> git diff --cached --stat -- $IN_SCOPE        # staged
 > ```
-> Expected at the time of writing: **no output** (nothing changed). If any
-> in-scope file changed since this plan was written, compare the "Current
-> state" excerpts below against the live files before proceeding; on a
-> mismatch, treat it as a STOP condition. (`.claude.local.md` is gitignored at
-> `.gitignore:46`, so it never appears in this diff — verify it by hand per
-> Step 7.)
+> The last three must print nothing. If an in-scope file appears in any of them,
+> compare the "Current state" excerpts below against the live file before
+> proceeding; on a mismatch, treat it as a STOP condition. Never `git checkout --`
+> or `git clean -f` to clear drift — report and stop.
+>
+> **Expected exception**: `tests/e2e/README.md` *will* differ once
+> `plans/040-revive-the-e2e-suites.md` has landed — 040 appends its
+> single-E2E-suite decision to that file. That is this plan's declared
+> dependency, not drift. Step 4c anchors on the text of the
+> `## Credentialed Auth Smoke` section, which 040 must leave byte-identical.
+>
+> `.claude.local.md` is gitignored at `.gitignore:46`, so it never appears in any
+> of these diffs — verify it by hand per Step 7.
+>
+> **Parallel execution**: this plan `git mv`s a root file and asserts on
+> `git status --porcelain`. Run it in its own worktree or clone if anything else
+> is in flight.
 
 ## Status
 
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**:
+  - `plans/040-revive-the-e2e-suites.md` (hard, file-level) — 040 appends to
+    `tests/e2e/README.md`, which Step 4c here edits. Running 044 first means 040
+    lands on top of your warning; running 040 first is safe because Step 4c
+    anchors on text 040 must not touch. Match by content, never by line number.
+  - `plans/038-test-the-production-sql-layer.md` (hard, factual) — 038 adds the
+    first behavioural tests of `assertMembership()`, including a route-level deny
+    matrix. Several sentences this plan writes into `tests/integration/README.md`
+    and ADR-0002 describe the state of that coverage; writing them before 038
+    lands makes them wrong on arrival. See Step 4a and Step 5d.
+- **Owns**: `docs/adr/` — this plan **creates the directory, its `README.md`
+  index and its `TEMPLATE.md`**, plus ADRs 0001–0003. Plans 047–052 each create
+  exactly one ADR file of their own (`0047`…`0052`) and must not touch the index
+  or template. The presence of those files is therefore **expected** and is not
+  a reason to stop; see "STOP conditions".
 - **Category**: docs
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -354,8 +386,8 @@ Facts verified for the runbook you will write (all re-confirmed at `42826a3`):
 | Prove no code changed | `git diff --name-only 42826a3..HEAD -- immi_case_downloader workers frontend scripts migrations supabase Makefile CLAUDE.md AGENTS.md README.md wrangler.toml .github` | no output |
 | Prove only the 2 test READMEs changed under `tests/` | `git diff --name-only 42826a3..HEAD -- tests` | exactly `tests/e2e/README.md` and `tests/integration/README.md` |
 | D1 migration parse check (offline) | see Step 6 | `account ok` / `catalog ok` / `ops ok` |
-| Python tests (optional final sanity) | `make test-py` | `1141 passed, 3 failed, 7 skipped` — the 3 failures are environmental, see Test plan |
-| Lint (optional final sanity) | `make lint` | `All checks passed!` |
+| Python tests (optional final sanity) | `make test-py` | exit status and the **set of failing files** unchanged vs. before you started — see Test plan |
+| Lint (optional final sanity) | `make lint-py` (`make lint` before plan 001) | `All checks passed!` |
 
 ## Scope
 
@@ -710,9 +742,20 @@ with:
 > Consequences:
 > - A green `rls_isolation.sql` run says **nothing** about production tenant
 >   isolation. It exercises a database that is no longer in the request path.
-> - There is currently **no automated test** of `assertMembership()`'s
->   isolation guarantee. That gap is tracked as an operator-blocked item
->   ("租戶隔離測試矩陣") in `.claude/STATE.md`.
+> - Coverage of the real mechanism is **partial, not absent**.
+>   `workers/__tests__/cloudflare-storage-contracts.test.js:127-134` asserts the
+>   SQL text and bound parameters of `assertMembership()` against a SQL-blind
+>   fake, and `plans/038` adds behavioural store-level tests (absent / revoked /
+>   wrong-tenant deny against the real `migrations/d1/account` schema) plus a
+>   route-level deny matrix for `GET /api/v1/admin/pipeline-runs`. What is still
+>   missing is a **full route security matrix**: seven other entrypoints call
+>   `assertMembership()` (`workers/case-api/cloudflare_mutations.js:70`,
+>   `workers/case-api/cloudflare_actions.js:47`,
+>   `workers/pipeline/control_handlers.js:51`,
+>   `workers/llm-council/cloudflare_handlers.js:79` and five call sites in
+>   `workers/llm-council/storage.js`), and none of them is proven to reach it.
+>   That gap is tracked as an operator-blocked item ("租戶隔離測試矩陣") in
+>   `.claude/STATE.md`.
 > - Both Supabase-backed scripts hard-skip when `SUPABASE_DB_URL` is unset
 >   (`test_revoke_member.py:33-36`), so they are inert unless an operator
 >   deliberately points them at a still-live Supabase project.
@@ -738,7 +781,13 @@ with:
 | `AC5 FAIL` on SELECT | RLS policy missing or `auth_tenant_id()` function not deployed | Historical answer: `supabase db push`. **This applies only to the retired Supabase project — it does not touch production D1.** For D1 schema changes see `docs/ops/d1-migrations.md`. |
 ```
 
-**4c.** In `tests/e2e/README.md`, replace line 18 (verbatim old text):
+**4c.** In `tests/e2e/README.md`, replace the sentence below. **Locate it by
+content, not by line number** — at `42826a3` it is line 18, but
+`plans/040-revive-the-e2e-suites.md` appends new sections to this file and may
+shift it. Edit **only** inside the `## Credentialed Auth Smoke` section; leave
+everything 040 wrote untouched.
+
+Verbatim old text:
 
 ```
 The test is skipped unless explicitly enabled. It creates real rows and cleans up the generated user, test tenant, smoke case, and council session in `finally`.
@@ -749,16 +798,31 @@ with:
 ```
 The test is skipped unless explicitly enabled. It creates real rows and attempts to clean up the generated user, test tenant, smoke case, and council session in `finally`.
 
-> **⚠ The teardown targets the wrong database. Do not run this against
-> production.** The cleanup path connects via `SUPABASE_DB_URL`, but production
-> auth, tenant and case rows live in Cloudflare D1 (`IMMI_ACCOUNT_DB`,
-> `IMMI_CATALOG_DB`) since commit `f91f45f` (2026-08-21) — there is no Postgres
-> in the production path (`docs/ARCHITECTURE.md`). Pointing
-> `IMMI_AUTH_SMOKE_BASE_URL` at `https://immi.trackit.today` therefore creates
-> real rows in D1 while the `finally` block deletes from Supabase and reports
-> success. Until the teardown is ported to D1 (`wrangler d1 execute`, or a
-> Worker-side test-cleanup endpoint), run this **only** against a disposable
-> staging Worker whose data you are willing to orphan.
+> **⚠ THE TEARDOWN DELETES FROM THE WRONG DATABASE AND REPORTS SUCCESS. Do not
+> run this against production.** The cleanup path connects via
+> `SUPABASE_DB_URL`, but production auth, tenant and case rows live in
+> Cloudflare D1 (`IMMI_ACCOUNT_DB`, `IMMI_CATALOG_DB`) since commit `f91f45f`
+> (2026-08-21) — there is no Postgres in the production path
+> (`docs/ARCHITECTURE.md`). Pointing `IMMI_AUTH_SMOKE_BASE_URL` at
+> `https://immi.trackit.today` therefore creates real users, tenants, cases and
+> council sessions in production D1, while the `finally` block deletes from a
+> retired Supabase project and exits green. Every run leaks a real tenant.
+>
+> **This warning is not a safeguard.** A comment in a README does not stop a
+> command from running, and the env vars above are copy-pasteable. The test
+> itself must fail closed. Until it does, run this **only** against a disposable
+> staging Worker whose data you are willing to orphan — and treat a run against
+> `immi.trackit.today` as an incident, not a mistake.
+>
+> **Required fix, owned by whichever plan owns `tests/e2e/*.py`** (this is a
+> docs plan and must not edit the test): at the top of
+> `tests/e2e/test_credentialed_auth_smoke.py`, refuse to run when the target is
+> production or when the teardown backend does not match the target — e.g. skip
+> (or fail) unless `urlparse(IMMI_AUTH_SMOKE_BASE_URL).hostname` is in an
+> explicit allow-list that excludes `immi.trackit.today`, and require an
+> `IMMI_AUTH_SMOKE_TEARDOWN=d1|supabase` that must agree with the target.
+> Then port the teardown to D1 (`wrangler d1 execute`, or a Worker-side
+> test-cleanup endpoint gated by a secret) and drop the allow-list.
 ```
 
 **4d.** In `tests/e2e/README.md`, replace the `SUPABASE_DB_URL` export line
@@ -808,7 +872,20 @@ new ADR that supersedes it and edit the old one's Status line to point forward.
 Copy `TEMPLATE.md` to `NNNN-kebab-slug.md` using the next free number, fill in
 the three sections, and add a row above. Keep it under one page — link to the
 commit for detail rather than restating the diff.
+
+Numbers 0047–0052 are reserved for decisions currently in flight
+(0047 AustLII ingestion architecture, 0048 Council case anchoring,
+0049 legislation corpus publication, 0050 server-side user data,
+0051 judge identity, 0052 Android client disposition). Each of those files is
+written by its own change; whoever lands one adds its row to the table above.
+Do not renumber around them.
 ```
+
+**This plan owns `docs/adr/README.md` and `docs/adr/TEMPLATE.md`.** No other
+plan may create or edit either file. If `docs/adr/0047-*.md` … `0052-*.md`
+already exist when you get here, that is expected — those plans create only
+their own file — and it is **not** a reason to stop. Add their rows to the table
+if they are present.
 
 **5b.** Create `docs/adr/TEMPLATE.md`:
 
@@ -914,8 +991,13 @@ miss. Every route that touches tenant-scoped data must call it.
 - Code review of any new tenant-scoped route must check for the call
   explicitly; "the database will stop it" is no longer true.
 - `tests/integration/rls_isolation.sql` verifies the retired Postgres
-  mechanism and does not exercise this one. No automated test covers
-  `assertMembership()`'s isolation guarantee today; it is tracked as an
+  mechanism and does not exercise this one. Coverage of the real mechanism is
+  partial: `workers/__tests__/cloudflare-storage-contracts.test.js:127-134`
+  asserts the SQL text against a SQL-blind fake, and `plans/038` adds
+  behavioural store-level deny tests plus a route-level matrix for one admin
+  route. A **full route security matrix** — absent / revoked / wrong-tenant /
+  wrong-role for every tenant-scoped route — does not exist, and the seven other
+  `assertMembership()` call sites are unproven at the route level. Tracked as an
   operator-blocked item in `.claude/STATE.md`.
 - Revocation is near-instant for writes (D1 re-check per request) but lags by
   up to the 5-minute access-token TTL for reads.
@@ -1001,9 +1083,26 @@ with:
 
 **Verify**:
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && ls docs/adr/*.md | wc -l && grep -c "open an RFC" docs/ARCHITECTURE.md ; grep -c "docs/adr/TEMPLATE.md" docs/ARCHITECTURE.md && grep -c "^| \`docs/" docs/ARCHITECTURE.md
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+# Check the five files BY IDENTITY, not by counting the directory — plans
+# 047-052 legitimately add more ADRs here and a count check would go red on
+# their arrival while telling you nothing about yours.
+for f in README.md TEMPLATE.md 0001-cloudflare-native-d1-stack.md \
+         0002-app-layer-tenant-isolation.md 0003-council-lexical-retrieval.md; do
+  test -f "docs/adr/$f" && echo "ok  docs/adr/$f" || echo "MISSING docs/adr/$f"
+done
+grep -c "open an RFC" docs/ARCHITECTURE.md ; echo "(want 0)"
+grep -c "docs/adr/TEMPLATE.md" docs/ARCHITECTURE.md ; echo "(want 1)"
+# The reconciliation table gained five rows; check which ones, not how many:
+for row in 'docs/HYPERDRIVE_CACHE_RFC.md' 'docs/archive/IMPROVEMENT_PLAN.md' \
+           'docs/plans/2026-03-15-system-integration-roadmap.md' \
+           'docs/plans/2026-05-03-perf-optimization-plan.md' \
+           'tests/integration/README.md'; do
+  grep -q "| \`$row\`" docs/ARCHITECTURE.md && echo "row ok: $row" || echo "ROW MISSING: $row"
+done
 ```
-→ prints `5`, then `0`, then `1`, then `4`.
+→ five `ok  docs/adr/…` lines and no `MISSING`; `0`; `1`; five `row ok:` lines
+and no `ROW MISSING`.
 
 ### Step 6: Document how D1 migrations are applied
 
@@ -1033,6 +1132,22 @@ That targets the **retired** Supabase project, which is one-time ETL/import
 tooling and is not in the production request path (`docs/ARCHITECTURE.md`,
 `README.md` §7). It has no effect on D1. It is not the command below.
 
+**This warning is the weakest part of this runbook, and it should not stay
+that way.** `migrate` is the generic name anyone reaches for, and a paragraph in
+a docs file does not stop a command from running. The target should be renamed
+`migrate-supabase-legacy`, with `migrate` either deleted or made to fail closed:
+
+```make
+migrate:
+	@echo "make migrate is retired. Production schema lives in migrations/d1/;"
+	@echo "see docs/ops/d1-migrations.md. For the legacy Supabase ETL project:"
+	@echo "  make migrate-supabase-legacy"
+	@exit 1
+```
+
+`Makefile` is outside this plan's file territory, so this is recorded as a
+required follow-up for whichever plan owns it (001/002) rather than done here.
+
 ## The three databases
 
 | Binding | `database_name` | `migrations_dir` | Contents |
@@ -1041,8 +1156,22 @@ tooling and is not in the production request path (`docs/ARCHITECTURE.md`,
 | `IMMI_ACCOUNT_DB` | `immi-account` | `migrations/d1/account` | Users, tenants, memberships, refresh sessions |
 | `IMMI_OPS_DB` | `immi-ops` | `migrations/d1/ops` | Pipeline runs, extraction audit, reconciliation |
 
-Declared at `wrangler.toml` lines 20-35. The three databases are independent —
-D1 has no cross-database foreign keys — so **order does not matter**.
+Declared at `wrangler.toml` lines 20-35. D1 has no cross-database foreign keys,
+so there is no *referential* ordering constraint between the three. There is a
+**code/schema compatibility** ordering constraint, and it is the one that
+actually bites:
+
+- **Expand before code.** Apply purely additive migrations (new tables, new
+  nullable columns, new indexes) to all three databases **before** deploying the
+  Worker that uses them. The old Worker ignores what it does not know about.
+- **Deploy code.**
+- **Contract after code.** Only once the new Worker is live and healthy do you
+  apply anything destructive (dropping a column, tightening a constraint,
+  renaming). A contract migration applied before the deploy takes production
+  down.
+
+If a single change needs both, split it into two migrations either side of the
+deploy. Within one phase the three databases can go in any order.
 
 ## Before you touch a remote database
 
@@ -1064,7 +1193,40 @@ D1 has no cross-database foreign keys — so **order does not matter**.
    Expected: `account ok`, `catalog ok`, `ops ok`. SQLite is not D1, so this
    proves the statements parse and compose — not that D1 accepts every feature.
 
-2. **Get a config with real resource IDs.** The checked-in `wrangler.toml`
+2. **Take a verified export, and know how to restore it.** An export you have
+   never restored is not a backup.
+
+   ```bash
+   npx wrangler d1 export IMMI_CATALOG_DB --remote \
+     --output "$HOME/immi-backups/catalog-$(date -u +%Y%m%dT%H%M%SZ).sql" \
+     --config /path/to/immi-native-main.toml
+   # Prove it restores, into a scratch LOCAL database — never back into production:
+   npx wrangler d1 execute immi-catalog-scratch --local \
+     --file "$HOME/immi-backups/catalog-<stamp>.sql"
+   ```
+
+   Then compare row counts for the tables you are about to touch, between the
+   scratch restore and production. Repeat for each database you will change.
+   Confirm the exact flags against your Wrangler version first
+   (`npx wrangler d1 --help`, `npx wrangler d1 export --help`) — this repo pins
+   nothing, and the CLI surface moves.
+
+3. **Write down the rollback plan and its cost, before you start.** Answer these
+   three in your run notes:
+   - Which mechanism? (forward fix, or whole-database point-in-time restore —
+     see "Rollback" below.)
+   - What is the RTO? Time the scratch restore in step 2 and use that number.
+   - What data loss is acceptable? A point-in-time restore of
+     `IMMI_CATALOG_DB` discards every case the weekly VPS crawler
+     (`0 14 * * 1` UTC) has ingested since the restore point. If that is not
+     acceptable, a point-in-time restore is not your rollback and you need a
+     forward fix.
+
+4. **Rehearse on a clone.** Restore the step-2 export into a scratch database,
+   run the migration there, and run the post-apply checks below against it.
+   `--local` is the cheapest form of this and needs no real resource IDs.
+
+5. **Get a config with real resource IDs.** The checked-in `wrangler.toml`
    carries placeholder `database_id`s (`00000000-0000-0000-0000-00000000000N`)
    **by design** — `scripts/check_cloudflare_native_target.py` enforces that
    shape, and `docs/ARCHITECTURE.md` explains why. Real IDs live only in the
@@ -1097,28 +1259,128 @@ Local D1 (for `wrangler dev`) is the same command with `--local` instead of
 Verified against `wrangler 4.120.0`. `wrangler d1 migrations` exposes exactly
 `create`, `list` and `apply`; `apply` accepts `--local`, `--remote`,
 `--preview`, `--persist-to` and the global `--config`. In a non-interactive
-shell the confirmation prompt is skipped.
+shell the confirmation prompt is skipped. Re-check with
+`npx wrangler d1 migrations apply --help` for your version rather than trusting
+this paragraph.
 
-## Re-applying `0001_*` is safe
+## After you apply
+
+Three checks, in this order. Do not skip to the deploy on a green `apply` alone
+— `apply` reports that it ran the file, not that the result is what the file
+describes.
+
+1. **Schema contract.** Re-run the `sqlite_master` +
+   `PRAGMA table_info/index_list/foreign_key_list` comparison from "Before you
+   touch a remote database" against production and against a scratch database
+   built from the migrations. They must now agree. This is the check that
+   catches a `CREATE TABLE IF NOT EXISTS` no-op.
+2. **Health.** `curl -fsS https://<target>/health` and one real read
+   (`curl -fsS https://<target>/api/v1/stats`). A migration that broke a query
+   surfaces here, not in the migration output.
+3. **Data reconciliation.** Row counts for the tables you touched, compared
+   against the numbers you recorded before the apply, with the expected delta
+   stated in advance. `SELECT COUNT(*)` per table via
+   `wrangler d1 execute --remote --command`. An unexplained change is a rollback
+   trigger, not something to investigate afterwards.
+
+Record all three in `.claude/STATE.md` with the run's timestamp.
+
+## Re-applying `0001_*`: idempotent, but NOT the same as "safe"
 
 Wrangler tracks applied migrations in a `d1_migrations` table it creates inside
 each database. The production databases were populated by a one-time import, not
 by `wrangler d1 migrations apply`, so that bookkeeping table may be empty and
 the first `apply` may offer to run `0001_*.sql` again.
 
-That is safe as of the four checked-in files: **every** `CREATE` statement in
-all four uses `IF NOT EXISTS` (40 of 40 in `catalog/0001_catalog.sql`, 15 of 15
-in `account/0001_account.sql`, 11 of 11 in `ops/0001_ops.sql`, 2 of 2 in
-`ops/0002_pipeline_control.sql`) and none of them contains an `INSERT`. Re-run
-the count before trusting this for a new file:
+Those files are **idempotent**: every `CREATE` in all four uses
+`IF NOT EXISTS`, and none executes an `INSERT` at the top level. But idempotent
+is a weaker guarantee than safe, and the difference is the trap:
+
+> `CREATE TABLE IF NOT EXISTS` against a table that already exists **with a
+> different shape** is a silent no-op. It does not add a missing column, does
+> not add a missing constraint, and does not error. Wrangler then records the
+> migration as applied. You end up with a database that reports "migrated" while
+> its schema does not match the file — and the next migration, written against
+> the file, breaks in production.
+
+That is exactly the situation here, because production was populated by import
+rather than by `apply`. **So: compare the live schema against the file before
+the first `apply`, per database.**
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && for f in migrations/d1/*/*.sql; do printf '%s CREATE=%s IF_NOT_EXISTS=%s INSERT=%s\n' "$f" "$(grep -c '^CREATE' "$f")" "$(grep -c 'IF NOT EXISTS' "$f")" "$(grep -c '^INSERT' "$f")"; done
+CFG=/path/to/immi-native-main.toml
+# What is actually there:
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --config "$CFG" \
+  --command "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name;"
+# Per table, the columns / indexes / FKs that CREATE ... IF NOT EXISTS will NOT fix:
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --config "$CFG" \
+  --command "PRAGMA table_info('immigration_cases');"
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --config "$CFG" \
+  --command "PRAGMA index_list('immigration_cases');"
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --config "$CFG" \
+  --command "PRAGMA foreign_key_list('immigration_cases');"
 ```
 
-A migration whose `CREATE` count exceeds its `IF NOT EXISTS` count, or that
-contains an `INSERT`, is **not** re-runnable — apply it only once, and say so in
-a comment at the top of the file.
+Build the same three views from the checked-in migration by applying it to a
+scratch local database and running the identical PRAGMAs, then diff. If they
+differ, **stop**: either write an explicit migration that reconciles the
+difference, or baseline the tracking table deliberately (mark `0001_*` applied
+without running it) — and record which you chose and why. Do not let a silent
+no-op decide it for you.
+
+## Deciding whether a NEW migration is re-runnable
+
+Do not use `grep -c '^INSERT'`. It is anchored to the line start, so it misses
+an indented `INSERT` — and `migrations/d1/catalog/0001_catalog.sql` contains
+**five** `INSERT` statements (lines 71, 75, 77, 81 and inside the FTS5 sync
+triggers) that this check reports as zero. Those particular ones are harmless,
+because they are trigger *bodies* rather than statements executed at migration
+time — but a check that cannot tell the difference is not a check.
+
+Split into statements and look at the first keyword of each:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python - <<'PY'
+import pathlib, re, sqlite3
+
+def statements(sql: str):
+    """Yield top-level statements, respecting BEGIN...END trigger bodies."""
+    buf = ""
+    for line in sql.splitlines(keepends=True):
+        buf += line
+        if sqlite3.complete_statement(buf):
+            yield buf.strip()
+            buf = ""
+    if buf.strip():
+        yield buf.strip()
+
+DESTRUCTIVE = ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "REPLACE")
+for path in sorted(pathlib.Path("migrations/d1").glob("*/*.sql")):
+    text = path.read_text()
+    flagged, creates, guarded = [], 0, 0
+    for stmt in statements(text):
+        s = re.sub(r"^\s*(--[^\n]*\n\s*)*", "", stmt)
+        if not s.strip():
+            continue
+        head = s.split(None, 1)[0].upper()
+        if head == "CREATE":
+            creates += 1
+            if "IF NOT EXISTS" in stmt.upper().split("BEGIN")[0]:
+                guarded += 1
+        elif head in DESTRUCTIVE:
+            flagged.append(head + " " + " ".join(stmt.split()[:6]))
+    status = "re-runnable" if (creates == guarded and not flagged) else "NOT re-runnable"
+    print(f"{path}: CREATE={creates} guarded={guarded} top-level-destructive={len(flagged)} -> {status}")
+    for f in flagged:
+        print(f"    {f}")
+PY
+```
+
+Expected today: all four files print `re-runnable` with
+`top-level-destructive=0` — the trigger-body `INSERT`s are correctly not
+flagged, because `sqlite3.complete_statement` keeps `BEGIN … END;` together. A
+file that prints `NOT re-runnable` must be applied exactly once, and must say so
+in a comment at the top of the file.
 
 ## Writing a new migration
 
@@ -1138,12 +1400,33 @@ a comment at the top of the file.
 1. **Forward fix** — write `NNNN+1` that undoes the change. Preferred for
    `IMMI_CATALOG_DB`, which receives continuous case writes from the VPS
    crawler.
-2. **Time Travel** — `npx wrangler d1 time-travel info <DB>` then
-   `npx wrangler d1 time-travel restore <DB> ...` restores the **whole
-   database** to a point in time. Every write after that point is lost. On
-   `IMMI_CATALOG_DB` that means losing every case ingested since the restore
-   point, so treat it as a last resort and note the timestamp before applying
-   anything.
+2. **Point-in-time restore** — restores the **whole database**, discarding every
+   write after the chosen point. Get the exact invocation for your Wrangler
+   version rather than copying it from here:
+
+   ```bash
+   npx wrangler d1 time-travel --help
+   npx wrangler d1 time-travel info <DB> --config /path/to/immi-native-main.toml
+   npx wrangler d1 time-travel restore <DB> --bookmark <BOOKMARK> --config /path/to/immi-native-main.toml
+   ```
+
+   Before you ever need it: run `time-travel info` and **write the bookmark
+   down** as part of the pre-apply checklist — a restore you cannot address is
+   not a rollback. Rehearse the restore against a scratch database at least once
+   so the RTO number in your run notes is measured rather than assumed.
+
+   **Cost, stated plainly.** On `IMMI_CATALOG_DB` a restore discards every case
+   the weekly VPS crawler has ingested since the bookmark (`0 14 * * 1` UTC, so
+   up to a week's ingestion). On `IMMI_ACCOUNT_DB` it discards user sign-ups,
+   tenant changes and refresh sessions — users get logged out and recent
+   accounts vanish. If that loss is unacceptable for the change you are making,
+   option 2 is **not** available to you and option 1 (forward fix) is your only
+   rollback; decide that before applying, not after.
+
+3. **Restoring from the export you took in step 2 of the pre-apply checklist**
+   is a third option, and the only one that lets you rebuild selectively. It is
+   also the slowest. Its RTO is whatever you measured when you verified the
+   export.
 
 ## What is deliberately not automated
 
@@ -1273,13 +1556,24 @@ Verification is structural rather than behavioural:
 - **The D1 migration files still parse** (Step 6's Python snippet) →
   `account ok`, `catalog ok`, `ops ok`.
 - **Optional end-of-run sanity, if you want belt and braces**:
-  - `make lint` → `All checks passed!`
-  - `make test-py` → `1141 passed, 3 failed, 7 skipped`. **The 3 failures are
-    pre-existing and environmental**: this machine's Homebrew Python 3.14.7 has
-    a `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf` import in
+  - `make lint-py` → `All checks passed!` (`make lint` before plan 001 lands)
+  - `make test-py` → compare the **set of failing files by name**, before and
+    after:
+    ```bash
+    make test-py > /tmp/immi-044-py-before.txt 2>&1   # run this BEFORE step 1
+    grep -E '^(FAILED|ERROR) ' /tmp/immi-044-py-before.txt | sort > /tmp/immi-044-pyfail-before.txt
+    # ... after the last step ...
+    make test-py > /tmp/immi-044-py-after.txt 2>&1
+    grep -E '^(FAILED|ERROR) ' /tmp/immi-044-py-after.txt | sort > /tmp/immi-044-pyfail-after.txt
+    diff /tmp/immi-044-pyfail-before.txt /tmp/immi-044-pyfail-after.txt; echo "unchanged=$?"
+    ```
+    **The 3 failures on the planning machine are pre-existing and
+    environmental**: Homebrew Python 3.14.7 has a `pyexpat`/`libexpat` ABI
+    mismatch that breaks the `pypdf` import in
     `tests/test_backfill_judge_overrides_from_pdf.py`. They are not caused by
-    repo code and are not this plan's problem. If you see a *different* count,
-    stop and report — a docs-only change cannot move it.
+    repo code and are not this plan's problem. If a *different file* appears in
+    that set, stop and report — a docs-only change cannot move it. No absolute
+    total is asserted, because plans 038-041 all move it.
 
 ## Done criteria
 
@@ -1298,16 +1592,38 @@ Machine-checkable. ALL must hold (run from
 - [ ] `grep -c "assertMembership" tests/integration/README.md` prints `1`
 - [ ] `grep -c "confirm the live system behaves correctly" tests/integration/README.md` prints `0`
 - [ ] `grep -c "Do not run this against" tests/e2e/README.md` prints `1`
-- [ ] `ls docs/adr/*.md | wc -l` prints `5`
+- [ ] All five of this plan's own ADR files exist, checked by name:
+      `docs/adr/README.md`, `docs/adr/TEMPLATE.md`,
+      `docs/adr/0001-cloudflare-native-d1-stack.md`,
+      `docs/adr/0002-app-layer-tenant-isolation.md`,
+      `docs/adr/0003-council-lexical-retrieval.md`.
+      (**Not** `ls docs/adr/*.md | wc -l` — plans 047–052 add their own ADRs
+      here and a count check would fail on their arrival while saying nothing
+      about these five.)
 - [ ] `grep -c "open an RFC" docs/ARCHITECTURE.md` prints `0`
 - [ ] `grep -c "docs/adr/TEMPLATE.md" docs/ARCHITECTURE.md` prints `1`
-- [ ] `grep -c "^| \`docs/" docs/ARCHITECTURE.md` prints `4`
+- [ ] All five new reconciliation rows are present by path (the `row ok:` loop in
+      Step 5's Verify block prints no `ROW MISSING`)
 - [ ] `test -f docs/ops/d1-migrations.md` succeeds
-- [ ] `grep -c "wrangler d1 migrations apply" docs/ops/d1-migrations.md` prints `4` or more
+- [ ] `docs/ops/d1-migrations.md` contains, checked by heading:
+      `## Before you touch a remote database`, `## After you apply`,
+      `## Rollback`, and a `wrangler d1 export` line — the pre-apply export,
+      the post-apply reconciliation and the rollback cost are all required
+      sections, not optional prose
 - [ ] `grep -c "Schema changes (D1 migrations)" docs/ARCHITECTURE.md` prints `1`
+- [ ] The re-runnability checker in `docs/ops/d1-migrations.md` prints
+      `re-runnable` with `top-level-destructive=0` for all four current files —
+      and, run against a file containing a deliberately indented `INSERT`,
+      prints `NOT re-runnable` (prove the check can fail; `grep -c '^INSERT'`
+      could not, which is why it was replaced)
 - [ ] `head -1 .claude.local.md | grep -c "STALE"` prints `1` — **or** the file does not exist
-- [ ] `git diff --name-only 42826a3..HEAD -- immi_case_downloader workers frontend scripts migrations supabase Makefile CLAUDE.md AGENTS.md README.md wrangler.toml .github` prints nothing
-- [ ] `git diff --name-only 42826a3..HEAD -- tests` prints exactly `tests/e2e/README.md` and `tests/integration/README.md`
+- [ ] All three print nothing:
+      `git diff --name-only 42826a3..HEAD -- immi_case_downloader workers frontend scripts migrations supabase Makefile CLAUDE.md AGENTS.md README.md wrangler.toml .github`,
+      the same paths with `git diff --name-only --` (unstaged), and with
+      `git diff --cached --name-only --` (staged)
+- [ ] Under `tests/`, only `tests/e2e/README.md` and
+      `tests/integration/README.md` are modified — checked against the working
+      tree (`git status --porcelain -- tests`), not only against `HEAD`
 - [ ] The Step 6 Python parse check prints `account ok`, `catalog ok`, `ops ok`
 - [ ] `git status --porcelain` shows no modified or untracked path outside the "In scope" list
 - [ ] `plans/README.md` status row for plan 044 updated — **only if that file already exists**
@@ -1324,9 +1640,13 @@ Stop and report back (do not improvise) if:
 - Any "Current state" excerpt above does not match the file on disk. These are
   verbatim reads at commit `42826a3`; a mismatch means the docs drifted and the
   replacement anchors will not apply cleanly.
-- `docs/adr/` or `docs/archive/` already exists and is non-empty. Another plan
-  or a prior run may have created it; merging is a judgment call, not a
-  mechanical one.
+- **`docs/adr/README.md`, `docs/adr/TEMPLATE.md`, or any of
+  `docs/adr/000{1,2,3}-*.md` already exists.** Those five files are this plan's
+  own output; finding them means a prior run got partway, and merging is a
+  judgment call. **The mere existence of `docs/adr/` is NOT a stop condition** —
+  plans 047–052 each create one ADR file there (`0047`…`0052`) and are expected
+  to. If you find those, add their rows to the index table and carry on.
+- `docs/archive/` already exists and is non-empty.
 - `IMPROVEMENT_PLAN.md` is missing from the repo root at Step 2, or `git mv`
   refuses because of uncommitted changes to it.
 - The Step 6 parse check stops printing `account ok` / `catalog ok` / `ops ok`.
@@ -1364,10 +1684,26 @@ For the human or agent who owns these docs after the change lands:
   `docs/adr/0001-cloudflare-native-d1-stack.md` and leave a pointer.
 - **Deliberately deferred, out of this plan's file territory** — report these in
   your handoff so they are not lost:
-  - `Makefile:107-108` still runs `supabase db push` under the name `migrate`,
-    and `Makefile:39`, `CLAUDE.md:25` and `AGENTS.md:25` still advertise it as
-    *the* migration command. `docs/ops/d1-migrations.md` now contradicts them in
-    prose, which is better than silence but not a fix.
+  - **OPEN SAFETY GAP — `make migrate` still runs `supabase db push`.**
+    `Makefile:107-108` defines a target under the generic name anyone reaches
+    for, which pushes to the **retired** Supabase project and has no effect on
+    production D1. `Makefile:39`, `CLAUDE.md:25` and `AGENTS.md:25` still
+    advertise it as *the* migration command. `docs/ops/d1-migrations.md` now
+    contradicts them in prose — better than silence, but prose does not stop a
+    command from running. Required fix, owned by whichever plan owns the
+    `Makefile` (001/002): rename to `migrate-supabase-legacy` and make `migrate`
+    fail closed with a pointer to `docs/ops/d1-migrations.md` (the exact recipe
+    is in that runbook's "Do not use `make migrate`" section). Not optional
+    cleanup — a production-sounding command that operates a retired database is
+    the same class of hazard as the credentialed-smoke teardown in Step 4c.
+  - **OPEN SAFETY GAP — `tests/e2e/test_credentialed_auth_smoke.py` does not
+    fail closed.** Step 4c documents that its teardown deletes from Supabase
+    while the test creates real rows in production D1, and every run against
+    `immi.trackit.today` leaks a tenant. A README warning is not a guard. The
+    test must refuse to run against a production hostname, or when the declared
+    teardown backend does not match the target — the concrete shape is in Step
+    4c. Owned by whichever plan owns `tests/e2e/*.py`; this docs plan cannot fix
+    it. Until it lands, treat the file as operator-only and staging-only.
   - No `make migrate-d1` target exists and no CI job parse-checks or applies
     `migrations/d1/**`. `.github/workflows/deploy-worker.yml` deploys code
     against whatever schema happens to be live.
@@ -1376,9 +1712,15 @@ For the human or agent who owns these docs after the change lands:
   - `.aperant/roadmap.md:3-4` is stamped 2026-04-16 and claims backlog
     authority, as does `README.md` §9 Roadmap (`README.md:469`). Neither defers
     to `.claude/STATE.md` §E, which holds the live list.
-  - No automated test covers `assertMembership()`'s tenant-isolation guarantee.
-    ADR-0002 and `tests/integration/README.md` now say so out loud; closing it
-    is separate work.
+  - No **full route security matrix** covers `assertMembership()`. Plan 038
+    adds behavioural store-level deny tests and a route-level matrix for one
+    admin route; the other seven call sites are still unproven at the route
+    level, and refresh-token rotation/replay is tested against a mock rather
+    than the real `immi_refresh_sessions` schema. ADR-0002 and
+    `tests/integration/README.md` now say so precisely — the earlier wording
+    ("no automated test") was wrong even at `42826a3`, because
+    `workers/__tests__/cloudflare-storage-contracts.test.js:127-134` asserts the
+    query shape. Closing the remaining gap is separate work.
 - **A reviewer should scrutinise**: that ADR-0002 does not soften the leak risk
   (it is the design the original auth plan rejected, and the ADR must keep
   saying so), and that `docs/ops/d1-migrations.md` never tells anyone to run

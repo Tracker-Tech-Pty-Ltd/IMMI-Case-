@@ -7,25 +7,42 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A committed-history diff alone cannot see a dirty
+> working tree, so all four commands below must run:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat 42826a3..HEAD -- \
->   .env.example \
->   scripts/preflight_secrets.sh scripts/test_preflight_secrets.sh \
->   immi_case_downloader/web/internal_extract.py immi_case_downloader/web/__init__.py \
->   workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js \
->   workers/pipeline/control_handlers.js tests/test_internal_extract.py
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE=".env.example
+>   scripts/preflight_secrets.sh scripts/test_preflight_secrets.sh
+>   immi_case_downloader/web/internal_extract.py immi_case_downloader/web/__init__.py
+>   workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js
+>   workers/pipeline/control_handlers.js tests/test_internal_extract.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
+> git diff --stat -- $SCOPE                   # unstaged
+> git diff --cached --stat -- $SCOPE          # staged
 > ```
-> Expected: no output (nothing changed since this plan was written). If any
-> in-scope file changed, compare the "Current state" excerpts against the live
-> code before proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing, and `git status --short --branch` lists
+> no in-scope path. If any in-scope file appears in **any** of them, that is a
+> STOP condition: compare the "Current state" excerpts against the live code and
+> report before proceeding. **Never** run `git checkout --` or `git clean -f` to
+> get a clean tree — the uncommitted work is the operator's.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: none for correctness, but Step 7a edits
+  `workers/case-api/cloudflare_mutations.js`, whose `requireWriter` /
+  body-reading region is also edited by the auth-hardening plan
+  (`plans/006-harden-auth-and-authorization.md`). The imports, `readJson` and
+  `requireWriter` sit within ~30 lines of each other, so "different function"
+  is not enough separation for a clean parallel merge. **Sequencing rule: the
+  auth plan owns that file first. Run Step 7a only after 006 has landed (or
+  after confirming it is not running), then re-read lines 1-70 of the live file
+  before editing.** If 006 has already landed, the line numbers quoted in
+  "Current state" for that file will have shifted — re-derive them, do not
+  trust them.
 - **Category**: dx
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -423,19 +440,40 @@ enforces its own platform request-body ceiling above these numbers.
 
 ## Commands you will need
 
+**Baselines are recorded, not asserted.** Sibling plans add tests in parallel,
+so a hard-coded suite total is guaranteed to be wrong by the time you run it.
+Before you change anything, record these four numbers and refer to them as
+`PY_BEFORE`, `WK_BEFORE`, `FE_BEFORE` and `RUFF_BEFORE`:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | tail -1                     # -> PY_BEFORE (e.g. "1141 passed, 3 failed, 7 skipped")
+(cd workers  && npx vitest run 2>&1 | tail -3)  # -> WK_BEFORE  (passed count)
+(cd frontend && npx vitest run 2>&1 | tail -3)  # -> FE_BEFORE  (passed count)
+.venv/bin/ruff check . 2>&1 | tail -1           # -> RUFF_BEFORE
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Python unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | `1141 passed, 3 failed, 7 skipped` at HEAD; after this plan the passed count rises and the **3 failed stays at 3** (see Test plan) |
-| One Python test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_internal_extract.py -q` | all pass |
-| Worker tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | `345 passed` at HEAD; more after this plan, 0 failed |
-| Python lint (repo target) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` | `All checks passed!` |
+| Python unit tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | passed count = `PY_BEFORE + 8`; **failed count is unchanged and every failure is still in `tests/test_backfill_judge_overrides_from_pdf.py`** (see Test plan) |
+| One Python test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_internal_extract.py -q` | `4 passed` after Step 4 (`2 passed` before) |
+| Worker tests | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | passed count = `WK_BEFORE + 5`, 0 failed |
+| Python lint (this plan's Python territory) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/ruff check immi_case_downloader/ scripts/ *.py` | `All checks passed!` |
 | Lint the new test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/ruff check tests/test_env_example_contract.py` | `All checks passed!` |
 | Preflight gate self-test | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && bash scripts/test_preflight_secrets.sh` | `ALL PREFLIGHT TESTS PASSED`, exit 0 |
 | Shell syntax check | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && bash -n scripts/preflight_secrets.sh && bash -n scripts/test_preflight_secrets.sh` | exit 0, no output |
-| Frontend tests (regression only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | `490 passed` |
+| Frontend tests (regression only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` | passed count = `FE_BEFORE`, unchanged |
 
-Do **not** run `.venv/bin/ruff check .` as a gate: it reports 43 pre-existing
-errors under `tests/`, all owned by a different plan.
+Two notes on the lint command:
+
+- Do **not** run `.venv/bin/ruff check .` as a gate: it reports pre-existing
+  errors under `tests/`, all owned by `plans/003-lint-the-test-suite.md`. Its
+  output must simply be **unchanged** from `RUFF_BEFORE`.
+- The table deliberately spells out the ruff invocation instead of using
+  `make lint`. `plans/001-restore-the-frontend-compile-gate.md` Step 3 splits
+  `lint:` into `lint: lint-py lint-fe`, so after 001 lands `make lint` also runs
+  ESLint over the frontend and can fail for reasons this plan did not cause.
+  If `make lint-py` exists when you run, it is equivalent and may be used.
 
 ## Scope
 
@@ -448,6 +486,8 @@ errors under `tests/`, all owned by a different plan.
 - `immi_case_downloader/web/internal_extract.py` (edit)
 - `tests/test_internal_extract.py` (edit)
 - `immi_case_downloader/web/__init__.py` (edit — `serve_spa` only)
+- `tests/test_spa_asset_containment.py` (create — Step 5's traversal tests; a
+  new file so it cannot collide with any plan editing `tests/test_app_factory.py`)
 - `workers/storage/body_limit.js` (create)
 - `workers/__tests__/body-limit.test.js` (create)
 - `workers/case-api/cloudflare_mutations.js` (edit — **`readJson` at lines
@@ -519,9 +559,22 @@ add, drop, or rename entries.
 # ─────────────────────────────────────────────────────────────────────────────
 # IMMI-Case environment template — copy to `.env` and fill in what you need.
 #
-# This file is the source of truth for environment variables (CLAUDE.md:51),
-# and `tests/test_env_example_contract.py` fails the build if any Python file
-# reads a variable that is not named somewhere in this file.
+# WHAT IS ENFORCED, AND WHAT IS NOT.
+# `tests/test_env_example_contract.py` fails the build if any **Python** file
+# under `immi_case_downloader/`, `scripts/` or the repo root reads an
+# environment variable that is not named somewhere in this file. That is the
+# only automatically enforced part of this contract.
+#
+# NOT enforced by any test, and therefore documented here on trust — if you add
+# one of these, add it here too, by hand:
+#   - Cloudflare Worker reads (`env.*` in `workers/**`) and the Wrangler
+#     `[vars]` / `wrangler secret put` values behind them  → section 7
+#   - `import.meta.env.*` reads in the Vite client bundle                → section 8
+#   - shell scripts (`scripts/*.sh`, `Makefile`, CI workflow `env:` blocks)
+#   - anything read only inside `tests/`
+# Extending the contract test to cover those surfaces is recorded as a
+# follow-up in plans/045; until it lands, do not describe this file as a
+# machine-verified inventory of the whole repository.
 #
 # Grouped BY CONSUMER, because not everything below belongs in `.env`:
 #   - Section 7 is the production Cloudflare Worker. Those are Wrangler
@@ -715,12 +768,26 @@ identifier is gone and no `VITE_*` assignment remains.)
 Create `tests/test_env_example_contract.py` with exactly this content:
 
 ```python
-"""Contract test: .env.example must name every env var the Python code reads.
+"""Contract test: .env.example must name every env var the PYTHON code reads.
 
 CLAUDE.md:51 designates .env.example the source of truth for environment
 variables. Nothing enforced that, so it drifted ~30 variables behind the code.
 This test fails when a Python file under the scanned roots reads a variable
 that .env.example never mentions.
+
+SCOPE — read this before citing the test as evidence of anything wider.
+It covers ONLY Python reads (`os.environ` / `os.getenv` / the project's
+`_*_env()` helpers) under `immi_case_downloader/`, `scripts/` and the repo
+root. It does NOT cover, and cannot fail on:
+
+  * Cloudflare Worker `env.*` reads under `workers/`
+  * Wrangler `[vars]` and `wrangler secret put` names
+  * `import.meta.env.*` in the Vite client bundle
+  * shell scripts, the Makefile, or CI workflow `env:` blocks
+
+Those surfaces are documented in .env.example by hand. Extending this test to
+them is a real follow-up (see plans/045 "Maintenance notes"); until someone
+does it, this file is the *Python* env contract, not a repo-wide inventory.
 
 If this test fails, the fix is to DOCUMENT the printed variable in the right
 section of .env.example (or, if it is genuinely internal, add it to
@@ -1028,9 +1095,9 @@ def _app():
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   .venv/bin/python -m pytest tests/test_internal_extract.py -q && \
-  make lint
+  .venv/bin/ruff check immi_case_downloader/ scripts/ *.py tests/test_internal_extract.py
 ```
-→ `4 passed`, then `All checks passed!`
+→ `4 passed` (2 existing + 2 new), then `All checks passed!`
 
 ### Step 5: Contain SPA asset paths inside the React build directory
 
@@ -1067,14 +1134,133 @@ original relative `path`, not `asset_path`.
 `abort` is already imported inside the function at line 166
 (`from flask import send_from_directory, abort`); add no import.
 
+Then create `tests/test_spa_asset_containment.py`. **`pytest tests/test_app_factory.py`
+is not sufficient evidence for this step** — its only SPA case
+(`test_serves_static_js_file_in_test_mode`, lines 162-185) is a happy path that
+`pytest.skip`s outright when no React build is present, so it passes identically
+whether or not the guard exists. The file below actually exercises the escape.
+
+```python
+"""SPA static-asset containment: a path resolving outside the React build
+directory must 404 instead of being served.
+
+serve_spa() has two branches. The normal one delegates to
+send_from_directory(), which carries Werkzeug's own traversal check. The
+`app.testing` branch open()s the joined path directly and had no check at all —
+that is the branch these tests cover, and the branch the Step 5 guard protects.
+
+The React build directory is a fixed path inside the installed package
+(<pkg>/static/react), so the fixture materialises files there under
+plan045-prefixed names and removes exactly what it created.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+import immi_case_downloader as pkg
+
+REACT_DIR = Path(os.path.dirname(pkg.__file__)) / "static" / "react"
+OUTSIDE_MARKER = "PLAN045-OUTSIDE-THE-BUILD-DIRECTORY"
+
+
+def _make_app():
+    from immi_case_downloader.web import create_app
+
+    with patch.dict(os.environ, {"SECRET_KEY": "test-key"}):
+        app = create_app(backend="csv")
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    return app
+
+
+@pytest.fixture()
+def react_build(tmp_path):
+    """A minimal build dir containing one real asset and one escaping symlink."""
+    missing_root = None
+    probe = REACT_DIR
+    while not probe.exists():
+        missing_root = probe
+        probe = probe.parent
+    REACT_DIR.mkdir(parents=True, exist_ok=True)
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text(OUTSIDE_MARKER, encoding="utf-8")
+
+    created: list[Path] = []
+
+    def _write(name: str, body: str) -> Path:
+        path = REACT_DIR / name
+        if path.exists() or path.is_symlink():
+            pytest.skip(f"{path} already exists; refusing to touch a real build artifact")
+        path.write_text(body, encoding="utf-8")
+        created.append(path)
+        return path
+
+    _write("plan045-index.html", "<!doctype html><title>t</title>")
+    _write("plan045-asset.js", "console.log('INSIDE-THE-BUILD');")
+
+    link = REACT_DIR / "plan045-escape.js"
+    if link.exists() or link.is_symlink():
+        pytest.skip("symlink fixture name already taken")
+    link.symlink_to(outside)
+    created.append(link)
+
+    try:
+        yield outside
+    finally:
+        for path in created:
+            if path.is_symlink() or path.exists():
+                path.unlink()
+        if missing_root is not None:
+            shutil.rmtree(missing_root, ignore_errors=True)
+
+
+def test_serves_a_file_inside_the_build_directory(react_build):
+    """The guard must not break the legitimate case it wraps."""
+    response = _make_app().test_client().get("/plan045-asset.js")
+    assert response.status_code == 200
+    assert b"INSIDE-THE-BUILD" in response.data
+
+
+def test_rejects_a_symlink_that_escapes_the_build_directory(react_build):
+    """Before the Step 5 guard this returned 200 with the outside file's bytes."""
+    response = _make_app().test_client().get("/plan045-escape.js")
+    assert response.status_code == 404
+    assert OUTSIDE_MARKER.encode() not in response.data
+
+
+def test_encoded_traversal_never_serves_a_file_outside_the_build(react_build):
+    """Defence in depth: Werkzeug normalises most of these, the guard covers the rest."""
+    client = _make_app().test_client()
+    for path in ("/../plan045-escape.js", "/%2e%2e%2fplan045-escape.js", "/a/../../setup.py"):
+        response = client.get(path)
+        assert response.status_code != 500
+        assert OUTSIDE_MARKER.encode() not in response.data
+```
+
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  .venv/bin/python -m pytest tests/test_app_factory.py -q && make lint
+  .venv/bin/python -m pytest tests/test_spa_asset_containment.py -q && \
+  .venv/bin/python -m pytest tests/test_app_factory.py -q && \
+  .venv/bin/ruff check immi_case_downloader/ scripts/ *.py tests/test_spa_asset_containment.py
 ```
-→ all pass (some SPA cases skip when no React build is present — that is the
-existing behaviour at `tests/test_app_factory.py:160-168`), then
-`All checks passed!`
+→ `3 passed` for the new file (**and none of the three skipped** — a skip means
+the fixture refused to write and the step is unverified, which is a STOP
+condition); then `tests/test_app_factory.py` unchanged from its own baseline
+(`9 passed, 1 skipped` at `42826a3` — the skip is the pre-existing
+no-React-build case at lines 170-172); then `All checks passed!`.
+
+Sanity check that the test can actually fail: with Step 5's guard temporarily
+reverted, `test_rejects_a_symlink_that_escapes_the_build_directory` must fail
+with a 200. If it passes against the unpatched code, the fixture is not
+reaching the `app.testing` branch and the test proves nothing — STOP.
 
 ### Step 6: Add a stream-bounded body reader for the Worker
 
@@ -1305,9 +1491,13 @@ changes.
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run && \
-  ! grep -rn 'content-length' case-api/cloudflare_mutations.js case-api/cloudflare_actions.js pipeline/control_handlers.js && echo OK
+  ! git grep -n -- 'content-length' -- 'workers/case-api/cloudflare_mutations.js' \
+      'workers/case-api/cloudflare_actions.js' 'workers/pipeline/control_handlers.js' && echo OK
 ```
-→ `350 passed` (345 existing + 5 new), 0 failed, then `OK`.
+→ passed count = `WK_BEFORE + 5`, 0 failed, then `OK`. (`git grep` is used
+rather than `grep --include`: this repo's shell may alias `grep` to `ugrep`,
+which rejects `--include` with a warning and exit 0 — making the negated check
+pass vacuously.)
 
 ## Test plan
 
@@ -1322,6 +1512,9 @@ New tests, all modelled on the file next to them:
   (403 `invalid_extraction_token`) and `test_internal_extract_rejects_oversize_batch`
   (400 `bad_payload` at 21 items). Structural pattern: the existing tests in the
   same file.
+- `tests/test_spa_asset_containment.py` (new, 3 tests) — a file inside the build
+  dir is still served; a symlink escaping it 404s (this is the one that fails
+  against unpatched code); encoded traversal never serves outside content.
 - `workers/__tests__/body-limit.test.js` (new, 5 tests) — under the limit;
   oversize with **no** `content-length` (the regression this plan fixes);
   oversize via a chunked `ReadableStream`; oversize declared by header; empty
@@ -1332,37 +1525,48 @@ New tests, all modelled on the file next to them:
 
 Regression runs:
 
-- `make test-py` — the baseline at commit `42826a3` is **1141 passed, 3 failed,
-  7 skipped**. The 3 failures are environmental, not repo defects: Homebrew
-  Python 3.14.7 has a `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf`
-  import in `tests/test_backfill_judge_overrides_from_pdf.py`. Expect
-  **1147 passed, 3 failed, 7 skipped** after this plan (+3 contract, +2 internal
-  extract, +1 net from the modified file). If the failure count is anything
-  other than 3, or a failure names a file other than
-  `tests/test_backfill_judge_overrides_from_pdf.py`, that is a regression —
-  STOP.
-- `cd workers && npx vitest run` — baseline 345 passed / 25 files; expect 350
-  passed / 26 files.
-- `cd frontend && npx vitest run` — baseline 490 passed; must be unchanged
-  (this plan touches no frontend source).
-- `make lint` — `All checks passed!` both before and after.
+- `make test-py` — **delta, not an absolute**: the passed count must be exactly
+  `PY_BEFORE + 8` (+3 contract, +2 internal extract, +3 SPA containment). Do not
+  assert a total; sibling plans add tests in parallel and any figure written here
+  would be stale. The failed count must be **unchanged**, and every remaining
+  failure must still be one of the three `pypdf` `ImportError`s in
+  `tests/test_backfill_judge_overrides_from_pdf.py` — check them **by name**,
+  not by counting:
+  ```bash
+  make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort
+  ```
+  Every line must name `tests/test_backfill_judge_overrides_from_pdf.py`. Those
+  three are environmental (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI
+  mismatch breaking the `pypdf` import), not repo defects. A failure naming any
+  other file is a regression — STOP.
+- `cd workers && npx vitest run` — passed count = `WK_BEFORE + 5`, 0 failed.
+- `cd frontend && npx vitest run` — passed count = `FE_BEFORE`, unchanged (this
+  plan touches no frontend source).
+- `.venv/bin/ruff check immi_case_downloader/ scripts/ *.py` — `All checks
+  passed!` both before and after; `.venv/bin/ruff check . 2>&1 | tail -1`
+  byte-identical to `RUFF_BEFORE`.
 
 ## Done criteria
 
 ALL must hold:
 
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` reports `3 failed` and no more, and every failure is in `tests/test_backfill_judge_overrides_from_pdf.py`
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_env_example_contract.py tests/test_internal_extract.py tests/test_app_factory.py -q` exits 0
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with 0 failed and at least 350 passed
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` still reports `490 passed`
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` prints `All checks passed!`
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/ruff check tests/test_env_example_contract.py tests/test_internal_extract.py` prints `All checks passed!`
+- [ ] `make test-py 2>&1 | grep -E "^(FAILED|ERROR)"` prints only lines naming `tests/test_backfill_judge_overrides_from_pdf.py` (the three `pypdf` ImportErrors, by name — not by count), and the passed count equals `PY_BEFORE + 8`
+- [ ] `.venv/bin/python -m pytest tests/test_env_example_contract.py -q` → `3 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_internal_extract.py -q` → `4 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_spa_asset_containment.py -q` → `3 passed`, **0 skipped**
+- [ ] `.venv/bin/python -m pytest tests/test_app_factory.py -q` exits 0 with the same counts it had before this plan
+- [ ] `cd workers && npx vitest run __tests__/body-limit.test.js` → `5 passed`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` exits 0 with 0 failed and a passed count equal to `WK_BEFORE + 5`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run` passed count equals `FE_BEFORE`, unchanged
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/ruff check immi_case_downloader/ scripts/ *.py` prints `All checks passed!`
+- [ ] `.venv/bin/ruff check . 2>&1 | tail -1` is byte-identical to `RUFF_BEFORE`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/ruff check tests/test_env_example_contract.py tests/test_internal_extract.py tests/test_spa_asset_containment.py` prints `All checks passed!`
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && bash scripts/test_preflight_secrets.sh` prints `ALL PREFLIGHT TESTS PASSED` and exits 0
-- [ ] `grep -rn 'content-length' workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/pipeline/control_handlers.js` returns no matches
+- [ ] `git grep -n -- 'content-length' -- 'workers/case-api/cloudflare_mutations.js' 'workers/case-api/cloudflare_actions.js' 'workers/pipeline/control_handlers.js'` returns no matches (use `git grep`, not `grep --include` — see Step 7)
 - [ ] `grep -n 'AUTH_TOKEN' scripts/preflight_secrets.sh` matches only the explanatory comment added in Step 3, never a `REQUIRED_SECRETS=` line
 - [ ] `grep -cE 'gateway\.ai\.cloudflare\.com/v1/[0-9a-f]{8}' .env.example` returns `0`
 - [ ] `grep -n 'csrf.exempt(internal_extract_bp)' immi_case_downloader/web/internal_extract.py` still matches
-- [ ] `git status --porcelain` lists only the 12 files named in "Scope"
+- [ ] `git status --porcelain` lists only the 13 files named in "Scope" (plus any path that was already dirty when you started, recorded in the Step 0 drift check — do not clean those)
 - [ ] `plans/README.md` status row for plan 045 updated
 
 ## STOP conditions
@@ -1387,8 +1591,15 @@ Stop and report back (do not improvise) if:
   `workers/__tests__/cloudflare-mutations.test.js`. The most likely cause is
   the `{}` vs `null` fallback difference between the three helpers being lost
   in Step 7c — re-read the three replacements before retrying.
-- `make test-py` reports a failure count other than 3, or a failing test
-  outside `tests/test_backfill_judge_overrides_from_pdf.py`.
+- `make test-py` reports a failing test outside
+  `tests/test_backfill_judge_overrides_from_pdf.py`, or the failure set changes
+  in any way from the one you recorded before starting.
+- Any test in `tests/test_spa_asset_containment.py` **skips**. A skip means the
+  fixture refused to write into the React build directory, so Step 5 is
+  unverified — report it rather than accepting a green run.
+- Step 7a is reached while `plans/006-harden-auth-and-authorization.md` is
+  still in flight on `workers/case-api/cloudflare_mutations.js`. Stop and let
+  the auth plan land first (see "Depends on").
 - Step 2's contract test fails with a variable you cannot place in any
   `.env.example` section — report the name and its read site rather than
   guessing at a section or silently adding it to `UNDOCUMENTED_BY_DESIGN`.
@@ -1443,6 +1654,17 @@ For the human or agent who owns this code next:
   noisy, document the variable rather than relaxing `DIRECT_READ_RE` /
   `HELPER_READ_RE`; the whole point is that `.env.example` cannot silently fall
   behind again.
+- **Follow-up: the contract test covers Python only.** It scans
+  `immi_case_downloader/`, `scripts/` and the repo root for `os.environ` /
+  `os.getenv` / `_*_env()` reads. It does **not** see Worker `env.*` reads,
+  Wrangler `[vars]` / secret names, `import.meta.env.*` in the Vite bundle, or
+  shell/CI `env:` blocks — so those four surfaces are documented by hand and can
+  drift silently, exactly the way the Python list did. Extending it is a real
+  piece of work with its own decisions (a Worker `env.X` scanner needs a
+  destructuring-aware parse, not a regex; Wrangler names live in a TOML the
+  repo deliberately ships with placeholders). Until someone does it, both the
+  `.env.example` header and the test docstring say so explicitly — do not
+  re-describe this file as a repo-wide machine-verified inventory.
 
 ## Findings reconsidered
 

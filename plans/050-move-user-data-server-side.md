@@ -12,24 +12,36 @@
 > writing a D1 query, a Worker route, or a React data-fetching hook, you have
 > left the plan — stop and report.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A committed-history diff cannot see uncommitted,
+> staged or untracked work, so all four commands must run:
 > ```bash
-> git diff --stat 42826a3..HEAD -- docs/adr/ migrations/d1/account/ \
->   frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> SCOPE="docs/adr/0050-user-data-server-side.md migrations/d1/account/
+>   frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
+> git diff --stat -- $SCOPE                   # unstaged
+> git diff --cached --stat -- $SCOPE          # staged
 > ```
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing and no in-scope path appears in
+> `git status`. `docs/adr/` merely existing (because
+> `plans/044-retire-the-stale-planning-docs.md` owns and created it) is fine
+> and expected. If any in-scope file appears in **any** of them, treat it as a
+> STOP condition. **Never** run `git checkout --` or `git clean -f` to force a
+> clean tree — the uncommitted work is the operator's.
 >
-> **Evidence drift check (also run first)** — this plan quotes files it does not
-> own, and its whole argument rests on them:
+> **Evidence drift check (also run first, same four forms)** — this plan quotes
+> files it does not own, and its whole argument rests on them:
 > ```bash
-> git diff --stat 42826a3..HEAD -- migrations/d1/catalog/0001_catalog.sql \
->   workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js \
->   workers/storage/cloudflare.js frontend/src/types/bookmarks.ts \
->   frontend/src/types/case.ts wrangler.toml
+> EVID="migrations/d1/catalog/0001_catalog.sql
+>   workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js
+>   workers/storage/cloudflare.js frontend/src/types/bookmarks.ts
+>   frontend/src/types/case.ts scripts/transform_immi_snapshot.py wrangler.toml"
+> git diff --stat 42826a3..HEAD -- $EVID
+> git diff --stat -- $EVID
+> git diff --cached --stat -- $EVID
 > ```
-> Expected: empty output. If not empty, re-read the changed file and confirm the
+> Expected: all three empty. If not, re-read the changed file and confirm the
 > quoted excerpt still says what this plan claims before you write it into the ADR.
 
 ## Status
@@ -62,20 +74,36 @@ would repeat the exact mistake this plan is documenting.
 There is a second, time-sensitive reason. `cases.user_notes` and `cases.tags`
 are columns on the **shared, global** catalog row, and the Worker's mutation
 handler writes them. That handler is currently fail-closed
-(`IMMI_CASE_MUTATIONS_ENABLED = "false"`), so no data exists yet. The moment an
-operator flips that flag, tenant A's private note on a case silently overwrites
-tenant B's. Deciding now — while the fix costs one schema decision and zero data
-migration — is far cheaper than deciding after the flag is on.
+(`IMMI_CASE_MUTATIONS_ENABLED = "false"`), so no data has arrived through *that*
+path. The moment an operator flips that flag, tenant A's private note on a case
+silently overwrites tenant B's.
+
+**What that flag does not tell you.** An earlier draft of this plan inferred
+from the flag that the two columns are empty. That inference does not hold, and
+Step 2 must not repeat it. There is a second write path with no flag on it:
+`scripts/transform_immi_snapshot.py:267` carries `tags` and `user_notes`
+straight from the source snapshot into the D1 catalog INSERT
+(the column list is at `:280-281`), and `scripts/export_immi_ndjson.py` exports
+them too. So whatever the legacy Postgres corpus held in those columns may
+already be sitting in `IMMI_CATALOG_DB` today, imported before the mutation flag
+was ever relevant. Whether that content is user-authored notes, extraction
+output, or empty strings is **unknown until someone counts** — and the answer
+changes the decision from "free, no migration" to "there is existing data with a
+provenance question". Step 2a makes the count a precondition rather than an
+assumption.
 
 ## Current state
 
 ### The files this plan touches
 
-- `docs/adr/` — **does not exist yet.** `ls -d docs/adr` returns
-  `No such file or directory`. `docs/` currently holds `ARCHITECTURE.md`,
+- `docs/adr/` — did not exist at `42826a3`. `docs/` held `ARCHITECTURE.md`,
   `HYPERDRIVE_CACHE_RFC.md`, `JUDGE_DATA_QUALITY.md`, `UPLOAD_JUDGE_PHOTOS.md`,
-  and the `ops/`, `plans/`, `screenshots/` directories. There is no existing ADR
-  convention in this repo — this plan establishes one.
+  and the `ops/`, `plans/`, `screenshots/` directories. **The directory and its
+  conventions are owned by `plans/044-retire-the-stale-planning-docs.md`**,
+  which creates `docs/adr/README.md`, `docs/adr/TEMPLATE.md` and ADRs 0001–0003.
+  This plan does **not** establish the convention and does **not** write an
+  index; it contributes exactly one file, `docs/adr/0050-user-data-server-side.md`.
+  Finding the directory already present is normal.
 - `frontend/src/hooks/use-bookmarks.ts` — the entire bookmarks + collections
   store, `localStorage`-backed via `useSyncExternalStore`. 227 lines.
 - `frontend/src/lib/saved-searches.ts` — the entire saved-search store,
@@ -270,8 +298,34 @@ IMMI_CASE_MUTATIONS_ENABLED = "false"
 CUTOVER_WRITE_FREEZE = "false"
 ```
 
-So: writes are fail-closed today, no user has ever written a note through this
-path, and the columns are empty. That is exactly why this is free to decide now.
+So no user has written a note through **the mutation route**. That is not the
+same as "the columns are empty", and the ADR must not say it is.
+
+### The second write path, which has no flag
+
+`scripts/transform_immi_snapshot.py:267` (verbatim, the values tuple of the
+catalog INSERT):
+
+```python
+            string(row.get("text_snippet")) or text[:500], string(row.get("tags")), string(row.get("user_notes")),
+```
+
+and its column list at `:280-281`:
+
+```python
+              is_represented,representative,source,case_nature,url,catchwords,legislation,text_snippet,tags,
+              user_notes,visa_outcome_reason,legal_test_applied,last_extraction_run_id,extraction_confidence_json,
+```
+
+`scripts/export_immi_ndjson.py` carries the same two fields out of the source
+snapshot. Neither script consults `IMMI_CASE_MUTATIONS_ENABLED` — that flag
+gates `dispatchCloudflareCaseMutation` in the Worker, not a bulk import run by
+an operator. So the live D1 catalog may already hold non-empty `tags` /
+`user_notes` inherited from the Supabase-era corpus.
+
+**Nobody has counted.** The executor cannot: it has no production D1
+credentials. That is precisely why Step 2a turns the count into an
+operator-run precondition and forbids the ADR from asserting emptiness.
 
 ### The exemplar to model the CRUD surface on
 
@@ -501,14 +555,26 @@ Quoted from `CLAUDE.md` and the repo's own code, because you have not read them:
 
 Run from the repo root unless the command says otherwise.
 
+**Record baselines first; this plan asserts that nothing moved, not that any
+particular total was reached.** Sibling plans add tests in parallel, so an
+absolute figure written here would be wrong on arrival:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+(cd frontend && npx vitest run 2>&1 | tail -3)         # -> FE_BEFORE
+(cd workers  && npx vitest run 2>&1 | tail -3)         # -> WK_BEFORE
+make test-py 2>&1 | tail -1                            # -> PY_BEFORE
+make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort   # -> PY_FAIL_BEFORE (named failures)
+```
+
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0, no output (~6s) |
 | Frontend lint (scoped) | `cd frontend && npx eslint src/hooks/use-bookmarks.ts src/lib/saved-searches.ts` | exit 0 and `✖ 1 problem (0 errors, 1 warning)` — see note below |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed`, 55 files |
-| Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files |
-| Python tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` — see note below |
-| Python lint | `make lint` | `All checks passed!` |
+| Frontend tests | `cd frontend && npx vitest run` | `FE_BEFORE` passed, **unchanged** (this plan runs no runtime code) |
+| Worker tests | `cd workers && npx vitest run` | `WK_BEFORE` passed, **unchanged** |
+| Python tests | `make test-py` | `PY_BEFORE` passed, **unchanged**, and the failure set identical to `PY_FAIL_BEFORE` — see note below |
+| Python lint | `.venv/bin/ruff check immi_case_downloader/ scripts/ *.py` | `All checks passed!` (spelled out rather than `make lint`: `plans/001` Step 3 turns `lint:` into `lint: lint-py lint-fe`) |
 | Scope check | `git status --short` | only the in-scope files, plus pre-existing ` M .claude/STATE.md` |
 
 **Note on the 1 eslint warning**: it is pre-existing and expected.
@@ -537,13 +603,19 @@ Python must run through the repo venv: `.venv/bin/python`, `.venv/bin/pytest`,
 
 **In scope** (the only files you may create or modify):
 
-- `docs/adr/README.md` (create)
-- `docs/adr/0001-user-data-persistence.md` (create)
+- `docs/adr/0050-user-data-server-side.md` (create — the **only** file you may
+  add under `docs/adr/`)
 - `frontend/src/hooks/use-bookmarks.ts` (add a comment block only — no code change)
 - `frontend/src/lib/saved-searches.ts` (add a comment block only — no code change)
 
 **Out of scope** (do NOT touch, even though they look directly related):
 
+- `docs/adr/README.md` and `docs/adr/TEMPLATE.md` — owned by `plans/044`. Do
+  not create them, append to them, or reformat them. Your index row is added by
+  044 when it lands (see "Maintenance notes").
+- **Production data.** Step 1a is a **read-only** inventory, run by the
+  operator. This plan issues no `UPDATE`, `DELETE`, `ALTER` or migration
+  against any database, and must not be read as authorising one.
 - `migrations/d1/account/0001_account.sql` **and any new file under
   `migrations/d1/account/`.** This plan has permission to write there and
   deliberately does not. Adding a `0002_*.sql` that no code reads would create a
@@ -572,40 +644,92 @@ Python must run through the repo venv: `.venv/bin/python`, `.venv/bin/pytest`,
   conventional commits, matching `git log` (e.g. `fix: install root node_modules
   in make install`). Suggested messages:
   - `docs: record the ADR for server-side user data`
-  - `docs: point the localStorage stores at ADR 0001`
+  - `docs: point the localStorage stores at ADR 0050`
 - Do **not** push, do **not** open a PR, do **not** merge. The operator commits
   and ships.
 
 ## Steps
 
-### Step 1: Create the ADR directory and its README
+### Step 1: Make the ADR directory available (no index file)
 
-`docs/adr/` does not exist. Create it along with `docs/adr/README.md` containing
-exactly this content — it establishes the convention for every later ADR:
-
-```markdown
-# Architecture Decision Records
-
-Each file records one decision that is expensive to reverse: the context that
-forced it, the options weighed, the choice, and what it costs.
-
-Naming: `NNNN-kebab-slug.md`, numbered in the order decisions were made.
-
-Status values: `Proposed` | `Accepted` | `Superseded by NNNN` | `Rejected`.
-Never edit a decision after it is Accepted — write a new ADR that supersedes it,
-so the reasoning behind the old choice stays readable.
-
-| ADR | Title | Status |
-|---|---|---|
-| [0001](0001-user-data-persistence.md) | Where bookmarks, collections and saved searches live | Proposed |
+```bash
+mkdir -p docs/adr
 ```
 
-**Verify**: `ls docs/adr/README.md && head -1 docs/adr/README.md`
-→ prints the path, then `# Architecture Decision Records`
+That is the whole step. **Do not create `docs/adr/README.md` or
+`docs/adr/TEMPLATE.md`.** ADR numbering is centrally assigned:
+`plans/044-retire-the-stale-planning-docs.md` **owns** `docs/adr/`, creating the
+directory, the index, the template and ADRs 0001–0003. This plan's assigned
+file is `docs/adr/0050-user-data-server-side.md` and nothing else. An earlier
+draft wrote its own `README.md` and claimed `0001`, colliding with two sibling
+plans doing the same thing — that collision is what forced central assignment.
+The directory already existing is the normal case, not a STOP condition.
+
+**Verify**:
+```bash
+test -d docs/adr && git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md
+```
+→ the directory exists and `git status` prints **nothing** for those two paths.
+
+### Step 1a: Inventory the existing `tags` / `user_notes` data (operator-run)
+
+**This is a precondition for Decision 4, not a formality.** Decision 4 says
+"the migration cost is literally zero today". That claim rests on the columns
+being empty, which nobody has verified — and the import path at
+`scripts/transform_immi_snapshot.py:267` can have filled them without ever
+touching the mutation flag (see "The second write path").
+
+You almost certainly cannot run this yourself: it needs production D1 access.
+Ask the operator to run it and give you the numbers. If they cannot or will
+not, **the ADR must record the counts as UNKNOWN and Decision 4 must be
+downgraded from "free now" to "requires a data inventory first"** — do not
+paper over a missing measurement with an assumption.
+
+```bash
+# Read-only. Against the production catalog D1.
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --command "
+  SELECT
+    COUNT(*)                                                   AS total_cases,
+    SUM(CASE WHEN COALESCE(tags,'')       <> '' THEN 1 ELSE 0 END) AS with_tags,
+    SUM(CASE WHEN COALESCE(user_notes,'') <> '' THEN 1 ELSE 0 END) AS with_notes
+  FROM cases;"
+
+# If either count is non-zero, sample 20 rows to judge PROVENANCE — are these
+# user-authored notes, or extraction/curation output that merely lives in a
+# badly-named column?
+npx wrangler d1 execute IMMI_CATALOG_DB --remote --command "
+  SELECT case_id, substr(tags,1,80) AS tags, substr(user_notes,1,120) AS user_notes
+  FROM cases WHERE COALESCE(user_notes,'') <> '' OR COALESCE(tags,'') <> '' LIMIT 20;"
+```
+
+Also count what the **source snapshot** carried, since that is where any
+existing content came from — the operator runs this wherever the snapshot lives:
+`grep -c '"user_notes": "[^"]' <snapshot>.ndjson` (or the equivalent against the
+CSV corpus).
+
+Then record, in the ADR's Context, all four of:
+
+1. `total_cases`, `with_tags`, `with_notes` from the live catalog, **with the
+   date measured** — or the word UNKNOWN and why.
+2. Whether the sampled content reads as user-authored or as extraction output.
+3. Whether any of it can be attributed to a tenant or owner. (It cannot: the
+   `cases` row has no tenant column. That is the finding, and it means any
+   existing note is already un-attributable — which strengthens Decision 4
+   rather than weakening it.)
+4. Whether the operator has taken a backup before any later plan migrates or
+   drops these columns. `CLAUDE.md`'s production-cleanup rule applies in full:
+   add a `<col>_backup` column and copy into it **before** any bulk write, and
+   dry-run on `LIMIT 100` with eyeballed output.
+
+**Nothing in this plan changes the data.** Step 1a only makes the later
+decision honest about what is there.
+
+**Verify**: the ADR's Context contains the three counts (or an explicit
+UNKNOWN with the reason), and Decision 4's cost claim matches them.
 
 ### Step 2: Write the ADR
 
-Create `docs/adr/0001-user-data-persistence.md`. Write it in English. It must
+Create `docs/adr/0050-user-data-server-side.md`. Write it in English. It must
 contain these sections, with the substance given below. You are transcribing and
 formatting a decision that has already been made — do not invent new options,
 and do not soften any of the numbered decisions.
@@ -613,7 +737,7 @@ and do not soften any of the numbered decisions.
 Every file:line reference you write must be one that appears in this plan. Do
 not add references you have not personally opened and confirmed.
 
-**Front matter** — a `# ADR 0001: Where bookmarks, collections and saved searches
+**Front matter** — a `# ADR 0050: Where bookmarks, collections and saved searches
 live` heading, then a status block:
 
 ```
@@ -728,10 +852,37 @@ State the four binding constraints, each with its evidence:
   CSRF → JWT → `assertMembership` — copied from
   `workers/case-api/cloudflare_actions.js:41-53`. Do not write a new gate.
 - Every read store method calls `await this.assertMembership(auth)` on its first
-  line and carries `WHERE tenant_id = ?`, exactly like
-  `workers/storage/cloudflare.js:1508-1520`. Tenant isolation here is app-layer;
-  a method that forgets the call is a real cross-tenant leak, with no RLS
-  backstop (`workers/storage/cloudflare.js:1300-1314`).
+  line, exactly like `workers/storage/cloudflare.js:1508-1520`. Tenant isolation
+  here is app-layer; a method that forgets the call is a real cross-tenant leak,
+  with no RLS backstop (`workers/storage/cloudflare.js:1300-1314`).
+- **Every predicate is `WHERE tenant_id = ? AND owner_id = ?`, not `tenant_id`
+  alone.** This is a decision, made here, and it is the correction to an
+  earlier draft that copied `listCouncilSessions`' `tenant_id`-only predicate
+  while simultaneously deferring the private-versus-shared question to
+  "follow-on decisions". Those two together are not a deferral — they are a
+  silent choice of *shared*, and the wrong one: every member of a tenant would
+  see every other member's bookmarks, collections and saved searches, on a
+  product whose primary user is a self-representing applicant whose personal
+  tenant is created for them at first login
+  (`CloudflareIdentityStore.upsertTelegramUser()`). A private-by-default store
+  can be opened up later; data that has already leaked between members cannot
+  be un-seen.
+
+  Both `collections` and `saved_searches` already carry `owner_id`
+  (`migrations/d1/account/0001_account.sql:56-87`) and the proposed `bookmarks`
+  table is keyed on `(tenant_id, owner_id, case_id)`, so the column exists — the
+  earlier draft simply did not use it. `collection_items` has no owner of its
+  own and must be reached **through its parent**: every read and write joins
+  `collections` and re-checks `(tenant_id, owner_id)` there. A route that
+  accepts a `collection_id` and trusts it is a direct object reference
+  vulnerability.
+
+  If sharing within a tenant is wanted later, it needs its own ADR and at
+  minimum: an explicit visibility column or ACL table, a definition of which
+  membership `role`s may read another member's rows
+  (`memberships.role` is already selected by `assertMembership`), and
+  parent-resource checks on every nested route. Do **not** approximate it by
+  widening a predicate.
 - `PUT …/items` replaces the whole ordered list rather than exposing
   per-item reorder endpoints, so `Collection.case_order` round-trips in one
   atomic D1 batch and drag-reorder in the SPA cannot half-apply.
@@ -751,14 +902,49 @@ Decide, and record the reasoning:
   Query, and filter-dependent hooks use `placeholderData`/`keepPreviousData` per
   the repo convention.
 - On the **first** login on a given browser, offer a one-way import of whatever
-  is in `immi-bookmarks` and `saved-searches` into the tenant, then mark the
-  local keys imported. Never merge in the other direction, and never
-  auto-import silently — the applicant must see what is being uploaded.
+  is in `immi-bookmarks` and `saved-searches` into the tenant. Never merge in
+  the other direction, and never auto-import silently.
+
+  Spell out the mechanics; "offer an import" is not a specification, and every
+  one of the following exists because its absence is a way to lose the user's
+  research:
+
+  - **Dry-run preview first.** The client posts the payload to a preview
+    endpoint (or a `?dry_run=1` variant) that returns what *would* be created,
+    what already exists, and what conflicts — and writes nothing. The applicant
+    approves that summary before anything is uploaded. This is the whole
+    difference between "an import" and "an irreversible action a stressed user
+    clicked through".
+  - **Idempotency key.** The client generates one key per import attempt and
+    sends it on both the preview and the commit. The server stores it and
+    returns the original result for a repeat. Without it, a flaky connection
+    plus a retry is a duplicated collection set, and the user's first
+    impression of the server-side feature is that it doubled their data.
+  - **Conflict policy, decided not deferred.** Server rows win on any
+    collision; a colliding local item is imported under a suffixed title
+    (`"<name> (imported)"`) rather than being merged or dropped. Merging needs
+    field-level semantics nobody has defined; dropping loses work silently.
+  - **Server-side completion marker, namespaced by `(tenant_id, owner_id)`.**
+    A `localStorage` flag is not a marker: the same user on a second browser
+    would be offered the import again and would re-upload. The server records
+    that this owner has completed an import, and the client asks.
+  - **Rollback.** The commit writes under one batch id; a single
+    "undo this import" removes exactly the rows that batch created. An import
+    with no undo is a one-way door on the user's own data.
+  - **The local copy is not deleted.** Keep `immi-bookmarks` and
+    `saved-searches` in place until the client has re-read the imported data
+    back from the server and confirmed the counts match. Only then mark them
+    imported — and even then, prefer renaming the keys (e.g.
+    `immi-bookmarks.imported-<date>`) over `removeItem`, because the failure
+    mode being defended against is exactly a write that appeared to succeed.
 - **Rejected: two-way sync.** It needs per-field conflict resolution and
   vector clocks for a single-user-per-tenant workload. Cost is not repaid.
 - **Rejected: leave it in `localStorage` and just surface the errors.** It does
   not survive a device change or a cleared cache, which is the actual failure
   the user reports.
+- **Rejected: silent auto-import on first login.** The applicant must see what
+  is being uploaded and to which account; this is their case research, and the
+  product's whole claim is that it is trustworthy with it.
 
 **## Decision 4 — Per-case notes and tags move to tenant-scoped tables; the
 shared catalog columns become extraction output only**
@@ -777,9 +963,30 @@ and `cases.tags` are reclassified as extraction/curation output owned by the
 pipeline, not user input, and the SPA must stop offering them as a
 user-editable field once the bookmark note ships.
 
-State why now: `IMMI_CASE_MUTATIONS_ENABLED = "false"` (`wrangler.toml:92`)
-means the columns have never received a user write. The migration cost is
-literally zero today and grows with every write after the flag flips.
+State why now, **using the Step 1a numbers and not an assumption**:
+`IMMI_CASE_MUTATIONS_ENABLED = "false"` (`wrangler.toml:92`) means the columns
+have never received a write **through the mutation route** — but
+`scripts/transform_immi_snapshot.py:267` imports both columns from the source
+snapshot with no flag involved, so the live catalog may already hold content.
+Write the measured counts here. Then state the cost honestly, in whichever form
+the measurement supports:
+
+- **`with_notes = 0` and `with_tags = 0`** → the migration cost is zero today
+  and grows with every write after the flag flips. Decide now.
+- **either count is non-zero** → there is existing content whose provenance must
+  be classified before anything moves. It is already un-attributable (the
+  `cases` row has no tenant column), so it cannot be migrated *to* a tenant;
+  the choice is between keeping it as pipeline-owned curation output under a
+  clearer name and discarding it. Either way a backup column comes first, per
+  `CLAUDE.md`'s production-cleanup rule.
+- **UNKNOWN** → say so, and downgrade the decision to "reclassification agreed
+  in principle, blocked on a data inventory". An ADR that asserts zero cost
+  without a count is the kind of claim that gets discovered wrong during the
+  migration.
+
+Whatever the counts, the *design* decision stands: a shared, global row cannot
+hold per-tenant user input, so notes and tags belong in the tenant-scoped
+tables. Only the cost and sequencing depend on the measurement.
 
 **## Consequences**
 
@@ -790,26 +997,31 @@ literally zero today and grows with every write after the flag flips.
   meaning the SPA carries two data sources for a while.
 - What stays broken until an implementer picks this up: everything in Context.
   This ADR ships no behaviour.
-- Follow-on decisions deliberately **not** made here: whether collections are
-  shareable across a tenant's members or private to `owner_id`; whether saved
-  searches support scheduled re-execution; rate limits on the new write routes.
+- Follow-on decisions deliberately **not** made here: whether saved searches
+  support scheduled re-execution; rate limits on the new write routes.
+- **Private-versus-shared is decided here, not deferred** (Decision 2): all
+  three resources are private to `(tenant_id, owner_id)`. Opening them up
+  within a tenant needs its own ADR with an explicit visibility model, a role
+  matrix, and parent-resource checks — it is not a predicate widening. Listing
+  this as an open question while prescribing `tenant_id`-only queries, as an
+  earlier draft did, would have shipped tenant-wide sharing by accident.
 
 **Verify**:
 ```bash
-test -f docs/adr/0001-user-data-persistence.md && \
-grep -c "^## " docs/adr/0001-user-data-persistence.md
+test -f docs/adr/0050-user-data-server-side.md && \
+grep -c "^## " docs/adr/0050-user-data-server-side.md
 ```
 → prints a number `>= 7` (Context, Decision 1–4, Consequences, plus any others)
 
 And confirm every decision is present:
 ```bash
-grep -c "^## Decision" docs/adr/0001-user-data-persistence.md
+grep -c "^## Decision" docs/adr/0050-user-data-server-side.md
 ```
 → `4`
 
 And confirm the false claim was not reproduced:
 ```bash
-grep -in "buys the user nothing\|buys nothing" docs/adr/0001-user-data-persistence.md
+grep -in "buys the user nothing\|buys nothing" docs/adr/0050-user-data-server-side.md
 ```
 → no output other than the correction sentence in Context item 5, if you phrased
 it using those words; if it appears anywhere as an assertion rather than a
@@ -828,7 +1040,7 @@ Change nothing else in the file:
  *
  * Client-only by design today, not by oversight. The server-side replacement —
  * the D1 tables, the Worker CRUD surface, and the one-way import performed on
- * first login — is decided in `docs/adr/0001-user-data-persistence.md`.
+ * first login — is decided in `docs/adr/0050-user-data-server-side.md`.
  *
  * Read that ADR before adding a field here: the shapes in this file are the
  * migration source, so every new field becomes another column to carry across,
@@ -862,7 +1074,7 @@ else in the file:
  * Client-only by design today, not by oversight. The server-side replacement —
  * `saved_searches` in IMMI_ACCOUNT_DB, the Worker CRUD surface, and the one-way
  * import performed on first login — is decided in
- * `docs/adr/0001-user-data-persistence.md`.
+ * `docs/adr/0050-user-data-server-side.md`.
  *
  * Note the failure mode that ADR exists to remove: `loadSavedSearches` deletes
  * the storage key when the payload is not an array, and `saveSavedSearches`
@@ -900,30 +1112,38 @@ baseline exactly.
 ```bash
 cd frontend && npx vitest run 2>&1 | tail -5
 ```
-→ `490 passed`, 55 test files
+→ `FE_BEFORE` passed, unchanged
 
 ```bash
 cd workers && npx vitest run 2>&1 | tail -5
 ```
-→ `345 passed`, 25 test files
+→ `WK_BEFORE` passed, unchanged
 
 ```bash
 make test-py 2>&1 | tail -3
 ```
-→ `1141 passed, 3 failed, 7 skipped` (the 3 are the pre-existing pyexpat/pypdf
+→ `PY_BEFORE` passed, unchanged, with the failure set identical to
+`PY_FAIL_BEFORE` (the pre-existing pyexpat/pypdf
 environmental failures — see "Commands you will need")
 
 ```bash
-make lint
+.venv/bin/ruff check immi_case_downloader/ scripts/ *.py
 ```
 → `All checks passed!`
 
 ```bash
-git status --short
+git status --porcelain --untracked-files=all
 ```
 → exactly: `M frontend/src/hooks/use-bookmarks.ts`,
-`M frontend/src/lib/saved-searches.ts`, `?? docs/adr/`, `?? plans/` (this plan
-file), and the pre-existing ` M .claude/STATE.md`. Nothing else.
+`M frontend/src/lib/saved-searches.ts`,
+`?? docs/adr/0050-user-data-server-side.md`, `?? plans/…` (this plan file), and
+whatever was already dirty when you ran the drift check (at `42826a3` that was
+` M .claude/STATE.md`, which is not yours — leave it). Nothing else.
+
+`--untracked-files=all` matters here: the plain form collapses a new directory
+to `?? docs/adr/`, which hides whether you also created `README.md` there.
+`docs/adr/README.md` and `docs/adr/TEMPLATE.md` must not appear — if 044 landed
+first they are tracked and unmodified, so they will not.
 
 ## Test plan
 
@@ -933,10 +1153,10 @@ would lock prose in place and break on every legitimate edit to the ADR.
 
 What must be proven instead is that nothing regressed:
 
-- `cd frontend && npx vitest run` → `490 passed` across 55 files, unchanged from
-  the `42826a3` baseline.
-- `cd workers && npx vitest run` → `345 passed` across 25 files, unchanged.
-- `make test-py` → `1141 passed, 3 failed, 7 skipped`, unchanged (the 3 failures
+- `cd frontend && npx vitest run` → `FE_BEFORE` passed, unchanged.
+- `cd workers && npx vitest run` → `WK_BEFORE` passed, unchanged.
+- `make test-py` → `PY_BEFORE` passed, unchanged, failure set identical to
+  `PY_FAIL_BEFORE` (the failures
   are environmental and pre-existing).
 - `cd frontend && npx tsc -b --noEmit` → exit 0 over 169 source files.
 - `cd frontend && npx eslint src/hooks/use-bookmarks.ts src/lib/saved-searches.ts`
@@ -952,23 +1172,28 @@ section; do not write them here.
 
 Machine-checkable. ALL must hold:
 
-- [ ] `test -f docs/adr/README.md` exits 0
-- [ ] `test -f docs/adr/0001-user-data-persistence.md` exits 0
-- [ ] `grep -c "^## Decision" docs/adr/0001-user-data-persistence.md` prints `4`
-- [ ] `grep -q "0001_account.sql:56-87" docs/adr/0001-user-data-persistence.md` exits 0
-- [ ] `grep -q "0001_catalog.sql:31-32" docs/adr/0001-user-data-persistence.md` exits 0
-- [ ] `grep -q "PROPOSED, NOT APPLIED" docs/adr/0001-user-data-persistence.md` exits 0
-- [ ] `grep -q "docs/adr/0001-user-data-persistence.md" frontend/src/hooks/use-bookmarks.ts` exits 0
-- [ ] `grep -q "docs/adr/0001-user-data-persistence.md" frontend/src/lib/saved-searches.ts` exits 0
+- [ ] `test -f docs/adr/0050-user-data-server-side.md` exits 0
+- [ ] `git status --short -- docs/adr/README.md docs/adr/TEMPLATE.md` prints nothing (plan 044 owns both; you neither created nor edited them)
+- [ ] `git status --porcelain --untracked-files=all -- docs/adr` lists **only** `docs/adr/0050-user-data-server-side.md`
+- [ ] `grep -c "^## Decision" docs/adr/0050-user-data-server-side.md` prints `4`
+- [ ] `grep -q "owner_id" docs/adr/0050-user-data-server-side.md` exits 0 and the Decision 2 constraint reads `tenant_id = ? AND owner_id = ?` — a `tenant_id`-only predicate is a silent choice of tenant-wide sharing
+- [ ] `grep -q "transform_immi_snapshot.py:267" docs/adr/0050-user-data-server-side.md` exits 0 (the second, unflagged write path is recorded)
+- [ ] Decision 4's cost claim matches the Step 1a counts — or says UNKNOWN and why. It must **not** assert the columns are empty on the strength of `IMMI_CASE_MUTATIONS_ENABLED` alone
+- [ ] `grep -q "idempotency" docs/adr/0050-user-data-server-side.md` exits 0 (the import flow's mechanics are specified, not gestured at)
+- [ ] `grep -q "0001_account.sql:56-87" docs/adr/0050-user-data-server-side.md` exits 0
+- [ ] `grep -q "0001_catalog.sql:31-32" docs/adr/0050-user-data-server-side.md` exits 0
+- [ ] `grep -q "PROPOSED, NOT APPLIED" docs/adr/0050-user-data-server-side.md` exits 0
+- [ ] `grep -q "docs/adr/0050-user-data-server-side.md" frontend/src/hooks/use-bookmarks.ts` exits 0
+- [ ] `grep -q "docs/adr/0050-user-data-server-side.md" frontend/src/lib/saved-searches.ts` exits 0
 - [ ] `ls migrations/d1/account/` lists exactly `0001_account.sql` and nothing else
 - [ ] `git diff --numstat -- frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts`
       shows `0` in the deletions column for both files
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
 - [ ] `cd frontend && npx eslint src/hooks/use-bookmarks.ts src/lib/saved-searches.ts` exits 0 with `0 errors, 1 warning`
-- [ ] `cd frontend && npx vitest run` reports `490 passed`
-- [ ] `cd workers && npx vitest run` reports `345 passed`
-- [ ] `make test-py` reports `1141 passed, 3 failed, 7 skipped`
-- [ ] `make lint` prints `All checks passed!`
+- [ ] `cd frontend && npx vitest run` reports `FE_BEFORE` passed, unchanged
+- [ ] `cd workers && npx vitest run` reports `WK_BEFORE` passed, unchanged
+- [ ] `make test-py` reports `PY_BEFORE` passed and `make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort` is identical to `PY_FAIL_BEFORE` (still exactly the three `pypdf` ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`, by name)
+- [ ] `.venv/bin/ruff check immi_case_downloader/ scripts/ *.py` prints `All checks passed!`
 - [ ] `git status --short` shows no modified file outside the in-scope list
 - [ ] `git diff --quiet -- workers/ migrations/ wrangler.toml Makefile` exits 0
 
@@ -985,10 +1210,17 @@ Stop and report back (do not improvise) if:
 - `migrations/d1/account/` already contains a `0002_*.sql`. The "no second
   unused schema" argument in Decision 1 no longer holds and the decision needs
   rethinking, not patching.
-- `wrangler.toml` no longer reads `IMMI_CASE_MUTATIONS_ENABLED = "false"`. The
-  "free to fix now" argument in Decision 4 depends on it — if writes were
-  enabled, `cases.user_notes` may already hold real cross-tenant data and the
-  decision needs a data-migration section this plan does not contain.
+- `wrangler.toml` no longer reads `IMMI_CASE_MUTATIONS_ENABLED = "false"`. If
+  writes were enabled, `cases.user_notes` may hold real cross-tenant data and
+  Decision 4 needs a data-migration section this plan does not contain.
+- The Step 1a inventory reports a non-zero `with_notes` or `with_tags` **and**
+  the sampled content reads as user-authored. That is existing, already
+  un-attributable user data on a shared row — a materially different problem
+  from the one this plan scoped, and it needs a migration/retention decision
+  before Decision 4 can claim any cost at all. Report the counts and stop.
+- You are tempted to run the Step 1a queries yourself against production, or to
+  turn any of them into an `UPDATE`. They are the operator's to run and they
+  are read-only. This plan changes no data.
 - A `bookmarks` table has appeared in any migration under `migrations/`.
 - You conclude the schema delta must be written as a real `.sql` file now. That
   contradicts the explicit Out-of-scope entry — report the reasoning, do not
@@ -997,18 +1229,37 @@ Stop and report back (do not improvise) if:
   `0 errors, 1 warning`, or the deletions column of
   `git diff --numstat` on either file is non-zero. Either means you changed code,
   not just comments.
-- Any test count moves off `490` / `345` / `1141 passed, 3 failed, 7 skipped`.
+- Any test count moves off `FE_BEFORE` / `WK_BEFORE` / `PY_BEFORE`, or the
+  Python failure set differs from `PY_FAIL_BEFORE`. This plan writes only
+  Markdown and comments; any movement means you changed code.
 - A step's verification fails twice after a reasonable fix attempt.
 
 ## Maintenance notes
 
 For the human or agent who owns this next:
 
+- **`docs/adr/README.md` is owned by plan 044; add the index row there when 044
+  lands.** The row is
+  `| [0050](0050-user-data-server-side.md) | Where bookmarks, collections and saved searches live | Proposed |`.
+  This plan writes no index and no template.
 - **What a reviewer should scrutinise**: that the ADR's gap table matches the SQL
   and the TypeScript types as they actually are — that table is the whole value
   of this plan, and it is the part that silently rots. Re-run
   `grep -rn "collection_items\|saved_searches" workers/` before approving; if it
   now returns hits, the ADR is describing a world that no longer exists.
+  Also check two things a reviewer would otherwise wave through: that every
+  read predicate in Decision 2 is `tenant_id AND owner_id` (a `tenant_id`-only
+  predicate silently makes one member's research visible to every other member
+  of the tenant), and that Decision 4's cost claim cites the Step 1a counts
+  rather than inferring emptiness from `IMMI_CASE_MUTATIONS_ENABLED`.
+- **The Step 1a inventory is the thing most likely to be skipped.** It needs
+  production D1 access the executor does not have, so the path of least
+  resistance is to assume zero and write a confident ADR. If the counts are
+  UNKNOWN, the ADR must say UNKNOWN — an implementer who later discovers
+  existing content in `cases.user_notes` will have built on a false premise,
+  and `CLAUDE.md`'s production-cleanup rule (backup column, `LIMIT 100`
+  eyeballed dry run) exists precisely because that has already happened once in
+  this repo (see `docs/JUDGE_DATA_QUALITY.md`).
 - **The next change that interacts with this**: any edit to
   `frontend/src/types/bookmarks.ts` or the `SavedSearch` interface at
   `frontend/src/types/case.ts:375-382` adds a row to the migration gap. The

@@ -3,25 +3,44 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- frontend/src/hooks/use-theme-preset.ts frontend/__tests__/theme-preset.test.ts
+> P="frontend/src/hooks/use-theme-preset.ts frontend/__tests__/theme-preset.test.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
-> Expected: **no output** (nothing changed since this plan was written).
-> If either file changed, compare the "Current state" excerpts below against the
-> live code before proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing, and `git status --short` lists no
+> in-scope path. If either file appears in **any** of them, compare the
+> "Current state" excerpts below against the live code before proceeding; on a
+> mismatch, treat it as a STOP condition.
 >
 > Also check the read-only reference files this plan depends on — their drift
 > invalidates the hex values in Step 1 and Step 2:
 > ```bash
-> git diff --stat 42826a3..HEAD -- frontend/src/tokens/tokens.json frontend/src/tokens/tokens.css frontend/src/pages/DesignTokensPage.tsx
+> R="frontend/src/tokens/tokens.json frontend/src/tokens/tokens.css frontend/src/pages/DesignTokensPage.tsx"
+> git diff --stat 42826a3..HEAD -- $R
+> git diff --stat -- $R
+> git diff --cached --stat -- $R
 > ```
-> Expected: **no output**.
+> Expected: **no output** from all three.
+>
+> If `frontend/src/pages/DesignTokensPage.tsx` is the *only* file listed and its
+> `getBaseColor()` body still matches the excerpt in "Current state", that is
+> `plans/025-remove-internal-tooling-from-prod.md` having landed first — which
+> it should not have (see Status). Only the line numbers moved. Re-locate
+> `getBaseColor` by name, confirm the body is unchanged, and continue; report
+> the out-of-order execution.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
@@ -29,6 +48,16 @@
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: `plans/001-restore-the-frontend-compile-gate.md`
+- **Must run BEFORE** these two, both of which are blocked on it:
+  - `plans/022-fix-contrast-tokens.md` — 022 changes four `tokens.json` values
+    that Step 1 below copies verbatim into the `parchment` preset, and Step 5's
+    test asserts an exact match against `tokens.json`. If 022 lands first, that
+    test fails on arrival. 022's Step 9 assumes this ordering and re-syncs the
+    four values afterwards.
+  - `plans/025-remove-internal-tooling-from-prod.md` — 025 deletes ~176 lines
+    from `frontend/src/pages/DesignTokensPage.tsx`, which this plan's drift
+    check requires to be unmodified and whose `getBaseColor()` (cited at
+    `:264-274`) constrains the type change in Step 3.
 - **Category**: direction
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -322,12 +351,19 @@ unless the command itself changes directory.
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Frontend typecheck (working form) | `cd frontend && npx tsc -b --noEmit` | exit 0, no output (first run can take several minutes) |
-| Run only this plan's test | `cd frontend && npx vitest run __tests__/theme-preset.test.ts` | `Test Files 1 passed (1)`, `Tests 9 passed (9)` |
-| Full frontend unit suite | `cd frontend && npx vitest run` | baseline is `490 passed`, 55 files; after this plan `499 passed`, 56 files |
+| Run only this plan's test | `cd frontend && npx vitest run __tests__/theme-preset.test.ts` | `Test Files 1 passed (1)`, `Tests 9 passed (9)` — a **per-file** count, which is stable regardless of what sibling plans land |
+| Full frontend unit suite | `cd frontend && npx vitest run` | **0 failed**, and `Tests passed` == `FE_BEFORE + 9` (`FE_BEFORE` recorded in Step 0) |
 | Frontend lint (touched files) | `cd frontend && npx eslint src/hooks/use-theme-preset.ts __tests__/theme-preset.test.ts` | exit 0, no output |
-| Full frontend lint | `cd frontend && npm run lint` | exit 0 |
+| Full frontend lint | `cd frontend && npm run lint` | exit 0 with **0 errors**; the warning count is not a gate |
 | Preset shape probe (see Step 2) | the `python3` heredoc in Step 2 | `vars=17 dark=17` for all 11 presets |
-| Worker tests (regression guard) | `cd workers && npx vitest run` | `345 passed`, 25 files |
+| Worker tests (regression guard) | `cd workers && npx vitest run` | 0 failed, `Tests passed` unchanged from `WK_BEFORE` (Step 0) |
+
+Absolute suite totals are deliberately absent from this table and from "Done
+criteria". Several frontend plans run in parallel; a hard-coded
+`499 passed / 56 files` turns any sibling plan landing first into a false STOP
+and teaches the executor to edit the yardstick. The one exact number kept is the
+**per-file** `9 passed` for this plan's own new test file, which no other plan
+can move.
 
 Do **not** use `npx tsc --noEmit` (without `-b`): in this repo it exits 0 while
 loading zero files, so it proves nothing.
@@ -368,9 +404,51 @@ loading zero files, so it proves nothing.
   - `refactor: make the theme preset var set a compile-time contract`
   - `fix: default the theme to Legal Codex and stop rewriting a stored preset`
   - `test: cover theme preset boot behaviour and var completeness`
+- **Step 4 must be its own commit** and must not be combined with any other
+  step. It carries the one change that is a product decision rather than a bug
+  fix (the default palette flip), and Step 0's rollback instruction depends on
+  it being revertible in isolation. The migration deletion inside Step 4 is a
+  bug fix and can ride along — reverting the commit reinstates the old default
+  *and* the old migration, which is the honest all-or-nothing rollback.
 - Do NOT push, do NOT open a PR, do NOT merge. The operator commits and ships.
 
 ## Steps
+
+### Step 0: Record the baselines, and pin a rollback point
+
+**Baselines.** Every suite gate in this plan is a delta against these, not
+against a number written into this file:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
+#   FE_BEFORE      = "Tests  N passed"
+#   FEFILES_BEFORE = "Test Files  N passed"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -5
+#   WK_BEFORE = "Tests  N passed"
+```
+
+**Rollback point.** This plan changes what every user sees on first paint: the
+default palette flips from `claude` (warm grey + orange) to `parchment` (Legal
+Codex off-white + navy), and it rewrites hover and scrim colours in all eleven
+presets. That is the largest single visual change in this batch, and it is a
+direction call that the owner may want to undo without unpicking Steps 1–3.
+Record the exact revert instruction now:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git rev-parse HEAD
+#   PRE_021_SHA — write this into your final report
+```
+
+Then state in your report, verbatim:
+
+> Visual rollback: `git revert <the commit that changed DEFAULT_PRESET>` undoes
+> the default-palette flip on its own. Steps 1, 2, 3 and 5 (explicit parchment
+> vars, the two missing tokens in all presets, the compile-time contract, the
+> tests) are independent of that decision and should be kept. Full rollback of
+> everything: `git revert` the whole branch, or reset to `PRE_021_SHA`.
+
+Keeping the default-flip in its own commit is therefore **required**, not
+stylistic — see "Git workflow".
 
 ### Step 1: Make `parchment` self-describing with the Legal Codex baseline
 
@@ -440,8 +518,8 @@ This is behaviour-preserving: `applyTheme()` now writes inline properties whose
 values are identical to what the `:root` / `.dark` rules already supplied.
 
 **Verify**: `cd frontend && npx tsc -b --noEmit` → exit 0, no output.
-**Verify**: `cd frontend && npx vitest run` → `490 passed` (unchanged; no new
-tests yet).
+**Verify**: `cd frontend && npx vitest run` → 0 failed, `Tests passed` still
+equal to `FE_BEFORE` (unchanged; no new tests yet).
 
 ### Step 2: Give the other ten presets the two missing properties
 
@@ -523,7 +601,8 @@ lavender     vars=17 dark=17 hover=True overlay=True
 ```
 
 **Verify**: `cd frontend && npx tsc -b --noEmit` → exit 0.
-**Verify**: `cd frontend && npx vitest run` → `490 passed`.
+**Verify**: `cd frontend && npx vitest run` → 0 failed, `Tests passed` still
+equal to `FE_BEFORE` (no test file added yet).
 
 ### Step 3: Turn the preset var set into a compile-time contract
 
@@ -600,7 +679,8 @@ is — the annotation is what forces each literal to satisfy `ThemePresetVars`.
 4. Re-run `cd frontend && npx tsc -b --noEmit` → exit 0, and re-run the Step 2
    python probe → all 11 rows still read `vars=17 dark=17 hover=True overlay=True`.
 
-**Verify**: `cd frontend && npx vitest run` → `490 passed`.
+**Verify**: `cd frontend && npx vitest run` → 0 failed, `Tests passed` still
+equal to `FE_BEFORE` (no test file added yet).
 
 ### Step 4: Default to Legal Codex and stop rewriting a stored preset
 
@@ -658,7 +738,8 @@ Expected: the count prints `1`; the `Migrate old default` grep prints nothing
 three uses inside `readStoredPreset()`, and one inside `resetPreset()`.
 
 **Verify**: `cd frontend && npx tsc -b --noEmit` → exit 0.
-**Verify**: `cd frontend && npx vitest run` → `490 passed`.
+**Verify**: `cd frontend && npx vitest run` → 0 failed, `Tests passed` still
+equal to `FE_BEFORE` (no test file added yet).
 
 ### Step 5: Add the regression test
 
@@ -863,20 +944,59 @@ describe("theme preset var contract", () => {
 **Verify**: `cd frontend && npx vitest run __tests__/theme-preset.test.ts` →
 `Test Files 1 passed (1)`, `Tests 9 passed (9)`.
 
-### Step 6: Full verification sweep
+### Step 6: Visual acceptance matrix (required — this is not automated)
+
+The JSON contrast assertions in Step 5 check *values*. They cannot see a modal
+scrim that is now too dark to read through, a hover tint that vanishes against
+its own surface, or a court badge that stopped separating from its card. This
+plan changes the default palette **and** two colours in all eleven presets, so a
+single manual glance at Forest is not adequate evidence.
+
+Start the dev server (`make ui`) and walk this matrix. There is no visual
+regression harness in this repo today (see Maintenance notes), so this is
+manual and it is the only coverage these surfaces get.
+
+For **each of the 11 presets** (switch them from `/design-tokens`), in **both**
+light and dark:
+
+| Surface | What to look for |
+|---|---|
+| Any confirm dialog (delete a saved search, or `/collections` → delete) | The scrim visibly darkens the page behind it. Dark mode must now be near-black, not the old barely-there `#111820`. |
+| A `<select>` and a text input on `/cases` filters | Border is visible against the card; the focus ring is visible. |
+| A `CourtBadge` row on `/cases` | All nine codes readable; none disappears into its card. |
+| One chart on `/` (Dashboard) | Series are distinguishable from each other and from the background. |
+| A hover state on `/court-lineage` court chips and `LineageFilters` | The hover tint belongs to the active theme, not to Legal Codex. This is the specific defect Step 2 fixes — before it, every preset borrowed `#e6e4e0` / `#243144`. |
+
+Capture a screenshot of the Dashboard and of one open modal for **at least**:
+`parchment` (the new default), `claude` (the old default — the change users will
+actually notice), `forest` and `slate` (the two whose derived hover values moved
+furthest), in both modes. That is 8 screenshots minimum. Attach them to your
+report. If you cannot take screenshots in your environment, say so explicitly
+and list which presets you checked by eye — do not report this step as verified.
+
+**Rollback if the matrix fails**: the default-palette flip lives in its own
+commit (Step 0 / Git workflow). Reverting that one commit restores the previous
+first-paint experience while keeping Steps 1, 2, 3 and 5. Report which preset
+and surface failed rather than nudging a hex to make it look acceptable — the
+ten alternate palettes are explicitly out of scope here (see Maintenance notes).
+
+### Step 7: Full verification sweep
 
 **Verify**: `cd frontend && npx tsc -b --noEmit` → exit 0.
-**Verify**: `cd frontend && npx vitest run` → `Test Files 56 passed (56)`,
-`Tests 499 passed (499)`.
-**Verify**: `cd frontend && npm run lint` → exit 0.
-**Verify**: `cd workers && npx vitest run` → `345 passed`, 25 files (proves no
-cross-package damage).
+**Verify**: `cd frontend && npx vitest run __tests__/theme-preset.test.ts` →
+`Test Files 1 passed (1)`, `Tests 9 passed (9)`.
+**Verify**: `cd frontend && npx vitest run` → **0 failed**, and `Tests passed`
+== `FE_BEFORE + 9`, `Test Files passed` == `FEFILES_BEFORE + 1` (Step 0).
+**Verify**: `cd frontend && npm run lint` → exit 0 with 0 errors.
+**Verify**: `cd workers && npx vitest run` → 0 failed, `Tests passed` unchanged
+from `WK_BEFORE` (proves no cross-package damage).
 **Verify**: `git status --short frontend/` from the repo root lists exactly two
 paths: `M frontend/src/hooks/use-theme-preset.ts` and
-`?? frontend/__tests__/theme-preset.test.ts`. Anything else under `frontend/`
-means you edited an out-of-scope file — revert it. (Outside `frontend/`, a
-pre-existing modification to `.claude/STATE.md` and the untracked `plans/`
-directory are expected and not yours to clean up.)
+`?? frontend/__tests__/theme-preset.test.ts`. If anything else under `frontend/`
+appears, **stop and report** — do not run `git checkout --` or `git clean`,
+because those cannot tell your mistake from the operator's own work. (Outside
+`frontend/`, a pre-existing modification to `.claude/STATE.md` and the untracked
+`plans/` directory are expected and not yours to clean up.)
 
 ## Test plan
 
@@ -910,28 +1030,38 @@ Var contract (4 tests) — these are the drift guards:
 9. Every preset's dark `overlay` is `#000000` and its light `overlay` equals its
    own dark background — catches an overlay copied from the wrong preset.
 
-Not covered by automated tests, do manually before handing back: start the dev
-server (`make ui`), open `/design-tokens`, confirm the page loads on Parchment,
-switch to Forest, toggle dark mode, and open any confirm dialog — the scrim must
-now be near-black rather than the barely-darker `#111820`. Also hover a court
-chip on `/court-lineage` in a non-Parchment theme and confirm the hover tint
-belongs to that theme.
+Not covered by automated tests: everything visual. The nine JSON assertions
+check token *values*; they cannot see an unreadable scrim, an invisible hover
+tint, or a badge that stopped separating from its card. **Step 6 is the coverage
+for that** — an 11-preset × 2-mode × 5-surface manual matrix with screenshots.
+It is required, not optional, and a single spot-check of one preset is not a
+substitute. Read Step 6 before declaring this plan done.
 
 ## Done criteria
 
 ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npx vitest run` exits 0 with `Tests 499 passed (499)` across 56 files
+- [ ] `cd frontend && npx vitest run` exits 0 with **0 failed**, `Tests passed`
+      == `FE_BEFORE + 9` and `Test Files passed` == `FEFILES_BEFORE + 1`
 - [ ] `cd frontend && npx vitest run __tests__/theme-preset.test.ts` exits 0 with `Tests 9 passed (9)`
-- [ ] `cd frontend && npm run lint` exits 0
-- [ ] `cd workers && npx vitest run` exits 0 with `345 passed`
+- [ ] `cd frontend && npm run lint` exits 0 with 0 errors
+- [ ] `cd workers && npx vitest run` exits 0 with 0 failed and `Tests passed`
+      unchanged from `WK_BEFORE`
+- [ ] Step 3's "verify the gate actually bites" rehearsal was performed: deleting
+      `lavender`'s dark `--color-overlay` produced a TS2322, and restoring it
+      cleared the error
+- [ ] Step 6's visual matrix was walked for all 11 presets × light/dark, with at
+      least 8 screenshots attached — or the report states explicitly which parts
+      could not be performed
+- [ ] The `DEFAULT_PRESET` change is isolated in its own commit, and the report
+      names that commit's SHA as the rollback handle
 - [ ] `grep -c '"claude"' frontend/src/hooks/use-theme-preset.ts` returns `1`
 - [ ] `grep -n 'Migrate old default' frontend/src/hooks/use-theme-preset.ts` returns no matches (exit 1)
 - [ ] The Step 2 python probe prints `vars=17 dark=17 hover=True overlay=True` for all 11 presets
 - [ ] `git status --short frontend/` lists only `frontend/src/hooks/use-theme-preset.ts` (modified) and `frontend/__tests__/theme-preset.test.ts` (new)
 - [ ] `git status --short frontend/src/tokens/` returns no output (`tokens.json` and `tokens.css` untouched)
-- [ ] `plans/README.md` status row for 021 updated
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
@@ -960,10 +1090,16 @@ Stop and report back (do not improvise) if:
   `TypeError: window.matchMedia is not a function` at import time). Do not
   "solve" it by editing `readStoredDark()` in the source — the stub belongs in
   the test. Report if the stub does not work.
-- The full frontend suite drops below 490 pre-existing passing tests, or any
-  existing test starts failing. Existing tests do not reference preset names, so
+- The full frontend suite reports any failure, or `Tests passed` is anything
+  other than `FE_BEFORE + 9`. Existing tests do not reference preset names, so
   a failure means something unexpected — report rather than adjusting the
-  existing test.
+  existing test. (If the number is *higher* than `FE_BEFORE + 9`, a sibling plan
+  landed mid-run; re-record `FE_BEFORE` and say so, do not silently accept it.)
+- Step 6's visual matrix shows a surface that is worse than before on **any**
+  preset. Revert the Step 4 commit, keep the rest, and report which preset,
+  which mode and which surface. Do not adjust a hex in
+  `use-theme-preset.ts` to rescue it — the ten alternate palettes need a
+  designer, and their contrast pass is explicitly out of scope here.
 - Any step's verification fails twice after a reasonable fix attempt.
 - You conclude the fix requires touching a file outside the In-scope list.
 
@@ -1006,6 +1142,23 @@ For whoever owns this code next:
   existing internal audit note flags `slate`'s accent (`#5a5df0`) against white
   at roughly 3.9:1, below WCAG AA for text. This plan changes only hover and
   overlay tokens and does not touch accents.
+  `plans/022-fix-contrast-tokens.md` measured the same file independently and
+  found the ten alternate presets fail the 3:1 non-text floor for
+  `--color-border` in **both** modes (1.12–1.53 light, 1.28–1.99 against their
+  own card), and nine of ten fail 4.5:1 for dark `--color-text-muted` on a card.
+  That is a ~20-value coordinated palette pass across this file. It is unowned
+  by any plan in this batch and needs a designer in the loop — worth its own
+  plan, and worth saying out loud rather than letting it disappear between 021
+  and 022.
+- **There is no visual regression harness in this repo.** Step 6's matrix is
+  manual because nothing automates it: `frontend/playwright.config.ts` and
+  `frontend/e2e/**` are slated for deletion by
+  `plans/040-revive-the-e2e-suites.md`, and the surviving `tests/e2e/react/`
+  suite takes no screenshots. If theme work continues, the highest-value
+  follow-up is a Playwright screenshot matrix over 11 presets × 2 modes × 4
+  surfaces, wired into the E2E job 040 creates. Until then every theme change
+  costs a human 20 minutes of clicking, which is why theme changes keep shipping
+  unverified.
 
 ## Findings reconsidered
 

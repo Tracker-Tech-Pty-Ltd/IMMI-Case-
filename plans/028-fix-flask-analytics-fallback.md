@@ -9,20 +9,50 @@
 >
 > **Drift check (run first)**:
 > ```bash
-> cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
->   git diff --stat 42826a3..HEAD -- immi_case_downloader/web/routes/api.py immi_case_downloader/web/cache.py immi_case_downloader/sqlite_repository.py immi_case_downloader/storage.py tests/test_sqlite_repository.py tests/test_cache.py
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> IN_SCOPE="immi_case_downloader/web/routes/api.py \
+>   immi_case_downloader/web/cache.py \
+>   immi_case_downloader/sqlite_repository.py \
+>   immi_case_downloader/storage.py \
+>   tests/test_sqlite_repository.py tests/test_cache.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed drift
+> git diff --stat -- $IN_SCOPE                 # unstaged drift
+> git diff --cached --stat -- $IN_SCOPE        # staged drift
 > ```
-> Expected at the time of writing: **no output** (nothing changed). If any
-> in-scope file changed since this plan was written, compare the "Current
-> state" excerpts against the live code before proceeding; on a mismatch,
-> treat it as a STOP condition.
+> All three `git diff` invocations must print nothing. A committed diff means a
+> sibling plan landed — compare the "Current state" excerpts against the live
+> code before proceeding; on a mismatch, treat it as a STOP condition.
+> **An in-scope path appearing as modified, staged or untracked in
+> `git status --short --branch` is also a STOP condition**: a range diff cannot
+> see uncommitted, staged or untracked work, so a dirty tree gives a false
+> all-clear and this plan would edit on top of somebody else's changes. Never
+> run `git checkout --` or `git clean -f` to "clean up" — that destroys the
+> operator's work. Report and stop.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: none
+- **Depends on**: `plans/027-fix-csv-data-integrity.md`, on two shared files:
+  - `immi_case_downloader/sqlite_repository.py` is edited by three plans in this
+    batch (027 Steps 6–7 rewrite `save_many` and the schema, this plan's Step 7
+    rewrites `get_statistics`, 026 Step 4 adds a class attribute). The agreed
+    order is **027 → 028 → 026**, with a single integrator owning the file and
+    running its whole test set once at the end. Run this plan second.
+  - `immi_case_downloader/storage.py`: 027 Step 8e changes the `dtype=` argument
+    of `load_cases_csv` (line 137); this plan's Step 7a adds a constant next to
+    `CASE_FIELDS` (line ~49) and uses it at line 353. Disjoint regions — hand
+    both to the integrator rather than resolving a conflict yourself.
+  - `plans/026-fix-seek-pagination.md` also edits
+    `immi_case_downloader/web/routes/api.py`, but only inside
+    `_invalidate_cases_cache()` (line 1059), which is in none of the regions
+    this plan touches. Textually disjoint; flag it to the integrator anyway.
+  - **Work in your own git worktree**
+    (`git worktree add ../immi-028 -b advisor/028-fix-flask-analytics-fallback`).
+    Plans 026–029 all create branches; run in parallel in one checkout they
+    switch each other's branch out mid-edit.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -50,12 +80,24 @@ key set from `CsvRepository`, so switching `BACKEND=sqlite` silently blanks the
 dashboard's visa-subclass and visa-family charts and renders every source count as
 zero — which looks like real data rather than missing data.
 
+Two more defects in the same region were found during review and are fixed here
+too. `SqliteRepository.close()` clears its connection-tracking list even for
+connections it failed to close, so the application context this plan pushes in a
+worker thread would leak the request thread's connection out of all tracking
+(Step 1b). And the two process-global case caches — `_all_cases_cache` and
+`_analytics_cases_cache` — are keyed on nothing at all, so two apps in one
+process can serve each other's whole case corpus (Step 6b); that is the same
+defect as the judge-bio loaders, with a much larger blast radius.
+
 After this plan: the fallback actually runs on both local backends and returns real
-aggregates; a genuine timeout is logged as a timeout and anything else is logged with
-a traceback; the analytics result cache is bounded and prunes expired entries; the
-judge-bio loaders are keyed on the output directory they actually read; and both local
-repository backends return the same `get_statistics()` shape, enforced by a contract
-test.
+aggregates; a filtered request that never attempted an RPC gets the fallback
+instead of an empty payload; a genuine timeout is logged as a timeout and
+anything else is logged with a traceback; the analytics result cache is bounded
+and prunes expired entries; the case caches and the judge-bio loaders are keyed
+on the repository and output directory they actually read; connections are no
+longer leaked by a cross-thread `close()`; and both local repository backends
+return the same `get_statistics()` payload — the whole nine-key dict, ties
+included — enforced by a contract test.
 
 ## Current state
 
@@ -483,7 +525,7 @@ directory. Always use the venv interpreter — never global `pip`/`python3`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Full Python suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | baseline at `42826a3` is `1141 passed, 3 failed, 7 skipped`; after this plan `1166 passed, 3 failed, 7 skipped`. The **3 failures are environmental and pre-existing** — Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. They are not caused by repo code and are not this plan's problem. |
+| Full Python suite | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py` | judged as a **delta** against the `SUITE_BEFORE` you record before Step 1 (`make test-py 2>&1 \| grep -E '[0-9]+ passed'`), plus an unchanged failure list. The **3 failures are environmental and pre-existing** — a Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`. They are not caused by repo code and are not this plan's problem. Record their names too: `make test-py 2>&1 \| grep -E "FAILED\|ERROR" \| sed -E 's/.*(tests\/[^:]+).*/\1/' \| sort -u`. |
 | One test file | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/<file>.py -q --no-cov` | exit 0 |
 | Analytics + repo files | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && .venv/bin/python -m pytest tests/test_analytics_api.py tests/test_analytics_judge_api.py tests/test_analytics_concepts_api.py tests/test_taxonomy_countries_and_judges_api.py tests/test_sqlite_repository.py tests/test_storage.py tests/test_cache.py tests/test_api_helpers.py -q --no-cov` | exit 0 |
 | Lint (source) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` | `All checks passed!` |
@@ -493,9 +535,26 @@ directory. Always use the venv interpreter — never global `pip`/`python3`.
 `make typecheck` and the frontend/Worker Vitest suites are **not** needed — this plan
 touches no TypeScript and no Worker code.
 
+**Record the suite baseline before you change anything** — every suite-level
+check in this plan is a delta against it, and there is no correct absolute
+value (sibling plans in this batch add tests to the same suite):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+make test-py 2>&1 | grep -E '[0-9]+ passed'                    # SUITE_BEFORE
+make test-py 2>&1 | grep -E "FAILED|ERROR" \
+  | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u                 # the failing files
+```
+
+The second command must print exactly
+`tests/test_backfill_judge_overrides_from_pdf.py`. If it prints anything else,
+record it — Step 9's "no new failures" check is then measured against a dirtier
+baseline than this plan assumed.
+
 Baseline per-file counts at `42826a3` (for the "+N tests" checks below):
 `tests/test_sqlite_repository.py` 45, `tests/test_cache.py` 6,
-`tests/test_analytics_api.py` 50.
+`tests/test_analytics_api.py` 50. Per-file counts are stable across sibling
+plans; suite totals are not.
 
 ## Scope
 
@@ -503,14 +562,20 @@ Baseline per-file counts at `42826a3` (for the "+N tests" checks below):
 
 - `immi_case_downloader/web/routes/api.py` — **only** these regions:
   - lines **268–302**: `_load_judge_bios`, `_load_judge_name_overrides` (Step 6)
+  - lines **1028–1056** and **1089–1127**: the module-level case caches,
+    `_get_all_cases`, `_get_analytics_cases` and the two warmup fillers
+    (Step 6b). **Excluding `_invalidate_cases_cache` at lines 1059–1071**,
+    which is `plans/026-fix-seek-pagination.md`'s edit region.
   - line **1074–1076**: `_analytics_cache_key` (Step 5)
   - lines **1177–1186**: `_has_analytics_filters` (Step 5, constant extraction only)
   - lines **1282–1290**: `_call_with_timeout` (+ new `_call_in_app_context`) (Steps 1, 4)
   - lines **1670–1911**: the four analytics endpoints (Steps 1, 2, 3)
 - `immi_case_downloader/web/cache.py` (Step 5)
-- `immi_case_downloader/sqlite_repository.py` — **only** `get_statistics()` (Step 7)
+- `immi_case_downloader/sqlite_repository.py` — **only** `get_statistics()`
+  (Step 7) and `close()` (Step 1b)
 - `immi_case_downloader/storage.py` — **only** adding the `TOP_VISA_SUBCLASS_LIMIT`
-  constant and using it at line 353 (Step 7). The returned payload must be byte-identical.
+  constant and rewriting the `sorted_subclasses` sort key at line 353 (Step 7).
+  Same keys, same value types, same counts; tie ordering becomes deterministic.
 - `tests/test_sqlite_repository.py` — **only** `TestStatistics` (lines 391–407)
 - `tests/test_cache.py` — append one new test class
 - `tests/test_analytics_fallback.py` — **create**
@@ -554,10 +619,16 @@ expected — not a drift STOP.
 
 ## Git workflow
 
-- Branch: `advisor/028-fix-flask-analytics-fallback`
-  (`git checkout -b advisor/028-fix-flask-analytics-fallback` from the current HEAD).
+- **Use your own worktree**, not a branch in the shared checkout:
+  `git worktree add ../immi-028 -b advisor/028-fix-flask-analytics-fallback`,
+  then work from `../immi-028`. Plans 026–029 all create branches and three of
+  them edit `immi_case_downloader/sqlite_repository.py`; run in parallel in one
+  checkout they switch each other's branch out mid-edit.
+- Branch: `advisor/028-fix-flask-analytics-fallback`.
 - Commit per step, conventional-commit style. Suggested messages:
   - Step 1: `fix: give the analytics fallback worker an application context`
+  - Step 1b: `fix: stop close() untracking connections it could not close`
+  - Step 6b: `fix: key the case caches on the repository they came from`
   - Step 2: `fix: stop logging every analytics failure as a timeout`
   - Step 3: `fix: run the analytics fallback on the sqlite backend`
   - Step 4: `fix: cancel analytics work that has already timed out`
@@ -628,6 +699,86 @@ application-context wrapper achieves the same result with no test churn, and
 `with app.app_context()` in a non-request thread is already the established pattern in
 this repo — see `immi_case_downloader/web/__init__.py:210`.)*
 
+**Step 1b — make the context pop harmless.** Pushing an application context in a
+worker thread means *popping* one there too, and the pop runs
+`teardown_appcontext`. The factory registers exactly one handler
+(`immi_case_downloader/web/__init__.py:104-109`):
+
+```python
+    @app.teardown_appcontext
+    def close_repository(_exc):
+        repo = app.config.get("REPO")
+        close = getattr(repo, "close", None)
+        if callable(close):
+            close()
+```
+
+and `SqliteRepository.close()` (`sqlite_repository.py:130-139`) is verbatim:
+
+```python
+    def close(self):
+        """Close all connections across all threads."""
+        with self._all_conns_lock:
+            for conn in self._all_conns:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._all_conns.clear()
+        self._local.conn = None
+```
+
+The `except Exception: pass` is what makes the cross-thread call *appear*
+harmless — sqlite3's `check_same_thread` guard raises and the request thread's
+connection survives. But `self._all_conns.clear()` runs **unconditionally**, so
+the connection it just failed to close is dropped from the tracking list. It is
+still open, still cached in the request thread's `threading.local`, and now
+unreachable: no later `close()` and no `__del__` will ever close it. That is a
+leaked connection (and, in WAL mode, a held `-wal`/`-shm` handle) per request
+thread per worker teardown. Do not ship a plan that knowingly leaks because the
+leak is small.
+
+Fix `close()` so it only forgets what it actually closed:
+
+```python
+    def close(self):
+        """Close every connection this repository can close from this thread.
+
+        A connection opened on another thread cannot be closed from here —
+        sqlite3's check_same_thread guard raises — so it stays in the tracking
+        list to be closed by its own thread (or at interpreter exit) instead of
+        being silently forgotten while still open. This matters because a Flask
+        `teardown_appcontext` pop can run this from a worker thread; clearing
+        the list unconditionally leaked the request thread's connection.
+        """
+        with self._all_conns_lock:
+            still_open = []
+            for conn in self._all_conns:
+                try:
+                    conn.close()
+                except Exception:
+                    still_open.append(conn)
+            self._all_conns[:] = still_open
+        own = getattr(self._local, "conn", None)
+        if own is None or own not in still_open:
+            self._local.conn = None
+```
+
+This is a change to `immi_case_downloader/sqlite_repository.py` outside
+`get_statistics()`, so add `close()` to the in-scope region list for that file
+(Scope section) when you make it.
+
+Add a test to `tests/test_analytics_fallback.py`:
+
+- `test_close_from_another_thread_does_not_untrack_a_live_connection` — open a
+  `SqliteRepository` on a tmp DB, force a connection on the main thread with
+  `repo._conn()`, then call `repo.close()` from a `threading.Thread` and join
+  it. Assert the main thread's connection is **still in** `repo._all_conns`,
+  that `repo._conn().execute("SELECT COUNT(*) FROM cases").fetchone()` still
+  works from the main thread, and that a subsequent `repo.close()` on the main
+  thread does empty the list. *Fails before this sub-step: the list is empty
+  after the cross-thread call.*
+
 **Verify**:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
@@ -685,6 +836,21 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 ```
 → `15` (7 lines already had it at `42826a3`, plus the 8 new non-timeout handlers).
 
+A count alone cannot tell you the handlers landed on the right eight `try`
+blocks, so also check the identity of the messages — each of the four endpoint
+names must appear once in a `timed out` line and once in a `failed` line, on
+both the RPC and the fallback path:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  for name in analytics_outcomes analytics_judges analytics_legal_concepts analytics_nature_outcome; do
+    printf '%s: ' "$name"
+    grep -c "\"$name \(RPC\|fallback\) \(timed out\|failed\)" immi_case_downloader/web/routes/api.py
+  done
+```
+→ `4` for each of the four names (RPC timed-out, RPC failed, fallback timed-out,
+fallback failed). Anything less means an endpoint kept a merged handler.
+
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint
 ```
@@ -699,13 +865,15 @@ payload with no log line. The comment above the guard states the real intent: sk
 fallback only when the RPC path *existed* and failed, because retrying would hit the
 same remote database.
 
-In each of the four endpoints, hoist the existing `hasattr` check into a local and
-reuse it. For `analytics_outcomes` (lines 1684–1710), the result is:
+In each of the four endpoints, hoist the existing `hasattr` check into a local
+and record **whether an RPC was actually attempted** — not merely whether one
+could have been. For `analytics_outcomes` (lines 1684–1710), the result is:
 
 ```python
     _rpc_ok = False
-    _rpc_capable = hasattr(repo, "get_analytics_outcomes")
-    if _rpc_capable and not _has_analytics_filters():
+    _rpc_attempted = False
+    if hasattr(repo, "get_analytics_outcomes") and not _has_analytics_filters():
+        _rpc_attempted = True
         try:
             ...unchanged body...
             _rpc_ok = True
@@ -713,13 +881,32 @@ reuse it. For `analytics_outcomes` (lines 1684–1710), the result is:
             logger.warning("analytics_outcomes RPC timed out, falling back to Python")
         except Exception:
             logger.warning("analytics_outcomes RPC failed, falling back to Python", exc_info=True)
-    # Skip the Python fallback only for backends that actually expose the analytics
-    # RPCs (Supabase / Hyperdrive): if their RPC timed out, the fallback would query
-    # the same remote database and time out again, wasting another 15 s and blowing
-    # the Cloudflare Worker 30 s wall-clock limit.  CSV and SQLite have no RPCs at
-    # all — for them the fallback is the only path there has ever been.
-    if not _rpc_ok and not _rpc_capable:
+    # Skip the Python fallback only when an RPC was actually tried and failed:
+    # retrying would query the same remote database that just timed out, wasting
+    # another 15 s and blowing the Cloudflare Worker 30 s wall-clock limit.  If no
+    # RPC was attempted — CSV and SQLite have none, and even Supabase skips it when
+    # filters are present — then the fallback is the only path there is, and
+    # skipping it is how these endpoints came to return an empty 200.
+    if not _rpc_ok and not _rpc_attempted:
 ```
+
+**Why `_rpc_attempted` and not `_rpc_capable`.** The obvious rewrite —
+`if not _rpc_ok and not _rpc_capable:` — reads as if it means "only skip after a
+failed RPC", but it does not: a Supabase request *with filters* never enters the
+RPC branch at all (`_has_analytics_filters()` is `True`), so `_rpc_ok` stays
+`False` while `_rpc_capable` is `True`, and the fallback is skipped for a query
+no RPC was ever tried on. That is exactly today's behaviour and exactly the bug
+class this plan exists to remove — an empty 200 with a comment claiming a reason
+that did not happen. `_rpc_attempted` makes the code do what the comment says.
+
+**This is a real behaviour change on Supabase/Hyperdrive, and it is intended.**
+Before: a filtered analytics request on those backends returned an empty payload
+immediately. After: it runs the Python fallback, bounded by the same 15-second
+`_call_in_app_context` timeout, and returns real aggregates when the load fits —
+or logs an honest `fallback timed out` and returns empty when it does not. The
+unfiltered path (the one the "don't retry a remote query that just timed out"
+protection was written for) is **unchanged**: there, an RPC is always attempted,
+so `_rpc_attempted` is `True` whenever `_rpc_capable` would have been.
 
 Apply the same transformation to the other three, using each endpoint's own RPC name:
 
@@ -732,9 +919,11 @@ Apply the same transformation to the other three, using each endpoint's own RPC 
 
 Delete the four `_supabase_backend = hasattr(repo, "count_cases")` lines.
 
-This is a **no-op on Supabase and Hyperdrive** — both define `count_cases` *and* all
-four RPCs, so the guard's value is unchanged for them. It only changes SQLite (and
-leaves CSV, which has neither, unchanged).
+On the **unfiltered** path this is a no-op for Supabase and Hyperdrive — both
+define `count_cases` *and* all four RPCs, so an RPC is always attempted and the
+guard's value is unchanged. It unblocks SQLite (which has `count_cases` but no
+RPCs), leaves CSV (which has neither) unchanged, and deliberately changes the
+**filtered** Supabase/Hyperdrive path as described above.
 
 **Verify**:
 ```bash
@@ -745,15 +934,26 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  grep -c "if not _rpc_ok and not _rpc_capable:" immi_case_downloader/web/routes/api.py
+  grep -c "if not _rpc_ok and not _rpc_attempted:" immi_case_downloader/web/routes/api.py && \
+  grep -c "_rpc_attempted = True" immi_case_downloader/web/routes/api.py
 ```
-→ `4`
+→ `4` then `4`. Both numbers matter: four guards and four assignments means no
+endpoint got the guard without the flag being set, which would silently disable
+its RPC path.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   .venv/bin/python -m pytest tests/test_analytics_api.py tests/test_analytics_judge_api.py tests/test_analytics_concepts_api.py tests/test_taxonomy_countries_and_judges_api.py -q --no-cov 2>&1 | tail -2
 ```
 → exit 0, all passed (no count change yet — new tests arrive in Step 8).
+
+The grep counts above cannot tell you the flag is set on the *right* line, so
+Step 8 adds `test_filtered_request_still_runs_the_fallback_when_no_rpc_was_tried`:
+a fake repo exposing all four `get_analytics_*` methods (each raising
+`AssertionError` if called) plus `count_cases`, driven through
+`/api/v1/analytics/outcomes?court=AATA`. It must return real aggregates without
+any RPC method being invoked. *Fails at `42826a3` and against the
+`_rpc_capable` version — both return an empty payload.*
 
 ### Step 4: Cancel analytics work that has already timed out
 
@@ -946,7 +1146,9 @@ print('stale eviction: OK')
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   .venv/bin/python -m pytest tests/test_analytics_api.py tests/test_cache.py -q --no-cov 2>&1 | tail -2
 ```
-→ exit 0, `56 passed`
+→ exit 0, `56 passed` (50 + 6 — the two files' per-file counts at the baseline
+recorded under "Commands you will need"; Step 8d adds 5 to `tests/test_cache.py`
+later, so this number is only correct *before* Step 8).
 
 ### Step 6: Key the judge-bio loaders on the output directory they read
 
@@ -1024,6 +1226,102 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 ```
 → exit 0, all passed
 
+### Step 6b: Key the case caches on the repository they were loaded from
+
+Step 6 fixes the judge-bio `lru_cache`, but the two caches that hold the actual
+**case data** have the identical defect and a worse blast radius.
+`immi_case_downloader/web/routes/api.py:1028-1038` (verbatim):
+
+```python
+_all_cases_cache: list[ImmigrationCase] = []
+_all_cases_ts: float = 0.0
+_all_cases_lock = threading.Lock()
+_CACHE_TTL = 300.0  # 5 min — same as stats; analytics warmup keeps this fresh
+
+# Separate lightweight cache for analytics endpoints (minimal 7 columns).
+# ~4x faster to load than the full all-cases cache (13s vs 57s on free tier).
+_analytics_cases_cache: list[ImmigrationCase] = []
+_analytics_cases_ts: float = 0.0
+_analytics_cases_lock = threading.Lock()
+_ANALYTICS_CASES_TTL = 300.0
+```
+
+Module-level, process-global, keyed on nothing. Two apps in one process — the
+shape `tests/conftest.py` produces constantly, and a dev loop that recreates the
+app — share them, so app B's analytics can be computed from app A's cases for up
+to 5 minutes. Judge *bios* leaking between output dirs is a cosmetic bug; whole
+**case corpora** leaking between repositories is a data-tenancy bug in a tool
+whose whole job is showing you what is in a particular dataset.
+
+Add a repository identity helper next to those globals:
+
+```python
+def _repo_identity(repo) -> str:
+    """A stable per-dataset key for the process-global case caches.
+
+    Two apps in one process get two repositories; without this they share one
+    cache and can serve each other's cases. `id()` is the last resort: it is
+    per-process, so it can only cause a miss, never a cross-dataset hit.
+    """
+    for attr in ("db_path", "base_dir"):
+        value = getattr(repo, attr, None)
+        if isinstance(value, str) and value:
+            return f"{type(repo).__name__}:{os.path.abspath(value)}"
+    return f"{type(repo).__name__}:{id(repo):x}"
+```
+
+`os` is already imported in this module (used at line 271). Then add
+`_all_cases_key: str = ""` and `_analytics_cases_key: str = ""` beside the two
+timestamps, and in **both** `_get_all_cases()` (line 1041) and
+`_get_analytics_cases()` (line 1107):
+
+- resolve `repo = get_repo()` and `key = _repo_identity(repo)` **before** the
+  fast path (both are called with an application context — Step 1 guarantees it
+  for the worker case),
+- add `and _analytics_cases_key == key` / `and _all_cases_key == key` to the
+  fast-path condition *and* to the double-check inside the lock,
+- set the key alongside the timestamp when the cache is filled.
+
+Do the same in the two warmup fillers, `_fill_all_cases_cache()` (line 1089) and
+`_fill_analytics_cases_cache()` — they set the cache and timestamp directly, and
+a filler that does not set the key turns every warmed cache into a guaranteed
+miss.
+
+Neither function's **signature** changes, so all 18 zero-argument
+`monkeypatch.setattr(..., "_get_analytics_cases", lambda: cases)` sites keep
+working.
+
+Do **not** touch `_invalidate_cases_cache()` (line 1059) — it is
+`plans/026-fix-seek-pagination.md` Step 5b's edit region, and zeroing the
+timestamps is already sufficient invalidation for the keyed caches.
+
+Add two tests to `tests/test_analytics_fallback.py`:
+
+- `test_analytics_cases_cache_is_scoped_per_repository` — build app A over a
+  dir with 3 cases and app B over a dir with 1 different case; inside
+  `app_a.app_context()` call `_get_analytics_cases()` (3 cases), then inside
+  `app_b.app_context()` call it again and assert you get B's single case, not
+  A's three. *Fails at `42826a3`: B receives A's list.*
+- `test_all_cases_cache_is_scoped_per_repository` — the same for
+  `_get_all_cases()`.
+
+Both must call the functions inside a real application context; the autouse
+`reset_analytics_caches` fixture clears the caches between tests, so the leak
+has to be exercised within a single test.
+
+**Verify**:
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  .venv/bin/python -m pytest tests/test_analytics_fallback.py -q --no-cov -k "scoped_per_repository" 2>&1 | tail -2
+```
+→ `2 passed`.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
+  .venv/bin/python -m pytest tests/test_analytics_api.py tests/test_analytics_judge_api.py tests/test_analytics_concepts_api.py -q --no-cov 2>&1 | tail -2
+```
+→ exit 0 — this is the check that the zero-argument seams survived.
+
 ### Step 7: Make the SQLite statistics payload match the CSV contract
 
 **7a — `immi_case_downloader/storage.py`.** Add a named constant directly after the
@@ -1044,12 +1342,26 @@ Then at line 353, change
 to
 
 ```python
+    # (-count, subclass) rather than count-descending alone: Python's sort is
+    # stable, so ties used to be broken by first-seen order — an ordering SQL
+    # cannot reproduce. With 25 subclasses on the same count, "the top 20" was a
+    # different set of 20 on each backend, and a cross-backend contract test
+    # would pass or fail by luck. SqliteRepository.get_statistics() now orders
+    # identically.
     sorted_subclasses = dict(
-        sorted(by_visa_subclass.items(), key=lambda x: x[1], reverse=True)[:TOP_VISA_SUBCLASS_LIMIT]
+        sorted(by_visa_subclass.items(), key=lambda x: (-x[1], x[0]))[:TOP_VISA_SUBCLASS_LIMIT]
     )
 ```
 
-No other change to `storage.py`. The returned dict must stay byte-identical.
+No other change to `storage.py`.
+
+**On "byte-identical":** the payload keeps the same keys, the same value types
+and the same counts. What changes is the *order* of tied `by_visa_subclass`
+entries and — when a tie straddles position 20 — which of them survive the cut.
+That is the point of the change: it is what makes the cross-backend contract
+expressible at all, instead of both backends returning "some 20 of these 25".
+The only consumer is `api.py:1475-1486` (`_clean_visa` and `group_by_family`),
+neither of which depends on ordering.
 
 **7b — `immi_case_downloader/sqlite_repository.py`.** Extend the existing import at
 line 9:
@@ -1094,10 +1406,15 @@ top-N by count. Use a bound parameter for the limit — never interpolate into S
         ):
             by_source[row["source"] or "Unknown"] = row["cnt"]
 
+        # The secondary sort is load-bearing, not decoration: `ORDER BY cnt DESC`
+        # alone leaves ties in an order SQLite may choose freely, so with more
+        # tied subclasses than the limit, "the top 20" would be a different 20
+        # here than in storage.get_statistics(). Both sides now order by
+        # (count descending, subclass ascending).
         by_visa_subclass = {}
         for row in conn.execute(
             "SELECT visa_subclass, COUNT(*) as cnt FROM cases WHERE visa_subclass != '' "
-            "GROUP BY visa_subclass ORDER BY cnt DESC LIMIT ?",
+            "GROUP BY visa_subclass ORDER BY cnt DESC, visa_subclass ASC LIMIT ?",
             (TOP_VISA_SUBCLASS_LIMIT,),
         ):
             by_visa_subclass[row["visa_subclass"]] = row["cnt"]
@@ -1180,8 +1497,8 @@ to `"Character Test"`), `visa_subclass="866"`, `source="AustLII"`, each with a u
 Set `TESTING = True` and `WTF_CSRF_ENABLED = False` on both, exactly as
 `tests/conftest.py:162-170` does.
 
-Tests to write — **8 test functions, 12 collected** (item 5 is parametrised over the
-four endpoint paths):
+Tests to write — **13 test functions, 17 collected** (item 5 is parametrised over
+the four endpoint paths):
 
 1. `test_outcomes_fallback_returns_data_on_csv_backend` — `GET /api/v1/analytics/outcomes`
    → 200 and `data["by_court"]["AATA"]["Remitted"] == 3`.
@@ -1210,9 +1527,24 @@ four endpoint paths):
    produce different keys.
 9. `test_analytics_cache_key_distinguishes_court` — `?court=AATA` and `?court=FCA`
    produce different keys.
+10. `test_filtered_request_still_runs_the_fallback_when_no_rpc_was_tried` (Step 3)
+    — a fake repo that defines `count_cases` **and** all four `get_analytics_*`
+    methods, each of which raises `AssertionError("RPC must not be called")`,
+    plus `load_all()` returning the fixture cases. Drive
+    `GET /api/v1/analytics/outcomes?court=AATA`; assert `by_court["AATA"]["Remitted"]`
+    is the real count and that no RPC was invoked. *Fails at `42826a3` and
+    against a `_rpc_capable`-based guard — both return an empty payload without
+    ever attempting an RPC.*
+11. `test_close_from_another_thread_does_not_untrack_a_live_connection` (Step 1b)
+    — described in Step 1b. *Fails before Step 1b: `_all_conns` is emptied even
+    though the connection was not closed.*
+12. `test_analytics_cases_cache_is_scoped_per_repository` (Step 6b).
+    *Fails at `42826a3`.*
+13. `test_all_cases_cache_is_scoped_per_repository` (Step 6b).
+    *Fails at `42826a3`.*
 
 **8b — `tests/test_repository_statistics_contract.py`** (new). Load the same case list
-into a `CsvRepository` and a `SqliteRepository` and compare. Tests to write (6):
+into a `CsvRepository` and a `SqliteRepository` and compare. Tests to write (8):
 
 1. `test_key_sets_are_identical` — `set(csv_stats) == set(sqlite_stats) == EXPECTED_KEYS`
    where `EXPECTED_KEYS = {"total", "by_court", "by_year", "by_nature",
@@ -1230,6 +1562,26 @@ into a `CsvRepository` and a `SqliteRepository` and compare. Tests to write (6):
    backend="sqlite")`, `GET /api/v1/stats` → `visa_subclasses` non-empty,
    `visa_families` non-empty, and every value in `sources` is `> 0`.
    *Fails at `42826a3` — `sources` is `{"AustLII": 0}` and the two visa maps are `{}`.*
+7. `test_full_statistics_payloads_are_equal` — `csv_stats == sqlite_stats` for
+   the **whole nine-key dict**, not a chosen subset. Comparing only
+   `by_court`/`by_source`/`by_visa_subclass` would let `by_year`, `by_nature`,
+   `visa_types`, `sources`, `total` or `with_full_text` diverge unnoticed; two
+   dicts compare equal regardless of key order, so this is safe to assert
+   directly. Feed the fixture cases enough variety to make every field non-empty
+   (at least two courts, two years, two natures, two sources, two visa types,
+   and one case with a `full_text_path`), and assert each of the nine values is
+   itself non-empty first — otherwise `{} == {}` would pass while proving
+   nothing.
+8. `test_visa_subclass_tie_break_is_deterministic` — the boundary case the
+   top-N cut turns into a real defect. Build **25 distinct subclasses each with
+   exactly the same count**, load them into both backends, and assert
+   `csv_stats["by_visa_subclass"] == sqlite_stats["by_visa_subclass"]`, that
+   both hold exactly `TOP_VISA_SUBCLASS_LIMIT` entries, and that their keys are
+   the 20 lexicographically smallest of the 25. Insert the cases in an order
+   that is **not** subclass-ascending (e.g. reversed), so a backend that fell
+   back to first-seen order would produce a different 20 and fail.
+   *Fails against a `cnt DESC`-only SQL ordering or a stable-sort-only Python
+   ordering; this is the test the tie-break exists for.*
 
 **8c — `tests/test_judge_bios_cache.py`** (new). Two tests:
 
@@ -1262,7 +1614,10 @@ tests. Import `AnalyticsCache` and `DEFAULT_MAX_ENTRIES` from
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
   .venv/bin/python -m pytest tests/test_analytics_fallback.py tests/test_repository_statistics_contract.py tests/test_judge_bios_cache.py tests/test_cache.py -q --no-cov 2>&1 | tail -2
 ```
-→ exit 0, `31 passed` (12 + 6 + 2 + 11)
+→ exit 0, `38 passed` (17 + 8 + 2 + 11). These are per-file counts for files
+only this plan writes (plus the 6 pre-existing tests in `tests/test_cache.py`),
+so they are stable no matter which sibling plans land. If your number differs,
+count the tests you actually wrote and reconcile before moving on.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
@@ -1273,21 +1628,28 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
 ### Step 9: Full-suite verification
 
 ```bash
-cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | grep -E '[0-9]+ passed'
 ```
-→ `1166 passed, 3 failed, 7 skipped` (1141 + 25 new: 12 + 6 + 2 + 5). The 3 failures must all be in
-`tests/test_backfill_judge_overrides_from_pdf.py` and must all be the pre-existing
-`pypdf` / `pyexpat` import error. Confirm with:
+→ the passed count must equal `SUITE_BEFORE + 32` (17 + 8 + 2 + 5 new tests),
+where `SUITE_BEFORE` is the number you recorded before Step 1. **Do not assert
+an absolute total**: sibling plans in this batch add tests to the same suite, so
+any hard-coded figure is wrong the moment one of them lands and it trains you to
+edit the yardstick instead of the code.
+
+The failures must still be the same three, **by name**:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && \
-  make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u
+  make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u
 ```
-→ every line names `tests/test_backfill_judge_overrides_from_pdf.py` and nothing else.
+→ prints exactly `tests/test_backfill_judge_overrides_from_pdf.py` and nothing
+else — the pre-existing `pypdf` / `pyexpat` ImportErrors. (Do not anchor the
+pattern with `^`: pytest emits ANSI colour codes before the word `FAILED` even
+when piped.)
 
-If the passed count is 1166 ± a small amount because you wrote a slightly different
-number of assertions, that is fine — what must hold is that the failure set is
-**exactly** the three pre-existing environmental failures.
+If the passed count is off by a few because you wrote a slightly different
+number of assertions, that is fine — what must hold is the delta being explained
+by tests you wrote, and the failure set being **exactly** those three names.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint && git status --short
@@ -1300,8 +1662,8 @@ New tests, by file:
 
 | File | Tests | Covers |
 |---|---|---|
-| `tests/test_analytics_fallback.py` (create) | 8 functions / 12 collected | PYCORR-03 (app context, CSV — 4 endpoints), the SQLite fallback gate (Step 3), PYCORR-14 (cancel-on-timeout), PYCORR-13 (cache key whitelist) |
-| `tests/test_repository_statistics_contract.py` (create) | 6 | PYCORR-24 (key-set parity, `by_court` domain, `by_source`, `by_visa_subclass`, `/api/v1/stats` on SQLite) |
+| `tests/test_analytics_fallback.py` (create) | 13 functions / 17 collected | PYCORR-03 (app context, CSV — 4 endpoints), the SQLite fallback gate and the filtered-RPC gate (Step 3), the cross-thread `close()` leak (Step 1b), the per-repository case caches (Step 6b), PYCORR-14 (cancel-on-timeout), PYCORR-13 (cache key whitelist) |
+| `tests/test_repository_statistics_contract.py` (create) | 8 | PYCORR-24 (key-set parity, full nine-key payload equality, `by_court` domain, `by_source`, `by_visa_subclass`, the 25-way tie boundary, `/api/v1/stats` on SQLite) |
 | `tests/test_judge_bios_cache.py` (create) | 2 | PYCORR-20 (per-output-dir cache keys) |
 | `tests/test_cache.py` (append) | 5 | PYCORR-13 (TTL eviction, capacity bound, LRU order) |
 
@@ -1330,22 +1692,25 @@ Machine-checkable. ALL must hold:
 
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make lint` prints `All checks passed!`
 - [ ] `.venv/bin/ruff check tests/test_analytics_fallback.py tests/test_repository_statistics_contract.py tests/test_judge_bios_cache.py tests/test_cache.py tests/test_sqlite_repository.py` prints `All checks passed!`
-- [ ] `make test-py` reports `7 skipped` and exactly `3 failed`, and
-      `make test-py 2>&1 | grep -E "^(FAILED|ERROR)" | sort -u` names only
-      `tests/test_backfill_judge_overrides_from_pdf.py`
+- [ ] `make test-py` passed count equals `SUITE_BEFORE + 32`, and
+      `make test-py 2>&1 | grep -E "FAILED|ERROR" | sed -E 's/.*(tests\/[^:]+).*/\1/' | sort -u`
+      prints exactly `tests/test_backfill_judge_overrides_from_pdf.py` — the same
+      three environmental `pyexpat` ImportErrors, by name, as the pre-plan baseline
 - [ ] `grep -c "except (FuturesTimeoutError, Exception):" immi_case_downloader/web/routes/api.py` returns no match (0)
 - [ ] `grep -c "_supabase_backend = hasattr" immi_case_downloader/web/routes/api.py` returns no match (0)
-- [ ] `grep -c "if not _rpc_ok and not _rpc_capable:" immi_case_downloader/web/routes/api.py` returns `4`
+- [ ] `grep -c "if not _rpc_ok and not _rpc_attempted:" immi_case_downloader/web/routes/api.py` returns `4` **and** `grep -c "_rpc_attempted = True" …` returns `4`
+- [ ] `.venv/bin/python -m pytest tests/test_analytics_fallback.py -q --no-cov -k "filtered_request_still_runs_the_fallback"` → `1 passed` (the count greps above cannot tell you the flag was set on the right line; this can)
 - [ ] `grep -c "_call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)" immi_case_downloader/web/routes/api.py` returns `4`
 - [ ] `grep -c "_call_with_timeout(_get_analytics_cases" immi_case_downloader/web/routes/api.py` returns no match (0)
 - [ ] `grep -n "future.cancel()" immi_case_downloader/web/routes/api.py` returns exactly one line
 - [ ] `grep -c "sorted(request.args.items())" immi_case_downloader/web/routes/api.py` returns no match (0)
 - [ ] `grep -c "lru_cache(maxsize=1)" immi_case_downloader/web/routes/api.py` returns no match (0)
-- [ ] `grep -c "OrderedDict" immi_case_downloader/web/cache.py` returns at least `2`
-- [ ] `grep -c "TOP_VISA_SUBCLASS_LIMIT" immi_case_downloader/storage.py immi_case_downloader/sqlite_repository.py` shows both files non-zero
-- [ ] `.venv/bin/python -m pytest tests/test_analytics_fallback.py tests/test_repository_statistics_contract.py tests/test_judge_bios_cache.py -q --no-cov` exits 0 with 20 tests passed (12 + 6 + 2)
+- [ ] The Step 5 `python -c` cache probe prints `entries: 3` then `stale eviction: OK` (a behavioural check; `grep -c OrderedDict` would also match an unused import, so it is not used here)
+- [ ] `.venv/bin/python -m pytest tests/test_repository_statistics_contract.py -q --no-cov -k "full_statistics_payloads_are_equal or tie_break_is_deterministic"` → `2 passed` (this replaces `grep -c TOP_VISA_SUBCLASS_LIMIT`, which counts a name rather than checking the two backends agree)
+- [ ] `.venv/bin/python -m pytest tests/test_analytics_fallback.py -q --no-cov -k "scoped_per_repository or untrack_a_live_connection"` → `3 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_analytics_fallback.py tests/test_repository_statistics_contract.py tests/test_judge_bios_cache.py -q --no-cov` exits 0 with 27 tests passed (17 + 8 + 2)
 - [ ] `.venv/bin/python -m pytest tests/test_cache.py -q --no-cov` exits 0 with 11 tests passed
-- [ ] `.venv/bin/python -m pytest tests/test_sqlite_repository.py -q --no-cov` exits 0 with 45 tests passed
+- [ ] `.venv/bin/python -m pytest tests/test_sqlite_repository.py -q --no-cov` exits 0 with 45 tests passed (unchanged: this plan edits two assertions there and adds no test)
 - [ ] `git status --short` lists only: `immi_case_downloader/web/routes/api.py`, `immi_case_downloader/web/cache.py`, `immi_case_downloader/sqlite_repository.py`, `immi_case_downloader/storage.py`, `tests/test_sqlite_repository.py`, `tests/test_cache.py`, `tests/test_analytics_fallback.py`, `tests/test_repository_statistics_contract.py`, `tests/test_judge_bios_cache.py`
 - [ ] `plans/README.md` status row updated (only if that file exists)
 
@@ -1359,11 +1724,16 @@ Stop and report back (do not improvise) if:
   or a `patch(..., "_load_judge_bios", ...)` line.** Both of those functions must keep
   their zero-argument signatures. Needing to edit those 43 call sites means you changed
   a signature the plan told you not to change — revert and re-read Steps 1 and 6.
-- After Step 3, a test that previously passed against the **Supabase** or
-  **Hyperdrive** code path starts failing. The `_rpc_capable` swap is meant to be a
-  no-op for those two backends (both define `count_cases` *and* all four
-  `get_analytics_*` RPCs). A behaviour change there means the capability sets are not
-  what this plan measured.
+- After Step 3, a test that previously passed against the **unfiltered**
+  Supabase or Hyperdrive code path starts failing. The `_rpc_attempted` swap is
+  a no-op there (both backends define all four `get_analytics_*` RPCs, so an RPC
+  is always attempted when there are no filters). A behaviour change on the
+  unfiltered path means the capability sets are not what this plan measured.
+  The **filtered** Supabase/Hyperdrive path *does* change on purpose — it now
+  runs the Python fallback instead of returning an empty payload — so a test
+  that asserted "filtered Supabase analytics return empty" is expected to fail
+  and should be updated with that reasoning recorded. Report it either way; do
+  not quietly relax an assertion.
 - `tests/test_sqlite_repository.py` fails in a class **other than** `TestStatistics`
   after Step 7. That would mean the `get_statistics()` rewrite broke a shared
   connection or schema assumption, not just the payload shape.
@@ -1372,12 +1742,15 @@ Stop and report back (do not improvise) if:
 - After Step 1, you observe a `sqlite3.ProgrammingError: Cannot operate on a closed
   database` anywhere. `create_app` registers a `teardown_appcontext` handler
   (`immi_case_downloader/web/__init__.py:104-109`) that calls `repo.close()`, so the
-  worker's application context pop *does* invoke `SqliteRepository.close()`. This was
-  measured to be harmless — sqlite3's `check_same_thread` guard makes the cross-thread
-  `conn.close()` raise, and `close()` swallows it (`sqlite_repository.py:130-139`), so
-  the request thread's connection survives. If that stops holding, do not paper over
-  it: stop and report, because the alternative implementation (pass `repo` into the
-  worker, edit 16 test lambdas) is a different plan.
+  worker's application context pop *does* invoke `SqliteRepository.close()`.
+  sqlite3's `check_same_thread` guard makes the cross-thread `conn.close()` raise
+  and `close()` swallows it, so the request thread's connection keeps working —
+  but the pre-review version of `close()` also cleared `_all_conns`
+  unconditionally, leaking that connection out of all tracking. **Step 1b fixes
+  that**; if you skipped it, go back. If a closed-database error appears even
+  with Step 1b in place, do not paper over it: stop and report, because the
+  alternative implementation (pass `repo` into the worker, edit 18 test lambdas)
+  is a different plan.
 - A step's verification fails twice after a reasonable fix attempt.
 - Any change appears to require touching a file outside the "In scope" list.
 
@@ -1385,12 +1758,15 @@ Stop and report back (do not improvise) if:
 
 For the human/agent who owns this code after the change lands:
 
-- **What a reviewer should scrutinise.** (1) That Step 3's `_rpc_capable` swap really
-  is inert on Supabase/Hyperdrive — the whole "don't retry a remote query that just
-  timed out" protection depends on it. (2) That the `with app.app_context()` in
+- **What a reviewer should scrutinise.** (1) That Step 3's `_rpc_attempted` swap
+  is inert on the **unfiltered** Supabase/Hyperdrive path — the whole "don't
+  retry a remote query that just timed out" protection depends on it — and that
+  the filtered path's new Python fallback is bounded by the 15 s timeout rather
+  than loading 149k rows unboundedly. (2) That the `with app.app_context()` in
   `_call_in_app_context` does not surprise anyone via `teardown_appcontext`; today the
   only registered handler is `close_repository`, and it is a no-op on `CsvRepository`
-  (no `close` method) and effectively a no-op cross-thread on `SqliteRepository`. If a
+  (no `close` method) and, after Step 1b, a genuine no-op cross-thread on
+  `SqliteRepository` rather than a silent connection leak. If a
   new `teardown_appcontext` handler with real side effects is ever added, revisit this.
   (3) That `AnalyticsCache.get()` now takes the lock on every read — fine for a
   local-dev Flask process, worth re-measuring if this class is ever reused somewhere hot.

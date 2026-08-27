@@ -7,23 +7,35 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index, or the file does not exist (in which case skip it).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**: three commands, not one. A committed-history
+> diff cannot see uncommitted, staged or untracked work, so an executor
+> starting from a dirty tree would otherwise get a false all-clear.
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   .github/workflows/ci.yml \
->   Makefile \
->   frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json \
->   frontend/vitest.config.ts frontend/eslint.config.js \
->   frontend/package.json frontend/package-lock.json \
->   frontend/__tests__ frontend/scripts
+> IN_SCOPE=(
+>   .github/workflows/ci.yml
+>   Makefile
+>   frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json
+>   frontend/vitest.config.ts frontend/eslint.config.js
+>   frontend/package.json frontend/package-lock.json
+>   frontend/__tests__ frontend/scripts frontend/src/tokens
+> )
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- "${IN_SCOPE[@]}"   # committed since planning
+> git diff --stat -- "${IN_SCOPE[@]}"                  # unstaged
+> git diff --cached --stat -- "${IN_SCOPE[@]}"         # staged
 > ```
 >
-> Expected: **empty output** (no in-scope file has changed since this plan was
-> written). If any file is listed, compare the "Current state" excerpts below
-> against the live code before proceeding; on a mismatch, treat it as a STOP
-> condition.
+> Expected: all three diffs **empty**. `git status --short --branch` may list
+> files outside the in-scope set (for example `plans/`); that is fine. If any
+> **in-scope** path appears in any of the three diffs, or appears as `??`
+> untracked, that is a STOP condition: compare the "Current state" excerpts
+> below against the live code and report before proceeding.
+>
+> Never "clean up" someone else's work to get a green drift check. Do **not**
+> run `git checkout --`, `git restore`, `git stash` or `git clean` on any path
+> you did not create in this plan.
 
 ## Status
 
@@ -31,6 +43,12 @@
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: none
+- **Blocks**: `plans/002-fix-test-collection-and-install.md`, which in turn
+  blocks `plans/003-lint-the-test-suite.md`. **001 → 002 → 003 is strictly
+  serial and must not be run in parallel**: all three edit `Makefile`, two edit
+  `.github/workflows/ci.yml`, and 001 and 002 both edit
+  `frontend/vitest.config.ts`. This plan is the first of the three; start from
+  a clean `main`.
 - **Category**: dx
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -291,6 +309,44 @@ vitest.config.ts(17,7): TS2769 'lines' is not a known coverage option
 
 The last one disappears when you fix the coverage block in Step 4.
 
+**This list is NOT closed — it is only the first batch.** TypeScript suppresses
+a container's own assignability error when it has already reported errors
+inside that container, so fixing a nested error can reveal a new one on the
+same object. That happens here, and it was confirmed on 2026-08-28 with a
+minimal reproduction run through this repo's own TypeScript:
+
+```ts
+interface Entry { name: string; total: number; win_rate: number; lift: number;
+                  by_court: Record<string, { total: number; win_rate: number }>; }
+interface Data  { baseline_rate: number; concepts: Entry[]; }
+
+const b: Data = {                                    // after adding by_court:
+  concepts: [{ name: "x", win_rate: 65, total: 200, lift: 1.3, by_court: {} }],
+  baseline_win_rate: 50,
+};
+// error TS2561: Object literal may only specify known properties, but
+// 'baseline_win_rate' does not exist in type 'Data'.
+// Did you mean to write 'baseline_rate'?
+```
+
+That is exactly the shape of
+`frontend/__tests__/analytics-charts-tokens.test.tsx`: the fixture writes
+`baseline_win_rate: 50` at **line 149** while
+`frontend/src/types/case.ts:298-301` declares
+
+```ts
+export interface ConceptEffectivenessData {
+  baseline_rate: number;
+  concepts: ConceptEffectivenessEntry[];
+}
+```
+
+So a 21st error appears the moment Step 5d's three `by_court: {}` additions
+land. Step 5d fixes it in the same pass. **Treat the enumerated list as a
+starting inventory, not a completion criterion**: the completion criterion is
+`npx tsc --noEmit -p tsconfig.test.json` exiting 0, and you re-run it after
+every batch of fixes until it does.
+
 The source types these fixtures must satisfy, read at `42826a3`:
 
 `frontend/src/types/case.ts:290-296`:
@@ -429,29 +485,75 @@ Quoted from `CLAUDE.md` — you have not read that file, so these are inlined:
 Run all frontend commands from
 `/Users/d/Developer/Active Projects/IMMI-Case-/frontend` unless stated.
 
+### Baseline capture (do this before Step 1)
+
+Every "expected" number in this plan is a **delta against a baseline you
+measure yourself**, not a hard-coded suite total. Hard-coded totals rot the
+moment a sibling plan lands and they train executors to edit the yardstick
+instead of the code. Run this first and keep the output; the rest of the plan
+refers to these variables by name.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+
+# Frontend
+cd frontend
+FE_SRC_BEFORE=$(npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/')
+FE_TESTFILES_BEFORE=$(npx vitest list --filesOnly | grep -c .)
+npx vitest run 2>&1 | tail -6      # read "Test Files N passed" / "Tests M passed"
+cd ..
+
+# Workers
+cd workers && npx vitest run 2>&1 | tail -4; cd ..
+
+# Python
+make test-py 2>&1 | tail -3
+```
+
+Write down, in your handoff:
+
+| Baseline | Symbol | Value observed at `42826a3` (re-measure; do not trust this column) |
+|---|---|---|
+| src files in the app tsc project | `FE_SRC_BEFORE` | 169 |
+| frontend test files collected | `FE_TESTFILES_BEFORE` | 55 |
+| frontend tests passing | `FE_TESTS_BEFORE` | 490 |
+| worker tests passing | `WK_TESTS_BEFORE` | 345 |
+| python passed / failed / skipped | `PY_*_BEFORE` | 1141 / 3 / 7 |
+
+### Command reference
+
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Frontend install | `cd frontend && npm ci` | exit 0 |
 | Typecheck (correct form) | `cd frontend && npx tsc -b --noEmit` | exit 0, no output |
-| Typecheck non-vacuity probe | `cd frontend && npx tsc -b --noEmit --force --listFiles \| grep -c '/frontend/src/'` | `169` |
+| Typecheck non-vacuity probe | `cd frontend && npx tsc -b --noEmit --force --listFiles \| grep -c '/frontend/src/'` | exactly `FE_SRC_BEFORE` (this plan adds and deletes no `src` file) |
 | Test-project typecheck | `cd frontend && npx tsc --noEmit -p tsconfig.test.json` | exit 0 after Step 5 |
-| Frontend lint | `cd frontend && npm run lint` | `✖ 25 problems (0 errors, 25 warnings)`, exit 0 |
-| Frontend unit tests | `cd frontend && npx vitest run` | `490 passed`, 55 files, exit 0 |
-| Frontend coverage | `cd frontend && npx vitest run --coverage` | `490 passed` + a coverage table, exit 0 |
+| Frontend lint | `cd frontend && npm run lint` | `0 errors` (warning count is not gated) , exit 0 |
+| Frontend unit tests | `cd frontend && npx vitest run` | exactly `FE_TESTS_BEFORE` passed across `FE_TESTFILES_BEFORE` files, exit 0 |
+| Frontend coverage | `cd frontend && npx vitest run --coverage` | same counts + a coverage table, exit 0 |
 | Production build | `cd frontend && npm run build:cloudflare` | exit 0, writes gitignored `frontend/dist/` |
-| Worker tests | `cd workers && npx vitest run` | `345 passed`, 25 files |
-| Python tests | `make test-py` | `1141 passed, 3 failed, 7 skipped` — see note below |
+| Worker tests | `cd workers && npx vitest run` | exactly `WK_TESTS_BEFORE` passed |
+| Python tests | `make test-py` | `PY_PASSED_BEFORE` passed, `PY_SKIPPED_BEFORE` skipped, `3 failed` — see note below |
 | Python lint | `make lint-py` (after Step 3) | `All checks passed!` |
 | Makefile typecheck | `make typecheck` | exit 0 |
 | Makefile lint (after Step 3) | `make lint` | ruff `All checks passed!` **and** eslint 0 errors |
 | YAML sanity | `python3 -c "import yaml,sys;yaml.safe_load(open('.github/workflows/ci.yml'))"` | exit 0, no output |
 
 **Python test note — do not chase these**: `make test-py` reports
-**3 pre-existing failures** in `tests/test_backfill_judge_overrides_from_pdf.py`.
-They are environmental: Homebrew Python 3.14.7 has a `pyexpat`/`libexpat` ABI
-mismatch that breaks the `pypdf` import. They are not caused by repo code and
-are not this plan's problem. The baseline is `1141 passed, 3 failed, 7 skipped`
-and must be unchanged when you finish.
+**3 pre-existing failures**, and they must still be *exactly those three, by
+name*, when you finish:
+
+```
+tests/test_backfill_judge_overrides_from_pdf.py::test_clean_line_does_not_destroy_words
+tests/test_backfill_judge_overrides_from_pdf.py::test_extract_judiciary_names_filters_non_judicial_judging
+tests/test_backfill_judge_overrides_from_pdf.py::test_merge_treats_postnominal_variant_as_equivalent
+```
+
+All three fail with `ImportError: ... pyexpat ... _XML_SetAllocTrackerActivationThreshold`.
+They are environmental: the Homebrew Python 3.14.7 this repo's `.venv` was
+built on has a `pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf`
+import. They are not caused by repo code and are not this plan's problem.
+Assert on the three test **names**, not on the number `3` alone.
 
 ## Scope
 
@@ -523,8 +625,16 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 git checkout -b advisor/001-restore-the-frontend-compile-gate
 ```
 
-Note: `.claude/STATE.md` is already modified in the working tree at `42826a3`.
-That is pre-existing and not yours — leave it alone and do not stage it.
+Note: the working tree may already carry modifications that are not yours —
+`.claude/STATE.md` was dirty at `42826a3`, and `plans/` may be dirty or
+untracked. Whatever the drift check showed as already-dirty at the start is
+pre-existing: leave it alone, do not stage it, and do not "clean" it. Record
+what was dirty in your handoff so a reviewer can tell your diff from the
+operator's.
+
+Before committing, per this repo's `CLAUDE.md` GitNexus rules, run
+`detect_changes()` and report the affected symbol set. If the index is stale,
+refresh it (`node .gitnexus/run.cjs analyze`) or mark the check **unverified**.
 
 ## Steps
 
@@ -596,7 +706,19 @@ and make the assertion flap. `--force` makes the count deterministic.
 
 Why the assertion exists at all: this is the exact failure the plan is fixing.
 Without it, any future tsconfig edit can silently empty the gate again and
-nothing will say so. `150` is a floor, not a target — today the count is 169.
+nothing will say so. `150` is a floor, not a target — today the count is
+`FE_SRC_BEFORE` (169 when this plan was written).
+
+**The margin on that floor is thinner than it looks, so Step 6 adds a second,
+identity-based assertion.** Measured on 2026-08-28 with a scratch project
+outside the repo: the test project *on its own* transitively pulls in **122**
+files under `frontend/src/` through its `@/*` imports. So deleting the
+`tsconfig.app.json` reference would drop the count to 122 and the `>= 150`
+floor would still catch it — but only by 28 files. One more import-heavy test
+file and a count-only gate stops discriminating between "the app project is
+wired in" and "the test project happens to reach enough files". Step 6b
+therefore also asserts the *identity* of the `references` array, which cannot
+drift silently regardless of file counts.
 
 **Verify**:
 
@@ -607,7 +729,9 @@ python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && ech
 cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'
 ```
 
-→ prints `TYPECHECK_OK`, then `YAML_OK`, then `169`.
+→ prints `TYPECHECK_OK`, then `YAML_OK`, then a number equal to
+`FE_SRC_BEFORE` from the baseline capture. This plan adds and deletes no file
+under `frontend/src/`, so any change here is a STOP condition.
 
 Commit: `ci: type-check the frontend in build mode instead of an empty project`
 
@@ -628,24 +752,40 @@ non-vacuity assertion and **before** the Vitest step:
       - name: Build production bundle
         run: npm run build:cloudflare
         working-directory: frontend
+
+      - name: Assert the committed design tokens are not stale
+        run: git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts
 ```
+
+The second step is not optional decoration. `npm run build:cloudflare` runs
+`npm run tokens` first, and that generator rewrites the **tracked** files
+`frontend/src/tokens/tokens.css` and `frontend/src/tokens/tokens.ts` in place
+from `frontend/src/tokens/tokens.json`. Without this assertion the build would
+silently regenerate them inside the CI runner and throw the result away, so a
+pull request that edits `tokens.json` without regenerating its outputs — or
+that hand-edits a generated file — merges green and ships stale tokens. The
+generator is deterministic (verified 2026-08-28: `frontend/scripts/build-tokens.ts`
+contains no `Date`/timestamp/`toISOString` call, and both outputs begin with
+the fixed header `/* Auto-generated from tokens.json — do not edit manually */`),
+so on a healthy tree this diff is empty and the step is silent. When it fires
+it fires for a real reason.
 
 **Verify**:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npm run build:cloudflare && echo "BUILD_OK"
-cd .. && git status --short
+cd ..
+git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts && echo "TOKENS_CLEAN"
+git status --short
 ```
 
-→ prints `BUILD_OK`; `git status --short` shows only ` M .claude/STATE.md`,
-your own in-scope edits, and `?? plans/`. It must **not** list anything under
-`frontend/src/tokens/` — `npm run build:cloudflare` runs `npm run tokens`,
-which rewrites the tracked files `frontend/src/tokens/tokens.css` and
-`frontend/src/tokens/tokens.ts` in place. Those are generated from the
-committed `tokens.json`, so a clean regeneration produces no diff. If a diff
-appears there, that is a STOP condition (the committed generated files are
-stale) — report it, do not commit the regeneration.
+→ prints `BUILD_OK`, then `TOKENS_CLEAN`; `git status --short` shows your own
+in-scope edits plus whatever was already dirty when you ran the drift check,
+and **nothing** under `frontend/src/tokens/` or
+`immi_case_downloader/static/react/`. If `TOKENS_CLEAN` does not print, that is
+a STOP condition (the committed generated files are stale) — report it, do not
+commit the regeneration.
 
 Commit: `ci: build the production bundle on every pull request`
 
@@ -722,9 +862,24 @@ python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && ech
 ```
 
 → `make lint-py` prints `All checks passed!` then `LINT_PY_OK`;
-`make lint-fe` prints `✖ 25 problems (0 errors, 25 warnings)` and
+`make lint-fe` prints a summary line whose **error** count is `0` (the warning
+count is not gated and is expected to be non-zero — 25 at `42826a3`) and
 `lint-fe exit=0`; `make lint` runs both and prints `LINT_ALL_OK`;
 then `YAML_OK`.
+
+Assert on the error count, not the warning count, and not on the exit code
+alone — ESLint exits 0 for warnings, so `exit=0` on its own would also be
+printed by a config that lints nothing. Confirm the run actually inspected
+files:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx eslint . -f json | python3 -c "import json,sys; d=json.load(sys.stdin); print('files linted:', len(d)); print('errors:', sum(f['errorCount'] for f in d))"
+```
+
+→ `files linted:` in the low hundreds (measured **242** on 2026-08-28, with
+`errors: 0` and `warnings: 25`). The number itself is not the gate; the point
+is that it is not `0`, which is what a silently-broken flat config would give.
 
 Commit: `ci: run ESLint on the frontend in CI and make lint`
 
@@ -734,18 +889,93 @@ Three things are wrong at once: the coverage provider is not installed, the
 thresholds are in a shape Vitest 4 does not recognise, and no automation ever
 passes `--coverage`.
 
-**4a.** Install the provider, pinned to the exact installed Vitest version.
+**4a.** Record the exact installed Vitest version **before** touching anything,
+so you can prove afterwards that it did not move:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+python3 -c "import json;print(json.load(open('package-lock.json'))['packages']['node_modules/vitest']['version'])" | tee /tmp/vitest-version-before.txt
+```
+
+→ `4.0.18` at `42826a3`.
+
+Now install the provider, pinned to that exact version.
 `@vitest/coverage-v8@4.0.18` declares `peerDependencies: { vitest: '4.0.18' }`
 — an exact pin — and `frontend/node_modules/vitest` is `4.0.18`. Use the exact
 version, **not** a caret range: `^4.0.18` resolves to 4.1.x and would drag
-`vitest` itself forward across 490 tests.
+`vitest` itself forward across the whole suite.
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npm install --save-dev --save-exact @vitest/coverage-v8@4.0.18
 ```
 
-**4b.** Measure the real coverage before choosing any number:
+Then prove `vitest` itself did not move:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+python3 -c "import json;print(json.load(open('package-lock.json'))['packages']['node_modules/vitest']['version'])" > /tmp/vitest-version-after.txt
+diff /tmp/vitest-version-before.txt /tmp/vitest-version-after.txt && echo "VITEST_PIN_HELD"
+```
+
+→ `VITEST_PIN_HELD`. **Do not** try to prove this with
+`git diff frontend/package-lock.json | grep '"vitest"'`. That check cannot
+fail usefully: `package-lock.json` is lockfileVersion 3, which records a
+`peerDependencies` block per package, and the newly added
+`node_modules/@vitest/coverage-v8` entry contains `"vitest": "4.0.18"` inside
+its own `peerDependencies` — so the grep matches added lines even when
+`vitest` is completely unchanged. (Verified 2026-08-28: two existing entries in
+this lockfile, `node_modules/vitest` and `node_modules/@vitest/ui`, already
+carry `vitest` inside `peerDependencies`.) Compare the parsed version field,
+which is the only thing that answers the question.
+
+**4b.** Fix the *coverage universe* before measuring anything, or the number
+you measure will be meaningless.
+
+Two independent defects in the current `coverage` block:
+
+1. **No `coverage.include`.** Verified against the installed Vitest 4.0.18
+   type definitions
+   (`frontend/node_modules/vitest/dist/chunks/reporters.d.CWXNI2jG.d.ts`,
+   `BaseCoverageOptions.include`): *"List of files included in coverage as glob
+   patterns. **By default only files covered by tests are included.**"* — and
+   `coverageConfigDefaults.include` really is `undefined` (checked by importing
+   `coverageConfigDefaults` from `vitest/config`). So a `src` file that no test
+   imports never enters the denominator at all. A ratchet measured on that
+   universe is a ratchet on "the files we already test", which is close to
+   meaningless: adding an untested module cannot lower it.
+2. **`"./__tests__/"` does not describe where the tests live.** It was written
+   when `frontend/__tests__/` was the only test root. It does not match
+   `src/**/__tests__/**`, and `plans/002` is about to widen the Vitest
+   `include` glob to collect exactly that directory — at which point the test
+   file itself would be eligible to count as covered source.
+
+Replace the whole block so the universe is stated explicitly:
+
+```ts
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "json-summary", "html"],
+      // Explicit universe. Without `include`, Vitest 4 reports only files that
+      // some test imported, so untested modules silently vanish from the
+      // denominator and the thresholds below would measure nothing.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "**/__tests__/**",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "src/tokens/tokens.ts",
+      ],
+      // (thresholds follow — see 4d)
+    },
+```
+
+`src/tokens/tokens.ts` is excluded because it is generated from
+`tokens.json` by `npm run tokens`; gating coverage on generated data is noise.
+
+**4c.** Now measure the real coverage, on the corrected universe:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
@@ -755,31 +985,46 @@ npx vitest run --coverage
 Record the four percentages from the `All files` row of the printed table:
 `% Stmts`, `% Branch`, `% Funcs`, `% Lines`.
 
-**4c.** `frontend/vitest.config.ts` — replace lines 13-21:
+**Prove the universe is what you asked for** — this is the check that fails if
+`include` is being ignored:
 
-```ts
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json", "html"],
-      exclude: ["node_modules/", "./__tests__/", "**/*.config.*", "**/*.d.ts"],
-      lines: 80,
-      functions: 80,
-      branches: 80,
-      statements: 80,
-    },
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+DISK=$(find src -type f \( -name '*.ts' -o -name '*.tsx' \) \
+  -not -path '*/__tests__/*' -not -name '*.d.ts' -not -name '*.config.*' \
+  -not -name 'tokens.ts' | wc -l | tr -d ' ')
+REPORTED=$(python3 -c "import json;d=json.load(open('coverage/coverage-summary.json'));print(len([k for k in d if k!='total']))")
+echo "on disk: $DISK   in coverage report: $REPORTED"
+[ "$DISK" = "$REPORTED" ] && echo "COVERAGE_UNIVERSE_OK" || echo "MISMATCH"
+grep -c '__tests__' coverage/coverage-summary.json
 ```
 
-with the nested form Vitest 4 actually reads:
+→ `COVERAGE_UNIVERSE_OK`, and the `grep -c` prints `0` (no test file is being
+counted as source). If the two numbers differ, do **not** paper over it by
+adjusting the threshold — report the mismatch and the two file lists.
+
+**4d.** `frontend/vitest.config.ts` — add the thresholds. Replace the
+`// (thresholds follow — see 4d)` placeholder from 4b with the nested form
+Vitest 4 actually reads, so the finished block is:
 
 ```ts
     coverage: {
       provider: "v8",
-      reporter: ["text", "json", "html"],
-      exclude: ["node_modules/", "./__tests__/", "**/*.config.*", "**/*.d.ts"],
+      reporter: ["text", "json", "json-summary", "html"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "**/__tests__/**",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "src/tokens/tokens.ts",
+      ],
       // Vitest 4 only reads thresholds nested under `thresholds`. The four
       // flat `80`s that used to live here were not recognised options and
       // never gated anything. These numbers are a RATCHET pinned to the
-      // coverage measured on 2026-08-27 — raise them, never lower them.
+      // coverage measured on the universe defined by `include` above —
+      // raise them, never lower them.
       thresholds: {
         lines: LINES,
         functions: FUNCTIONS,
@@ -797,12 +1042,25 @@ Choose each number by this rule, so the gate is real and passes today:
   whole percent that passes right now. Do **not** round up and do **not**
   aspirationally write 80; that would fail CI on the very first run.
 
-Leave the `exclude` array exactly as-is. It is not the defect: in Vitest 4
-`coverageConfigDefaults.exclude` is `[]` (verified by importing
-`coverageConfigDefaults` from `vitest/config`), so supplying an `exclude` list
-does not clobber any default.
+Expect these numbers to be **much lower** than the ones a run without
+`coverage.include` would have produced, because untested modules now count.
+That is the point: a threshold measured on "only the files we already test" is
+a threshold that no untested file can ever violate.
 
-**4d.** `.github/workflows/ci.yml` — change the Vitest step from:
+Note on the old `exclude` list (`["node_modules/", "./__tests__/", …]`): the
+audit that fed this plan suspected the leading `./` was the defect. It is not —
+in Vitest 4 `coverageConfigDefaults.exclude` is `[]`, so supplying an `exclude`
+list clobbers no default. The list is being replaced because it describes the
+wrong universe once `include` exists and once `plans/002` widens the test glob,
+not because of the `./`.
+
+**`plans/002` re-measures these numbers.** It widens the Vitest `include` glob
+to collect `frontend/src/lib/__tests__/saved-searches.test.ts`, which executes
+`src/lib/saved-searches.ts` for the first time and moves at least the `lines`
+figure. Do not try to pre-compensate here; 002 Step 1a owns the re-measure and
+says so.
+
+**4e.** `.github/workflows/ci.yml` — change the Vitest step from:
 
 ```yaml
       - name: Run Vitest tests
@@ -820,7 +1078,7 @@ to:
 
 This is the same single test run, with thresholds enforced — not a second run.
 
-**4e.** `Makefile` — add a target after `test-workers` (after line 71) so the
+**4f.** `Makefile` — add a target after `test-workers` (after line 71) so the
 CI command is reproducible locally:
 
 ```make
@@ -831,7 +1089,7 @@ coverage-fe:
 Leave `test-fe` as the fast, no-coverage local loop. `.PHONY` already lists
 `coverage-fe` from Step 3c.
 
-**4f.** `Makefile:32` — add a help line next to the existing `make coverage`
+**4g.** `Makefile:32` — add a help line next to the existing `make coverage`
 entry:
 
 ```make
@@ -843,24 +1101,38 @@ entry:
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 make coverage-fe && echo "COVERAGE_OK"
-grep -n 'thresholds' frontend/vitest.config.ts
-grep -n '"@vitest/coverage-v8"' frontend/package.json
+python3 - <<'PY'
+import re
+s = open("frontend/vitest.config.ts").read()
+cov = s.split("coverage:", 1)[1]
+assert "thresholds: {" in cov, "thresholds block missing"
+head = cov.split("thresholds: {", 1)[0]
+for k in ("lines", "functions", "branches", "statements"):
+    assert not re.search(rf"^\s*{k}\s*:", head, re.M), f"{k} is still a direct child of coverage"
+assert 'include: ["src/**/*.{ts,tsx}"]' in cov, "coverage.include missing"
+print("COVERAGE_CONFIG_SHAPE_OK")
+PY
+python3 -c "import json;print(json.load(open('frontend/package.json'))['devDependencies']['@vitest/coverage-v8'])"
 python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && echo "YAML_OK"
 ```
 
-→ `make coverage-fe` prints `490 passed`, a coverage table, **no**
-`ERROR: Coverage for ... does not meet threshold` line, then `COVERAGE_OK`;
-`grep thresholds` shows the nested block; `grep @vitest/coverage-v8` shows
-`"@vitest/coverage-v8": "4.0.18"` (exact, no caret); then `YAML_OK`.
+→ `make coverage-fe` prints the same passing test counts as the baseline
+capture, a coverage table, **no** `ERROR: Coverage for ... does not meet
+threshold` line, then `COVERAGE_OK`; then `COVERAGE_CONFIG_SHAPE_OK`; then
+`4.0.18` exactly (no `^`, no `~`); then `YAML_OK`.
+
+The `python3` shape check replaces a bare `grep -n 'thresholds'`, which would
+also have matched the explanatory comment above the block and so could not
+have failed for the right reason.
 
 Sanity check that the gate is live rather than decorative: temporarily raise
 `lines` to `100`, re-run `npx vitest run --coverage`, confirm it **fails** with
-a threshold error, then restore your measured value and confirm it passes
-again. Do not commit the `100`.
+a threshold error and a non-zero exit, then restore your measured value and
+confirm it passes again. Do not commit the `100`.
 
 Commit: `test: enforce Vitest coverage thresholds instead of declaring them`
 
-### Step 5: Create the test tsconfig and clear the 20 errors it surfaces
+### Step 5: Create the test tsconfig and clear every error it surfaces
 
 Right now the 55 files under `frontend/__tests__`, plus `vitest.config.ts`,
 `playwright.config.ts`, `scripts/build-tokens.ts` and
@@ -908,13 +1180,29 @@ Three details that matter and will bite if you change them:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx tsc --noEmit -p tsconfig.test.json 2>&1 | tee /tmp/tsc-test-backlog.txt | grep -c 'error TS'
+```
+
+→ Expect **19** on the first run (the 20 enumerated above, minus the
+`vitest.config.ts` TS2769 that Step 4 already fixed). If you instead see four
+errors reading `error TS2688: Cannot find type definition file for ...`, the
+file is not at `frontend/tsconfig.test.json` — move it there and re-run. (That
+failure was reproduced deliberately on 2026-08-28: a copy of this config placed
+outside `frontend/` cannot resolve `vite/client`, `vitest/globals`,
+`@testing-library/jest-dom` or `node`, and reports exactly those four.)
+
+**19 is a starting inventory, not a target.** As shown in "What a test tsconfig
+surfaces", fixing the three `by_court` errors unmasks a 21st error on the same
+object literal. After every batch of fixes, re-run:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npx tsc --noEmit -p tsconfig.test.json 2>&1 | grep -c 'error TS'
 ```
 
-→ Expect **19** (20 minus the `vitest.config.ts` TS2769, which Step 4 already
-fixed). If you instead see four errors reading
-`error TS2688: Cannot find type definition file for ...`, the file is not at
-`frontend/tsconfig.test.json` — move it there and re-run.
+and keep going until it prints `0`. Any error that appears at a file:line **not
+on the enumerated list and not `analytics-charts-tokens.test.tsx:149`** is a
+STOP condition — report it rather than guessing at a fix.
 
 **5c.** Fix the seven unused-symbol errors (TS6133):
 
@@ -936,14 +1224,32 @@ already supersedes it, and the value is never read. Do not rename it — TypeScr
 `noUnusedLocals` does not honour a leading underscore for local variables (only
 for parameters), so `_raw` cannot be silenced that way.
 
-**5d.** Fix the eleven fixture-shape errors. Each is a test fixture that has
-drifted behind its source type. Add the missing fields; do not weaken the
+**5d.** Fix the twelve fixture-shape errors (eleven visible on the first run,
+plus the one the first eleven are masking). Each is a test fixture that has
+drifted behind its source type. Add or rename the fields; do not weaken the
 source types and do not add `as any`.
 
 - `frontend/__tests__/analytics-charts-tokens.test.tsx:145-147` — each of the
   three `concepts` entries needs `by_court`, per
   `frontend/src/types/case.ts:295` (`by_court: Record<string, { total: number; win_rate: number }>`).
   Add `by_court: {},` to each object.
+- `frontend/__tests__/analytics-charts-tokens.test.tsx:149` — **in the same
+  edit**, rename the key `baseline_win_rate` to `baseline_rate`.
+  `ConceptEffectivenessData` (`frontend/src/types/case.ts:298-301`) declares
+  `baseline_rate: number` and has no `baseline_win_rate` member; the fixture's
+  key has been wrong the whole time and TypeScript was masking it behind the
+  three `by_court` errors. The line becomes:
+
+  ```tsx
+      baseline_rate: 50,
+  ```
+
+  This is behaviourally inert — verified 2026-08-28 by
+  `grep -rn 'baseline_rate\|baseline_win_rate' frontend/src frontend/__tests__`,
+  whose only `frontend/src` hits are the two type declarations
+  (`types/case.ts:268`, `:299`) and `components/judges/ConceptEffectivenessTable.tsx:8`.
+  `ConceptEffectivenessChart`, the component this fixture is passed to, never
+  reads the field, so the rename cannot change what the test asserts.
 - `frontend/__tests__/llm-council-page.test.tsx:160` and
   `frontend/__tests__/llm-council-thread.test.tsx:139` — each fixture is an
   `LlmCouncilSession` missing `retrieve_code`. That field is
@@ -1007,12 +1313,24 @@ say so in your report — but try the narrowing first, it is the cleaner fix.
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
 npx tsc --noEmit -p tsconfig.test.json && echo "TEST_PROJECT_CLEAN"
-npx vitest run
+npx vitest run 2>&1 | tail -6
 ```
 
-→ prints `TEST_PROJECT_CLEAN` with no error output, then `490 passed`
-across 55 files. **The test count must still be 490** — you changed fixtures,
-not assertions.
+→ prints `TEST_PROJECT_CLEAN` with no error output, then a passing run whose
+`Test Files` and `Tests` counts are **identical to `FE_TESTFILES_BEFORE` and
+`FE_TESTS_BEFORE`** from the baseline capture. You changed fixtures, not
+assertions, so any movement in either direction is a STOP condition.
+
+Two named assertions that must specifically still pass (they are the ones whose
+fixtures you edited):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npx vitest run __tests__/analytics-charts-tokens.test.tsx -t "ConceptEffectivenessChart renders with data"
+npx vitest run __tests__/session-list-item-stale-closure.test.tsx
+```
+
+→ both exit 0 with no failures.
 
 Commit: `fix: bring the frontend test files and build scripts under a tsconfig`
 
@@ -1056,6 +1374,37 @@ Step 1 to guard the test project too. Replace the body of the
           fi
 ```
 
+**6c.** Add an identity assertion on the `references` array itself, as a
+separate CI step immediately after the one above. A file **count** cannot tell
+you *which* project contributed the files: measured on 2026-08-28, the test
+project alone reaches 122 files under `frontend/src/`, so the `>= 150` floor
+survives the loss of the app reference today by a margin of only 28 files. The
+`references` list is the thing that must not drift, so assert on it directly:
+
+```yaml
+      - name: Assert the tsconfig project graph is intact
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const raw = fs.readFileSync("tsconfig.json", "utf8").replace(/^\s*\/\/.*$/gm, "");
+            const cfg = JSON.parse(raw);
+            const want = ["./tsconfig.app.json", "./tsconfig.node.json", "./tsconfig.test.json"];
+            const got = (cfg.references || []).map(r => r.path).sort();
+            const missing = want.filter(p => !got.includes(p));
+            if (missing.length) {
+              console.error("::error::tsconfig.json is missing project reference(s): " + missing.join(", "));
+              process.exit(1);
+            }
+            if (cfg.compilerOptions) {
+              console.error("::error::tsconfig.json must stay references-only; compilerOptions here causes TS5101.");
+              process.exit(1);
+            }
+            console.log("tsconfig references OK: " + got.join(", "));
+          '
+```
+
 **Verify**:
 
 ```bash
@@ -1064,13 +1413,22 @@ make typecheck && echo "TYPECHECK_OK"
 cd frontend
 npx tsc -b --noEmit --force --listFiles > /tmp/verify-listfiles.txt
 echo "src=$(grep -c '/frontend/src/' /tmp/verify-listfiles.txt) tests=$(grep -c '/frontend/__tests__/' /tmp/verify-listfiles.txt)"
+node -e 'const c=JSON.parse(require("fs").readFileSync("tsconfig.json","utf8"));const g=(c.references||[]).map(r=>r.path).sort();console.log(JSON.stringify(g));if(g.length!==3||c.compilerOptions)process.exit(1)' && echo "REFS_OK"
 npm run build:cloudflare && echo "BUILD_OK"
-cd .. && python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && echo "YAML_OK"
+cd ..
+git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts && echo "TOKENS_CLEAN"
+python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))" && echo "YAML_OK"
 ```
 
-→ `TYPECHECK_OK`; the counts line shows `src=169` and `tests` at least `55`;
-then `BUILD_OK` (this proves `npm run build`'s own `tsc -b` still passes with
-three references, which is what the deploy workflow runs); then `YAML_OK`.
+→ `TYPECHECK_OK`; the counts line shows `src=` equal to `FE_SRC_BEFORE` and
+`tests` at least equal to `FE_TESTFILES_BEFORE`; then the three reference paths
+and `REFS_OK`; then `BUILD_OK` (this proves `npm run build`'s own `tsc -b`
+still passes with three references, which is what the deploy workflow runs);
+then `TOKENS_CLEAN`; then `YAML_OK`.
+
+Negative check on the new assertion — it must be able to fail. Temporarily
+delete the `./tsconfig.test.json` entry from `tsconfig.json`, re-run the `node
+-e` line, confirm it exits non-zero, then restore. Do not commit the deletion.
 
 Commit: `ci: reference the test tsconfig so 55 test files are type-checked`
 
@@ -1084,39 +1442,54 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 
 # frontend job, in CI order
 cd frontend
-npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'   # 169
+npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'   # == FE_SRC_BEFORE
 npm run lint                                                          # 0 errors
 npm run build:cloudflare                                              # exit 0
-npx vitest run --coverage                                             # 490 passed, thresholds met
+cd ..
+git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts
+cd frontend
+npx vitest run --coverage 2>&1 | tail -8   # == FE_TESTS_BEFORE, thresholds met
 cd ..
 
 # worker job
-cd workers && npx vitest run; cd ..                                   # 345 passed, 25 files
+cd workers && npx vitest run 2>&1 | tail -4; cd ..   # == WK_TESTS_BEFORE
 
 # python job
-make test-py                                                          # 1141 passed, 3 failed, 7 skipped
-make lint                                                             # ruff clean + eslint 0 errors
+make test-py 2>&1 | tail -6   # == PY_PASSED_BEFORE / PY_SKIPPED_BEFORE, 3 named failures
+make lint                     # ruff clean + eslint 0 errors
 
 # nothing outside scope touched
-git status --short
+git status --short --branch
 ```
 
-`git status --short` must list only `.claude/STATE.md` (pre-existing),
-`plans/` (untracked), and files from the In-scope list. Nothing under
+Every count above is compared against the value you wrote down in the baseline
+capture, not against a number printed in this document. The only deviation
+allowed anywhere is: none. This plan changes gates, not behaviour.
+
+`git status --short` must list only files from the In-scope list plus whatever
+was already dirty when you ran the drift check. Nothing under
 `immi_case_downloader/static/react/` and nothing under `frontend/src/tokens/`.
+
+**Before committing**, per this repo's `CLAUDE.md` GitNexus rules, run
+`detect_changes()` and confirm the affected symbol set is limited to the test
+fixtures you edited and `frontend/scripts/translate-locales.ts`. If the index
+is stale (it lagged `HEAD` on 2026-08-28), either refresh it with
+`node .gitnexus/run.cjs analyze` from the repo root or record the check as
+**unverified** in your handoff — do not silently skip it.
 
 ## Test plan
 
-This plan writes **no new tests**. It makes the existing 490 frontend tests,
-345 worker tests and 1141 Python tests actually gate merges, and it brings
-the 55 previously-unchecked frontend test files under a type-checker.
+This plan writes **no new tests**. It makes the existing frontend, worker and
+Python suites actually gate merges, and it brings the previously-unchecked
+frontend test files under a type-checker.
 
-- **Existing tests as the regression net**: `frontend/__tests__` (55 files,
-  490 tests) must stay at exactly 490 passing throughout. The only edits to
-  test files are fixture-shape corrections (adding fields the source type
-  already requires) and deleting unused imports. Neither changes any assertion.
-  If the count moves off 490 in either direction, you have changed behaviour —
-  STOP.
+- **Existing tests as the regression net**: the frontend suite must stay at
+  exactly `FE_TESTS_BEFORE` passing across `FE_TESTFILES_BEFORE` files
+  throughout — the numbers you recorded in the baseline capture, not numbers
+  copied from this document. The only edits to test files are fixture-shape
+  corrections (adding or renaming fields the source type already requires) and
+  deleting unused imports. Neither changes any assertion. If either count moves
+  in either direction, you have changed behaviour — STOP.
 - **Structural pattern to follow for fixture edits**:
   `frontend/__tests__/session-list-item-stale-closure.test.tsx:30-39` shows the
   house style for a typed fixture factory — an explicit return type annotation
@@ -1127,49 +1500,87 @@ the 55 previously-unchecked frontend test files under a type-checker.
   `thresholds.lines` to `100`, confirm `npx vitest run --coverage` fails with a
   threshold error, restore the measured value, confirm it passes. This proves
   the gate is live rather than decorative — which was the entire defect.
-- **Negative test of the non-vacuity assertion** (optional, not committed):
+- **Negative test of the non-vacuity assertion** (required, not committed):
   temporarily empty the `references` array in `frontend/tsconfig.json`, run the
   Step 1 assertion body locally, and confirm it exits 1 with the
   `project graph collapsed` message. Restore immediately.
-- **Verification**: `cd frontend && npx vitest run --coverage` → `490 passed`,
-  55 files, no threshold error, exit 0.
+- **Negative test of the reference-identity assertion** (required, not
+  committed): delete only the `./tsconfig.test.json` entry, run the Step 6c
+  `node -e` body, confirm it exits 1 naming the missing reference. Restore
+  immediately. This one matters because the count-based floor alone would
+  **not** catch that specific deletion for the `__tests__` half if the floor
+  were ever loosened.
+- **Verification**: `cd frontend && npx vitest run --coverage` → exactly
+  `FE_TESTS_BEFORE` passing across `FE_TESTFILES_BEFORE` files, no threshold
+  error, exit 0.
 
 ## Done criteria
 
-Machine-checkable. ALL must hold.
+Machine-checkable. ALL must hold. Every count is a **comparison against the
+baseline you captured**, never a literal copied from this file — a literal
+would rot the moment `plans/002` or any sibling plan lands, and would tempt the
+next executor to edit the yardstick instead of the code.
 
 - [ ] `cd frontend && npx tsc --noEmit --listFiles | wc -l` still returns `0` —
       and **no command in `Makefile` or `.github/workflows/ci.yml` uses that
       form**: `grep -rn 'tsc --noEmit' Makefile .github/workflows/ci.yml`
       returns no matches.
 - [ ] `make typecheck` exits 0.
-- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'` returns `169`.
-- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/__tests__/'` returns at least `55`.
+- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'`
+      returns exactly `FE_SRC_BEFORE` (unchanged: this plan touches no `src` file).
+- [ ] `cd frontend && npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/__tests__/'`
+      returns at least `FE_TESTFILES_BEFORE` minus the one colocated file
+      (`FE_TESTFILES_BEFORE` counts only `frontend/__tests__` at this point in
+      the chain, so the two are equal here).
 - [ ] `cd frontend && npx tsc --noEmit -p tsconfig.test.json` exits 0 with no output.
 - [ ] `frontend/tsconfig.json` contains exactly three entries in `references`,
       including `{ "path": "./tsconfig.test.json" }`, and still has
-      `"files": []` and no `compilerOptions` key.
+      `"files": []` and no `compilerOptions` key — checked with the Step 6c
+      `node -e` one-liner, which exits non-zero on any of those three failures.
 - [ ] `make lint` exits 0; `make lint-py` and `make lint-fe` both exist and
       exit 0 independently.
-- [ ] `grep -c 'eslint\|npm run lint' .github/workflows/ci.yml` returns at
-      least `1` (it returned 0 before this plan).
-- [ ] `grep -c 'build:cloudflare' .github/workflows/ci.yml` returns at least `1`.
-- [ ] `grep -c 'vitest run --coverage' .github/workflows/ci.yml` returns at least `1`.
-- [ ] `cd frontend && npm run build:cloudflare` exits 0.
-- [ ] `cd frontend && npx vitest run --coverage` exits 0, reports `490 passed`
-      across 55 files, and prints no `does not meet threshold` line.
-- [ ] `frontend/vitest.config.ts` has no top-level `lines:` / `functions:` /
-      `branches:` / `statements:` key directly under `coverage` — they are
-      nested under `thresholds`:
-      `grep -A6 'thresholds: {' frontend/vitest.config.ts` shows all four.
-- [ ] `grep '"@vitest/coverage-v8"' frontend/package.json` shows `"4.0.18"`
-      exactly (no `^`, no `~`).
-- [ ] `cd workers && npx vitest run` reports `345 passed`, 25 files.
-- [ ] `make test-py` reports `1141 passed, 3 failed, 7 skipped` — the same
-      3 pre-existing pyexpat failures, no more, no fewer.
+- [ ] `cd frontend && npx eslint . -f json` reports `0` total errors across a
+      non-zero number of linted files (242 on 2026-08-28).
+- [ ] CI actually runs ESLint, the build and coverage — asserted structurally,
+      not by grep, since a grep also matches a comment:
+      ```bash
+      python3 - <<'PY'
+      import yaml
+      j = yaml.safe_load(open('.github/workflows/ci.yml'))['jobs']['test-frontend']['steps']
+      runs = " ".join(s.get('run','') for s in j)
+      assert 'npm run lint' in runs, 'no eslint step'
+      assert 'build:cloudflare' in runs, 'no build step'
+      assert 'vitest run --coverage' in runs, 'coverage not enforced'
+      assert 'frontend/src/tokens/tokens.css' in runs, 'no stale-token assertion'
+      print('CI_FRONTEND_SHAPE_OK')
+      PY
+      ```
+- [ ] `cd frontend && npm run build:cloudflare` exits 0, and
+      `git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts`
+      exits 0 afterwards.
+- [ ] `cd frontend && npx vitest run --coverage` exits 0, reports exactly
+      `FE_TESTS_BEFORE` passing across `FE_TESTFILES_BEFORE` files, and prints
+      no `does not meet threshold` line.
+- [ ] `frontend/vitest.config.ts` has no `lines:` / `functions:` / `branches:` /
+      `statements:` key directly under `coverage` (they are nested under
+      `thresholds`) **and** has `include: ["src/**/*.{ts,tsx}"]` — checked with
+      the Step 4g `python3` shape check, which fails on either.
+- [ ] The coverage report's file set equals the on-disk `src` set minus the
+      declared excludes (the Step 4c `COVERAGE_UNIVERSE_OK` check), and
+      `grep -c '__tests__' coverage/coverage-summary.json` returns `0`.
+- [ ] `python3 -c "import json;print(json.load(open('frontend/package.json'))['devDependencies']['@vitest/coverage-v8'])"`
+      prints `4.0.18` exactly (no `^`, no `~`).
+- [ ] The parsed `packages["node_modules/vitest"].version` in
+      `frontend/package-lock.json` is byte-identical before and after Step 4a.
+- [ ] `cd workers && npx vitest run` reports exactly `WK_TESTS_BEFORE` passing.
+- [ ] `make test-py` reports exactly `PY_PASSED_BEFORE` passed and
+      `PY_SKIPPED_BEFORE` skipped, and the failures are **still exactly the
+      three named `tests/test_backfill_judge_overrides_from_pdf.py` pyexpat
+      ImportErrors listed in "Commands you will need"** — assert on the names,
+      not on the number.
 - [ ] `python3 -c "import yaml;yaml.safe_load(open('.github/workflows/ci.yml'))"` exits 0.
-- [ ] `git status --short` lists no file outside the In-scope list (ignoring
-      the pre-existing `.claude/STATE.md` and the untracked `plans/`).
+- [ ] `git status --short --branch` lists no file outside the In-scope list,
+      other than paths that were already dirty at the drift check.
 - [ ] Nothing under `immi_case_downloader/static/react/` and nothing under
       `frontend/src/tokens/` is modified.
 - [ ] Nothing was pushed and no PR was opened.
@@ -1178,9 +1589,11 @@ Machine-checkable. ALL must hold.
 
 Stop and report back — do not improvise — if any of these occur.
 
-1. **The drift check is not empty** and the "Current state" excerpts no longer
-   match the live files. Line numbers in this plan were read at `42826a3`;
-   a mismatch means the codebase moved under you.
+1. **Any in-scope path appears in any of the three drift diffs, or as an
+   untracked `??` entry**, and the "Current state" excerpts no longer match the
+   live files. Line numbers in this plan were read at `42826a3`; a mismatch
+   means the codebase moved under you. Report it — never `git checkout --`,
+   `git restore`, `git stash` or `git clean` a path you did not create.
 2. **`npx tsc -b --noEmit` does not exit 0 at the start of Step 1.** The entire
    premise of this plan is that the latent-error backlog is empty today
    (verified at `42826a3`). If it is not, someone merged a type error behind
@@ -1193,18 +1606,25 @@ Stop and report back — do not improvise — if any of these occur.
    "Legal Codex" direction (warm off-white `#f5f4f1`, deep navy `#1b2838`,
    amber `#d4a017`, Crimson Text serif headings, 9 court-specific colour codes)
    is a decided, owned artifact, not a build by-product.
-4. **The Vitest test count moves off 490**, in either direction, at any point.
-   You are only supposed to be adding fields to fixtures and deleting unused
+4. **The Vitest test-file or test count moves off `FE_TESTFILES_BEFORE` /
+   `FE_TESTS_BEFORE`**, in either direction, at any point. You are only
+   supposed to be adding or renaming fields in fixtures and deleting unused
    imports.
-5. **`npx tsc --noEmit -p tsconfig.test.json` reports substantially more than
-   19 errors in Step 5b**, or reports errors in files not on the enumerated
-   list. The 20-error backlog was measured directly; a much larger number means
-   your `tsconfig.test.json` differs from the one specified (most likely
-   `include` is wrong, or you included `frontend/e2e/**`).
-6. **`npm install --save-dev --save-exact @vitest/coverage-v8@4.0.18` bumps
-   `vitest` itself** in `frontend/package-lock.json`. Check with
-   `git diff frontend/package-lock.json | grep -n '"vitest"'`. The pin exists
-   precisely to avoid that; a bump puts 490 tests on an untested runner version.
+5. **`npx tsc --noEmit -p tsconfig.test.json` reports errors at a file:line
+   that is neither on the enumerated list nor
+   `analytics-charts-tokens.test.tsx:149`**, or reports substantially more than
+   19 on the first run of Step 5b. The enumerated backlog was measured directly;
+   a much larger number means your `tsconfig.test.json` differs from the one
+   specified (most likely `include` is wrong, or you included
+   `frontend/e2e/**`). Note that a *slightly* larger number as you fix things is
+   expected and is not a STOP — see "This list is NOT closed".
+6. **Step 4a's `diff /tmp/vitest-version-before.txt /tmp/vitest-version-after.txt`
+   is not empty** — i.e. installing the coverage provider moved `vitest` itself
+   in `frontend/package-lock.json`. The exact pin exists precisely to avoid
+   that; a bump puts the whole suite on an untested runner version. Do not
+   substitute `git diff frontend/package-lock.json | grep '"vitest"'` for this
+   check: that grep matches the new provider's own `peerDependencies` block and
+   so fires whether or not `vitest` moved.
 7. **Any measured coverage metric is so low that a floor threshold looks
    meaningless** (below ~30%). Report the four numbers and ask whether to gate
    at the floor or to drop the threshold block entirely, rather than encoding a
@@ -1215,10 +1635,15 @@ Stop and report back — do not improvise — if any of these occur.
    or `CLAUDE.md`. If a fixture error can only be resolved by changing a source
    type, that is a real API question, not a test fix. Report it.
 9. **Any step's verification fails twice** after one reasonable fix attempt.
-10. **`make test-py` deviates from `1141 passed, 3 failed, 7 skipped`.** The 3
-   failures are the known Homebrew `pyexpat`/`pypdf` ABI problem; any other
-   number means something in this plan reached the Python side, which it
-   should not have.
+10. **`make test-py` deviates from `PY_PASSED_BEFORE` / `PY_SKIPPED_BEFORE`, or
+   the failing tests are not exactly the three named
+   `tests/test_backfill_judge_overrides_from_pdf.py` pyexpat ImportErrors.**
+   Those three are the known Homebrew `pyexpat`/`pypdf` ABI problem; anything
+   else means something in this plan reached the Python side, which it should
+   not have.
+11. **The Step 4c `COVERAGE_UNIVERSE_OK` check prints `MISMATCH`.** The
+   thresholds would then be measuring an unknown set of files. Report the two
+   file lists; do not adjust the threshold to make the run pass.
 
 ## Maintenance notes
 
@@ -1229,11 +1654,15 @@ For whoever owns this next.
 - That `frontend/tsconfig.json` gained *only* a `references` entry. Any
   `compilerOptions` there is a TS5101 landmine.
 - That the coverage `thresholds` numbers are the measured floor, not a
-  copy-paste of `80`. Ask what was measured; the commit message should say.
-- That the non-vacuity assertion is present in `ci.yml` and its two floors
-  (`150` src, `50` tests) are below the real counts (169 / 55) but far above
-  zero. The assertion is the whole point: without it this exact regression can
-  reappear silently.
+  copy-paste of `80`, **and that `coverage.include` is present**. Without
+  `include`, Vitest 4 counts only files some test imported, so a threshold
+  measured that way can never be violated by an untested module. Ask what was
+  measured and on what universe; the commit message should say.
+- That the non-vacuity assertion is present in `ci.yml`, that its two floors
+  are below the real counts but far above zero, **and that the separate
+  `references`-identity assertion (Step 6c) is there too**. The count floor
+  alone has only a 28-file margin (the test project reaches 122 `src` files on
+  its own), so the identity check is what actually pins the project graph.
 - That no `--max-warnings 0` sneaked into the ESLint step. The 25 warnings are
   pre-existing and out of scope; gating on them would make a free change
   expensive.
@@ -1256,13 +1685,22 @@ For whoever owns this next.
   coverage is measured and then ignored, and `--cov=immi_case_downloader` does
   not cover the top-level scripts. Same defect class as the frontend one this
   plan fixes, but on the Python side and outside this plan's file territory.
-- **`CLAUDE.md:32` documents a path that does not exist**:
-  `cd frontend && npx vitest run src/__tests__/components/judges/`. There is no
-  `frontend/src/__tests__` directory; the tests live in `frontend/__tests__`
-  (55 files). An agent following that line runs Vitest against nothing. Fix it
-  to `cd frontend && npx vitest run __tests__/` in whichever plan owns
-  `CLAUDE.md`. Also update the `make lint` description there once Step 3 lands,
-  since `make lint` is no longer Python-only.
+- **Docs go stale the moment this lands, and the fix has named owners.** Do not
+  leave this as a floating note:
+  - `plans/042-rewrite-the-agent-facing-docs.md` owns `CLAUDE.md`, `AGENTS.md`
+    and the `make help` correspondence. Hand it: (a) `CLAUDE.md:32` documents
+    `cd frontend && npx vitest run src/__tests__/components/judges/`, a path
+    that does not exist — there is no `frontend/src/__tests__` directory before
+    `plans/002` and the historical suite lives in `frontend/__tests__`, so an
+    agent following that line runs Vitest against nothing; it should become
+    `npx vitest run __tests__/`; (b) `make lint` is no longer Python-only after
+    Step 3 and the one-line description must change; (c) `make typecheck` is
+    now `tsc -b --noEmit`, not `tsc --noEmit`.
+  - `plans/043-correct-the-readme.md` owns `README.md`, including the frontend
+    test counts, which this plan holds constant but `plans/002` changes.
+  Both are documentation-only plans and must run **after** 001→002→003, since
+  the numbers and command names they reconcile are set by that chain. Say so in
+  your handoff; do not edit either file from this plan.
 - **`@eslint/js` is `^9.39.1` while `eslint` is `^10.0.0`.** Investigated and
   deliberately not changed — see "Findings reconsidered".
 - **`eslint.config.js:19` sets `ecmaVersion: 2020`** while
@@ -1272,12 +1710,29 @@ For whoever owns this next.
   aligning to `2023` + `globals.es2023` alongside the `@eslint/js` bump if that
   is ever done.
 
+**A green CI is not a clean dependency audit — this plan does not claim it is**
+
+Switching these gates on makes `.github/workflows/ci.yml` green on a frontend
+whose `package-lock.json` still carries npm advisories (17 at the time
+`plans/035` was written, of which 2 are critical; 8 of them reachable from
+production dependencies). Nothing in this plan detects or reports that, and
+adding an `npm audit` gate here would either fail the build on day one or
+require an unreviewed `npm audit fix`, both of which are out of scope.
+
+The owner is **`plans/035-fix-frontend-dependency-advisories.md`**, which
+regenerates the lockfile deliberately. It is an independent plan and may run
+before or after this chain; if it runs after, expect it to move
+`frontend/package-lock.json`, which is in this plan's In-scope list, so the two
+must not run concurrently. State in your handoff that CI going green here says
+nothing about the advisory backlog and points at 035.
+
 **What will interact with this later**
 
 - Any future change to `frontend/tsconfig*.json` must keep the CI assertion's
   floors honest. If the app legitimately shrinks below 150 source files, raise
   or lower the floor **deliberately and in the same commit** — never delete the
-  assertion.
+  assertion, and never delete the Step 6c `references`-identity check, which is
+  the half that does not depend on file counts at all.
 - If `vitest` is upgraded past `4.0.18`, `@vitest/coverage-v8` must move in
   lockstep: it declares an exact peer pin on the vitest version.
 - If a new `frontend/scripts/*.ts` file is added, it is now type-checked
@@ -1336,3 +1791,41 @@ stated, and one was corrected. Recorded here so nobody re-audits them.
   `frontend/package.json:13` (not `:18`) for `"lint": "eslint ."`. The three
   load-bearing citations (`frontend/tsconfig.json:2`, `Makefile:96`,
   `.github/workflows/ci.yml:64`) were all exact.
+
+- **Corrected: `coverage.exclude` *is* part of the defect after all — but not
+  for the reason first proposed.** The bullet above remains true (the leading
+  `./` is not the bug, and `coverageConfigDefaults.exclude` really is `[]`), but
+  a second, larger defect was found on 2026-08-28 and is now fixed in Step 4b:
+  `coverageConfigDefaults.include` is `undefined`, and the installed Vitest
+  4.0.18 documents `include` as *"By default only files covered by tests are
+  included."* So the whole coverage universe was "files some test already
+  imported", and a threshold measured on it could never be violated by an
+  untested module. Step 4b now sets `include: ["src/**/*.{ts,tsx}"]` and
+  rewrites `exclude` to cover both test roots, and Step 4c proves the resulting
+  universe matches the on-disk file set.
+
+## Review points not applied
+
+One reviewer point did not survive verification and is deliberately **not**
+applied. Recorded here so it is not re-raised.
+
+- **"Even with the `tsconfig.app.json` reference removed, `tsconfig.test.json`
+  could still pull in more than 150 `src` files through test imports, so the
+  `src >= 150` floor is not a reliable non-vacuity gate." — measured false.**
+  On 2026-08-28 the test project was built in isolation (a copy of the Step 5a
+  config placed outside the repo, extending
+  `frontend/tsconfig.app.json` and including only `frontend/__tests__`,
+  `vitest.config.ts`, `playwright.config.ts` and `frontend/scripts`) and run as
+  `npx tsc --noEmit --listFiles -p <that config> | grep -c '/frontend/src/'`.
+  Result: **122**, against `169` for the full `tsc -b` graph
+  (`npx tsc -b --noEmit --force --listFiles | grep -c '/frontend/src/'`). 122 is
+  below the `150` floor, so deleting the app reference **does** fail the
+  assertion as written. The floor is not vacuous today.
+
+  The reviewer's *remedy* was nevertheless adopted, on the strength of that same
+  measurement rather than the claim: a 28-file margin is thin, and a count can
+  never say *which* project supplied the files. Step 6c therefore adds an
+  assertion on the identity of the `references` array, which is immune to file
+  counts entirely. What was rejected is the premise that the existing floor
+  fails to discriminate — it does discriminate, and the plan says so with the
+  number.

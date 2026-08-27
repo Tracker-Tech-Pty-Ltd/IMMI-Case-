@@ -3,51 +3,81 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan in
-> `plans/README.md` if that file exists — unless a reviewer dispatched you and
-> told you they maintain the index.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
-> **Drift check (run first)**:
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> git diff --stat 42826a3..HEAD -- \
->   frontend/src/tokens/tokens.json \
->   frontend/src/tokens/tokens.css \
->   frontend/src/tokens/tokens.ts \
->   frontend/src/index.css \
->   frontend/src/components/analytics/RiskGauge.tsx \
->   frontend/src/components/judges/constants.ts \
->   frontend/src/components/shared/OutcomeStackedBar.tsx \
->   frontend/__tests__/risk-gauge.test.tsx \
->   frontend/__tests__/css-tokens.test.ts \
->   frontend/src/hooks/use-theme-preset.ts
+> P="frontend/src/tokens/tokens.json \
+>    frontend/src/tokens/tokens.css \
+>    frontend/src/tokens/tokens.ts \
+>    frontend/src/index.css \
+>    frontend/src/components/analytics/RiskGauge.tsx \
+>    frontend/src/components/judges/constants.ts \
+>    frontend/src/components/shared/OutcomeStackedBar.tsx \
+>    frontend/__tests__/risk-gauge.test.tsx \
+>    frontend/__tests__/css-tokens.test.ts \
+>    frontend/src/hooks/use-theme-preset.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
 >
-> Expected: the only file that may appear is
-> `frontend/src/hooks/use-theme-preset.ts` (plan 021 modifies it — Step 9 below
-> handles that case explicitly). If **any other** file is listed, compare the
+> Two files are **expected** to appear in the committed diff, and only those two:
+>
+> - `frontend/src/hooks/use-theme-preset.ts` — `plans/021-restore-legal-codex-default.md`
+>   is a hard prerequisite (see Status). If it is *absent*, 021 has not landed
+>   and that is a STOP condition, not a green light.
+> - `frontend/src/index.css` — `plans/019-fix-the-entry-bundle.md` deletes its
+>   line 1 (the Google Fonts `@import`). Confirm the deletion is the *only*
+>   change to that file (`git diff 42826a3..HEAD -- frontend/src/index.css`
+>   should show one removed `@import url("https://fonts.googleapis.com/...")`
+>   line and nothing else). Every `index.css` line number quoted in this plan is
+>   from `42826a3`; after 019 they shift up by one. **Re-locate every insertion
+>   point by its anchor text, never by line number.**
+>
+> If **any other** file is listed in any of the four commands, compare the
 > "Current state" excerpts below against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: `plans/021-restore-legal-codex-default.md` (which itself
-  depends on `plans/001-restore-the-frontend-compile-gate.md`)
+- **Depends on** (both are **hard** — do not start until each has landed):
+  - `plans/021-restore-legal-codex-default.md` (which itself depends on
+    `plans/001-restore-the-frontend-compile-gate.md`)
+  - `plans/019-fix-the-entry-bundle.md` — both plans edit
+    `frontend/src/index.css`. The hunks do not overlap (019 deletes line 1; this
+    plan inserts near the `select { … }` rule), but each plan's drift check
+    treats a modified `index.css` as a STOP, so they cannot run concurrently,
+    and after 019 every `index.css` line number quoted here shifts by one.
+- **Must run BEFORE**: `plans/024-add-accessibility-gates.md`. This plan adds
+  `on-solid`, an `outcome` scale and three new chart steps, and changes nine
+  dark court values — which invalidates 024's hard-coded 119-pair count, its
+  39-entry `KNOWN_BELOW_THRESHOLD` list, and its "more than five keys moved is a
+  STOP" rule. 024 must re-measure against the post-022 `tokens.json`.
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
 
-Why the dependency is real, stated here because the executor has not read plan
-021: plan 021 Step 1 replaces the `parchment` preset's empty `vars: {}` /
+Why the 021 dependency is real, stated here because the executor has not read
+plan 021: plan 021 Step 1 replaces the `parchment` preset's empty `vars: {}` /
 `darkVars: {}` with a 17-key map whose hex strings are **copied verbatim from
 `frontend/src/tokens/tokens.json`**, and plan 021 Step 5 adds a test that
 "asserts an exact match against `tokens.json`". Three of the values this plan
 changes (`text.muted` light, `text.muted` dark, `border.DEFAULT` dark) are in
-that copied set. If 021 lands first and this plan changes `tokens.json` without
-re-syncing the copy, 021's own test fails. Step 9 handles both orderings.
+that copied set, so this plan **must** re-sync them — that is Step 9, and it is
+now unconditional. If you find that 021 has not landed, stop: running this plan
+first leaves a landmine that fires when 021 arrives.
 
 Plan 001 matters because it repairs the frontend typecheck gate: `make
 typecheck` and CI currently run `npx tsc --noEmit`, which loads **zero** files
@@ -79,11 +109,41 @@ component that bypassed it:
 - 117 hex literals across 27 component files never move when the theme changes,
   which is *why* the court fix cannot be applied centrally today.
 
-After this plan the token layer is AA-clean in both themes, there is a
-foreground token for solid-fill backgrounds, the outcome and chart scales exist
-as tokens, three components stop carrying stranded literals, and a regression
-test (`frontend/__tests__/token-contrast.test.ts`) fails the build if any of it
-drifts back.
+After this plan **the `tokens.json` baseline** is AA-clean in both themes, there
+is a foreground token for solid-fill backgrounds, the outcome and chart scales
+exist as tokens, three components stop carrying stranded literals, and a
+regression test (`frontend/__tests__/token-contrast.test.ts`) fails the build if
+any of it drifts back.
+
+### What is still broken after this plan (say this out loud, do not close the finding)
+
+This plan fixes the token *layer*. It does not make the rendered app AA-clean,
+and reporting it as "AA-clean" would be false. Three populations of real,
+user-visible failures survive, all deliberately out of this plan's file
+territory — each needs a named owner before the finding can be closed:
+
+1. **51 `bg-accent text-white` call sites and 14 `hover:bg-accent-light` sites**
+   still measure **1.81–3.19:1 in dark mode** across the eleven presets. Step 2
+   lands the `text-on-solid` and `hover:bg-accent-hover` replacements; migrating
+   ~30 component files is mechanical but collides with plans 015–020 and 031.
+   **Until that migration lands, every primary button in the app fails WCAG AA
+   in dark mode.** That is a release blocker for any "accessible" claim, not a
+   nice-to-have.
+2. **Eight chart call sites still read the light-only `getCourtColor()`**
+   (`frontend/src/tokens/tokens.ts:224`). Step 3 authors correct dark court
+   *values*, but nothing in the chart path reads them, so **dark-mode charts
+   keep rendering the light court palette** — the exact defect Step 3 is
+   described as fixing. What Step 3 genuinely fixes today is
+   `CourtBadge`/`bg-court-*`, which resolves the CSS variable and therefore does
+   follow the theme. The recipe for the chart half is in Maintenance notes.
+3. **The ten alternate presets** still fail 3:1 for `--color-border` in both
+   modes and 4.5:1 for dark `--color-text-muted` on cards. That is ~20 values in
+   `use-theme-preset.ts` and needs a designer.
+
+Steps 8's tests assert (1)'s *token* is correct and (2)'s *values* are correct.
+No test in this plan asserts that the app renders them, because it cannot
+without touching the out-of-scope files. Do not let a green suite be read as
+"the contrast findings are closed".
 
 ## Current state
 
@@ -276,6 +336,26 @@ function arcStrokeColor(score: number): string {
   return "#22c55e";
 }
 ```
+
+The two helpers above are **not** the only colour literals in this file. There
+are two more, both as fallbacks inside `var()`, at `:49` and `:82`:
+
+```tsx
+          stroke="var(--color-border, #e5e7eb)"
+```
+```tsx
+            fill="var(--color-text-muted, #94a3b8)"
+```
+
+They matter for two reasons. First, a `var()` fallback is dead weight here —
+`--color-border` and `--color-text-muted` are defined unconditionally in
+`tokens.css`'s `:root`, so the fallback can only ever fire if the token layer is
+missing entirely, and then it silently paints a hardcoded light-theme grey.
+Second, and practically: Step 6's "no hex literal" verification and Step 8's
+test 15 both scan this whole file, so **leaving them in makes both fail**. An
+earlier draft of this plan claimed the grep would return `0` while only removing
+the three arc/label literals; that claim was wrong. Step 6a now removes all
+five.
 
 `frontend/src/components/analytics/RiskGauge.tsx:43-44`, verbatim (note the
 `<svg>` has no `role` and no `aria-label`):
@@ -486,10 +566,10 @@ Quoted from `CLAUDE.md` and the codebase, because the executor has not read them
 |---|---|---|
 | Regenerate tokens | `cd frontend && npm run tokens` | `✓ tokens.css generated` / `✓ tokens.ts generated`, **no `⚠ WARN` and no `WARN color value` lines** |
 | Typecheck (working form) | `cd frontend && npx tsc -b --noEmit` | exit 0, no output |
-| Frontend tests | `cd frontend && npx vitest run` | baseline at `42826a3` is `490 passed`, 55 files, 0 failed |
-| Frontend lint | `cd frontend && npx eslint .` | exit 0, 0 errors |
-| Production build | `cd frontend && npm run build` | exit 0 |
-| Single test file | `cd frontend && npx vitest run __tests__/token-contrast.test.ts` | all pass |
+| Frontend tests | `cd frontend && npx vitest run` | 0 failed, `Tests passed` == `FE_BEFORE + 18` (record `FE_BEFORE` before you start) |
+| Frontend lint | `cd frontend && npx eslint .` | exit 0, 0 errors; warning count is **not** a gate |
+| Production build | `cd frontend && npm run build:cloudflare` | exit 0. **Never `npm run build`** — that writes to the git-tracked `immi_case_downloader/static/react/` and dirties 93 files outside this plan's scope. See Step 10. |
+| Single test file | `cd frontend && npx vitest run __tests__/token-contrast.test.ts` | `18 passed` — a per-file count, stable regardless of sibling plans |
 | Generated files in sync | `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain frontend/src/tokens/` | only your intended files listed |
 
 Do **not** use `npx tsc --noEmit` (without `-b`): `frontend/tsconfig.json` is a
@@ -513,11 +593,10 @@ always exits 0.
   the direct test of an in-scope component and cannot be left stale.
 - `frontend/__tests__/token-contrast.test.ts` — **create**. New file; no other
   plan creates it.
-- `frontend/src/hooks/use-theme-preset.ts` — **only under the Step 9
-  condition** (plan 021 has already landed), and then only the four values
-  inside the `parchment` entry. If the condition does not hold, this file must
-  end the plan byte-identical to `42826a3`; Step 9 tells you what to report
-  instead.
+- `frontend/src/hooks/use-theme-preset.ts` — the four values inside the
+  `parchment` entry only (Step 9). Plan 021 is a hard prerequisite, so this
+  re-sync is unconditional. Do not touch any of the ten other presets, and do
+  not touch `parchment.colors`.
 
 **Out of scope** (do NOT touch, even though they look related):
 
@@ -571,7 +650,10 @@ always exits 0.
 - Commit per step or per logical unit. Message style, matching `git log`:
   - `fix: raise the failing colour tokens to WCAG AA in both themes`
   - `feat: add on-solid foreground and accent-hover tokens`
-  - `fix: give the nine court colours real dark-mode values`
+  - `fix: give the nine court colours real dark-mode values` — **keep Step 3 in
+    its own commit.** It is the one change most likely to draw a design
+    objection (the `HCA` slate), and isolating it makes that objection
+    revertible without unpicking the rest of the plan. Report the SHA.
   - `refactor: route outcome and judge chart colours through tokens`
   - `fix: use semantic tokens and add an aria-label in RiskGauge`
   - `test: assert token contrast in both themes`
@@ -694,46 +776,115 @@ pass.
 
 ### Step 3: Give the nine court colours real dark-mode values
 
+**Read this constraint before choosing any value.** A `--color-court-*` token is
+used for two different jobs, and they pull in opposite directions:
+
+- **As a chart mark** on a dark background → WCAG 1.4.11 non-text, needs
+  **≥ 3:1 against `#111820` / `#192230` / `#1c2535`**. Pushes the colour
+  *lighter*.
+- **As a badge background** in `CourtBadge`. `frontend/src/components/shared/CourtBadge.tsx:39`
+  hardcodes `text-white` on a `bg-court-*` class, `frontend/src/index.css:41-50`
+  maps `--color-court-hca: var(--color-court-hca)` into Tailwind's `@theme`, and
+  the generated `tokens.css` redefines every `--color-court-*` inside `.dark`.
+  **So a dark court value applies to the badge immediately, on the very first
+  build, with no other change.** The 12px medium label is normal-size text →
+  needs **≥ 4.5:1 against `#ffffff`**. Pushes the colour *darker*.
+
+An earlier draft of this step ignored the second job and set `HCA` dark to
+`#94a3b8`. Measured: `#94a3b8` on white is **2.56:1** — that would have taken
+the HCA badge from ~15:1 (its near-black light value) to unreadable, i.e. this
+plan would have *broken* the badge while claiming to fix the charts. The
+constraint below exists so that cannot happen again.
+
+**The window.** Both floors are satisfiable at once: a colour needs relative
+luminance roughly in `[0.126, 0.183]` to clear 3:1 on `#111820` and 4.5:1 on
+white. Eight of the nine values below sit in that window by construction.
+
 Edit `frontend/src/tokens/tokens.json` only. Replace the nine values in
 `color.dark.court` (lines 35-39) with the palette below. `color.court` (the
 light block, lines 15-19) stays **unchanged**.
 
-| court | light (unchanged) | new dark | dark ratios (page / card / surface) | hue |
-|---|---|---|---|---|
-| AATA | `#1a5276` | `#2679ae` | 3.77 / 3.37 / 3.24 | 203 |
-| ARTA | `#6c3483` | `#9d53bb` | 3.73 / 3.34 / 3.21 | 283 |
-| FCA | `#117864` | `#12816b` | 3.72 / 3.33 / 3.21 | 168 |
-| FCCA | `#b9770e` | `#b9770e` | 4.86 / 4.35 / 4.18 | 37 |
-| FedCFamC2G | `#a93226` | `#d03e2f` | 3.75 / 3.36 / 3.23 | 6 |
-| HCA | `#1b2631` | `#94a3b8` | 6.97 / 6.24 / 6.00 | 215 |
-| RRTA | `#1e8449` | `#1e8449` | 3.79 / 3.39 / 3.26 | 145 |
-| MRTA | `#922b5f` | `#c63c82` | 3.72 / 3.33 / 3.20 | 330 |
-| FMCA | `#b84c00` | `#c25000` | 3.78 / 3.38 / 3.25 | 25 |
+| court | light (unchanged) | new dark | dark ratios (page / card / surface) | white-on-badge | hue |
+|---|---|---|---|---|---|
+| AATA | `#1a5276` | `#2679ae` | 3.77 / 3.37 / 3.24 | 4.74 ✓ | 203 |
+| ARTA | `#6c3483` | `#9d53bb` | 3.73 / 3.34 / 3.21 | 4.79 ✓ | 283 |
+| FCA | `#117864` | `#12816b` | 3.72 / 3.33 / 3.21 | 4.80 ✓ | 168 |
+| FCCA | `#b9770e` | `#b9770e` | 4.86 / 4.35 / 4.18 | **3.68 ✗** | 37 |
+| FedCFamC2G | `#a93226` | `#d03e2f` | 3.75 / 3.36 / 3.23 | 4.76 ✓ | 6 |
+| HCA | `#1b2631` | **`#64748b`** | 3.75 / 3.36 / 3.23 | 4.76 ✓ | 215 |
+| RRTA | `#1e8449` | `#1e8449` | 3.79 / 3.39 / 3.26 | 4.72 ✓ | 145 |
+| MRTA | `#922b5f` | `#c63c82` | 3.72 / 3.33 / 3.20 | 4.81 ✓ | 330 |
+| FMCA | `#b84c00` | `#c25000` | 3.78 / 3.38 / 3.25 | 4.73 ✓ | 25 |
 
 Every value clears the WCAG 1.4.11 3:1 floor on all three dark backgrounds, all
 nine are distinct, and the hues stay spread across the wheel (6, 25, 37, 145,
 168, 203, 215, 283, 330), so the categorical encoding still reads. `FCCA` and
-`RRTA` already passed and are left identical on purpose — continuity for the two
-courts that did not need changing. `HCA` moves furthest (from a near-black navy
-to a light steel) because at `#1b2631` it measured 1.04:1 and was invisible; it
-is deliberately desaturated so it separates from `AATA` by lightness even though
-their hues are 12° apart.
+`RRTA` already cleared 3:1 and are left identical on purpose — continuity for
+the two courts that did not need changing.
+
+`HCA` moves furthest (from a near-black navy to a desaturated slate) because at
+`#1b2631` it measured 1.04:1 on a dark card and was invisible. `#64748b` is
+deliberately low-chroma so it separates from `AATA` by *saturation* rather than
+hue — they sit 12° apart, and a saturated blue at the same lightness would be
+hard to tell from AATA. Check that separation by eye in Step 11's matrix; it is
+the one value in this palette most likely to draw an objection.
+
+**`FCCA` is the one known exception and it is pre-existing, not introduced
+here.** `#b9770e` on white is 3.68:1, so the FCCA badge already fails AA today
+in *light* mode with exactly the same hex. Leaving the dark value identical
+keeps the two modes consistent rather than making dark better than light.
+Fixing it properly means either darkening `color.court.FCCA` (a visible change
+to a shipped brand colour, needing design sign-off) or giving `CourtBadge` a
+per-court foreground token — and `CourtBadge.tsx` is not in this plan's
+territory. It is recorded in Maintenance notes and is asserted as a **named**
+exception in Step 8's test, so any *other* court regressing fails loudly.
 
 Regenerate with `npm run tokens`.
 
 **Verify**: `cd frontend && npm run tokens` → no `WARN` lines.
 
-**Verify**:
+**Verify** (identity of the unchanged pair, and both contrast floors — this is
+the check that would have caught the `#94a3b8` mistake):
 ```bash
-cd frontend && python3 -c "
-import json,sys
-t=json.load(open('src/tokens/tokens.json'))
-l,d=t['color']['court'],t['color']['dark']['court']
-same=[k for k in l if l[k]==d[k]]
-print('identical to light:',same)
-sys.exit(0 if same==['FCCA','RRTA'] else 1)"
+cd frontend && python3 - <<'PY'
+import json, sys
+def lum(h):
+    h = h.lstrip('#'); r, g, b = [int(h[i:i+2], 16) / 255 for i in (0, 2, 4)]
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+def cr(a, b):
+    la, lb = lum(a), lum(b); hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+t = json.load(open('src/tokens/tokens.json'))
+light, dark = t['color']['court'], t['color']['dark']['court']
+dbg = [t['color']['dark']['background'][k] for k in ('DEFAULT', 'card', 'surface')]
+
+same = sorted(k for k in light if light[k] == dark[k])
+print('identical to light:', same)
+
+bad = []
+for court, value in dark.items():
+    marks = [round(cr(value, bg), 2) for bg in dbg]
+    badge = round(cr(value, '#ffffff'), 2)
+    print(f'{court:12s} {value}  dark-bgs={marks}  white-on-badge={badge}')
+    if min(marks) < 3.0:
+        bad.append(f'{court}: chart mark {min(marks)} < 3.0')
+    if badge < 4.5 and court != 'FCCA':      # FCCA is the documented exception
+        bad.append(f'{court}: CourtBadge white label {badge} < 4.5')
+
+if len(set(dark.values())) != 9:
+    bad.append('dark court values are not all distinct')
+if same != ['FCCA', 'RRTA']:
+    bad.append(f'unchanged set is {same}, expected [FCCA, RRTA]')
+for b in bad:
+    print('FAIL:', b)
+sys.exit(1 if bad else 0)
+PY
 ```
-→ prints `identical to light: ['FCCA', 'RRTA']` and exits 0.
+→ prints one line per court, `identical to light: ['FCCA', 'RRTA']`, no `FAIL:`
+lines, and exits 0. If it exits non-zero, **do not proceed** — you have either
+mistyped a hex or reintroduced the badge regression.
 
 **Verify**: `cd frontend && npx vitest run __tests__/css-tokens.test.ts` → all
 pass.
@@ -887,10 +1038,23 @@ function arcStrokeColor(score: number): string {
 ```
 
 `text-danger` / `text-warning` / `text-success` are real Tailwind utilities here:
-`frontend/src/index.css:27-30` maps `--color-danger: var(--color-semantic-danger)`
-and its three siblings inside `@theme`. After Step 1, all four semantic colours
-clear 4.5:1 on all three backgrounds in both modes (worst case: dark `success`
-at 4.94 on the surface background).
+the `@theme` block in `frontend/src/index.css` maps
+`--color-danger: var(--color-semantic-danger)` and its three siblings (at
+`:27-30` as of `42826a3`; locate them by the `--color-success:` anchor, since
+plan 019 shifts the line numbers). After Step 1, all four semantic colours clear
+4.5:1 on all three backgrounds in both modes (worst case: dark `success` at 4.94
+on the surface background).
+
+**6a-bis — remove the two `var()` fallback literals.** Still in `RiskGauge.tsx`:
+
+- `:49` `stroke="var(--color-border, #e5e7eb)"` → `stroke="var(--color-border)"`
+- `:82` `fill="var(--color-text-muted, #94a3b8)"` → `fill="var(--color-text-muted)"`
+
+Both variables are defined unconditionally in `tokens.css`'s `:root`, so
+dropping the fallback changes nothing at runtime — it only removes a stranded
+light-theme grey that would silently paint if the token layer ever failed to
+load, and it is what makes Step 6's grep and Step 8's test 15 achievable. Do not
+substitute a different fallback; the point is to have none.
 
 **6b — accessible name.** The `<svg>` at line 44 currently has no `role` and no
 `aria-label`, so a screen reader announces nothing for the gauge. Change it to:
@@ -923,10 +1087,16 @@ literals, nothing else:
 Do not add or remove `it` blocks in this file; the count must stay at 6.
 
 **Verify**: `cd frontend && grep -cE '#[0-9a-fA-F]{6}|text-(red|yellow|green)-500' src/components/analytics/RiskGauge.tsx`
+→ `0`. This can only pass if 6a-bis was done as well as 6a; if it prints `2` you
+skipped the two `var()` fallbacks.
+
+**Verify** (no `var()` fallback survives anywhere in the file):
+`cd frontend && grep -cE 'var\(--[a-z-]+,' src/components/analytics/RiskGauge.tsx`
 → `0`.
 
 **Verify**: `cd frontend && npx vitest run __tests__/risk-gauge.test.tsx __tests__/risk-gauge-baseline.test.tsx`
-→ `13 passed` (6 + 7), 0 failed.
+→ `13 passed` (6 + 7), 0 failed. These are **per-file** counts and stay valid
+however many sibling plans land.
 
 ### Step 7: Make the `select` chevron follow the theme
 
@@ -942,7 +1112,12 @@ Add this block **immediately before** the `select {` rule (and after the
 ```css
 /* Select chevron: one data URI per theme — currentColor does not resolve
    inside a background-image document, so the stroke must be baked in.
-   %23 is a URL-encoded "#". Colours match --color-text-muted in each mode. */
+   %23 is a URL-encoded "#".
+   These two greys are the tokens.json (parchment) --color-text-muted values.
+   They do NOT track the ten alternate presets, which write their own
+   --color-text-muted inline on <html>; a data URI cannot read a custom
+   property. That is a known, measured limitation — see the note below the
+   block and the guard in Step 8 (test 16). */
 :root {
   --select-chevron: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e6a65' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
 }
@@ -961,12 +1136,56 @@ Then, inside the `select { … }` rule, replace the whole
 
 As in Step 2b, the `.dark` rule must come after the `:root` rule.
 
+**Scope of the fix — state this accurately in your report.** This makes the
+chevron follow **light/dark**, not the eleven presets. `applyTheme()` writes
+`--color-text-muted` as an inline style on `<html>` for the ten themed presets
+(20 declarations in `use-theme-preset.ts`), and a `background-image` data URI is
+a separate document: `currentColor` does not resolve inside it and neither does
+a custom property. So under `ocean`, `forest`, `slate`, … the chevron stays the
+Legal Codex grey rather than that preset's own muted colour.
+
+That is a **cosmetic mismatch, not a contrast failure**, and it was measured
+rather than assumed. Against all twenty preset card backgrounds
+(`--color-background-card`), the light chevron `#6e6a65` scores 5.09–5.37:1 and
+the dark chevron `#858e9e` scores 4.43–5.34:1 — every one clears the WCAG 1.4.11
+3:1 floor for a non-text indicator, with 4.43 (`slate` dark) the worst case.
+Step 8 test 16 locks that in, so a future preset whose card background breaks it
+fails the suite.
+
+Two alternatives were considered and rejected, so nobody re-litigates them:
+
+- **`currentColor` inside the SVG** — does not work. A `background-image` is an
+  independent document with no access to the host element's computed style.
+- **CSS `mask-image` + `background-color: var(--color-text-muted)`** — masks the
+  *whole* element, including the card background, leaving a chevron-shaped
+  select. Making it work needs a wrapper element around every `<select>`, i.e.
+  edits across every form in the app. Out of scope, and disproportionate for a
+  cosmetic mismatch that already passes contrast.
+
+The durable fix, if presets ever need their own chevron, is to have each preset
+declare `--select-chevron-color` and to build the URI in JS at `applyTheme()`
+time — which lives in `use-theme-preset.ts`, plan 021's file. Recorded in
+Maintenance notes.
+
 **Verify**: `cd frontend && grep -c 'data:image/svg+xml' src/index.css` → `2`.
 
 **Verify**: `cd frontend && grep -c '%236e7177' src/index.css` → `0`.
 
 **Verify**: `cd frontend && grep -c 'background-image: var(--select-chevron);' src/index.css`
 → `1`.
+
+**Verify** (the theme actually switches it — a grep cannot tell two URIs apart
+from one URI written twice):
+```bash
+cd frontend && python3 - <<'PY'
+import re, sys
+src = open('src/index.css').read()
+uris = re.findall(r"--select-chevron:\s*url\(\"data:image/svg\+xml[^\"]*stroke='%23([0-9a-fA-F]{6})'", src)
+print('chevron stroke colours:', uris)
+sys.exit(0 if len(uris) == 2 and uris[0] != uris[1] else 1)
+PY
+```
+→ prints two **different** six-digit colours and exits 0.
 
 ### Step 8: Add the contrast regression test
 
@@ -983,7 +1202,7 @@ Do **not** `import` from `@/hooks/use-theme-preset` — that module calls
 setup (only two individual test files stub it). Read the file as text and
 extract the accent values with a regex instead.
 
-Write exactly these 15 `it` blocks:
+Write exactly these 18 `it` blocks:
 
 1. `light text.muted clears 4.5:1 on background, card and surface`
 2. `dark text.muted clears 4.5:1 on background, card and surface`
@@ -1000,6 +1219,9 @@ Write exactly these 15 `it` blocks:
 13. `chart ramp 1-7 clears 3:1 on all three backgrounds in both modes`
 14. `outcome colours clear 4.5:1 against on-solid in both modes`
 15. `the three tokenised components hold no hex colour literals`
+16. `the select chevron clears 3:1 against every preset card background in its own mode`
+17. `every dark court colour clears 4.5:1 against white, the CourtBadge label`
+18. `RiskGauge holds no var() fallback literals`
 
 Implementation notes that make these mechanical:
 
@@ -1023,107 +1245,174 @@ Implementation notes that make these mechanical:
   `../src/components/analytics/RiskGauge.tsx`,
   `../src/components/judges/constants.ts`,
   `../src/components/shared/OutcomeStackedBar.tsx`.
+- For 16, extract the twenty preset card backgrounds from the source text of
+  `../src/hooks/use-theme-preset.ts` with
+  `/"--color-background-card":\s*"(#[0-9a-fA-F]{6})"/g` and assert there are
+  **at least 20** matches before looping (the same anti-vacuity guard as 7/8).
+  Extract the two chevron stroke colours from the source text of
+  `../src/index.css` with
+  `/--select-chevron:\s*url\("data:image\/svg\+xml[^"]*stroke='%23([0-9a-fA-F]{6})'/g`
+  and assert there are exactly **2** and that they differ. `use-theme-preset.ts`
+  lists each preset as `vars` (light) then `darkVars` (dark), so the matches
+  alternate light, dark, light, dark…: check even-indexed cards against the
+  light chevron and odd-indexed against the dark one, and assert every ratio
+  `>= 3.0`. Worst measured case at the time of writing is 4.43 (`slate` dark),
+  so there is real headroom — a failure here means someone added a preset with
+  a card background too close to the fixed chevron grey.
+- For 17, loop `color.dark.court` and assert
+  `getContrastRatio(value, "#ffffff") >= 4.5` for every court **except**
+  `FCCA`, and assert `FCCA` specifically is still `< 4.5` — the same
+  no-stale-exemption shape used elsewhere, so if someone fixes FCCA the test
+  tells them to delete the exception rather than silently passing. Name the
+  reason in a comment: `CourtBadge` hardcodes `text-white`
+  (`src/components/shared/CourtBadge.tsx:39`) on `bg-court-*`, which resolves
+  the same `--color-court-*` variable `tokens.css` redefines under `.dark`.
+- For 18, read `../src/components/analytics/RiskGauge.tsx` and assert
+  `src.match(/var\(--[a-z-]+,/g)` is `null` — a `var()` fallback is how a
+  hardcoded colour sneaks back into a "tokenised" component without matching a
+  bare-hex scan in some other form.
 - Every numeric assertion uses `expect(ratio).toBeGreaterThanOrEqual(4.5)` (or
   `3.0`) with a message string naming the token and the background, e.g.
   `` expect(r, `text.muted on ${bgName} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5) ``,
   so a future failure says which token broke.
 
 **Verify**: `cd frontend && npx vitest run __tests__/token-contrast.test.ts` →
-`15 passed`, 0 failed.
+`18 passed`, 0 failed. This is a **per-file** count and is not affected by any
+sibling plan.
 
-**Verify**: revert one value temporarily to prove the test bites —
-set `color.dark.semantic.danger` back to `#d04848` in `tokens.json`, run
-`cd frontend && npx vitest run __tests__/token-contrast.test.ts` → the
-`dark semantic colours` test **fails**. Then restore `#d96d6d` and re-run →
-`15 passed`. Do not commit the temporary revert. (Do **not** run `npm run
-tokens` during this check; `tokens.json` alone drives the test.)
+**Verify (two deliberate-failure rehearsals — do both, then undo them).** A test
+that cannot fail is not a test:
 
-### Step 9: Re-sync the `parchment` preset — only if plan 021 has already landed
+1. Set `color.dark.semantic.danger` back to `#d04848` in `tokens.json`, run
+   `cd frontend && npx vitest run __tests__/token-contrast.test.ts` → the
+   `dark semantic colours` test **fails**. Restore `#d96d6d`.
+2. Set `color.dark.court.HCA` to `#94a3b8` (the value an earlier draft of this
+   plan proposed) and re-run → test **17** fails with
+   `court.HCA on #ffffff = 2.56:1`. This is the specific regression the badge
+   constraint exists to catch, so prove it is caught. Restore `#64748b`.
 
-Plan 021 copies four of this plan's values into the `parchment` preset in
+After both, re-run → `18 passed`. Do not commit either temporary revert. (Do
+**not** run `npm run tokens` during these checks; `tokens.json` alone drives the
+test.)
+
+### Step 9: Re-sync the `parchment` preset with the new token values
+
+Plan 021 — a **hard prerequisite** of this plan (see Status) — copies four of
+this plan's values into the `parchment` preset in
 `frontend/src/hooks/use-theme-preset.ts` and adds a test asserting they match
-`tokens.json` exactly. Run the condition check:
+`tokens.json` exactly. Since 021 has landed, this step is unconditional.
 
-```bash
-cd frontend && grep -c '"--color-text-muted": "#8b8680"' src/hooks/use-theme-preset.ts
-```
+An earlier draft made this step conditional, with a "plan 021 has not landed"
+branch that finished the plan anyway and left a written warning for the
+operator. That branch has been **deleted**: it produced a state where
+`tokens.json` and 021's Step 1 code block disagree, and whichever plan ran next
+failed on arrival with no one owning the fix. Ordering is now enforced instead.
 
-- **Result `0`** — plan 021 has not landed. At commit `42826a3`, `parchment`
-  declares `vars: {}` / `darkVars: {}` at `use-theme-preset.ts:64-70`, so there
-  is nothing to re-sync. **Do not open this file for writing**, and instead
-  **STOP and report** the following to the operator before finishing, because it
-  is a live hazard the operator has to route around:
-
-  > Plan 022 changed `tokens.json` values that plan 021's Step 1 quotes
-  > verbatim. Before plan 021 runs, three hex strings in its Step 1 code block
-  > must be updated: `"--color-text-muted": "#8b8680"` → `"#6e6a65"`,
-  > `"--color-text-muted": "#6d7788"` → `"#858e9e"`, `"--color-border":
-  > "#4a5060"` → `"#687087"`, and the `darkColors` array's 4th element
-  > `"#4a5060"` → `"#687087"`. Otherwise plan 021's Step 5 test — which asserts
-  > an exact match against `tokens.json` — will fail.
-
-  Then continue to Step 10. Note that `#4a5060` still appears once in this file
-  at `use-theme-preset.ts:67` (the `parchment.darkColors` swatch array); leave it
-  — plan 021 rewrites that whole block.
-- **Result `1`** — plan 021 has landed. Make exactly these four edits inside the
-  `parchment` entry, and touch nothing else in the file:
-
-  | location | from | to |
-  |---|---|---|
-  | `parchment.vars["--color-text-muted"]` | `"#8b8680"` | `"#6e6a65"` |
-  | `parchment.darkVars["--color-text-muted"]` | `"#6d7788"` | `"#858e9e"` |
-  | `parchment.darkVars["--color-border"]` | `"#4a5060"` | `"#687087"` |
-  | `parchment.darkColors` 4th element | `"#4a5060"` | `"#687087"` |
-
-  The fourth row is the preset-picker swatch array
-  (`darkColors: ["#111820", "#c9942e", "#192230", "#4a5060"]` at
-  `use-theme-preset.ts:67`); leaving it stale would show the old border colour in
-  the picker.
-
-  Do **not** touch `parchment.colors` (its 4th element is `#6e7177`, the light
-  border, which this plan does not change), and do **not** touch any of the ten
-  other presets.
-
-**Verify** (branch `1` only): `cd frontend && grep -c '#8b8680\|#6d7788\|#4a5060' src/hooks/use-theme-preset.ts`
-→ `0`.
-
-**Verify** (branch `0` only): `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain frontend/src/hooks/use-theme-preset.ts`
-→ **empty output** (the file must be untouched), and
-`cd frontend && grep -c '#8b8680\|#6d7788' src/hooks/use-theme-preset.ts` → `0`
-(those two never appear in this file at `42826a3`; only `#4a5060` does, at line
-67).
-
-**Verify** (either branch): `cd frontend && npx vitest run` → 0 failed.
-
-### Step 10: Full verification sweep
-
-Run all five gates from the repo root, in this order, and confirm each:
+First confirm the prerequisite really did land:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
-npm run tokens          # no WARN lines
-npx tsc -b --noEmit     # exit 0, no output
-npx eslint .            # exit 0, 0 errors
-npx vitest run          # 505 passed, 0 failed
-npm run build           # exit 0
+grep -c '"--color-text-muted": "#8b8680"' src/hooks/use-theme-preset.ts
 ```
 
+- **`1`** — plan 021 landed. Proceed.
+- **`0`** — plan 021 has **not** landed (at `42826a3`, `parchment` declares
+  `vars: {}` / `darkVars: {}` at `use-theme-preset.ts:64-70`). **STOP.** Do not
+  open the file for writing and do not continue to Step 10; the drift check at
+  the top of this plan should already have caught this. Report that 022 was
+  dispatched out of order and that 021 must run first.
+
+Make exactly these four edits inside the `parchment` entry, and touch nothing
+else in the file:
+
+| location | from | to |
+|---|---|---|
+| `parchment.vars["--color-text-muted"]` | `"#8b8680"` | `"#6e6a65"` |
+| `parchment.darkVars["--color-text-muted"]` | `"#6d7788"` | `"#858e9e"` |
+| `parchment.darkVars["--color-border"]` | `"#4a5060"` | `"#687087"` |
+| `parchment.darkColors` 4th element | `"#4a5060"` | `"#687087"` |
+
+The fourth row is the preset-picker swatch array
+(`darkColors: ["#111820", "#c9942e", "#192230", "#4a5060"]`, at
+`use-theme-preset.ts:67` before 021 rewrote the block — locate it by the
+`darkColors:` key inside the `parchment` entry, not by line number); leaving it
+stale would show the old border colour in the picker.
+
+Do **not** touch `parchment.colors` (its 4th element is `#6e7177`, the light
+border, which this plan does not change), and do **not** touch any of the ten
+other presets.
+
+**Verify**: `cd frontend && grep -c '#8b8680\|#6d7788\|#4a5060' src/hooks/use-theme-preset.ts`
+→ `0`.
+
+**Verify** (the sync is real, not just the greps passing) —
+`cd frontend && npx vitest run __tests__/theme-preset.test.ts` →
+`Tests 9 passed (9)`. That file is plan 021's, and its
+`parchment mirrors the tokens.json Legal Codex baseline exactly` test is the
+assertion that fails if any of the four edits was missed or mistyped. If it
+fails, fix the preset — never `tokens.json`, and never that test.
+
+**Verify**: `cd frontend && npx vitest run` → 0 failed.
+
+### Step 10: Full verification sweep
+
+⚠️ **Use `npm run build:cloudflare`, never `npm run build`.** They are not
+interchangeable:
+
+- `npm run build` → `vite build` with `build.outDir` from `vite.config.ts` =
+  `../immi_case_downloader/static/react/`, which is **tracked in git** (93
+  files, last regenerated at commit `18a5b0c`, 2026-06-17). Running it here
+  would put 93 unrelated files in this plan's diff and make the
+  `git status --porcelain` check below fail for a reason that has nothing to do
+  with contrast.
+- `npm run build:cloudflare` → `vite build --outDir dist --emptyOutDir`, writing
+  to `frontend/dist/`, which is gitignored (`frontend/.gitignore:11`) and is
+  what production actually serves (`wrangler.toml:14-15`
+  `[assets] directory = "./frontend/dist"`).
+
+An earlier draft of this step said `npm run build`. It was wrong.
+
+Record the frontend baseline **before** you start the plan (or recover it now by
+stashing nothing and reading the number from your Step 1 run); every suite gate
+below is a delta:
+
+```bash
+# BEFORE the plan:   cd frontend && npx vitest run 2>&1 | tail -5   → FE_BEFORE
+```
+
+Run all five gates, in this order, and confirm each:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npm run tokens                       # no WARN lines
+npx tsc -b --noEmit                  # exit 0, no output
+npx eslint .                         # exit 0, 0 errors (warning count is NOT a gate)
+npx vitest run 2>&1 | tail -5        # 0 failed
+npx vitest run __tests__/token-contrast.test.ts __tests__/risk-gauge.test.tsx __tests__/css-tokens.test.ts 2>&1 | tail -5
+npm run build:cloudflare             # exit 0
+```
+
+**Verify**: the full run reports **0 failed**, and `Tests passed` ==
+`FE_BEFORE + 18` (the 18 new tests from Step 8; `risk-gauge.test.tsx` keeps its
+6 and `css-tokens.test.ts` is untouched). If your Step 8 file has a different
+number of `it` blocks, the requirement is 0 failed and
+`FE_BEFORE + <your it count>`.
+
+**Verify** (the per-file check, which is the one that stays valid however many
+sibling plans land): the three-file run reports `18 + 6 + 44 = 68 passed`,
+0 failed. If `css-tokens.test.ts` is not at 44, plan 024 has already rewritten
+its Group 3 — that is out-of-order execution; report it (024 must run *after*
+this plan).
+
 Then confirm the generated files are exactly what the generator produces (i.e.
-nobody hand-edited them):
+nobody hand-edited them) and that nothing outside scope moved:
 
 ```bash
 cd "/Users/d/Developer/Active Projects/IMMI-Case-"
 git status --porcelain
 ```
 
-**Verify**: `npx vitest run` → `505 passed` (the `42826a3` baseline of 490, plus
-the 15 new tests from Step 8; `risk-gauge.test.tsx` keeps its 6). If your Step 8
-file has a different number of `it` blocks, the hard requirement is **0 failed**
-and `490 + <your it count>` passed.
-
-**Verify**: `git status --porcelain` lists **only** these paths (plus
-`frontend/src/hooks/use-theme-preset.ts` if and only if the Step 9 condition
-held):
+**Verify**: `git status --porcelain` lists **only** these paths:
 
 ```
 frontend/src/tokens/tokens.json
@@ -1133,13 +1422,50 @@ frontend/src/index.css
 frontend/src/components/analytics/RiskGauge.tsx
 frontend/src/components/judges/constants.ts
 frontend/src/components/shared/OutcomeStackedBar.tsx
+frontend/src/hooks/use-theme-preset.ts
 frontend/__tests__/risk-gauge.test.tsx
 frontend/__tests__/token-contrast.test.ts
 ```
 
+**Verify** (nothing leaked into the tracked Flask bundle):
+`cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain immi_case_downloader/static/react/`
+→ **empty output**. If it is not empty you ran `npm run build`. Stop and report;
+do **not** run `git checkout --` or `git clean` to undo it — those cannot tell
+your accidental rebuild from the operator's own work.
+
+### Step 11: Visual acceptance matrix (required — this is not automated)
+
+Step 8's tests check token *values* against formulas. They cannot see that the
+new `HCA` slate is indistinguishable from `AATA` on a real chart, that a
+corrected outcome colour clashes with its neighbour, or that the amber
+`accent-hover` `color-mix()` resolved to something muddy under a preset. This
+plan changes nine court colours, two shipped outcome colours, six baseline
+values and adds a derived hover colour — that needs eyes.
+
+Start the dev server (`make ui`). For **each of the 11 presets** (switch from
+`/design-tokens`), in **both** light and dark:
+
+| Surface | What to look for |
+|---|---|
+| `/cases` list | All nine `CourtBadge` codes readable. This is the surface Step 3's badge constraint protects — HCA in dark mode is the specific one to check. |
+| `/` Dashboard court chart | The nine court series are distinguishable from each other. `HCA` (slate) vs `AATA` (blue) at similar lightness is the known risk. |
+| Any `OutcomeStackedBar` (case list / judge detail) | Segment percentage labels legible on every segment; `withdrawn` and `granted` are the two whose light values changed. |
+| `/analytics` RiskGauge | The arc and the caption use semantic colours and are readable at all three bands (score 25 / 55 / 80). |
+| Any `<select>` on `/cases` filters | The chevron is visible against the field. |
+| A primary `bg-accent` button, hovered | Hover darkens in light mode and lightens in dark mode; the label does not fade. |
+
+Capture screenshots of the Dashboard court chart and one `/cases` badge row for
+at least `parchment`, `claude`, `forest` and `slate`, both modes — 8 minimum.
+Attach them. If you cannot take screenshots, say so explicitly and list what you
+checked by eye; do not report this step as verified.
+
+**Rollback**: keep Step 3 (court palette) in its own commit so a design
+objection to the `HCA` slate can be reverted without unpicking Steps 1, 2, 4–8.
+Report that commit's SHA.
+
 ## Test plan
 
-**New file**: `frontend/__tests__/token-contrast.test.ts` — 15 tests, listed
+**New file**: `frontend/__tests__/token-contrast.test.ts` — 18 tests, listed
 verbatim in Step 8. They cover:
 
 - *Happy path / the AA contract*: text, border, semantic, chart, court and
@@ -1157,9 +1483,25 @@ verbatim in Step 8. They cover:
   colours identical between themes (test 11), so someone re-copying the whole
   block fails loudly; the preset-accent regex is asserted to find at least 10
   matches before looping, so a rename cannot make the test silently vacuous.
+- *The dual role of a court token*: test 17 asserts every dark court value is
+  still legible as a `CourtBadge` background under the hardcoded `text-white`
+  label, with `FCCA` named as the one pre-existing exception. This is the test
+  that catches the class of mistake where fixing charts breaks badges.
+- *The chevron's real reach*: test 16 measures the two fixed chevron greys
+  against all twenty preset card backgrounds, which is the honest scope of the
+  Step 7 fix (theme-aware, not preset-aware).
 - *Anti-drift*: test 15 re-reads the three tokenised component sources and
   asserts zero hex literals, mirroring the existing guard in
-  `frontend/__tests__/analytics-charts-tokens.test.tsx:45-68`.
+  `frontend/__tests__/analytics-charts-tokens.test.tsx:45-68`; test 18 closes the
+  `var(--x, #hex)` loophole in `RiskGauge` that a bare-hex scan would otherwise
+  have to catch by luck.
+
+**What these tests deliberately do not claim.** They assert values in
+`tokens.json` and the absence of literals in three component sources. They do
+**not** assert that the app renders those values — in particular they cannot see
+that the eight `getCourtColor()` chart call sites still read the light palette in
+dark mode, or that 51 `bg-accent text-white` buttons still fail AA. See "What is
+still broken after this plan".
 
 **Modified file**: `frontend/__tests__/risk-gauge.test.tsx` — three class-name
 literals updated in the existing `applies color classes based on score
@@ -1170,12 +1512,15 @@ the luminance/contrast helpers and the tokens.json loading;
 `frontend/__tests__/analytics-charts-tokens.test.tsx` for the
 read-source-and-assert-no-hex pattern.
 
-**Negative test performed once, not committed**: Step 8's second verify reverts
-`color.dark.semantic.danger` to `#d04848` and confirms the suite fails, proving
-the assertions are live.
+**Negative tests performed once, not committed**: Step 8's rehearsals revert
+`color.dark.semantic.danger` to `#d04848` and `color.dark.court.HCA` to
+`#94a3b8`, and confirm the suite fails in each case, proving the assertions are
+live rather than vacuously green.
 
-**Full-suite verification**: `cd frontend && npx vitest run` → 505 passed, 0
-failed.
+**Full-suite verification**: `cd frontend && npx vitest run` → 0 failed, with
+`Tests passed` == `FE_BEFORE + 18`. No absolute total is asserted anywhere in
+this plan: sibling frontend plans land in parallel, and a hard-coded suite total
+would turn any of them into a false STOP here.
 
 ## Done criteria
 
@@ -1183,14 +1528,25 @@ ALL must hold:
 
 - [ ] `cd frontend && npm run tokens` prints no line containing `WARN`
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0 with no output
-- [ ] `cd frontend && npx eslint .` exits 0 with 0 errors
-- [ ] `cd frontend && npx vitest run` reports 0 failed and 505 passed (or
-      `490 + <it count in token-contrast.test.ts>`)
-- [ ] `cd frontend && npm run build` exits 0
+- [ ] `cd frontend && npx eslint .` exits 0 with 0 errors (warning count is
+      explicitly **not** a gate)
+- [ ] `cd frontend && npx vitest run` reports 0 failed and `Tests passed` ==
+      `FE_BEFORE + <it count in token-contrast.test.ts, expected 18>`
+- [ ] `cd frontend && npm run build:cloudflare` exits 0 — **not** `npm run build`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --porcelain immi_case_downloader/static/react/`
+      is empty
 - [ ] `cd frontend && npx vitest run __tests__/token-contrast.test.ts` reports
-      15 passed
+      18 passed
+- [ ] `cd frontend && npx vitest run __tests__/risk-gauge.test.tsx` reports
+      6 passed, and `__tests__/css-tokens.test.ts` reports 44 passed
+- [ ] `cd frontend && npx vitest run __tests__/theme-preset.test.ts` reports
+      9 passed (plan 021's file — proves the Step 9 re-sync is exact)
+- [ ] Step 8's two deliberate-failure rehearsals were performed and both
+      produced a failing test before being reverted
 - [ ] `cd frontend && grep -cE '#[0-9a-fA-F]{6}' src/components/analytics/RiskGauge.tsx src/components/judges/constants.ts src/components/shared/OutcomeStackedBar.tsx`
       reports `0` for all three files
+- [ ] `cd frontend && grep -cE 'var\(--[a-z-]+,' src/components/analytics/RiskGauge.tsx`
+      reports `0` (no `var()` fallback literal survives)
 - [ ] `cd frontend && grep -cE 'text-(red|yellow|green)-500' src/components/analytics/RiskGauge.tsx`
       reports `0`
 - [ ] `cd frontend && grep -c '#8b8680\|#6d7788\|#4a5060\|#d04848\|#4a90c4\|#10b981\|#f59e0b' src/tokens/tokens.json`
@@ -1202,24 +1558,50 @@ ALL must hold:
       reports `18`
 - [ ] `cd frontend && grep -c -- '--color-chart-' src/tokens/tokens.css`
       reports `14`
-- [ ] `cd frontend && python3 -c "import json;t=json.load(open('src/tokens/tokens.json'));l,d=t['color']['court'],t['color']['dark']['court'];print(sorted(k for k in l if l[k]==d[k]))"`
-      prints `['FCCA', 'RRTA']`
+- [ ] The Step 3 court-palette python check exits 0: nine distinct dark values,
+      every one ≥ 3:1 on all three dark backgrounds, every one except `FCCA`
+      ≥ 4.5:1 against `#ffffff`, and `['FCCA', 'RRTA']` the only pair identical
+      to light
+- [ ] The Step 7 chevron check prints two **different** stroke colours
+- [ ] Step 11's visual matrix was walked for all 11 presets × light/dark with at
+      least 8 screenshots attached — or the report says explicitly what could not
+      be performed
+- [ ] The report states, in these words or clearer, that this plan does **not**
+      make the app AA-clean: the 51 `bg-accent text-white` sites, the 14
+      `hover:bg-accent-light` sites, the 8 light-only `getCourtColor()` chart
+      call sites and the ten alternate presets are all still failing and need
+      owners (see "What is still broken after this plan")
 - [ ] `git status --porcelain` lists no file outside the "In scope" list
-- [ ] `plans/README.md` status row updated — **only if that file exists**. It
-      does **not** exist at commit `42826a3`; do not create it.
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
 Stop and report back — do not improvise — if any of these occur:
 
-- **Plan 021 is IN PROGRESS.** Check `plans/README.md`. Plan 021 rewrites the
-  `parchment` preset with hex strings copied from `tokens.json` and adds a test
-  asserting an exact match. Running both at once guarantees a merge conflict in
-  `frontend/src/hooks/use-theme-preset.ts` and a failing test in whichever lands
-  second.
-- **The drift check lists any file other than `frontend/src/hooks/use-theme-preset.ts`.**
+- **Plan 021 has not landed, or is IN PROGRESS.** It is a hard prerequisite.
+  Step 9's condition check (`grep -c '"--color-text-muted": "#8b8680"'` → must
+  be `1`) is the machine test. Running both at once guarantees a merge conflict
+  in `frontend/src/hooks/use-theme-preset.ts` and a failing test in whichever
+  lands second; running this one first leaves `tokens.json` and 021's Step 1
+  code block permanently disagreeing.
+- **Plan 019 has not landed.** Both plans edit `frontend/src/index.css`. Check
+  with `grep -c 'fonts.googleapis.com' frontend/src/index.css` → must be `0`
+  (019 removed the `@import`). If it is `1`, 019 has not run; stop rather than
+  creating a conflicting `index.css` hunk.
+- **The drift check lists any file other than
+  `frontend/src/hooks/use-theme-preset.ts` and `frontend/src/index.css`.**
   The hex values in "Current state" are the whole basis of every number in this
   plan; if `tokens.json` moved, re-measure before touching anything.
+- **`frontend/__tests__/css-tokens.test.ts` no longer reports 44 tests.** Plan
+  024 rewrote its Group 3, which means 024 ran before this plan. That is
+  out-of-order: 024's contrast matrix is measured against the *pre-022*
+  `tokens.json` and its baseline is now wrong. Report it; do not adjust 024's
+  constants from inside this plan.
+- **Any dark court value fails the badge floor.** If the Step 3 python check
+  reports `CourtBadge white label < 4.5` for a court other than `FCCA`, you have
+  picked a value that fixes the chart mark and breaks the badge. Pick another
+  colour inside the luminance window stated in Step 3; do **not** relax the
+  check and do **not** edit `CourtBadge.tsx` (out of scope).
 - **`npm run tokens` prints a `⚠ WARN` line.** That means a block you added under
   `color` has no mirror under `color.dark` (or vice versa), which will leave a
   token defined in only one theme — exactly the class of bug this plan exists to
@@ -1249,7 +1631,25 @@ For whoever owns this code next:
 - **The token pipeline is one-directional.** `tokens.json` → `npm run tokens` →
   `tokens.css` + `tokens.ts`. Both outputs are tracked in git and both are
   rewritten by `npm run build`. A hand-edit to either is guaranteed to be lost.
-- **Two follow-ups are deliberately deferred, in priority order:**
+- **HANDOFF — one new i18n key ships untranslated.** Step 6b introduces
+  `analytics.risk_gauge_aria`, which exists in **neither**
+  `frontend/src/i18n/locales/en.json` nor `zh-TW.json` (verified: `grep -c` → 0
+  in both). Locale JSON is owned by
+  `plans/018-complete-the-i18n-catalogue.md`, so this plan ships it as
+  `defaultValue`-only — meaning a zh-TW screen-reader user hears the English
+  string. Hand plan 018 exactly this:
+
+  | key | en | zh-TW |
+  |---|---|---|
+  | `analytics.risk_gauge_aria` | `Score {{score}} out of 100: {{label}}` | `評分 {{score}} 分（滿分 100）：{{label}}` |
+
+- **Three follow-ups are deliberately deferred, in priority order:**
+  0. **Migrate the button call sites onto `text-on-solid` / `hover:bg-accent-hover`.**
+     Listed first here because it is the largest remaining *user-visible* AA
+     failure this plan leaves behind — 51 + 14 call sites at 1.81–3.19:1 in dark
+     mode. See "What is still broken after this plan"; the token half is done,
+     the migration is mechanical, and it needs an owner and a release decision,
+     not more analysis.
   1. **Wire the dark court colours to the charts.** Step 3 authors correct
      values, but all eight chart call sites read `getCourtColor()` from the
      generated `frontend/src/tokens/tokens.ts:224`, which is a plain lookup into
@@ -1265,6 +1665,15 @@ For whoever owns this code next:
      render the light court palette. Note those same call sites also carry the
      literal fallback `?? "#8b8680"`, which is now a stale copy of the old
      `text.muted`; fold it into the same pass.
+
+     **Note the asymmetry this leaves in the meantime**: `CourtBadge` *does*
+     follow the new dark values (it uses the `bg-court-*` Tailwind class, which
+     resolves `--color-court-*` from `tokens.css`'s `.dark` block), while the
+     eight chart call sites *do not* (they import a plain JS record). So after
+     this plan a court can look one colour on a badge and a different colour on
+     the chart beside it, in dark mode. That is strictly better than today —
+     today both are illegible — but it is a real inconsistency a reviewer will
+     notice, and it is the reason this follow-up ranks second, not tenth.
   2. **Migrate the button call sites onto the new tokens.** 51 sites combine
      `bg-accent` with `text-white` and 14 use `hover:bg-accent-light`. After
      this plan the replacements exist: `text-white` → `text-on-solid`, and
@@ -1286,18 +1695,38 @@ For whoever owns this code next:
     not a mechanical nudge.
 - **What a reviewer should scrutinise**: (1) that `tokens.css` and `tokens.ts`
   in the diff are exactly what `npm run tokens` emits — regenerate and diff;
-  (2) the `HCA` dark value `#94a3b8`, which is the largest visual departure in
-  the palette and the one most likely to draw a design objection; (3) the two
-  corrected light outcome values (`withdrawn`, `granted`) — they change existing
-  on-screen colours, unlike the other seven; (4) that `--color-accent-hover`'s
-  `color-mix()` resolves against the **inline** `--color-accent` the active
-  preset writes on `<html>`, not against the `tokens.css` default.
+  (2) the `HCA` dark value `#64748b`, which is the largest visual departure in
+  the palette, the one most likely to draw a design objection, and the one whose
+  separation from `AATA` rests on saturation rather than hue — check it on a
+  real chart, not in a swatch grid; (3) the two corrected light outcome values
+  (`withdrawn`, `granted`) — they change existing on-screen colours, unlike the
+  other seven; (4) that `--color-accent-hover`'s `color-mix()` resolves against
+  the **inline** `--color-accent` the active preset writes on `<html>`, not
+  against the `tokens.css` default; (5) that no dark court value regressed the
+  white-on-badge floor — Step 3's python check is the mechanical form of this.
 - **Known-stale comment left alone on purpose**:
   `frontend/__tests__/css-tokens.test.ts:89-91` still says `color.dark` is
   expected to lack `court`. That was true before Step 3 only in the sense that
   the values were a duplicate; the key has always existed. Editing that file was
   kept out of scope to avoid a collision, and the new `token-contrast.test.ts`
   covers court parity properly.
+- **`CourtBadge`'s hardcoded `text-white` is the real structural weakness.**
+  `frontend/src/components/shared/CourtBadge.tsx:39` fixes the label colour, so
+  every court colour has to satisfy *two* opposing contrast floors at once
+  (Step 3). That is why `FCCA` cannot be fixed without either changing a shipped
+  brand colour or touching the badge. The clean design is a per-court foreground
+  token — `color.court-fg.{AATA,…}` mirrored under `color.dark.court-fg`,
+  emitted as `--color-court-fg-*`, mapped into `@theme`, and read by the badge
+  as `text-court-fg-<code>`. That decouples the mark colour from the label
+  colour and removes the constraint entirely. It needs `CourtBadge.tsx`, which
+  this plan does not own, plus `scripts/build-tokens.ts` for the `@theme`
+  mapping. Worth doing before anyone else adds a court.
+- **The select chevron follows light/dark, not the presets.** Two data URIs in
+  `index.css`; a `background-image` document cannot read `currentColor` or a
+  custom property. Measured safe (≥ 4.43:1 against every preset card) and
+  guarded by test 16. If presets ever need their own chevron, the fix is to let
+  each preset declare `--select-chevron-color` and build the URI in JS inside
+  `applyTheme()` — `frontend/src/hooks/use-theme-preset.ts`, plan 021's file.
 - **`--color-border-light` is intentionally left below 3:1** in both themes. It
   is used 71 times, essentially all as `border-t` / `border-b` dividers inside
   cards (`CaseCard.tsx:56`, `JudgeCard.tsx:81`,
@@ -1347,3 +1776,42 @@ re-audits them:
   true — that button is fine. The finding itself survives on the 51
   `bg-accent text-white` sites and the 14 `hover:bg-accent-light` sites, which I
   counted and confirmed, and on the dark-mode measurements tabled above.
+
+## Review points not applied
+
+One reviewer point was verified against the code and only **partly** holds; the
+remedy it proposed does not work in this codebase. Recorded so it is not
+re-litigated.
+
+- **"The `select` chevron should be driven by `currentColor` / a CSS mask, or
+  each preset should supply its own chevron variable."** The *premise* is
+  correct and has been applied: the two data URIs added in Step 7 follow
+  light/dark but not the ten alternate presets, which write their own
+  `--color-text-muted` inline on `<html>`
+  (`frontend/src/hooks/use-theme-preset.ts` — `grep -c '"--color-text-muted"'`
+  → **20**, i.e. ten presets × light + dark). Step 7 now says that plainly
+  instead of claiming the colours "match `--color-text-muted` in each mode".
+
+  The proposed *fixes* were rejected on evidence:
+  - **`currentColor` inside the SVG** cannot work. The URI is a
+    `background-image`, i.e. an independent document with no access to the host
+    element's computed style. This is a spec-level property of
+    `background-image`, not a codebase limitation.
+  - **CSS `mask-image` + `background-color: var(--color-text-muted)`** would
+    mask the whole `<select>`, including the card background it paints via
+    `background-color: var(--color-background-card)`
+    (`frontend/src/index.css:262` at `42826a3`), leaving a chevron-shaped
+    control. Making it work needs a wrapper element around every `<select>` in
+    the app, which is far outside this plan's five-file territory.
+  - **A per-preset `--select-chevron-color`** is the right long-term design, but
+    it must be written by `applyTheme()` in
+    `frontend/src/hooks/use-theme-preset.ts`, which is owned by
+    `plans/021-restore-legal-codex-default.md`. Recorded in Maintenance notes as
+    the follow-up.
+
+  And the severity implied by the point does not hold: this is a cosmetic
+  mismatch, not a contrast failure. Measured against all twenty preset
+  `--color-background-card` values, the light chevron `#6e6a65` scores
+  5.09–5.37:1 and the dark chevron `#858e9e` scores 4.43–5.34:1 — every one
+  clears the WCAG 1.4.11 3:1 floor, worst case `slate` dark at 4.43. Step 8
+  test 16 now locks that in, so a future preset that breaks it fails the suite.

@@ -7,24 +7,57 @@
 > `plans/README.md` if that file exists; if it does not exist, do **not** create
 > it (a reviewer maintains the index).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A committed-range diff
+> cannot see uncommitted, staged or untracked edits, so the first alone gives a
+> dirty tree a false all-clear.
+>
+> The path list names **only the files this plan owns**. An earlier draft
+> scanned all of `workers/__tests__/`, which would make this plan STOP every
+> time any sibling plan added an unrelated test file — a drift check that fires
+> on other people's work trains executors to ignore it.
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> PATHS="workers/cloudflare-native.js
+>   immi_case_downloader/web/security.py
+>   workers/__tests__/cloudflare-native-security-headers.test.js
+>   tests/test_security_headers_parity.py
+>   tests/test_security.py"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $PATHS   # committed since the plan was written
+> git diff --stat -- $PATHS                 # unstaged working-tree edits
+> git diff --cached --stat -- $PATHS        # staged but uncommitted edits
 > ```
-> git diff --stat 42826a3..HEAD -- workers/cloudflare-native.js immi_case_downloader/web/security.py workers/__tests__/ tests/test_security.py
-> ```
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing and `git status --short` lists no
+> in-scope path. Any in-scope path in **any** of them is a STOP condition.
+>
+> **Never** run `git checkout --`, `git restore` or `git clean` to clear a
+> dirty tree — those edits may be the operator's uncommitted work.
 
 ## Status
 
 - **Priority**: P1
-- **Effort**: S
-- **Risk**: LOW
-- **Depends on**: `plans/001-*.md` (the verification-gate plan — this plan's
-  Done criteria run `make test-py`, `cd workers && npx vitest run` and
-  `make lint`, and those gates must be trustworthy first). If `plans/001-*.md`
-  does not exist in this repo, proceed anyway: every command in this plan is
-  self-contained and its expected output is stated below.
+- **Effort**: M (raised from S: the staged HSTS rollout and the Report-Only
+  canary are real work, and the parity test is now a two-way comparison)
+- **Risk**: MED (raised from LOW). Two reasons, both real:
+  1. **A CSP is a live-fire change.** Every test in this plan runs against
+     mocked responses; none of them loads the actual SPA in a browser. A
+     directive that is wrong by one origin breaks the app for real users while
+     the suite stays green. Step 3c's Report-Only canary exists because of
+     this.
+  2. **HSTS is not fully reversible.** Once a browser caches
+     `Strict-Transport-Security`, it enforces HTTPS for that host for
+     `max-age` seconds regardless of what the server later says. A wrong
+     one-year `includeSubDomains` header cannot be recalled from clients that
+     already saw it — you can only serve `max-age=0` and wait for each client
+     to return. That is why Step 1 ships a short TTL and Step 5 ramps it.
+- **Depends on**: `plans/001-*.md` → `plans/002-*.md` → `plans/003-*.md`, in
+  that order and strictly serially. This plan adds a new Python test file, so
+  it needs the collection and lint gates those plans repair to be trustworthy.
+  In particular, `make lint` does **not** currently cover `tests/` — plan 003
+  is what brings it in scope, and it targets the `lint-py` recipe that plan 001
+  introduces. Until 003 lands, run Ruff directly on your new file (Step 3d).
+- **Runs before**: `plans/007-*.md`, which changes one line in
+  `workers/cloudflare-native.js`. This plan owns that file; 007 rebases.
 - **Category**: security
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -38,8 +71,30 @@ the HTML/JS/CSS of the React SPA comes straight out of the `ASSETS` binding with
 immigration case data for self-representing applicants, so the concrete costs
 are: the app can be silently framed for clickjacking against a logged-in user;
 a single compromised or injected script has no source allowlist to contain it;
-and a first visit over plain HTTP can be downgraded because nothing pins the
-origin to TLS.
+and **every visit after the first** can be downgraded to plain HTTP because
+nothing pins the origin to TLS.
+
+**Be precise about what HSTS does and does not fix.** An earlier draft of this
+plan claimed HSTS closes "a first visit over plain HTTP". It does not, and
+saying so leads to shipping a one-year `includeSubDomains` header as if it were
+a free win:
+
+- A browser only honours `Strict-Transport-Security` on an **HTTPS** response.
+  On a plain-HTTP response it is ignored outright, so the very first visit is
+  unprotected trust-on-first-use no matter what we send.
+- Only the browser preload list closes the first visit, and submitting
+  `trackit.today` to it is an apex-wide, months-to-reverse commitment across
+  every sibling subdomain. That is an operator decision, not a code change —
+  see "Maintenance notes".
+- What HSTS actually buys is every visit *after* the first: an `http://` link,
+  a typed bare hostname, or an on-path downgrade attempt is upgraded by the
+  browser before a request leaves the machine.
+- HSTS also cannot help if plain HTTP is still served at all. Confirming that
+  the Cloudflare zone has "Always Use HTTPS" enabled is a **prerequisite**
+  (Step 0b), not an optional extra.
+
+That is still worth having. It is just not the thing the first draft said, and
+the difference changes how aggressively the header should be rolled out.
 
 The local-dev Flask server *does* set four of these headers
 (`immi_case_downloader/web/security.py:152-167`) — but Flask is not in the
@@ -284,22 +339,41 @@ resolve `null`.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Drift check | `git diff --stat 42826a3..HEAD -- workers/cloudflare-native.js immi_case_downloader/web/security.py workers/__tests__/ tests/test_security.py` | empty output (no drift) |
-| Worker tests (all) | `cd workers && npx vitest run` | `345 passed` before your change; `349 passed` after Step 3 |
-| Worker tests (one file) | `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js` | `4 passed` |
-| Python tests (all unit) | `make test-py` | `1141 passed, 3 failed, 7 skipped` — see the note below |
-| Python tests (one file) | `.venv/bin/python -m pytest tests/test_security_headers_parity.py -q` | `4 passed` |
+| Drift check | the four commands in the header block above | no in-scope path listed |
+| Worker tests (all) | `cd workers && npx vitest run` | **0 failed**; `Tests` == `WORKER_BEFORE + 6` after Step 3 |
+| Worker tests (one file) | `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js` | `6 passed` (per-file count) |
+| Worker test by name | `cd workers && npx vitest run __tests__/<file>.test.js -t "<name>"` | that test passes |
+| Python tests (all unit) | `make test-py` | passing == `PY_BEFORE_PASSED + 6`; no failure other than the 3 named below |
+| Python tests (one file) | `.venv/bin/python -m pytest tests/test_security_headers_parity.py -q` | `6 passed` (per-file count) |
 | Python security suite | `.venv/bin/python -m pytest tests/test_security.py -q` | all pass, 0 failed |
 | Python lint | `make lint` | `All checks passed!` |
-| Frontend tests | `cd frontend && npx vitest run` | `490 passed` (unchanged — you touch no frontend file) |
+| Ruff on the new test file | `.venv/bin/ruff check tests/test_security_headers_parity.py` | `All checks passed!` — needed until `plans/003-*.md` brings `tests/` into `make lint` scope |
+| Frontend tests | `cd frontend && npx vitest run` | **0 failed**, count unchanged from Step 0a (you touch no frontend file) |
 | Frontend typecheck | `cd frontend && npx tsc -b --noEmit` | exit 0 (unchanged) |
+| Production header probe | `curl -sS -o /dev/null -D - https://immi.trackit.today/` | operator-run; see Step 5a |
 
-**Known-baseline note on `make test-py`**: at commit `42826a3` this run reports
-**3 pre-existing failures** in `tests/test_backfill_judge_overrides_from_pdf.py`.
-They are environmental — Homebrew Python 3.14.7 has a `pyexpat`/`libexpat` ABI
-mismatch that breaks the `pypdf` import — not caused by repo code and **not this
-plan's problem**. Your bar is: *the same 3 failures and no others*. If a
-different test fails, that is a STOP condition.
+### Baselines, not absolutes
+
+**Do not assert a whole-suite total anywhere.** Plans 004–007 add Worker tests
+and 002/003 change Python collection, so a fixed number written here is wrong
+as soon as any of them lands — and an executor who "corrects" it is editing the
+yardstick rather than the code. Record `WORKER_BEFORE`, `FRONTEND_BEFORE` and
+`PY_BEFORE_PASSED` in Step 0a and assert deltas: **+6 Worker tests, +6 Python
+tests**. Per-file counts (`6 passed` for each of this plan's two new files) are
+stable and may be asserted as absolutes, because no sibling plan owns either
+file.
+
+**Known-baseline note on `make test-py`**: this run reports 3 pre-existing
+failures that are environmental — Homebrew Python 3.14.7 has a
+`pyexpat`/`libexpat` ABI mismatch that breaks the `pypdf` import. They are not
+caused by repo code and **not this plan's problem**. Your bar is: still
+**exactly those 3, by name** —
+`test_clean_line_does_not_destroy_words`,
+`test_extract_judiciary_names_filters_non_judicial_judging` and
+`test_merge_treats_postnominal_variant_as_equivalent`, all in
+`tests/test_backfill_judge_overrides_from_pdf.py`. Check with
+`make test-py 2>&1 | grep -E '^(FAILED|ERROR)'`, not with a count: a count can
+stay at 3 while a different test breaks.
 
 ## Scope
 
@@ -339,11 +413,69 @@ different test fails, that is a STOP condition.
   - Step 1 → `feat: harden SPA asset responses with CSP and transport headers`
   - Step 2 → `refactor: share one security header policy between Worker and Flask`
   - Step 3 → `test: cover SPA security headers and cross-runtime CSP parity`
+  - Steps 0, 4, 5 → no commit (baselines, verification, operator handoff text).
+  - Each later HSTS stage (5b) → its own commit, e.g.
+    `chore: raise HSTS max-age to stage 2 (1 day)`, touching both policy files
+    and the stage-gate test together.
 - No AI attribution / `Co-Authored-By` lines.
 - **Do NOT push, do NOT open a PR, do NOT merge.** Stop after the final
   verification and report.
 
 ## Steps
+
+### Step 0: Baselines and transport prerequisites
+
+**0a. Record baselines.** Never assert a whole-suite total in this plan —
+sibling plans 004–007 all add Worker tests, and 002/003 change the Python
+collection, so any fixed number here is wrong the moment one of them lands.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+npx vitest run 2>&1 | grep -E 'Test Files|Tests '      # WORKER_BEFORE
+cd ../frontend && npx vitest run 2>&1 | grep 'Tests '  # FRONTEND_BEFORE
+cd .. && make test-py 2>&1 | tail -3                   # PY_BEFORE
+```
+
+This plan adds **4 Worker tests** and **5 Python tests**. Final assertions are
+`WORKER_BEFORE + 4` and `PY_BEFORE_PASSED + 5`, with **0 failed** on the Worker
+side and, on the Python side, no failure other than the three named
+environmental ones below.
+
+The 3 permitted Python failures — a Homebrew Python 3.14.7
+`pyexpat`/`libexpat` ABI mismatch breaking the `pypdf` import — must remain
+**exactly these, by name**:
+
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_clean_line_does_not_destroy_words`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_extract_judiciary_names_filters_non_judicial_judging`
+- `tests/test_backfill_judge_overrides_from_pdf.py::test_merge_treats_postnominal_variant_as_equivalent`
+
+Judge by name, not by count: a count can stay at 3 while a different test
+breaks.
+
+**0b. Confirm plain HTTP is already redirected — this is a prerequisite, not a
+nice-to-have.** HSTS is only honoured on HTTPS responses, so if the zone still
+serves plain HTTP, the header protects nothing on the request that matters.
+Put this in the PR for the operator to run and report:
+
+```bash
+curl -sS -o /dev/null -D - http://immi.trackit.today/ | head -20
+```
+Expected: a `301` or `308` to `https://immi.trackit.today/`. If it returns
+`200` over plain HTTP, the Cloudflare zone setting **"Always Use HTTPS"** is
+off — it must be enabled before Step 5 ramps `max-age`. Record the actual
+status line in the PR; "probably fine" is not a result.
+
+**0c. Confirm the built bundle really has no inline script**, since the whole
+`script-src` tightening rests on it:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend"
+npm run build:cloudflare
+grep -o '<script[^>]*>' dist/index.html
+```
+Every tag must contain `src=`. A tag without `src=` is a STOP condition (the
+answer is a hash- or nonce-based CSP, which is a different plan). A stale
+`dist/` from an older build proves nothing, which is why this rebuilds first.
 
 ### Step 1: Attach security headers to every static-asset response in the Worker
 
@@ -386,8 +518,24 @@ const SPA_SECURITY_HEADERS = Object.freeze({
   "X-Frame-Options": "SAMEORIGIN",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 });
+
+// Transport hardening is separate from document hardening, and is applied to
+// EVERY response (see withTransportSecurity below), not only to assets: a
+// browser that lands directly on /api/v1/auth/telegram/callback or on an API
+// route would otherwise never receive an HSTS header at all.
+//
+// STAGED ROLLOUT — read Step 5 before changing this value.
+//   Stage 1 (this step):  max-age=300               (5 minutes, no subdomains)
+//   Stage 2 (+1 week):    max-age=86400             (1 day)
+//   Stage 3 (+1 week):    max-age=2592000           (30 days)
+//   Stage 4 (operator):   max-age=31536000; includeSubDomains
+// A cached HSTS entry cannot be recalled — a browser that saw a one-year
+// header enforces HTTPS for a year whatever we serve next. A 5-minute TTL
+// makes a mistake recoverable in 5 minutes. `includeSubDomains` is a separate,
+// operator-approved decision because it binds every sibling host under the
+// apex, including ones this Worker knows nothing about.
+const STRICT_TRANSPORT_SECURITY = "max-age=300";
 
 function withSpaSecurityHeaders(response) {
   // Responses handed back by the ASSETS binding have immutable headers.
@@ -396,6 +544,21 @@ function withSpaSecurityHeaders(response) {
   for (const [name, value] of Object.entries(SPA_SECURITY_HEADERS)) {
     hardened.headers.set(name, value);
   }
+  return hardened;
+}
+
+/**
+ * Attach HSTS to any response, on HTTPS only.
+ *
+ * Browsers ignore Strict-Transport-Security on a plain-HTTP response, so
+ * emitting it there is noise; more importantly, skipping it keeps local
+ * `http://localhost` development from pinning itself to HTTPS.
+ */
+function withTransportSecurity(request, response) {
+  if (new URL(request.url).protocol !== "https:") return response;
+  if (response.headers.get("Strict-Transport-Security")) return response;
+  const hardened = new Response(response.body, response);
+  hardened.headers.set("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY);
   return hardened;
 }
 ```
@@ -417,19 +580,57 @@ Leave the surrounding `if (env.ASSETS) { try { … } catch (err) { … } }` and 
 trailing `return unavailable(...)` exactly as they are — the fail-closed
 behaviour when the binding is missing or throws must not change.
 
-Do not change any other line in the file.
+**1c. Apply HSTS to every response, not only assets.**
+
+The asset branch is not the only way a browser reaches this Worker. A user who
+follows a Telegram login link lands on
+`GET /api/v1/auth/telegram/callback`, which returns a `302` from `dispatchAuth`
+long before the asset branch — under 1b alone that navigation would carry no
+HSTS at all. Transport security has to sit at the entrypoint.
+
+The current handler is `async fetch(request, env, ctx) { …many returns… }`.
+Rename the existing body to a module-level `async function route(request, env, ctx)`
+— moving it verbatim, changing no line inside it beyond 1b — and make `fetch`
+a two-line wrapper:
+
+```js
+  async fetch(request, env, ctx) {
+    return withTransportSecurity(request, await route(request, env, ctx));
+  },
+```
+
+This is a mechanical extraction. Verify it as one:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+git diff -U0 -- workers/cloudflare-native.js | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l
+```
+Inspect that diff by eye: apart from the `withSpaSecurityHeaders` call, the new
+constants, the `route`/`fetch` split and indentation, **no routing line may
+have changed**. If the diff shows a reordered or deleted dispatch line, undo
+and redo the extraction.
+
+**Do not add CSP, `X-Frame-Options` or `Permissions-Policy` to API responses
+here.** Those are document-level policies; adding them to JSON responses is
+noise, and a later plan may want to make its own decision about
+`X-Content-Type-Options` on the API. This step adds exactly one header to
+non-asset responses.
 
 **Verify**:
-```
+```bash
 cd workers && npx vitest run
 ```
-→ `345 passed` (no new tests yet; the existing suite must stay green).
+→ **0 failed**, `Tests` == `WORKER_BEFORE` (this step adds no tests; the
+existing suite must stay green through the `route`/`fetch` extraction — that
+suite is the extraction's safety net, which is why it runs before Step 3 adds
+anything).
 
 **Verify**:
+```bash
+grep -c "withSpaSecurityHeaders" workers/cloudflare-native.js   # → 2
+grep -c "withTransportSecurity" workers/cloudflare-native.js    # → 2
+grep -c "async function route(" workers/cloudflare-native.js    # → 1
 ```
-grep -c "withSpaSecurityHeaders" workers/cloudflare-native.js
-```
-→ `2`
 
 **Verify** (the deploy gate that forbids Supabase/Postgres/Hyperdrive markers in
 the native bundle still passes):
@@ -475,7 +676,13 @@ SPA_CONTENT_SECURITY_POLICY = "; ".join(SPA_CSP_DIRECTIVES)
 
 PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=()"
 
-STRICT_TRANSPORT_SECURITY = "max-age=31536000; includeSubDomains"
+# Staged rollout — must stay byte-identical to STRICT_TRANSPORT_SECURITY in
+# workers/cloudflare-native.js, and must be raised in the same commit on both
+# sides. Stage 1 is deliberately 5 minutes: a cached HSTS entry cannot be
+# recalled, so a mistake at this TTL costs 5 minutes rather than a year.
+# See Step 5 for the ramp and for why `includeSubDomains` needs operator
+# sign-off before it is added.
+STRICT_TRANSPORT_SECURITY = "max-age=300"
 
 
 def add_security_headers(response):
@@ -587,16 +794,47 @@ describe("SPA static-asset security headers", () => {
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(response.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
     expect(response.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
-    expect(response.headers.get("Strict-Transport-Security")).toBe(
-      "max-age=31536000; includeSubDomains",
+    expect(response.headers.get("Strict-Transport-Security")).toBe("max-age=300");
+    expect(response.headers.get("Permissions-Policy")).toBe(
+      "camera=(), microphone=(), geolocation=(), payment=()",
     );
-    expect(response.headers.get("Permissions-Policy")).toContain("geolocation=()");
 
-    const csp = response.headers.get("Content-Security-Policy");
-    expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("frame-ancestors 'self'");
-    expect(csp).toContain("object-src 'none'");
-    expect(csp).toContain("base-uri 'self'");
+    // Exact value, not a bag of `toContain` substrings. A substring check
+    // cannot detect an EXTRA directive or an extra origin appended to an
+    // existing one, which is the drift that actually matters for a CSP.
+    expect(response.headers.get("Content-Security-Policy")).toBe([
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+      "script-src 'self' https://static.cloudflareinsights.com https://telegram.org",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https://telegram.org https://t.me",
+      "connect-src 'self' https://cloudflareinsights.com",
+      "frame-src 'self' https://oauth.telegram.org https://telegram.org",
+      "worker-src 'self' blob:",
+    ].join("; "));
+  });
+
+  it("sends HSTS on an API response too, not only on assets", async () => {
+    // A Telegram login lands on /api/v1/auth/telegram/callback, which returns
+    // a 302 long before the asset branch. Under an assets-only wrapper that
+    // navigation would carry no HSTS at all.
+    const env = makeEnv();
+    const response = await worker.fetch(
+      new Request("https://immi.example/api/v1/definitely-not-a-route"),
+      env,
+    );
+    expect(response.headers.get("Strict-Transport-Security")).toBe("max-age=300");
+    // ...but document-level policy stays off the JSON API.
+    expect(response.headers.get("Content-Security-Policy")).toBeNull();
+  });
+
+  it("omits HSTS over plain HTTP so localhost is never pinned to TLS", async () => {
+    const response = await worker.fetch(new Request("http://localhost:8787/"), makeEnv());
+    expect(response.headers.get("Strict-Transport-Security")).toBeNull();
   });
 
   it("gives the built bundle no way to execute inline or eval'd script", async () => {
@@ -705,55 +943,165 @@ def test_csp_forbids_inline_and_evaled_script():
     assert "'unsafe-eval'" not in script_src
 
 
-def test_worker_and_flask_ship_the_same_csp_directives():
+def _worker_csp_directives() -> list[str]:
+    """Parse the ordered directive list out of the Worker's source.
+
+    A one-way `directive in source` check is not a parity test: it passes when
+    the Worker has EXTRA directives Flask does not, when a directive is defined
+    but never used, and when the two lists are in different orders. CSP is
+    order-insensitive for semantics but not for review — and an extra origin on
+    the production side is exactly the drift this file exists to catch. So
+    extract the array and compare it as a whole.
+    """
     source = WORKER_ENTRY.read_text(encoding="utf-8")
-    for directive in SPA_CSP_DIRECTIVES:
-        assert f'"{directive}"' in source, (
-            f"workers/cloudflare-native.js is missing CSP directive: {directive}"
-        )
-    assert f'"{PERMISSIONS_POLICY}"' in source
-    assert f'"{STRICT_TRANSPORT_SECURITY}"' in source
+    match = re.search(
+        r"const SPA_CONTENT_SECURITY_POLICY = \[(.*?)\]\.join\(", source, re.S
+    )
+    assert match, "could not locate SPA_CONTENT_SECURITY_POLICY array in the Worker"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def test_worker_and_flask_ship_exactly_the_same_csp_directives():
+    worker = _worker_csp_directives()
+    flask = list(SPA_CSP_DIRECTIVES)
+
+    # Ordered equality, both directions at once. Reports the asymmetric
+    # difference on failure so the message says which side has the extra.
+    assert worker == flask, (
+        f"CSP drift.\n"
+        f"  only in Worker: {[d for d in worker if d not in flask]}\n"
+        f"  only in Flask:  {[d for d in flask if d not in worker]}\n"
+        f"  worker order:   {worker}\n"
+        f"  flask order:    {flask}"
+    )
+
+
+def test_worker_and_flask_ship_the_same_transport_headers():
+    source = WORKER_ENTRY.read_text(encoding="utf-8")
+    worker_hsts = re.search(
+        r'const STRICT_TRANSPORT_SECURITY = "([^"]+)"', source
+    )
+    worker_pp = re.search(r'"Permissions-Policy": "([^"]+)"', source)
+    assert worker_hsts, "Worker does not define STRICT_TRANSPORT_SECURITY"
+    assert worker_pp, "Worker does not set Permissions-Policy"
+    assert worker_hsts.group(1) == STRICT_TRANSPORT_SECURITY
+    assert worker_pp.group(1) == PERMISSIONS_POLICY
+
+
+def test_hsts_max_age_is_not_raised_without_updating_this_test():
+    """Stage gate for the HSTS ramp (Step 5).
+
+    A cached HSTS entry cannot be recalled, so raising max-age is a one-way
+    door per client. This test forces the raise to be a deliberate, reviewed
+    edit rather than a one-character change nobody notices. Update the expected
+    value in the SAME commit that raises it, and record the stage in the PR.
+    """
+    assert STRICT_TRANSPORT_SECURITY == "max-age=300", (
+        "HSTS max-age changed. If this is a planned stage of the Step 5 ramp, "
+        "update this assertion in the same commit and say which stage in the "
+        "PR. If `includeSubDomains` is being added, it needs explicit operator "
+        "sign-off first — see Maintenance notes."
+    )
 ```
 
+Add `import re` to that file's imports.
+
 **Verify**:
-```
+```bash
 cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js
 ```
-→ `Test Files  1 passed (1)` and `Tests  4 passed (4)`.
+→ `Tests  6 passed (6)` (a per-file count for a file only this plan owns).
 
 **Verify**:
-```
+```bash
 .venv/bin/python -m pytest tests/test_security_headers_parity.py -q
 ```
-→ `4 passed`.
+→ `6 passed` (per-file count).
+
+**Verify the parity test can actually fail** — this is the point of the
+two-way comparison, and the one-way version passed on drift it should have
+caught:
+
+```bash
+# 1. Extra directive on the Worker side only → must FAIL.
+#    (Edit workers/cloudflare-native.js: add "media-src 'self'" to the array.)
+.venv/bin/python -m pytest tests/test_security_headers_parity.py -q
+# 2. Reordered array, same directives → must FAIL (ordered equality).
+# 3. Restore both, re-run → 6 passed.
+```
+Do not commit either temporary edit. If step 1 or 2 *passes*, your comparison
+is still one-way — fix it before continuing.
+
+**3c. Canary the policy in Report-Only mode before enforcing it.**
+
+Every test above runs against a mocked `ASSETS` response. **None of them loads
+the real SPA in a real browser**, so none can tell you whether the policy
+blocks the Telegram widget, the Google Fonts import at
+`frontend/src/index.css:1`, the Cloudflare Analytics beacon, or a lazily
+imported chunk. A CSP that is wrong by one origin ships green and breaks the
+app.
+
+Put this in the PR as an operator step, to run **before** the enforcing deploy:
+
+1. Deploy once with the header name changed to
+   `Content-Security-Policy-Report-Only` (same value). Report-Only blocks
+   nothing; it only reports.
+2. Exercise the real app in a browser with the console open, and record what
+   appears: load `/`, navigate to `/analytics`, `/cases`, a case detail page
+   and `/judges`; complete a **Telegram login**; confirm fonts render as
+   Crimson Text and not a fallback; confirm a Recharts chart draws.
+3. Any `Content Security Policy` violation in the console names the directive
+   and the blocked origin. Add that origin to **both** policy files and repeat.
+   Zero violations across all five routes plus the login is the bar.
+4. Only then flip the header name back to `Content-Security-Policy` and deploy.
+
+**3d. Lint your new Python file directly.** `make lint` does not currently
+cover `tests/` — `plans/003-*.md` is what brings it in scope, and it targets
+the `lint-py` recipe `plans/001-*.md` introduces. Until those land, run Ruff
+against the file explicitly rather than assuming `make lint` saw it:
+
+```bash
+.venv/bin/ruff check tests/test_security_headers_parity.py
+```
+→ `All checks passed!`
+
+If `plans/003-*.md` has landed, `make lint` covers it and this is redundant but
+harmless.
 
 ### Step 4: Full-suite confirmation
 
 Run the three suites and confirm nothing regressed.
 
 **Verify**:
-```
+```bash
 cd workers && npx vitest run
 ```
-→ `Tests  349 passed (349)` (345 before + your 4).
+→ **0 failed**, `Tests` == `WORKER_BEFORE + 6` (the baseline from Step 0a).
 
 **Verify**:
-```
+```bash
 make test-py
 ```
-→ `1141 passed, 3 failed, 7 skipped` **plus your 4 new tests** = `1145 passed,
-3 failed, 7 skipped`. The 3 failures must all be in
-`tests/test_backfill_judge_overrides_from_pdf.py` (the pre-existing Homebrew
-`pyexpat`/`pypdf` environment issue). Any other failure is a STOP condition.
+→ passing count == `PY_BEFORE_PASSED + 6`, and **0 failures other than exactly
+the 3 named** `tests/test_backfill_judge_overrides_from_pdf.py` tests listed in
+Step 0a. Check by name:
+```bash
+make test-py 2>&1 | grep -E '^(FAILED|ERROR)'
+```
+→ exactly three lines, all naming
+`tests/test_backfill_judge_overrides_from_pdf.py`. Any other failure is a STOP
+condition.
 
 **Verify**:
-```
+```bash
 make lint
+.venv/bin/ruff check tests/test_security_headers_parity.py
 ```
-→ `All checks passed!`
+→ both print `All checks passed!` (the second is needed until
+`plans/003-*.md` brings `tests/` into `make lint` scope — see Step 3d).
 
 **Verify** (no collateral changes):
-```
+```bash
 git status --porcelain | awk '{print $NF}' | sort
 ```
 → exactly these four paths and nothing else:
@@ -764,6 +1112,63 @@ workers/__tests__/cloudflare-native-security-headers.test.js
 workers/cloudflare-native.js
 ```
 
+### Step 5: Production probe, staged HSTS ramp, and rollback
+
+Unit tests prove the Worker *would* send these headers. They do not prove the
+deployed site *does* — a Cloudflare transform rule, a page rule, or another
+Worker in the chain can strip or override a response header. This step is
+executed by the operator; produce it verbatim in the PR.
+
+**5a. Post-deploy header probe.** Run against the real host, not localhost:
+
+```bash
+for path in / /analytics /api/v1/csrf-token; do
+  echo "== $path"
+  curl -sS -o /dev/null -D - "https://immi.trackit.today$path" \
+    | grep -iE 'content-security-policy|strict-transport-security|x-frame-options|referrer-policy|permissions-policy|x-content-type-options'
+done
+```
+
+Expected: `/` and `/analytics` carry all six headers; `/api/v1/csrf-token`
+carries `Strict-Transport-Security` and no CSP. **Paste the actual output into
+the PR.** A `curl` that returns nothing for a header is the finding — do not
+record "looks right".
+
+**5b. The HSTS ramp.** Stage 1 (`max-age=300`) ships with this plan. Each later
+stage is a separate one-line commit on **both** files, plus the matching update
+to `test_hsts_max_age_is_not_raised_without_updating_this_test`:
+
+| Stage | Value | Earliest | Precondition |
+|---|---|---|---|
+| 1 | `max-age=300` | this deploy | 0b confirmed HTTP→HTTPS redirect |
+| 2 | `max-age=86400` | +7 days | stage 1 live a week with no TLS-related reports |
+| 3 | `max-age=2592000` | +7 days | stage 2 live a week, 5a probe still clean |
+| 4 | `max-age=31536000; includeSubDomains` | operator decision | operator has confirmed **every** subdomain of `trackit.today` serves HTTPS — `includeSubDomains` binds hosts this Worker knows nothing about, and breaking a sibling subdomain is the classic HSTS incident |
+
+Do not skip stages to "save time". The whole point is that each stage's blast
+radius is bounded by its own TTL.
+
+**5c. Rollback.**
+
+- **CSP / X-Frame-Options / Referrer-Policy / Permissions-Policy**: fully
+  reversible. Redeploy the previous Worker build and the headers are gone on
+  the next request. If the app breaks and you need a faster mitigation than a
+  redeploy, rename the header to `Content-Security-Policy-Report-Only` and
+  deploy that — it disables enforcement while keeping the reports.
+- **HSTS: not reversible for clients that already cached it.** Serving
+  `max-age=0` tells *future* visitors to forget the pin, but a browser that saw
+  `max-age=300` still enforces HTTPS for up to 5 minutes, and one that saw a
+  one-year header enforces it for up to a year. This asymmetry is the entire
+  reason for the staged ramp — at stage 1 the worst case is a 5-minute
+  window, which is why stage 1 is where this plan stops.
+- Emergency HSTS rollback procedure: set `STRICT_TRANSPORT_SECURITY` to
+  `"max-age=0"` in both files and deploy. Then wait out the longest TTL ever
+  served. Record in the PR which stage was live when the rollback happened.
+
+**Verify**: not machine-checkable from this repo. The Done criterion is that
+5a's real `curl` output appears in the PR and that the ramp table and rollback
+are recorded there for whoever runs stage 2.
+
 ## Test plan
 
 **New Worker tests** — `workers/__tests__/cloudflare-native-security-headers.test.js`
@@ -772,7 +1177,9 @@ workers/cloudflare-native.js
 `beforeEach` reset, explicit `vitest` imports because `globals: false`):
 
 1. *Happy path* — a `GET /` that reaches the `ASSETS` binding returns the shell
-   body plus all six headers with their exact values.
+   body plus all six headers, with the CSP asserted as an **exact** joined
+   string rather than a bag of `toContain` substrings (a substring check cannot
+   see an added directive or an origin appended to an existing one).
 2. *The regression this plan fixes* — the `script-src` directive contains
    neither `'unsafe-inline'` nor `'unsafe-eval'`, and still allows the Telegram
    widget origin. This is the assertion that would have failed before the change
@@ -784,8 +1191,16 @@ workers/cloudflare-native.js
 4. *Edge case: binding failure* — when `env.ASSETS.fetch` throws, the Worker
    still falls through to the `503 cloudflare_route_unavailable` response rather
    than crashing inside the new wrapper.
+5. *API responses get HSTS too* — a non-asset route carries
+   `Strict-Transport-Security` but **no** CSP. Without this, a Telegram login
+   landing on `/api/v1/auth/telegram/callback` would receive no transport
+   header at all.
+6. *Plain HTTP gets no HSTS* — `http://localhost:8787/` receives no
+   `Strict-Transport-Security`, so a developer's browser never pins localhost
+   to TLS. (Browsers ignore the header on HTTP anyway; this keeps us from
+   emitting a header that only ever misleads.)
 
-**New Python tests** — `tests/test_security_headers_parity.py` (4 tests):
+**New Python tests** — `tests/test_security_headers_parity.py` (6 tests):
 
 1. `test_flask_sets_the_full_security_header_set` — all five always-on headers.
 2. `test_hsts_is_sent_only_on_a_tls_terminated_runtime` — HSTS absent when
@@ -793,12 +1208,27 @@ workers/cloudflare-native.js
    with the exact value when it is `True`.
 3. `test_csp_forbids_inline_and_evaled_script` — same regression assertion as
    Worker test 2, on the Python side.
-4. `test_worker_and_flask_ship_the_same_csp_directives` — reads
-   `workers/cloudflare-native.js` as text and asserts every directive string from
-   `SPA_CSP_DIRECTIVES`, plus `PERMISSIONS_POLICY` and
-   `STRICT_TRANSPORT_SECURITY`, appears verbatim as a double-quoted JS string
-   literal. This is the cross-language drift guard; it is the reason both sides
-   are written as one directive per line.
+4. `test_worker_and_flask_ship_exactly_the_same_csp_directives` — parses the
+   `SPA_CONTENT_SECURITY_POLICY` array out of `workers/cloudflare-native.js`
+   and asserts **ordered list equality** with `SPA_CSP_DIRECTIVES`. The first
+   draft asserted only `directive in source`, which passes when the Worker has
+   extra directives, when a constant is defined but never used, and when the
+   two lists are ordered differently — i.e. it could not detect the drift it
+   existed to detect. This version reports the asymmetric difference on
+   failure so the message names which side has the extra.
+5. `test_worker_and_flask_ship_the_same_transport_headers` — same exact
+   comparison for `Permissions-Policy` and `Strict-Transport-Security`.
+6. `test_hsts_max_age_is_not_raised_without_updating_this_test` — a stage gate
+   for the Step 5b ramp. Raising `max-age` is a one-way door per client, so it
+   must be a reviewed edit, not a one-character change.
+
+**What none of these tests can prove**, stated plainly so nobody mistakes green
+for safe: every Worker test runs against a **mocked** `ASSETS` response, and no
+test in this plan loads the built SPA in a browser. They cannot tell you the
+policy permits the Telegram widget, the Google Fonts import at
+`frontend/src/index.css:1`, the Cloudflare Analytics beacon, or a lazily
+imported Recharts chunk. That is what Step 3c's Report-Only canary and Step 5a's
+production `curl` probe are for; neither is optional.
 
 **Existing tests that must keep passing unmodified**:
 `tests/test_security.py::TestSecurityHeaders` (4 tests — pins the three header
@@ -811,19 +1241,29 @@ substrings), `tests/test_native_effective_references.py`,
 
 ALL must hold:
 
-- [ ] `cd workers && npx vitest run` → `349 passed`, 0 failed
-- [ ] `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js` → `4 passed`
-- [ ] `.venv/bin/python -m pytest tests/test_security_headers_parity.py -q` → `4 passed`
+- [ ] `cd workers && npx vitest run` → **0 failed**, `Tests` equal to `WORKER_BEFORE + 6` (baseline from Step 0a)
+- [ ] `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js` → `6 passed`
+- [ ] `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js -t "sends HSTS on an API response too"` passes
+- [ ] `cd workers && npx vitest run __tests__/cloudflare-native-security-headers.test.js -t "omits HSTS over plain HTTP"` passes
+- [ ] `.venv/bin/python -m pytest tests/test_security_headers_parity.py -q` → `6 passed`
+- [ ] `.venv/bin/python -m pytest tests/test_security_headers_parity.py -q -k "exactly_the_same or same_transport"` → `2 passed`
+- [ ] The parity test was demonstrated to **fail** when a directive is added to the Worker only, and when the Worker array is reordered (Step 3b's negative check) — a one-way `in source` check passes both, which is why the first draft's version was not a parity test
 - [ ] `.venv/bin/python -m pytest tests/test_security.py -q` → 0 failed
-- [ ] `make test-py` → `1145 passed, 3 failed, 7 skipped`, and all 3 failures are in `tests/test_backfill_judge_overrides_from_pdf.py`
-- [ ] `make lint` → `All checks passed!`
-- [ ] `cd frontend && npx vitest run` → `490 passed` (unchanged)
-- [ ] `grep -c "Strict-Transport-Security" workers/cloudflare-native.js` → `1`
+- [ ] `make test-py` → passing count equal to `PY_BEFORE_PASSED + 6`, and `make test-py 2>&1 | grep -E '^(FAILED|ERROR)'` returns exactly the 3 named `tests/test_backfill_judge_overrides_from_pdf.py` tests
+- [ ] `make lint` → `All checks passed!` **and** `.venv/bin/ruff check tests/test_security_headers_parity.py` → `All checks passed!` (the second is required until `plans/003-*.md` brings `tests/` into lint scope)
+- [ ] `cd frontend && npx vitest run` → **0 failed**, count unchanged from Step 0a
+- [ ] `grep -c 'STRICT_TRANSPORT_SECURITY = "max-age=300"' workers/cloudflare-native.js` → `1` and the same in `immi_case_downloader/web/security.py` → `1` (both sides on stage 1)
+- [ ] `grep -c "includeSubDomains" workers/cloudflare-native.js immi_case_downloader/web/security.py` → `0` in both — `includeSubDomains` is stage 4 and needs operator sign-off
 - [ ] `grep "script-src" workers/cloudflare-native.js | grep -c "unsafe-inline"` → `0` (`style-src` lives on its own line and the explanatory comments avoid the literal string `script-src`, so only a genuine loosening of `script-src` trips this)
 - [ ] `grep "script-src" immi_case_downloader/web/security.py | grep -c "unsafe-inline"` → `0`
 - [ ] `grep -c "jsdelivr" immi_case_downloader/web/security.py` → `0`
+- [ ] `git diff -U0 -- workers/cloudflare-native.js` shows **no routing line changed** — only the new constants, the `withSpaSecurityHeaders` call, the `route`/`fetch` split and its indentation (inspect by eye; this is a judgement call, not a grep)
 - [ ] `git status --porcelain | awk '{print $NF}' | sort` lists exactly the 4 in-scope paths and nothing else
-- [ ] `git diff --stat -- wrangler.toml frontend/` → empty
+- [ ] `git status --porcelain -- wrangler.toml frontend/` → empty (working-tree check, not a committed-range diff)
+- [ ] Step 0b's `curl` output (the HTTP→HTTPS redirect) is recorded in the PR with its actual status line
+- [ ] Step 0c was run against a **freshly built** `frontend/dist/index.html`, and every `<script>` tag has a `src=`
+- [ ] Step 3c's Report-Only canary is written into the PR as an operator step, with the five routes and the Telegram login named
+- [ ] Step 5a's real `curl` header output from `https://immi.trackit.today` appears in the PR, and Step 5b's ramp table and 5c's rollback are recorded for whoever runs stage 2
 - [ ] `plans/README.md` status row updated **if that file exists** (do not create it)
 
 ## STOP conditions
@@ -834,12 +1274,32 @@ Stop and report back (do not improvise) if:
   `immi_case_downloader/web/security.py` changed since `42826a3`, or the
   verbatim excerpts in "Current state" no longer match the live code.
 - `new Response(response.body, response)` throws in the Worker test run — most
-  likely on a null-body status such as `304 Not Modified`. Report the exact error
+  likely on a null-body status such as `304 Not Modified` or `204`. This now
+  applies to **two** wrappers: `withSpaSecurityHeaders` (assets) and
+  `withTransportSecurity` (every response, including the `302` redirects
+  `dispatchAuth` returns). Report the exact error and which wrapper raised it,
   rather than papering over it with a status-specific branch; the fix shape
-  needs a decision.
-- `make test-py` fails anywhere **other than**
-  `tests/test_backfill_judge_overrides_from_pdf.py`, or the failure count moves
-  off 3.
+  needs a decision. Note that a redirect's body is already `null`, so a `302`
+  should re-wrap cleanly — if it does not, something else is wrong.
+- `make test-py` fails on any test that is not one of the three named
+  `tests/test_backfill_judge_overrides_from_pdf.py` tests listed in Step 0a.
+  Judge by **name**, not by count — the count can stay at 3 while a different
+  test breaks.
+- **Step 0b shows plain HTTP returning `200` instead of a redirect.** The zone
+  is serving unencrypted traffic; HSTS on the HTTPS side does not compensate
+  and the ramp must not start. Report and let the operator enable
+  "Always Use HTTPS" first.
+- **The parity test still passes** after you add a directive to the Worker only
+  (Step 3b's negative check). Your comparison is one-way; fix it before
+  continuing. This is the exact defect the first draft shipped.
+- **You are about to set `max-age` above 300, or to add `includeSubDomains`, in
+  this plan.** Both are later stages of the Step 5b ramp and
+  `includeSubDomains` additionally needs operator sign-off. A cached HSTS entry
+  cannot be recalled; this is not a place to save a round trip.
+- **You are about to convert the CSP to Report-Only permanently** to make a
+  browser problem go away. Report-Only is the canary (Step 3c), not the
+  destination. If real violations appear, add the origin to both files — or
+  report that the policy needs rethinking.
 - An existing test in `tests/test_security.py`, `tests/e2e/`,
   `tests/test_native_effective_references.py`,
   `tests/test_cloudflare_route_manifest.py` or `workers/__tests__/` starts
@@ -863,29 +1323,46 @@ For whoever owns this code next:
   `workers/cloudflare-native.js` are the same policy written twice — once in
   Python for local dev, once in JS for production. There is no way to share a
   literal across the two runtimes, so
-  `tests/test_security_headers_parity.py::test_worker_and_flask_ship_the_same_csp_directives`
-  is the enforcement. It matches directive strings **verbatim as double-quoted
-  JS string literals**, so if you reformat the JS array (single quotes, template
-  literals, joining directives onto one line) that test will fail even though the
-  policy is unchanged. Keep one directive per line, double-quoted.
+  `tests/test_security_headers_parity.py::test_worker_and_flask_ship_exactly_the_same_csp_directives`
+  is the enforcement. It **parses** the JS array and compares it as an ordered
+  list, in both directions — so an extra directive on either side fails, and so
+  does a reordering. It depends on the array being written as one
+  double-quoted string per line inside
+  `const SPA_CONTENT_SECURITY_POLICY = [ … ].join(`; reformatting to single
+  quotes, template literals, or one line will break the parse. Keep the shape.
+  (The first version of this test only checked `directive in source`, which
+  passed on extra directives, unused constants and reorderings alike — if you
+  ever find yourself "simplifying" it back to that, you are removing the test.)
 - **Adding any new third-party origin to the SPA breaks it silently in
   production but not in `npx vitest run`.** A new font host, analytics vendor,
   map tile server, image CDN or embedded iframe needs its origin added to the
   matching directive in *both* files. Symptom of forgetting: the resource is
   blocked in the browser console with a CSP violation, while every test still
   passes.
-- **HSTS is deliberately `max-age=31536000; includeSubDomains` with no
-  `preload`.** Submitting `trackit.today` to the browser preload list is an
-  apex-wide, hard-to-reverse commitment affecting every sibling subdomain; that
-  is an operator decision, not a code change. Do not add `preload` without it.
-- **Deliberately deferred out of this plan**: the JSON API responses
-  (`/health`, `/api/v1/*`, and the `unavailable()` helper) still carry no
-  security headers. `X-Content-Type-Options: nosniff` on those is genuinely
-  worth adding, but it touches every response path in
-  `workers/cloudflare-native.js` rather than the asset region this plan owns, so
-  it was scoped out to keep the change reviewable and to avoid colliding with
-  parallel work in the same file. No test in this plan asserts their absence, so
-  a follow-up is free to add them.
+- **HSTS ships at `max-age=300` and ramps in four stages** (Step 5b). This is
+  not timidity: an HSTS entry a browser has cached cannot be recalled — serving
+  `max-age=0` only affects clients that come back — so the TTL you ship is the
+  worst-case duration of any mistake. Stage 1 caps that at five minutes.
+  `test_hsts_max_age_is_not_raised_without_updating_this_test` forces each
+  raise to be a reviewed edit.
+- **`includeSubDomains` is stage 4 and needs an explicit operator decision**,
+  because it binds every host under `trackit.today`, including ones this Worker
+  has never heard of. Breaking a sibling subdomain that does not serve HTTPS is
+  the classic HSTS incident. Confirm every subdomain is HTTPS-only first.
+- **`preload` is not in scope at any stage.** Submitting `trackit.today` to the
+  browser preload list is apex-wide and takes months to reverse. It is also the
+  only thing that protects a genuine first visit — so if first-visit protection
+  is the goal, that is the conversation to have, not a longer `max-age`.
+- **Partially deferred**: the JSON API responses (`/health`, `/api/v1/*`, and
+  the `unavailable()` helper) now carry `Strict-Transport-Security` — Step 1c
+  applies it at the entrypoint, because a Telegram login callback is a real
+  browser navigation that never reaches the asset branch. They still carry no
+  `X-Content-Type-Options`. Adding `nosniff` there is genuinely worth doing and
+  is now cheap, since `withTransportSecurity` is already the single wrap point;
+  it was left out only to keep this change's blast radius to one header on the
+  API. One test (`"sends HSTS on an API response too"`) asserts CSP is
+  **absent** on API responses — a follow-up that wants document-level policy on
+  the API must update that assertion deliberately rather than by accident.
 - **Also deferred**: `'unsafe-inline'` remains in `style-src` because React and
   Recharts set inline `style` attributes throughout the SPA (the project's
   Recharts convention — every `Tooltip` `contentStyle` must set
@@ -919,3 +1396,32 @@ corrected in this plan:
   appears in the Flask policy but nothing in the repo loads from it (the only
   three matches for `jsdelivr` outside `node_modules` are the `security.py` lines
   themselves), so it is dropped from both policies instead of being carried over.
+
+- **Two claims in the first draft of this plan were wrong and are corrected
+  above.** Recorded here so a reader of the diff can see what changed:
+  1. *"a first visit over plain HTTP can be downgraded because nothing pins the
+     origin to TLS", fixed by a one-year `includeSubDomains` HSTS at Risk:
+     LOW.* Three errors in one sentence. HSTS is ignored on plain-HTTP
+     responses, so it cannot protect a first visit at all — only the browser
+     preload list does, and that is an apex-wide operator commitment. The
+     header was also attached **only in the `env.ASSETS` branch**, so a browser
+     landing directly on `GET /api/v1/auth/telegram/callback` (a real Telegram
+     login navigation, dispatched by `dispatchAuth` well before the asset
+     branch) would never receive it. And a one-year `includeSubDomains` header
+     is not LOW risk: a cached HSTS entry cannot be recalled, and
+     `includeSubDomains` binds sibling hosts this Worker knows nothing about.
+     Now: HSTS applies to every response via `withTransportSecurity`, starts at
+     `max-age=300`, ramps in four reviewed stages, and `includeSubDomains` is
+     gated on operator sign-off. Risk raised to MED.
+  2. *`test_worker_and_flask_ship_the_same_csp_directives` asserted only that
+     each Python directive string appears somewhere in the JS source.* That is
+     a one-way containment check, not a parity test: it passes when the Worker
+     carries **extra** directives or extra origins, when a constant is defined
+     but never used, and when the two lists are ordered differently. It also
+     never rebuilt the SPA, so it could not speak to what the deployed bundle
+     actually loads. Now: the array is parsed and compared for ordered
+     equality both ways, `Permissions-Policy` and `Strict-Transport-Security`
+     are compared exactly, the Worker test asserts the response's full CSP
+     string rather than substrings, Step 0c rebuilds `frontend/dist` before
+     checking for inline scripts, and Step 3c adds a browser Report-Only canary
+     because **no test in this plan loads the real SPA**.

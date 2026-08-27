@@ -1,32 +1,67 @@
-# Plan 025: Take the 2,663-line DesignTokensPage out of the user-facing app
+# Plan 025: Unadvertise DesignTokensPage and single-source the colour maths
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> report — do not improvise. **Do NOT edit `plans/README.md`.** That index is
+> maintained by the integration owner; several plans run in parallel and a
+> shared status file is a guaranteed conflict. Report your status instead.
 >
-> **Drift check (run first)**:
+> **Read the title literally.** This plan removes one **navigation entry** and
+> extracts a shared module. It does **not** remove the page from production, and
+> it does **not** make the route private — see "What this plan does and does not
+> achieve" below before writing any completion claim.
+>
+> **Drift check (run first)**. A commit-range diff cannot see uncommitted,
+> staged or untracked work, so run all four commands:
 >
 > ```bash
-> git diff --stat 42826a3..HEAD -- \
->   frontend/src/components/layout/nav-config.ts \
->   frontend/src/App.tsx \
->   frontend/src/pages/DesignTokensPage.tsx \
->   frontend/__tests__/css-tokens.test.ts
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="frontend/src/components/layout/nav-config.ts \
+>    frontend/src/App.tsx \
+>    frontend/src/pages/DesignTokensPage.tsx \
+>    frontend/__tests__/css-tokens.test.ts \
+>    frontend/src/lib/color.ts"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P    # committed since the plan was written
+> git diff --stat -- $P                  # unstaged
+> git diff --cached --stat -- $P         # staged
 > ```
 >
-> Expected: empty output. If any in-scope file changed since this plan was
-> written, compare the "Current state" excerpts against the live code before
-> proceeding; on a mismatch, treat it as a STOP condition.
+> Expected: the last three print nothing, and `git status --short` lists no
+> in-scope path. If any in-scope file appears in **any** of them, compare the
+> "Current state" excerpts against the live code before proceeding; on a
+> mismatch, treat it as a STOP condition.
+>
+> Never run `git checkout --` or `git clean -f` to "clean up" a dirty tree.
+> Those destroy the operator's work. Stop and report instead.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: `plans/001-restore-the-frontend-compile-gate.md` — **soft, but
+  real.** Every command below uses the working `npx tsc -b --noEmit` form, so
+  this plan runs standalone. What 001 adds is `frontend/tsconfig.test.json`:
+  without it, `frontend/__tests__/` is in no TypeScript project, so the new
+  `__tests__/color.test.ts` compiles only inside Vitest's esbuild transform,
+  which strips types without checking them. `frontend/src/lib/color.ts` *is*
+  covered by `tsconfig.app.json` either way. Prefer running after 001; if you
+  run before it, say so in your report.
+- **Depends on**: `plans/021-restore-legal-codex-default.md` — **hard.** Plan
+  021's drift check requires `frontend/src/pages/DesignTokensPage.tsx` to be
+  unmodified since `42826a3`, and its Step 3 pins its type change against
+  `getBaseColor()` at `DesignTokensPage.tsx:264-274`. This plan deletes ~176
+  lines above that function, moving every line number in the file. Running this
+  first makes 021 STOP on a drift it cannot distinguish from a real conflict.
+- **Must run BEFORE**: `plans/024-add-accessibility-gates.md`. Both edit
+  `frontend/__tests__/css-tokens.test.ts` — this plan removes the file's local
+  `getLuminance` / `getContrastRatio` (Step 4), and 024 rewrites its Group 3
+  contrast block, which *uses* `getContrastRatio`. If 024 runs first it will
+  assume the helpers are still defined locally at lines 13–30 and its edit will
+  land on the wrong lines. 024's drift check requires this plan's change to be
+  present.
 - **Category**: tech-debt
 - **Planned at**: commit `42826a3`, 2026-08-27
 
@@ -51,10 +86,47 @@ threshold. The suite's WCAG contrast assertions therefore validate the test's
 own copy of the maths, not the copy the rendered page uses — the two can drift
 apart silently and the tests will still pass.
 
-After this plan: the page stays reachable at `/design-tokens` by direct URL for
-internal use, but is no longer advertised in the user-facing navigation; and
-the colour maths lives in one exported module that both the page and the test
-import, so a change to the algorithm is caught by the test.
+After this plan: the page is no longer advertised in the sidebar or the mobile
+drawer, and the colour maths lives in one exported module that both the page and
+the test import, so a change to the algorithm is caught by the test.
+
+### What this plan does and does not achieve
+
+Be exact about this in the commit message and in the completion report. An
+earlier draft was titled "take it out of the user-facing app", which overstates
+what one nav-entry deletion can do.
+
+**It does:**
+- Remove `/design-tokens` from `APP_NAV_GROUPS`, so it disappears from
+  `Sidebar.tsx` and `MobileNav.tsx` — the only two places the app advertises it.
+- Give the colour maths a single implementation shared by the page and the test.
+
+**It does not:**
+- Remove the route. `App.tsx:412-418` still registers `path="design-tokens"`,
+  deliberately (it is the design team's working surface).
+- Make the page private. Any visitor who types `/design-tokens` gets the full
+  untranslated internal showcase, including a live CSS-variable editor.
+- Close the keyboard path. **`frontend/src/hooks/use-keyboard.ts:50` maps the
+  `?` key to `navigate("/design-tokens")`, and `useKeyboard()` is mounted
+  app-wide from `AppLayout.tsx:20`.** So pressing `?` on any page still takes
+  *any* user straight there. That is a discoverable, user-facing path, not an
+  obscure direct-URL one — "no longer advertised" is true of the navigation
+  chrome only, and this shortcut is the reason the claim has to be qualified.
+  Retargeting it needs `use-keyboard.ts` **and**
+  `tests/e2e/react/test_react_keyboard.py`, neither of which this plan owns.
+- Shrink the bundle. `App.tsx:81-85` already `lazy()`-loads the page.
+- Remove the prefetch entry (`frontend/src/lib/prefetch.ts:18`), which is now
+  simply never triggered.
+
+**If the requirement is genuinely "internal-only", this plan is not enough** and
+should not be signed off as satisfying it. That version needs: a build-time flag
+or an admin role check on the route, the `?` shortcut retargeted to a real
+keyboard-help overlay, the prefetch entry removed, and a verification against a
+production `frontend/dist` build that an unauthenticated visitor cannot reach
+the page while an authorised role still can. All of that spans `App.tsx`,
+`use-keyboard.ts`, `prefetch.ts`, `MobileNav.tsx` and the E2E suite — a
+different plan with a different file territory. Say so explicitly rather than
+letting an IA change be read as an access-control change.
 
 ## Current state
 
@@ -363,8 +435,8 @@ so `import { ... } from "@/lib/color"` resolves at test runtime. Other files in
 | Command | Result |
 |---|---|
 | `cd frontend && npx tsc -b --noEmit` | exit 0 (169 source files) |
-| `cd frontend && npx vitest run` | 490 passed, 55 files |
-| `cd frontend && npx vitest run __tests__/css-tokens.test.ts` | 44 passed |
+| `cd frontend && npx vitest run` | recorded as `FE_BEFORE` / `FEFILES_BEFORE` in Step 0 — this plan asserts a **delta**, never an absolute |
+| `cd frontend && npx vitest run __tests__/css-tokens.test.ts` | 44 passed (a **per-file** count, stable across sibling plans, and unchanged by this plan) |
 | `cd frontend && npx eslint src/pages/DesignTokensPage.tsx src/components/layout/nav-config.ts src/App.tsx __tests__/css-tokens.test.ts` | clean, no output |
 
 **`make typecheck` is a broken gate right now** — it runs `npx tsc --noEmit`,
@@ -380,9 +452,14 @@ Run all frontend commands from
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Real typecheck | `npx tsc -b --noEmit` | exit 0, no output |
-| Full frontend tests | `npx vitest run` | 490 passed before step 5, 490 + new tests after |
-| One test file | `npx vitest run __tests__/css-tokens.test.ts` | 44 passed |
+| Full frontend tests | `npx vitest run` | 0 failed; `Tests passed` == `FE_BEFORE` through step 4, then `FE_BEFORE + <it count in color.test.ts>` after step 5 |
+| One test file | `npx vitest run __tests__/css-tokens.test.ts` | 44 passed, before and after |
 | New colour test | `npx vitest run __tests__/color.test.ts` | all pass |
+
+Absolute suite totals are deliberately absent from this table and from "Done
+criteria". Several frontend plans run in parallel; a hard-coded
+`490 passed / 55 files` turns any sibling plan landing first into a false STOP
+and teaches the executor to edit the yardstick.
 | Lint the touched files | `npx eslint src/lib/color.ts src/pages/DesignTokensPage.tsx src/components/layout/nav-config.ts __tests__/css-tokens.test.ts __tests__/color.test.ts` | exit 0, no output |
 | Confirm route still registered | `grep -n 'path="design-tokens"' src/App.tsx` | prints line 413 (unchanged) |
 | Confirm scope | `git status --short` (from repo root) | only the in-scope files listed |
@@ -442,6 +519,19 @@ this plan adds none.
 - Do **not** push, open a PR, or merge. The operator commits and ships.
 
 ## Steps
+
+### Step 0: Record the test baseline
+
+Every suite gate below is a delta against these; nothing in this plan compares
+against a number written into the file.
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && npx vitest run 2>&1 | tail -5
+#   FE_BEFORE      = "Tests  N passed"
+#   FEFILES_BEFORE = "Test Files  N passed"
+npx vitest run __tests__/css-tokens.test.ts 2>&1 | tail -3
+#   must read 44 passed — a per-file count this plan must leave unchanged
+```
 
 ### Step 1: Remove `/design-tokens` from the navigation
 
@@ -548,7 +638,26 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
   npx tsc -b --noEmit && echo TSC_OK && npx vitest run 2>&1 | tail -5
 ```
 
-→ `grep -c` prints `13`; then `TSC_OK`; then `Tests  490 passed (490)`.
+→ `grep -c` prints `13`; then `TSC_OK`; then 0 failed with `Tests passed` still
+equal to `FE_BEFORE` (this step only duplicates code; no test result may move).
+
+**Verify the module exports the right thirteen symbols, not merely thirteen of
+something** — a count cannot tell a missing `oklabToRgb` from a stray helper:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && python3 - <<'PY'
+import re, sys
+src = open('src/lib/color.ts').read()
+found = set(re.findall(r'^export (?:function|type) (\w+)', src, re.M))
+want = {"hexToRgb","rgbToLinear","linearToRgb","rgbToOklab","oklabToRgb",
+        "rgbToHex","generateTones","getLuminance","getContrastRatio",
+        "WcagLevel","getWcagLevel","ColorBlindType","simulateColorBlindness"}
+print("missing:", sorted(want - found))
+print("unexpected:", sorted(found - want))
+sys.exit(0 if found == want else 1)
+PY
+```
+→ prints two empty lists and exits 0.
 
 ### Step 3: Point `DesignTokensPage.tsx` at the shared module
 
@@ -603,8 +712,9 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
 ```
 
 → first `grep -c` prints `0` (all four moved out); second prints `2`
-(`getCssVar` and `toLabelled` still there); then `TSC_OK`; then
-`Tests  490 passed (490)`.
+(`getCssVar` and `toLabelled` still there); then `TSC_OK`; then 0 failed with
+`Tests passed` still equal to `FE_BEFORE` — this step is behaviour-neutral, so
+any movement in that number means something else changed.
 
 **Verify the file shrank by roughly the extracted block**:
 
@@ -615,6 +725,26 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
 
 → a number between `2480` and `2500` (was 2,663; ~176 lines removed, ~7 added).
 If it is still 2,663 or below 2,400, something went wrong — STOP.
+
+A line count is a smoke check, not a correctness check. The identity check is
+the one that matters:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && python3 - <<'PY'
+import re, sys
+src = open('src/pages/DesignTokensPage.tsx').read()
+gone = ["hexToRgb","rgbToLinear","linearToRgb","rgbToOklab","oklabToRgb",
+        "rgbToHex","generateTones","getLuminance","getContrastRatio",
+        "getWcagLevel","simulateColorBlindness"]
+stay = ["getCssVar","toLabelled"]
+bad  = [n for n in gone if re.search(r'^(?:function|const) %s\b' % n, src, re.M)]
+lost = [n for n in stay if not re.search(r'^function %s\b' % n, src, re.M)]
+print("still defined locally (should be none):", bad)
+print("missing but must stay:", lost)
+sys.exit(1 if bad or lost else 0)
+PY
+```
+→ prints two empty lists and exits 0.
 
 ### Step 4: Make `css-tokens.test.ts` assert against the real implementation
 
@@ -720,9 +850,20 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
     __tests__/color.test.ts && echo LINT_OK
 ```
 
-→ `TSC_OK`; `Test Files  56 passed (56)` with `Tests  490 + N passed` where N is
-the number of tests you added in step 5 (and **exactly** 490 pre-existing tests
-still pass — no test may be lost); then `LINT_OK`.
+→ `TSC_OK`; 0 failed, with `Test Files passed` == `FEFILES_BEFORE + 1` and
+`Tests passed` == `FE_BEFORE + N`, where N is the number of `it` blocks you
+added in step 5. State that arithmetic in your report. Every pre-existing test
+must still pass — none may be lost. Then `LINT_OK`.
+
+**Verify the per-file counts** (these stay valid however many sibling plans
+land, unlike a suite total):
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/frontend" && \
+  npx vitest run __tests__/css-tokens.test.ts __tests__/color.test.ts 2>&1 | tail -5
+```
+→ `css-tokens.test.ts` still reports 44 tests, `color.test.ts` reports N, 0
+failed overall.
 
 **Verify nothing outside scope was touched** (from the repo root):
 
@@ -741,7 +882,9 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
 ```
 
 (`.claude/STATE.md` may also appear as modified — it is a session-state file
-this plan does not own; leave it alone.)
+this plan does not own; leave it alone.) If anything else appears, **stop and
+report** — do not run `git checkout --` or `git clean`, which cannot tell your
+mistake from the operator's own work.
 
 ## Test plan
 
@@ -762,28 +905,46 @@ this plan does not own; leave it alone.)
 - **No new component/render tests.** `DesignTokensPage.tsx` has no Vitest
   coverage today and this plan deliberately does not add any — the page is
   being demoted to internal tooling, not promoted.
-- Verification: `cd frontend && npx vitest run` → 56 files, 490 pre-existing
-  tests plus the new ones, zero failures.
+- Verification: `cd frontend && npx vitest run` → **0 failed**, with
+  `Test Files passed` == `FEFILES_BEFORE + 1` and `Tests passed` ==
+  `FE_BEFORE + <it count in color.test.ts>` (baselines from Step 0). No absolute
+  suite total is asserted anywhere in this plan — sibling frontend plans land in
+  parallel and any hard-coded figure would turn one of them into a false STOP.
 
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
-- [ ] `cd frontend && npx vitest run` exits 0; at least 490 tests pass and 0 fail
+- [ ] `cd frontend && npx vitest run` exits 0 with **0 failed**, `Tests passed`
+      == `FE_BEFORE + <it count in color.test.ts>` and `Test Files passed` ==
+      `FEFILES_BEFORE + 1`
 - [ ] `cd frontend && npx vitest run __tests__/css-tokens.test.ts` → 44 passed
+      (unchanged by this plan)
 - [ ] `cd frontend && npx vitest run __tests__/color.test.ts` → 1 file passed, 0 failed
 - [ ] `cd frontend && npx eslint src/lib/color.ts src/pages/DesignTokensPage.tsx src/components/layout/nav-config.ts __tests__/css-tokens.test.ts __tests__/color.test.ts` exits 0 with no output
 - [ ] `grep -c "design-tokens" frontend/src/components/layout/nav-config.ts` → `0`
 - [ ] `grep -c "Palette" frontend/src/components/layout/nav-config.ts` → `0`
 - [ ] `grep -c 'path="design-tokens"' frontend/src/App.tsx` → `1` (route preserved)
-- [ ] `git diff --stat 42826a3..HEAD -- frontend/src/App.tsx` → empty (App.tsx unmodified)
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat -- frontend/src/App.tsx`
+      and `git diff --cached --stat -- frontend/src/App.tsx` are both empty
+      (this plan modified nothing in `App.tsx`; the commit-range form cannot
+      show this once sibling plans have landed)
 - [ ] `grep -c "^function getLuminance\|^function getContrastRatio" frontend/__tests__/css-tokens.test.ts` → `0`
-- [ ] `grep -c "^function hexToRgb\|^function getLuminance\|^function generateTones\|^function simulateColorBlindness" frontend/src/pages/DesignTokensPage.tsx` → `0`
-- [ ] `grep -c "^function getCssVar\|^function toLabelled" frontend/src/pages/DesignTokensPage.tsx` → `2`
-- [ ] `grep -c "^export function\|^export type" frontend/src/lib/color.ts` → `13`
+- [ ] `grep -c 'from "@/lib/color"' frontend/__tests__/css-tokens.test.ts` → `1`
+- [ ] Step 3's python identity check exits 0 (all eleven helpers gone from the
+      page, `getCssVar` and `toLabelled` still present)
+- [ ] Step 2's python export check exits 0 (`src/lib/color.ts` exports exactly
+      the thirteen named symbols — not merely thirteen symbols)
 - [ ] `git status --short` from the repo root lists no files outside the In-scope list (`.claude/STATE.md` excepted)
-- [ ] `plans/README.md` status row for 025 updated
+- [ ] The completion report states plainly that the route stays public and that
+      the `?` keyboard shortcut (`use-keyboard.ts:50`) still navigates any user
+      to `/design-tokens` — i.e. this is an information-architecture change, not
+      an access-control one (see "What this plan does and does not achieve")
+- [ ] The completion report hands the stale
+      `tests/e2e/react/react_helpers.py:SIDEBAR_NAV_ITEMS` row to the operator
+      (see Maintenance notes) — it is unowned by any plan in this batch
+- [ ] `plans/README.md` is **unchanged** — the integration owner maintains it
 
 ## STOP conditions
 
@@ -802,9 +963,16 @@ Stop and report back (do not improvise) if:
   `'getLuminance' is declared but its value is never read` in
   `DesignTokensPage.tsx`, you imported too many symbols — import only the six
   listed in step 3.
-- After step 3 the total Vitest count is anything other than 490 passing. This
+- After step 3 the total Vitest count is anything other than `FE_BEFORE`. This
   step is meant to be behaviour-neutral; a changed count means something moved
   that should not have.
+- The drift check shows `frontend/src/hooks/use-theme-preset.ts` unchanged since
+  `42826a3` — that means `plans/021-restore-legal-codex-default.md` has **not**
+  landed, and this plan is running out of order. Deleting ~176 lines from
+  `DesignTokensPage.tsx` will make 021's drift check fire on arrival. Report and
+  stop. (Check with
+  `grep -c 'DEFAULT_PRESET' frontend/src/hooks/use-theme-preset.ts` → must be
+  `5` once 021 has landed.)
 - `DesignTokensPage.tsx` fails to compile because `TONE_LABELS`, `toLabelled`,
   or `getCssVar` went missing — you deleted past the boundaries in step 3.
 - You find yourself wanting to edit `frontend/src/App.tsx`, `use-keyboard.ts`,
@@ -822,34 +990,60 @@ For the human or agent who owns this code next:
   `oklabToRgb` would silently change every generated tone swatch, and nothing in
   the suite renders those swatches.
 - **`/design-tokens` is still reachable** at `https://<host>/design-tokens` by
-  direct URL, and that is deliberate — it is the design team's working surface.
-  If it should become genuinely private, the next step is an `adminOnly`-style
-  gate. **Be aware that today's `adminOnly` flag would not have been enough:**
+  direct URL **and by pressing `?`**, and that is deliberate — it is the design
+  team's working surface. If it should become genuinely private, the next step
+  is an `adminOnly`-style gate **plus** retargeting the shortcut and removing
+  the prefetch entry, verified against a production `frontend/dist` build (an
+  unauthenticated visitor blocked, an authorised role still admitted).
+  **Be aware that today's `adminOnly` flag would not have been enough:**
   `Sidebar.tsx:86` filters on it (`.filter((item) => !item.adminOnly || canViewAdmin)`)
   but `MobileNav.tsx:64-66` maps `group.items` with **no such filter**, so an
   `adminOnly` item still renders in the mobile drawer for everyone. That is a
   pre-existing leak affecting `/admin/pipeline-runs` (`nav-config.ts:75-81`)
   right now, independent of this plan; fixing it needs `MobileNav.tsx`, which
   this plan does not own. Worth a follow-up plan.
-- **Two paths to the page remain and were deliberately left alone**:
+- **Two paths to the page remain and were deliberately left alone**, and the
+  first of them undercuts any "users can no longer reach it" claim:
   `frontend/src/hooks/use-keyboard.ts:50` maps the `?` key to
-  `navigate("/design-tokens")`, and `frontend/src/lib/prefetch.ts:18` keeps a
-  prefetch entry. The keyboard shortcut is asserted by
+  `navigate("/design-tokens")`, and `useKeyboard()` is mounted app-wide from
+  `AppLayout.tsx:20`, so **`?` on any page still takes any user there** — a
+  discoverable shortcut, not an obscure URL. `frontend/src/lib/prefetch.ts:18`
+  also keeps a prefetch entry (harmless once the nav entry that triggers it is
+  gone). The shortcut is asserted by
   `tests/e2e/react/test_react_keyboard.py:50-63`, so retargeting it (a global
   help/shortcuts overlay would be the obvious replacement) must be done in a
-  plan that owns both the hook and that test file.
-- **The Playwright E2E suite is already stale here and this change does not make
-  it newly red.** `tests/e2e/react/react_helpers.py:75-88` defines
+  plan that owns both the hook and that test file. Until then, keep the
+  completion claim at "unadvertised", never "removed" or "internal-only".
+- **HANDOFF — this plan knowingly makes an E2E helper staler, and nobody owns
+  fixing it.** `tests/e2e/react/react_helpers.py:75-88` defines
   `SIDEBAR_NAV_ITEMS`, which at `42826a3` already lists `("Download", "/download")`
   and `("Pipeline", "/pipeline")` — labels that no longer exist in
   `APP_NAV_GROUPS` (they were consolidated into `/data-tools`). Since
   `click_sidebar_link` (`react_helpers.py:155-162`) does an exact-name
   `get_by_role("link", ...)` lookup, `test_react_rapid_nav.py` and
   `test_react_dark_mode.py:108-114` already fail on those entries. After this
-  plan `("Design Tokens", "/design-tokens")` joins them as stale. Whoever
-  refreshes that helper should regenerate the whole list from `nav-config.ts`
-  rather than patching one row. E2E is not part of `make test` and needs a
-  running server, so it does not gate this work.
+  plan `("Design Tokens", "/design-tokens")` joins them as a **third** stale
+  row — one this plan caused.
+
+  Two honest points about that:
+  1. `tests/e2e/react/**` is out of this plan's territory, and E2E is not part
+     of `make test` (it needs a running Flask server and a built SPA), so it
+     does not gate this work.
+  2. **It is also not covered by `plans/040-revive-the-e2e-suites.md`.** That
+     plan's in-scope list names `.github/workflows/ci.yml`, `frontend/e2e/**`,
+     `frontend/playwright.config.ts`, `tests/e2e/README.md`,
+     `tests/e2e/test_smoke.py`, `tests/e2e/react/test_react_smoke.py` and two
+     Worker test files — **not** `react_helpers.py`. So "040 will fix it" would
+     be false. Report this to the operator as an unowned follow-up needing
+     either an addition to 040's scope or a small plan of its own.
+
+  The right fix when someone does own it: derive `SIDEBAR_NAV_ITEMS` from
+  `frontend/src/components/layout/nav-config.ts` at test-collection time (parse
+  the `to:` values and resolve `labelKey` against `en.json`) rather than
+  hand-maintaining a parallel list — that is what let it drift three entries out
+  of date in the first place. Also retarget the `?` shortcut assertion in
+  `tests/e2e/react/test_react_keyboard.py:50-63` at the same time, since it is
+  the same coupling.
 - **Unused i18n keys left behind on purpose**: `nav.design_tokens`
   (`en.json:28`, `zh-TW.json:28`) and `nav_descriptions.design_tokens`
   (`en.json:50`, `zh-TW.json:50`). The `pages.design_tokens.*` keys are still

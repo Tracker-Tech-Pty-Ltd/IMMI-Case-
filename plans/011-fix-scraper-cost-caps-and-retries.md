@@ -7,13 +7,20 @@
 > `plans/README.md` if that file exists; if it does not exist, do **not** create
 > it (a reviewer maintains the index).
 >
-> **Drift check (run first)**:
+> **Drift check (run first)** — all four commands. A `42826a3..HEAD` diff sees
+> only what is committed, so on a dirty tree it gives a false all-clear:
+> ```bash
+> cd "/Users/d/Developer/Active Projects/IMMI-Case-"
+> P="workers/austlii-scraper/src workers/austlii-scraper/wrangler.toml workers/austlii-scraper/tsconfig.json workers/extraction-container.js"
+> git status --short --branch
+> git diff --stat 42826a3..HEAD -- $P     # landed since this plan was written
+> git diff --stat -- $P                   # unstaged
+> git diff --cached --stat -- $P          # staged
 > ```
-> git diff --stat 42826a3..HEAD -- workers/austlii-scraper/src workers/austlii-scraper/wrangler.toml workers/austlii-scraper/tsconfig.json workers/extraction-container.js
-> ```
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> If any in-scope path appears in **any** of the three diffs, or in
+> `git status --short`, treat it as a STOP condition: compare the "Current state"
+> excerpts against the live code and report before editing. Do **not** run
+> `git checkout --` or `git clean` — the operator may have work in progress.
 
 ## Status
 
@@ -25,6 +32,27 @@
   the frontend compile-gate plans are irrelevant to it.)
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
+
+### Parallelism
+
+This plan owns `workers/austlii-scraper/**` and `workers/extraction-container.js`
+and nothing else. It shares **no file** with the five plans queued serially on
+`workers/storage/cloudflare.js` / `workers/case-api/cloudflare.js`
+(009 → 010 → 013 → 014 → 012), so it can run fully in parallel with all of them.
+
+One consequence you must respect: because those five are landing tests into the
+main Worker suite concurrently, **this plan must not assert an absolute main-Worker
+test total.** It asserts only that the main-Worker suite has zero failures and
+that its total did not *drop* below the baseline you record in Step 0.
+
+One ordering note in the other direction: Step 5 adds a new query against
+`pipeline_control_commands`. `plans/013-*.md` Step 2 originally asked its
+executor to confirm "exactly six lines" match a repo-wide grep for that table —
+a count this plan legitimately increases to seven. That check has been rewritten
+in 013 to analyse predicates instead of counting lines, so the two plans no
+longer conflict; no ordering constraint follows from it. If you are looking at an
+older copy of 013 that still counts lines, tell the integrator rather than
+skipping this step.
 
 ## Why this matters
 
@@ -590,16 +618,30 @@ parameters under `noUnusedParameters`).
 Run everything from the repository root
 `/Users/d/Developer/Active Projects/IMMI-Case-` unless the command `cd`s itself.
 
+**Record your baselines first (Step 0).** The main Worker suite is being grown
+concurrently by five other plans, so no absolute total for it is valid:
+
+```bash
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers"
+BEFORE_MAIN=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_MAIN=$BEFORE_MAIN"
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper"
+BEFORE_SCRAPER=$(npx vitest run 2>&1 | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+'); echo "BEFORE_SCRAPER=$BEFORE_SCRAPER"  # 28 at 42826a3
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short > /tmp/immi-011-dirty-before.txt
+```
+
+The scraper suite is owned solely by this plan, so its per-file and per-suite
+counts are stable and are used directly.
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Scraper tests (primary gate) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run` | exit 0. Baseline at `42826a3`: `Test Files 7 passed (7)`, `Tests 28 passed (28)`. After this plan: 7 files, **40** tests |
+| Scraper tests (primary gate) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run` | exit 0. Baseline at `42826a3`: `Test Files 7 passed (7)`, `Tests 28 passed (28)`. After this plan: 7 files, **49** tests (`BEFORE_SCRAPER + 21`) |
 | Scraper typecheck | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit` | exit 0, **no output** |
 | Unused-symbol probe (step 1 only) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit --noUnusedLocals --noUnusedParameters` | after step 1: exit 0, no output |
-| Main Worker tests (regression) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | `345 passed`, 25 files — unchanged by this plan |
-| Python config gates (regression) | `.venv/bin/python -m pytest tests/test_native_pipeline_boundary.py tests/test_effective_native_ci.py -q` | `7 passed` |
-| Full Python suite (final check) | `make test-py` | `1141 passed, 3 failed, 7 skipped`. The 3 failures are **environmental** (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import in `tests/test_backfill_judge_overrides_from_pdf.py`). They exist at `42826a3` and are not yours to fix |
-| Container bridge syntax | `node --check workers/extraction-container.js` | exit 0, no output |
-| Diff review | `git status --short` and `git diff` | only in-scope files listed |
+| Main Worker tests (regression) | `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` | zero failures, and the total is **`BEFORE_MAIN` or higher** — higher is expected and fine if a sibling plan landed while you worked. A total **below** `BEFORE_MAIN` means something was deleted; stop. Do not assert an absolute number here. |
+| Python config gates (regression) | `.venv/bin/python -m pytest tests/test_native_pipeline_boundary.py tests/test_effective_native_ci.py -q` | `7 passed` (per-file count, stable) |
+| Full Python suite (final check) | `make test-py` | zero *new* failures. The only failures allowed are **exactly the three environmental ImportErrors in `tests/test_backfill_judge_overrides_from_pdf.py`, by name** (Homebrew Python 3.14.7 `pyexpat`/`libexpat` ABI mismatch breaks the `pypdf` import). Confirm by name: `make test-py 2>&1 \| grep -E '^(FAILED\|ERROR)' \| sort -u` must list nothing outside that file. |
+| Container bridge syntax | `node --check workers/extraction-container.js` | exit 0, no output. **This is a parse check only** — it proves nothing about whether the bridge works at runtime; see Step 7 and Step 9. |
+| Diff review | `git diff --stat`, `git diff --cached --stat`, `git status --short` | only in-scope files, plus whatever `/tmp/immi-011-dirty-before.txt` already listed |
 
 Never use global `pip`/`python`; the venv is at
 `/Users/d/Developer/Active Projects/IMMI-Case-/.venv`.
@@ -854,10 +896,36 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-" && grep -n "max_concurrency" 
 
 Commit: `fix: retry transient AustLII failures and serialise the scrape queue`
 
-### Step 3: Make both cost caps real and fail closed
+### Step 3: Make both cost caps real, fail closed, and distinguish "broke" from "spent"
 
 Addresses JSCORR-14. All edits in `workers/austlii-scraper/src/extract.ts`,
 `workers/austlii-scraper/src/types.ts` and the extract test file.
+
+**Two things this step is NOT, stated up front so the commit message and your
+report stay honest:**
+
+1. **These are not hard caps.** The flow is still check → pay → charge. A batch
+   that starts with `$0.01` of headroom may cost `$3`, and nothing can stop it
+   once `callInternalExtract` is in flight. The bound this step actually
+   delivers is: **overspend is limited to at most one batch beyond the ceiling,
+   per ledger, per concurrent consumer** — and `immi-extract-queue` runs at
+   `max_concurrency = 1` (`workers/austlii-scraper/wrangler.toml:76`), so that
+   is one batch. Before this step, the overspend was unbounded because the
+   charge never happened when staging threw. Call it "a bounded ceiling", never
+   "a hard cap".
+2. **The run and month ledgers are two separate Durable Objects**, so a check
+   against both and a charge to both are not one atomic operation. A crash
+   between the two `/charge` calls leaves the ledgers disagreeing. A true fix is
+   a reservation/settlement protocol with a stable attempt id against a single
+   coordinating ledger; that is a larger change to `CostCapDO` (which this plan
+   holds out of scope because a new DO shape needs a `[[migrations]]` tag) and is
+   recorded in "Maintenance notes".
+
+What this step *does* fix, completely: the ceiling is no longer silently
+disabled by a missing binding; the advertised monthly ceiling is actually read;
+a malformed ledger body no longer resets the budget to full; and — new in this
+revision — an *unreachable* ledger is no longer misreported as an *exhausted*
+one.
 
 1. `types.ts`: add one field to `Env`, directly after
    `PIPELINE_RUN_COST_CAP_USD?: string;` (line 97):
@@ -884,52 +952,97 @@ Addresses JSCORR-14. All edits in `workers/austlii-scraper/src/extract.ts`,
    missing binding is a configuration fault, so it retries into the DLQ where an
    operator can see it, rather than quietly disabling the ceiling.
 4. `extract.ts`: replace `getRemainingCostUsd` and `chargeCostUsd`
-   (lines 235–251) wholesale with:
+   (lines 235–251) wholesale with the block below. The two structural changes
+   against the first draft of this plan are: the budget check returns a
+   **tri-state** (`available` / `exhausted` / `unavailable`) instead of a bare
+   number, and the ledger names are computed **once** and passed to the charge,
+   so a batch that straddles a UTC month boundary charges the same month it
+   checked.
    ```ts
    /** Ledger names. `run:` is per pipeline run; `month:` accumulates across runs. */
    function costLedgerNames(runId: string, now: number = Date.now()): readonly [string, string] {
      return [`run:${runId}`, `month:${new Date(now).toISOString().slice(0, 7)}`] as const;
    }
 
+   type LedgerState = "available" | "exhausted" | "unavailable";
+
+   interface LedgerReading {
+     state: LedgerState;
+     remaining: number;
+   }
+
    /**
-    * Fail closed: an unreachable ledger, a non-OK response, or a malformed body
-    * all count as zero remaining budget. Never fall back to the full cap.
+    * Read one ledger. Three outcomes, deliberately distinct:
+    *   available   — the ledger answered and has budget left
+    *   exhausted   — the ledger answered and the budget is gone
+    *   unavailable — the ledger did not answer, or answered with a body we
+    *                 cannot trust
+    * `unavailable` must NEVER be collapsed into `exhausted`: aborting a run and
+    * acking its messages on an infrastructure blip destroys work that a retry
+    * would have completed, and reports a false "budget spent" to the operator.
     */
-   async function remainingForLedger(env: Env, ledger: string, cap: number): Promise<number> {
-     if (!env.COST_CAP_DO) return 0;
+   async function readLedger(env: Env, ledger: string, cap: number): Promise<LedgerReading> {
+     if (!env.COST_CAP_DO) return { state: "unavailable", remaining: 0 };
      try {
        const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
        const response = await stub.fetch(`https://cost/remaining?cap=${encodeURIComponent(String(cap))}`);
        if (!response.ok) throw new Error(`ledger responded ${response.status}`);
        const body = await response.json<{ remaining_usd?: number }>();
        const remaining = Number(body?.remaining_usd);
-       return Number.isFinite(remaining) && remaining >= 0 ? remaining : 0;
+       if (!Number.isFinite(remaining) || remaining < 0) throw new Error("ledger returned a malformed remaining_usd");
+       return { state: remaining > 0 ? "available" : "exhausted", remaining };
      } catch (err) {
        console.error(JSON.stringify({
          event: "extract.cost_cap.unavailable",
          ledger,
          error: err instanceof Error ? err.message : String(err),
        }));
-       return 0;
+       return { state: "unavailable", remaining: 0 };
      }
    }
 
-   async function getRemainingCostUsd(env: Env, runId: string): Promise<number> {
-     const [runLedger, monthLedger] = costLedgerNames(runId);
-     const [runRemaining, monthRemaining] = await Promise.all([
-       remainingForLedger(env, runLedger, positiveNumber(env.PIPELINE_RUN_COST_CAP_USD, DEFAULT_RUN_COST_CAP_USD)),
-       remainingForLedger(env, monthLedger, positiveNumber(env.PIPELINE_MONTHLY_HARD_CAP_USD, DEFAULT_MONTHLY_COST_CAP_USD)),
+   interface CostBudget {
+     state: LedgerState;
+     remaining: number;
+     ledgers: readonly [string, string];
+   }
+
+   /**
+    * Check both ceilings. `unavailable` wins over `exhausted` wins over
+    * `available`, because the two failure modes need opposite handling and
+    * "we do not know" must never be reported as "we are out of money".
+    * The ledger names are returned so the caller charges exactly the ledgers it
+    * checked, even if the batch crosses a UTC month boundary mid-flight.
+    */
+   async function checkCostBudget(env: Env, runId: string): Promise<CostBudget> {
+     const ledgers = costLedgerNames(runId);
+     const [runReading, monthReading] = await Promise.all([
+       readLedger(env, ledgers[0], positiveNumber(env.PIPELINE_RUN_COST_CAP_USD, DEFAULT_RUN_COST_CAP_USD)),
+       readLedger(env, ledgers[1], positiveNumber(env.PIPELINE_MONTHLY_HARD_CAP_USD, DEFAULT_MONTHLY_COST_CAP_USD)),
      ]);
-     return Math.min(runRemaining, monthRemaining);
+     const readings = [runReading, monthReading];
+     const state: LedgerState = readings.some((reading) => reading.state === "unavailable")
+       ? "unavailable"
+       : readings.some((reading) => reading.state === "exhausted")
+         ? "exhausted"
+         : "available";
+     return { state, remaining: Math.min(runReading.remaining, monthReading.remaining), ledgers };
    }
 
    /**
     * Charge both ledgers. A charge failure is loud but never triggers a retry:
     * the money is already spent, so re-running the batch would spend more.
+    * Takes the ledger names the caller checked, so the check and the charge
+    * cannot land in different months.
     */
-   async function chargeCostUsd(env: Env, runId: string, usd: number): Promise<void> {
+   async function chargeCostUsd(
+     env: Env,
+     ledgers: readonly [string, string],
+     runId: string,
+     usd: number,
+   ): Promise<void> {
      if (!env.COST_CAP_DO || usd <= 0) return;
-     for (const ledger of costLedgerNames(runId)) {
+     for (const ledger of ledgers) {
        try {
          const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
          const response = await stub.fetch("https://cost/charge", {
@@ -950,12 +1063,38 @@ Addresses JSCORR-14. All edits in `workers/austlii-scraper/src/extract.ts`,
      }
    }
    ```
-   Leave the existing cap-hit block at lines 58–68 unchanged — it already aborts
-   the run with `abortReason: "cost_cap_hit"` and acks, which is the right
-   behaviour for either ledger.
-5. `wrangler.toml`: no change needed —
+5. `extract.ts`: replace the cap-hit block at lines 57–68 so the two failure
+   modes are handled differently. **Do not leave it unchanged** — that is what
+   turns a ledger outage into a false "budget exhausted, run aborted, messages
+   acked, work lost":
+   ```ts
+     const budget = await checkCostBudget(env, runId);
+     if (budget.state === "unavailable") {
+       // A ledger we cannot read is an infrastructure fault, not a spent budget.
+       // Retry (max_retries then DLQ) so the work survives and an operator sees it.
+       retryAll(messages, "cost_ledger_unavailable");
+       await sendPipelineAlert(env, "cost ledger unavailable", { run_id: runId });
+       return;
+     }
+     if (budget.state === "exhausted") {
+       await updatePipelineRun(env, runId, {
+         status: "aborted",
+         abortReason: "cost_cap_hit",
+       }).catch(() => undefined);
+       for (const message of messages) message.ack();
+       console.warn(JSON.stringify({ event: "extract.aborted.cost_cap_hit", run_id: runId }));
+       await sendPipelineAlert(env, "cost cap hit", { run_id: runId, remaining_usd: budget.remaining });
+       return;
+     }
+   ```
+   Then thread `budget.ledgers` through to the charge in Step 4:
+   `await chargeCostUsd(env, budget.ledgers, runId, response.cost_usd);`
+6. Delete the now-unused `getRemainingCostUsd`. With `noUnusedLocals` enabled in
+   Step 1, leaving it behind fails `npx tsc --noEmit`, which is the check that
+   catches this for you.
+7. `wrangler.toml`: no change needed —
    `PIPELINE_MONTHLY_HARD_CAP_USD = "10"` on line 111 is now read by code.
-6. Update `workers/austlii-scraper/src/__tests__/extract-native.test.ts`. The new
+8. Update `workers/austlii-scraper/src/__tests__/extract-native.test.ts`. The new
    binding guard means the existing `baseEnv()` (which has no `COST_CAP_DO`)
    would now retry instead of ack, so add a stub to `baseEnv` that also records
    what was charged. Add these locals inside `baseEnv` next to `nativeMessages`:
@@ -977,16 +1116,26 @@ Addresses JSCORR-14. All edits in `workers/austlii-scraper/src/extract.ts`,
        },
    ```
    and add `costCalls` to the object `baseEnv` returns (alongside
-   `nativeMessages` and `ack`). Then add three cases:
+   `nativeMessages` and `ack`). Then add **five** cases:
    - `"charges both the run and the month ledger"` — run the happy-path batch and
      assert `current.costCalls.filter((call) => call.url.includes("/charge")).map((call) => call.ledger)`
      equals `[\`run:${RUN_ID}\`, \`month:${new Date().toISOString().slice(0, 7)}\`]`.
-   - `"aborts the run when a cost ledger returns a malformed body"` — override
-     `COST_CAP_DO` so `/remaining` returns `Response.json({})`; assert
-     `updateRun` was called with
+   - `"aborts the run when a ledger reports zero remaining"` — override
+     `COST_CAP_DO` so `/remaining` returns `Response.json({ remaining_usd: 0 })`;
+     assert `updateRun` was called with
      `expect.objectContaining({ status: "aborted", abortReason: "cost_cap_hit" })`,
      that `EXTRACTION_BACKEND.fetch` was **not** called, and that `ack` was
-     called once.
+     called once. (This is the *real* exhausted case.)
+   - `"retries instead of aborting when a cost ledger returns a malformed body"` —
+     override `COST_CAP_DO` so `/remaining` returns `Response.json({})`, with a
+     `retry = vi.fn()`. Assert `retry` called once, `ack` **not** called,
+     `EXTRACTION_BACKEND.fetch` **not** called, and `updateRun` **not** called
+     with `abortReason: "cost_cap_hit"`. This is the tri-state fix: a ledger that
+     cannot be trusted must not be reported as a spent budget, and the batch must
+     survive. Against the first draft of this plan (which mapped malformed → 0 →
+     `cost_cap_hit`) this test fails.
+   - `"retries when the cost ledger throws"` — `COST_CAP_DO.get` returns a stub
+     whose `fetch` rejects. Same assertions as the previous case.
    - `"fails closed when the cost cap binding is absent"` — `baseEnv({ COST_CAP_DO: undefined })`
      with a `retry = vi.fn()`; assert `retry` called once and
      `EXTRACTION_BACKEND.fetch` not called.
@@ -995,7 +1144,16 @@ Addresses JSCORR-14. All edits in `workers/austlii-scraper/src/extract.ts`,
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit && echo TSC_OK && npx vitest run 2>&1 | tail -6
 ```
-→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  34 passed (34)`.
+→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  36 passed (36)`
+(`BEFORE_SCRAPER + 3` from Step 2, `+ 5` here).
+
+Then confirm the tri-state is genuinely wired, not just present in the file — a
+grep for `"unavailable"` would also match the log-event string, so assert on
+behaviour by name instead:
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run src/__tests__/extract-native.test.ts -t "retries instead of aborting when a cost ledger returns a malformed body" 2>&1 | tail -4
+```
+→ `Tests 1 passed`.
 
 Then prove the monthly cap is no longer dead config:
 ```
@@ -1012,11 +1170,26 @@ Addresses JSCORR-08. All edits in `workers/austlii-scraper/src/extract.ts` and
 its test file. Do this **after** step 3 — it depends on the `chargeCostUsd`
 shape introduced there.
 
+**The ack rule must be positive, not negative.** Acking "everything not in
+`failedCaseIds`" silently destroys any input case the extraction backend did not
+return. That is a live risk, not a theoretical one: `callInternalExtract`
+validates only `Array.isArray(body.extracted)`
+(`workers/austlii-scraper/src/extract.ts:159`), and `normalizeExtracted`
+(`:269-275`) only defaults `fields`/`base` — **nothing checks that the returned
+case ids match the ids that were sent**. A backend that drops one case from a
+five-case batch, or returns a duplicate, or returns an id nobody asked for,
+currently produces a batch where the dropped input is acked and lost forever.
+
+So: ack an input **only if** exactly one output claimed it *and* that output
+staged successfully. Everything else retries.
+
 1. Add an outcome type next to the other local types in `extract.ts` (just above
    `async function enqueueNativeExtractedResults`):
    ```ts
    interface EnqueueOutcome {
      upserted: number;
+     /** Input case ids that reached D1/R2/queue successfully. Ack ONLY these. */
+     stagedCaseIds: Set<string>;
      failedCaseIds: Set<string>;
    }
    ```
@@ -1029,14 +1202,33 @@ shape introduced there.
      env: Env,
      runId: string,
      extracted: ExtractedCase[],
+     inputCaseIds: ReadonlySet<string>,
    ): Promise<EnqueueOutcome> {
      if (!env.NATIVE_CASE_QUEUE) throw new Error("NATIVE_CASE_QUEUE is required for native extraction");
      let count = 0;
+     const stagedCaseIds = new Set<string>();
      const failedCaseIds = new Set<string>();
+     const seen = new Set<string>();
      for (const item of extracted) {
+       // The backend is not trusted to echo the batch back faithfully. An id we
+       // did not send, or a second copy of one we did, is a protocol violation:
+       // log it and stage nothing, so the corresponding input (if any) stays
+       // un-acked and is retried rather than being marked done by a stray row.
+       if (!inputCaseIds.has(item.case_id) || seen.has(item.case_id)) {
+         console.error(JSON.stringify({
+           event: "extract.enqueue.unexpected_case",
+           run_id: runId,
+           case_id: item.case_id,
+           reason: seen.has(item.case_id) ? "duplicate" : "not_in_batch",
+         }));
+         failedCaseIds.add(item.case_id);
+         continue;
+       }
+       seen.add(item.case_id);
        try {
          // …existing body, unchanged, ending with:
          count += 1;
+         stagedCaseIds.add(item.case_id);
        } catch (err) {
          failedCaseIds.add(item.case_id);
          console.error(JSON.stringify({
@@ -1047,20 +1239,36 @@ shape introduced there.
          }));
        }
      }
-     return { upserted: count, failedCaseIds };
+     // An input the backend never mentioned is the dangerous case: it is in
+     // neither set, so a "not failed => ack" rule would drop it silently.
+     for (const caseId of inputCaseIds) {
+       if (!stagedCaseIds.has(caseId) && !failedCaseIds.has(caseId)) {
+         console.error(JSON.stringify({
+           event: "extract.enqueue.missing_case",
+           run_id: runId,
+           case_id: caseId,
+         }));
+       }
+     }
+     return { upserted: count, stagedCaseIds, failedCaseIds };
    }
    ```
+   Build `inputCaseIds` at the call site from the messages, not from the
+   response: `const inputCaseIds = new Set(messages.map((message) => message.body.case_id));`
 3. Replace the block at `extract.ts:84-101` with this — cost first, enqueue
    guarded, per-item ack/retry:
    ```ts
      // Charge before any work that can fail. A throw between the paid container
      // call and this line would let the platform redeliver the whole batch and
      // re-bill the extraction against a ledger that never saw the first call.
-     await chargeCostUsd(env, runId, response.cost_usd);
+     // `budget.ledgers` (Step 3) are the ledgers this batch was checked against,
+     // so a batch that crosses a UTC month boundary charges the month it read.
+     await chargeCostUsd(env, budget.ledgers, runId, response.cost_usd);
 
+     const inputCaseIds = new Set(messages.map((message) => message.body.case_id));
      let outcome: EnqueueOutcome;
      try {
-       outcome = await enqueueNativeExtractedResults(env, runId, response.extracted);
+       outcome = await enqueueNativeExtractedResults(env, runId, response.extracted, inputCaseIds);
      } catch (err) {
        console.error(JSON.stringify({
          event: "extract.enqueue.batch_failed",
@@ -1078,24 +1286,34 @@ shape introduced there.
        costUsd: response.cost_usd,
      }).catch(() => undefined);
 
-     // Per-item retry: re-publishing is idempotent (stageNativeOutboxEvent
-     // returns "published" for an event already sent), so only the case that
-     // actually failed goes round again.
+     // Positive ack rule: a message is done ONLY if its case staged
+     // successfully. Anything else — failed, dropped by the backend, or
+     // returned twice — is retried. Re-publishing is idempotent
+     // (stageNativeOutboxEvent returns "published" for an event already sent),
+     // so a retry is cheap and cannot double-write.
+     let retried = 0;
      for (const message of messages) {
-       if (outcome.failedCaseIds.has(message.body.case_id)) message.retry();
-       else message.ack();
+       if (outcome.stagedCaseIds.has(message.body.case_id)) message.ack();
+       else { message.retry(); retried += 1; }
      }
      console.log(JSON.stringify({
        event: "extract.batch.ok",
        run_id: runId,
+       requested: messages.length,
        extracted: response.extracted.length,
        upserted: outcome.upserted,
-       retried: outcome.failedCaseIds.size,
+       staged: outcome.stagedCaseIds.size,
+       retried,
        llm_calls: response.llm_calls,
        cost_usd: response.cost_usd,
      }));
    ```
-4. Add two cases to `extract-native.test.ts`:
+   `requested` and `staged` are new fields on an existing log event. They are the
+   only way an operator can see a backend that is quietly returning fewer cases
+   than it was given: `requested > staged + retried` is impossible by
+   construction, but a persistently high `retried` with a low `extracted` means
+   the backend is dropping cases and the DLQ is about to fill.
+4. Add **five** cases to `extract-native.test.ts`:
    - `"charges the batch cost before staging results"` — make
      `NATIVE_CASE_QUEUE.send` reject (`vi.fn(async () => { throw new Error("queue down"); })`)
      and assert that `current.costCalls.some((call) => call.url.includes("/charge") && call.usd === 0.1)`
@@ -1108,12 +1326,32 @@ shape introduced there.
      `extract.ts:192` fires for it only. Assert the first message's `ack` was
      called and its `retry` was not, and the second message's `retry` was called
      and its `ack` was not. (Give each message its own `ack`/`retry` spies.)
+   - `"retries an input case the backend did not return"` — the partial-response
+     regression guard. Two-message batch, but `EXTRACTION_BACKEND.fetch` returns
+     `extracted` containing **only** the first case. Assert message 1 acked and
+     message 2 **retried, not acked**. Against a `failedCaseIds`-only ack rule
+     this test fails, because the missing case is in neither set.
+   - `"ignores a case the backend returned that was not in the batch"` —
+     single-message batch, backend returns that case plus a stray
+     `case_id: "ffffffffffff"`. Assert the real message is acked, that
+     `NATIVE_CASE_QUEUE.send` was called **once** (the stray was not staged), and
+     that a `console.error` line parses as JSON with
+     `event === "extract.enqueue.unexpected_case"` and `reason === "not_in_batch"`.
+   - `"stages a duplicated case only once"` — single-message batch, backend
+     returns the same case twice. Assert `NATIVE_CASE_QUEUE.send` called once and
+     the message acked once.
 
 **Verify**:
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit && echo TSC_OK && npx vitest run 2>&1 | tail -6
 ```
-→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  36 passed (36)`.
+→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  41 passed (41)`.
+
+Confirm the partial-response guard is real rather than incidentally passing:
+```
+cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run src/__tests__/extract-native.test.ts -t "retries an input case the backend did not return" 2>&1 | tail -4
+```
+→ `Tests 1 passed`, and none of `0 passed` / `No test files`.
 
 Also confirm the ordering is right in the source:
 ```
@@ -1128,6 +1366,18 @@ Commit: `fix: charge extraction cost before staging and retry per item`
 
 Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
 `workers/austlii-scraper/src/index.ts` and the control test file.
+
+**Reading the command back is not sufficient on its own.** The sequence
+`readControlCommand → startPipelineRun → updateControlCommand(runId)` still has a
+crash window: if the process dies (or the Worker is evicted, or `sendBatch`
+throws and the retry arrives) *after* the run row exists but *before* `run_id`
+is written back to the command, the redelivery reads `run_id: null` and mints a
+second run. Two concurrent deliveries of the same command hit the same window.
+
+So the run id must be **derived from the command id**, not minted randomly, and
+the insert must be idempotent. Then a redelivery converges on the same row
+whether or not the write-back happened. The read-back stays as a fast path and
+as the source of the `completed` short-circuit.
 
 1. `pipeline-db.ts`: add a read helper immediately above
    `export async function updateControlCommand(` (line 112):
@@ -1151,9 +1401,56 @@ Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
      return row ?? null;
    }
    ```
-2. `index.ts`: add `readControlCommand,` to the existing
+1b. `pipeline-db.ts`: make `startPipelineRun` able to take a caller-supplied,
+   deterministic id and make the insert idempotent. `pipeline_runs.run_id` is
+   `TEXT PRIMARY KEY` (`migrations/d1/ops/0001_ops.sql:4-22`), so
+   `INSERT OR IGNORE` collapses a redelivery onto the row that already exists.
+   Change the function (currently `workers/austlii-scraper/src/pipeline-db.ts:218-228`,
+   whose body opens `const runId = crypto.randomUUID();`) to:
+   ```ts
+   export async function startPipelineRun(
+     env: Env,
+     options: {
+       trigger: "cron" | "manual" | "webhook";
+       courts: CourtCode[];
+       phase: string;
+       /**
+        * Deterministic id for a run that must survive queue redelivery. Derived
+        * from the control command id so a redelivery — including one that
+        * crashed before the command row learned its run_id — converges on the
+        * same pipeline_runs row instead of forking a phantom one.
+        */
+       runId?: string;
+     },
+   ): Promise<string> {
+     const runId = options.runId ?? crypto.randomUUID();
+     await ops(env).prepare(`
+       INSERT OR IGNORE INTO pipeline_runs (run_id, trigger, court, phase, status, started_at)
+       VALUES (?, ?, ?, ?, 'running', ?)
+     `).bind(runId, options.trigger, options.courts.join(","), options.phase, new Date().toISOString()).run();
+     return runId;
+   }
+   ```
+   `INSERT OR IGNORE` changes cron behaviour not at all — a random UUID never
+   collides — so this is safe for the existing callers that pass no `runId`.
+1c. `pipeline-db.ts`: add the derivation helper next to it, so the same rule is
+   used by every caller and is testable on its own:
+   ```ts
+   /** Stable pipeline-run id for a control command. Same command => same run. */
+   export function controlRunId(commandId: string): string {
+     return `cmd-${commandId}`;
+   }
+   ```
+   A prefixed command id is used rather than a hash because `run_id` is a plain
+   `TEXT` column with no format constraint anywhere in
+   `migrations/d1/ops/0001_ops.sql`, and a readable id makes an operator's job
+   easier when they are correlating a dashboard row with the command that caused
+   it. Confirm before relying on it:
+   `grep -rn "run_id" migrations/d1/ops/*.sql` — no CHECK constraint, no length
+   limit.
+2. `index.ts`: add `readControlCommand,` and `controlRunId,` to the existing
    `import { … } from "./pipeline-db";` list (lines 19–30), keeping it in the
-   current alphabetical-ish order — put it right after
+   current alphabetical-ish order — put `readControlCommand` right after
    `latestRunningPipelineRun,`.
 3. `index.ts`: in `handlePipelineControlBatch`, insert the claim between the
    `nativePipelineReady` check and the first `updateControlCommand` call
@@ -1173,8 +1470,9 @@ Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
          const priorRunId = prior?.run_id ?? null;
          await updateControlCommand(env, control.command_id, { status: "running" });
    ```
-4. `index.ts`: reuse `priorRunId` in the two branches that mint a run. In the
-   `download` branch (line 104) replace
+4. `index.ts`: in the two branches that mint a run, pass the deterministic id.
+   `priorRunId` alone is not enough — it is `null` in exactly the crash window
+   this step exists to close. In the `download` branch (line 104) replace
    ```ts
          const runId = await startPipelineRun(env, {
            trigger: "manual",
@@ -1184,15 +1482,20 @@ Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
    ```
    with
    ```ts
+         // Deterministic id + INSERT OR IGNORE: a redelivery converges on the
+         // same run row whether or not the previous attempt got as far as
+         // writing run_id back onto the command. priorRunId is preferred when
+         // present so a run started before this change is still honoured.
          const runId = priorRunId ?? await startPipelineRun(env, {
            trigger: "manual",
            courts: controlCourts(control.courts),
            phase: "download",
+           runId: controlRunId(control.command_id),
          });
    ```
-   and make the same `priorRunId ??` change in the final `else` (discovery)
-   branch at line 132. Leave the `stop` and `legislation_update` branches alone —
-   neither starts a run.
+   and make the same change in the final `else` (discovery) branch at line 132,
+   keeping that branch's own `trigger`/`phase` values. Leave the `stop` and
+   `legislation_update` branches alone — neither starts a run.
 5. `pipeline-control.test.ts`: the module mock is exhaustive, so add the new
    export or every control test breaks. Add to the `vi.hoisted` object
    (lines 3–13):
@@ -1202,7 +1505,10 @@ Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
    add `readControlCommand: mocks.readControlCommand,` to the
    `vi.mock("../pipeline-db", …)` factory (lines 19–30), and add
    `mocks.readControlCommand.mockResolvedValue(null);` to the `beforeEach`.
-   Then add two cases:
+   You must also add `controlRunId` to the same mock factory — but mock it with
+   the **real** implementation (`controlRunId: (id: string) => \`cmd-${id}\``),
+   not `vi.fn()`, because tests assert on the derived value.
+   Then add **four** cases:
    - `"reuses the run a redelivered download command already started"` —
      `mocks.readControlCommand.mockResolvedValue({ status: "running", run_id: RUN_ID })`,
      dispatch the same `cmd-download` message; assert
@@ -1213,12 +1519,42 @@ Addresses JSCORR-15. Edits in `workers/austlii-scraper/src/pipeline-db.ts`,
      assert `ack` called once, and `mocks.startPipelineRun`,
      `mocks.runDiscoveryAndEnqueue` and `mocks.updateControlCommand` were **not**
      called.
+   - `"derives the same run id when the command row never learned it"` — the
+     crash-window guard. Leave `mocks.readControlCommand` returning
+     `{ status: "running", run_id: null }` (i.e. the previous attempt started a
+     run but died before the write-back). Dispatch the `download` command
+     **twice**. Assert `mocks.startPipelineRun` was called twice, and that
+     **both** calls received `expect.objectContaining({ runId: \`cmd-${COMMAND_ID}\` })`
+     — the same id — so `INSERT OR IGNORE` collapses them onto one row.
+     Against the first draft of this plan (`priorRunId ?? startPipelineRun(...)`
+     with a random UUID inside) the two calls carry no `runId` at all and this
+     test fails.
+   - `"passes the deterministic run id on a first delivery"` —
+     `mocks.readControlCommand.mockResolvedValue(null)`; assert the single
+     `startPipelineRun` call carries `runId: \`cmd-${COMMAND_ID}\``.
+
+   The mocked `startPipelineRun` cannot prove `INSERT OR IGNORE` actually
+   de-duplicates — it never touches D1. Prove that half separately, against real
+   SQLite, so the claim is not resting on a mock:
+   ```bash
+   cd "/Users/d/Developer/Active Projects/IMMI-Case-" && python3 - <<'PY'
+   import sqlite3
+   c = sqlite3.connect(":memory:")
+   c.executescript(open("migrations/d1/ops/0001_ops.sql").read())
+   for _ in range(2):
+       c.execute("INSERT OR IGNORE INTO pipeline_runs (run_id, trigger, court, phase, status, started_at)"
+                 " VALUES (?, 'manual', 'FCA', 'download', 'running', '2026-01-01T00:00:00Z')", ("cmd-abc",))
+   print(c.execute("SELECT COUNT(*) FROM pipeline_runs").fetchone()[0])
+   PY
+   ```
+   → prints `1`. If it prints `2`, `run_id` is not the primary key on this
+   schema and the whole idempotency argument is wrong — STOP and report.
 
 **Verify**:
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit && echo TSC_OK && npx vitest run 2>&1 | tail -6
 ```
-→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  38 passed (38)`.
+→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  45 passed (45)`.
 
 Commit: `fix: make pipeline control commands idempotent across redeliveries`
 
@@ -1227,30 +1563,73 @@ Commit: `fix: make pipeline control commands idempotent across redeliveries`
 Addresses JSCORR-26. Edits in `workers/austlii-scraper/src/discover.ts` and its
 test file.
 
-1. Add a helper just above `export async function runDiscoveryAndEnqueue(`
-   (line 174):
+**Do not infer success from `candidate_urls.length > 0 || errors.length === 0`.**
+That heuristic is wrong in a case that occurs regularly in this corpus: a court
+whose 2026 listing fetches and parses fine but legitimately contains **zero**
+cases so far, while its 2025 listing 5xx's. `candidate_urls` is then empty and
+`errors` is non-empty, so the court reads as unproductive — and if it is the only
+court in the run, the run is marked `failed` even though discovery worked. The
+`ARTA` court is exactly this shape early in a calendar year.
+
+Record what actually happened per year instead. `discoverCourt`
+(`workers/austlii-scraper/src/discover.ts:108-172`) already loops years with a
+`try`/`catch` at `:122-135`, so both counters are one line each.
+
+1. Extend `DiscoveryResult` (`workers/austlii-scraper/src/discover.ts:50-57`)
+   with two counters. Both are required (not optional) so the compiler finds
+   every construction site for you — there are three (`:155-162`, `:165-171`, and
+   any early return you find on a fresh read):
+   ```ts
+   export interface DiscoveryResult {
+     court: CourtCode;
+     candidate_urls: string[];
+     new_case_urls: string[];
+     new_cases: DiscoveryCandidate[];
+     skipped_reason?: "rate_anomaly" | "paused" | "court_disabled";
+     errors: string[];
+     /** Court-years this run tried to fetch. */
+     attempted_years: number;
+     /** Court-years whose listing fetched AND parsed without throwing. A year
+      *  that parsed to zero cases counts as successful — an empty listing is a
+      *  real answer, not a failure. */
+     successful_years: number;
+   }
+   ```
+2. In `discoverCourt`, track them across the year loop. Declare
+   `let successfulYears = 0;` next to `const errors: string[] = [];` (line 118),
+   add `successfulYears += 1;` as the last statement inside the `try` at
+   `:123-129` (after the `for (const item of parsed)` loop, so a parse throw does
+   not count), and put
+   `attempted_years: years.length, successful_years: successfulYears` into every
+   returned object — including the `skipped_reason: "rate_anomaly"` early return
+   at `:155-162`, which has already done its fetching.
+3. Replace the productivity test with one that reads those counters:
    ```ts
    /**
-    * A court counts as productive when it was not skipped and either returned
-    * listings or completed cleanly. A run is only "failed" when no court in it
-    * was productive; a single transient court-year failure stays visible in
-    * errors/errorsJson without zeroing the operator dashboard.
+    * A court counts as productive when it was not skipped and at least one of
+    * its court-years fetched and parsed. A year that parsed to zero cases is a
+    * success: an empty listing is a real answer. A run is only "failed" when no
+    * court in it was productive; a single transient court-year failure stays
+    * visible in errors/errorsJson without zeroing the operator dashboard.
     */
    function courtWasProductive(result: DiscoveryResult): boolean {
      if (result.skipped_reason) return false;
-     return result.candidate_urls.length > 0 || result.errors.length === 0;
+     return result.successful_years > 0;
    }
    ```
-2. In `runDiscoveryAndEnqueue`, add a counter next to `let discovered = 0;`
+4. In `runDiscoveryAndEnqueue`, add a counter next to `let discovered = 0;`
    (line 180):
    ```ts
      let productiveCourts = 0;
    ```
-   and increment it right after `errors.push(...result.errors);` (line 190):
+   and increment it right after `errors.push(...result.errors);` (line 190) —
+   **before** the `if (result.skipped_reason) continue;` at `:192`, so a skipped
+   court is still evaluated by `courtWasProductive` (which returns `false` for
+   it) rather than being silently excluded:
    ```ts
      if (courtWasProductive(result)) productiveCourts += 1;
    ```
-3. Replace the final `updatePipelineRun` call (lines 227–232) with:
+5. Replace the final `updatePipelineRun` call (lines 227–232) with:
    ```ts
      await updatePipelineRun(env, runId, {
        discovered,
@@ -1259,7 +1638,7 @@ test file.
        status: courts.length === 0 || productiveCourts > 0 ? "ok" : "failed",
      });
    ```
-4. `discover.test.ts`: the existing `vi.mock("../pipeline-db", …)` factory
+6. `discover.test.ts`: the existing `vi.mock("../pipeline-db", …)` factory
    (lines 5–9) does **not** export `isPipelineStopRequested`, which
    `runDiscoveryAndEnqueue` imports. Add
    `isPipelineStopRequested: vi.fn(async () => false),` to that factory, and
@@ -1283,15 +1662,32 @@ test file.
      return `new Response("boom", { status: 500 })`; assert the last
      `updatePipelineRun` call matches
      `expect.objectContaining({ status: "failed" })`.
+   - `"reports ok when one year is empty and another fails"` — the case the old
+     `candidate_urls.length > 0` heuristic got wrong, and the reason this step
+     was rewritten. One court (`ARTA`), `PIPELINE_DISCOVERY_LOOKBACK_YEARS: "2"`,
+     and a `fetch` stub that returns a **valid listing page containing zero case
+     anchors** for the newer year and `new Response("boom", { status: 500 })` for
+     the older one. Assert the final `updatePipelineRun` patch matches
+     `expect.objectContaining({ status: "ok" })` and that its `errors` is `1`.
+     Against `candidate_urls.length > 0 || errors.length === 0` this test fails
+     with `status: "failed"` — run it against the old helper once to confirm that
+     before you move on.
+   - `"counts a year that parses to zero cases as successful"` — call
+     `discoverCourt(env, "ARTA", "run-x", Date.UTC(2026, 0, 1))` directly with a
+     `fetch` stub returning an empty-but-valid listing for every year, and assert
+     the returned `DiscoveryResult` has `successful_years === attempted_years`
+     and `attempted_years > 0`. This pins the semantics of the new counters at
+     their source, where the run-level test cannot see them.
    Use `vi.mocked(updatePipelineRun).mock.calls.at(-1)?.[2]` to read the patch
-   argument, and `vi.clearAllMocks()` in a `beforeEach` so the two cases do not
+   argument, and `vi.clearAllMocks()` in a `beforeEach` so the cases do not
    see each other's calls.
 
 **Verify**:
 ```
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit && echo TSC_OK && npx vitest run 2>&1 | tail -6
 ```
-→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  40 passed (40)`.
+→ `TSC_OK`, `Test Files  7 passed (7)`, `Tests  49 passed (49)`
+(`BEFORE_SCRAPER + 21`).
 
 Commit: `fix: report a partly successful discovery run as ok`
 
@@ -1367,11 +1763,78 @@ cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && np
 cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run 2>&1 | tail -4
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && make test-py 2>&1 | tail -4
 cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git status --short
+cd "/Users/d/Developer/Active Projects/IMMI-Case-" && git diff --stat && git diff --cached --stat
 ```
-→ scraper: `Test Files 7 passed (7)`, `Tests 40 passed (40)`, tsc silent;
-main Worker: `345 passed`; Python: `1141 passed, 3 failed, 7 skipped` (the same
-three `pyexpat`/`pypdf` environmental failures that exist at `42826a3`);
-`git status --short` lists only files from the In-scope list.
+→ scraper: `Test Files 7 passed (7)`, `Tests 49 passed (49)`, tsc silent;
+main Worker: zero failures and a total ≥ `BEFORE_MAIN` (a sibling plan may have
+landed tests while you worked; a total *below* `BEFORE_MAIN` is a STOP
+condition); Python: failures only inside
+`tests/test_backfill_judge_overrides_from_pdf.py`, still exactly the three
+`pyexpat`/`pypdf` ImportErrors by name; the three git commands list only files
+from the In-scope list plus whatever `/tmp/immi-011-dirty-before.txt` already
+contained.
+
+### Step 9: Write the activation runbook (no code — this is a deliverable)
+
+Everything above is inert until an operator deploys it, and two of the changes
+are actively unsafe to activate without ordering. Produce the runbook below as
+part of your completion report. **Do not run any of it** — you have no
+credentials and this plan explicitly forbids `wrangler deploy`.
+
+The runbook must state, in this order:
+
+1. **The `COST_CAP_DO` binding is now mandatory.** After Step 3, an extraction
+   Worker deployed without it retries every batch into the DLQ with
+   `missing_cost_cap_do`. `scripts/check_cloudflare_native_target.py`'s
+   `_validate_pipeline` (lines 161–195) requires the D1/R2/KV/queue/`MYBROWSER`/
+   `AI`/`EXTRACTION_BACKEND` bindings but **not** `COST_CAP_DO`, so a config
+   missing it passes the deploy gate. That script is owned by another plan and is
+   out of scope here, so this is a **manual pre-deploy check**, and it must be in
+   the runbook as a blocking step:
+   ```bash
+   grep -A2 'COST_CAP_DO' <operator-wrangler.toml>   # must show a durable_objects binding
+   grep -n 'PIPELINE_MONTHLY_HARD_CAP_USD' <operator-wrangler.toml>
+   ```
+   Also record the follow-up: add `COST_CAP_DO` and
+   `PIPELINE_MONTHLY_HARD_CAP_USD` to `_validate_pipeline` so this stops being
+   manual. Name it as a required change to that file's owning plan.
+2. **Deploy the extraction Container Worker first, and smoke it.**
+   `workers/extraction-container.js` could not even be evaluated before Step 7
+   (`ReferenceError: DurableObject is not defined`), so its `/health` has never
+   been observed to answer. It deploys separately, from
+   `config/wrangler-extraction-container.toml.example`
+   (`name = "immi-extraction"`, `main = "workers/extraction-container.js"`,
+   `class_name = "ExtractionBackend"`). The smoke test must be:
+   - an authenticated `GET /health` returning 200 — this is the first evidence
+     that the `cloudflare:workers` import fix works at runtime, which
+     `node --check` cannot tell you;
+   - one bounded `POST /internal/extract` with a **single** case and a
+     deliberately small budget, then read the `run:`/`month:` ledgers via the DO
+     and confirm the charge landed on both;
+   - a redelivery of that same message, confirming the outbox short-circuit
+     (`stageNativeOutboxEvent` → `"published"`) means no second queue send and no
+     second charge.
+3. **Only then enable the pipeline**: flip `PIPELINE_ENABLED` /
+   `NATIVE_PIPELINE_ENABLED` to `"true"` on the scraper Worker. The checked-in
+   defaults stay `"false"`; `tests/test_native_pipeline_boundary.py:37-39`
+   asserts that and must not be changed.
+4. **Rollback**, stated concretely rather than as "revert": redeploy the previous
+   Worker **version id** for both `immi-extraction` and the scraper
+   (`wrangler deployments list` → `wrangler rollback <version-id>`), and set
+   `PIPELINE_ENABLED="false"` first so no new batches start while the rollback
+   runs. Note explicitly that a rollback does **not** unwind the ledgers: money
+   already charged stays charged, and a `month:` ledger can be reset only with
+   `POST https://cost/reset` to that DO.
+5. **What to watch for the first run**, by log event name:
+   `extract.cost_cap.unavailable` (ledger outage — expect retries, not aborts),
+   `extract.cost_cap.charge_failed` (page-worthy: spend is being under-counted),
+   `extract.enqueue.missing_case` / `extract.enqueue.unexpected_case` (the
+   backend is not echoing the batch faithfully),
+   `pipeline.control.duplicate_ignored` (idempotency working as intended).
+
+**Verify**: the runbook exists in your completion report and names, for each of
+the five points, the exact command or log event. There is nothing to execute
+here — say so plainly rather than implying the deploy was validated.
 
 ## Test plan
 
@@ -1389,35 +1852,65 @@ and forwards to extract"`:
    not regress).
 3. 200 with a body under 50 characters → `retry` called, `ack` not called.
 
-`workers/austlii-scraper/src/__tests__/extract-native.test.ts` (+5, steps 3–4) —
+`workers/austlii-scraper/src/__tests__/extract-native.test.ts` (+10, steps 3–4) —
 model after `"writes an R2 payload and sends only a pointer event to the
 coordinator Queue"`:
 4. Happy path charges both `run:<id>` and `month:<YYYY-MM>` ledgers, in that
    order.
-5. `/remaining` returning `{}` (malformed) → run aborted with
+5. `/remaining` returning `{ remaining_usd: 0 }` → run aborted with
    `abortReason: "cost_cap_hit"`, container never called, message acked.
-6. `COST_CAP_DO` absent → `retry` called, container never called.
-7. Staging failure still charges the cost (`/charge` seen with `usd === 0.1`).
-8. Two-message batch where only the second item throws `Missing canonical text`
-   → first message acked, second message retried.
+6. `/remaining` returning `{}` (malformed) → **retried**, not aborted, container
+   never called. The tri-state guard.
+7. `/remaining` throwing → same as 6.
+8. `COST_CAP_DO` absent → `retry` called, container never called.
+9. Staging failure still charges the cost (`/charge` seen with `usd === 0.1`).
+10. Two-message batch where only the second item throws `Missing canonical text`
+    → first message acked, second message retried.
+11. Backend returns only one of two input cases → the unreturned message is
+    **retried**, not acked. The partial-response guard.
+12. Backend returns a case id that was not in the batch → ignored, one queue
+    send, `extract.enqueue.unexpected_case` logged.
+13. Backend returns the same case twice → staged once, acked once.
 
-`workers/austlii-scraper/src/__tests__/pipeline-control.test.ts` (+2, step 5) —
+`workers/austlii-scraper/src/__tests__/pipeline-control.test.ts` (+4, step 5) —
 model after `"queues only catalog cases without a native content pointer for
 download"`:
-9. Redelivered `download` command whose row already carries a `run_id` reuses it
-   (`startPipelineRun` not called, jobs still carry that `run_id`).
-10. A command whose row is already `completed` is acked with no work at all.
+14. Redelivered `download` command whose row already carries a `run_id` reuses it
+    (`startPipelineRun` not called, jobs still carry that `run_id`).
+15. A command whose row is already `completed` is acked with no work at all.
+16. Command row exists with `run_id: null` (the crash window) and is delivered
+    twice → both `startPipelineRun` calls carry the same
+    `runId: cmd-<command_id>`.
+17. First delivery passes `runId: cmd-<command_id>`.
 
-`workers/austlii-scraper/src/__tests__/discover.test.ts` (+2, step 6) — model
+`workers/austlii-scraper/src/__tests__/discover.test.ts` (+4, step 6) — model
 after `"uses Firecrawl as an opt-in listing fallback…"` for the `fetch` stub and
 env shape:
-11. One court's listings succeed, another's fail → final `updatePipelineRun`
+18. One court's listings succeed, another's fail → final `updatePipelineRun`
     patch has `status: "ok"` and `errors > 0`.
-12. Every court fails → final patch has `status: "failed"`.
+19. Every court fails → final patch has `status: "failed"`.
+20. One year parses to **zero cases** and another 5xx's → `status: "ok"`,
+    `errors: 1`. The case the old heuristic got wrong.
+21. `discoverCourt` with an empty-but-valid listing every year →
+    `successful_years === attempted_years`, both > 0.
 
-Final counts: scraper suite goes from **28** to **40** tests across the same 7
-files. `cd workers && npx vitest run` (345) and `make test-py` (1141 passed / 3
-environmental failures) must be unchanged.
+Two checks that no Vitest run can perform, and that are therefore specified as
+explicit commands in their steps rather than left implied:
+
+- **`INSERT OR IGNORE` really de-duplicates on this schema** — the mocked
+  `startPipelineRun` never touches D1. Step 5 runs the two-insert probe against
+  real SQLite loaded from `migrations/d1/ops/0001_ops.sql` and expects `1`.
+- **The container bridge actually loads.** `node --check` proves the file
+  parses, not that `import { DurableObject } from "cloudflare:workers"` resolves
+  at runtime — that resolution only exists inside workerd. Step 9's runbook makes
+  an authenticated `GET /health` against the deployed Worker the acceptance
+  evidence, and the plan does not claim JSCORR-13 is verified until an operator
+  reports it.
+
+Final counts: the scraper suite goes from **28** to **49** tests across the same
+7 files (`BEFORE_SCRAPER + 21`). The main Worker suite must have zero failures
+and a total ≥ `BEFORE_MAIN`; `make test-py` must show no failure outside
+`tests/test_backfill_judge_overrides_from_pdf.py`.
 
 ## Done criteria
 
@@ -1425,16 +1918,22 @@ ALL must hold:
 
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit` exits 0 with no output
 - [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx tsc --noEmit --noUnusedLocals --noUnusedParameters` exits 0 with no output
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run` reports `Test Files  7 passed (7)` and `Tests  40 passed (40)`
-- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` reports `345 passed` (unchanged)
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers/austlii-scraper" && npx vitest run` reports `Test Files  7 passed (7)` and `Tests  49 passed (49)` (`BEFORE_SCRAPER + 21`)
+- [ ] Each of the twenty-one new tests reports `Tests 1 passed` when run with `-t "<title>"` — none reports `0 passed` or `No test files`
+- [ ] `cd "/Users/d/Developer/Active Projects/IMMI-Case-/workers" && npx vitest run` reports zero failures and a total **≥ `BEFORE_MAIN`** (this plan changes no main-Worker file; a higher total means a sibling plan landed, which is fine)
 - [ ] `.venv/bin/python -m pytest tests/test_native_pipeline_boundary.py tests/test_effective_native_ci.py -q` reports `7 passed`
-- [ ] `make test-py` reports `1141 passed, 3 failed, 7 skipped` (the same three `pypdf`/`pyexpat` environmental failures as at `42826a3`)
-- [ ] `node --check workers/extraction-container.js` exits 0
+- [ ] `make test-py 2>&1 | grep -E '^(FAILED|ERROR)' | sort -u` lists nothing outside `tests/test_backfill_judge_overrides_from_pdf.py`, and what it lists there is still exactly the three `pypdf`/`pyexpat` ImportErrors, by name
+- [ ] The `INSERT OR IGNORE` SQLite probe in Step 5 printed `1`
+- [ ] `node --check workers/extraction-container.js` exits 0 — recorded as a **parse** check, not as evidence the bridge runs
 - [ ] `grep -c 'import { DurableObject } from "cloudflare:workers";' workers/extraction-container.js` prints `1`
 - [ ] `grep -c 'new Request(containerUrl, request)' workers/extraction-container.js` prints `0`
 - [ ] `grep -rn "PIPELINE_MONTHLY_HARD_CAP_USD" workers/austlii-scraper/` returns exactly 3 lines (`wrangler.toml`, `src/types.ts`, `src/extract.ts`)
 - [ ] `grep -n "max_concurrency" workers/austlii-scraper/wrangler.toml` shows no value greater than `1`
 - [ ] `grep -c "Number.POSITIVE_INFINITY" workers/austlii-scraper/src/extract.ts` prints `0`
+- [ ] `grep -c "getRemainingCostUsd" workers/austlii-scraper/src/extract.ts` prints `0` (replaced by `checkCostBudget`)
+- [ ] `grep -c "successful_years" workers/austlii-scraper/src/discover.ts` is ≥ `4` (the interface field, the increment, and one per construction site)
+- [ ] `grep -c "controlRunId" workers/austlii-scraper/src/index.ts` prints `3` (the import plus both run-starting branches)
+- [ ] The Step 9 activation runbook is written out in the completion report, and the report states plainly that no deploy or runtime verification was performed
 - [ ] `grep -n "chunkArray\|parseCourtList\|parseScheduledTime\|MAX_BATCH_ENQUEUE\|EnqueueRequest\|EnqueueResponse" workers/austlii-scraper/src/index.ts workers/austlii-scraper/src/types.ts` returns no matches
 - [ ] `grep -c "extractFullText(html)" workers/austlii-scraper/src/index.ts` prints `1`
 - [ ] `grep -n 'PIPELINE_ENABLED = "false"' workers/austlii-scraper/wrangler.toml` still matches (fail-closed default preserved)
@@ -1453,9 +1952,10 @@ Stop and report back (do not improvise) if:
   `index.ts:344` (`if (!response.ok)`), `wrangler.toml:62`
   (`max_concurrency = 20`) or `wrangler.toml:111`
   (`PIPELINE_MONTHLY_HARD_CAP_USD = "10"`).
-- `cd workers && npx vitest run` drops below 345 passing. This plan must not
-  change the main production Worker at all; a change there means you edited an
-  out-of-scope file.
+- `cd workers && npx vitest run` drops **below `BEFORE_MAIN`**, or reports any
+  failure. This plan must not change the main production Worker at all; a drop
+  means you edited an out-of-scope file. A *rise* is expected while sibling
+  plans land and is not a problem — do not "correct" it.
 - `make test-py` shows any failure other than the three known
   `tests/test_backfill_judge_overrides_from_pdf.py` `pypdf`/`pyexpat` import
   errors. In particular `tests/test_native_pipeline_boundary.py` or
@@ -1465,9 +1965,17 @@ Stop and report back (do not improvise) if:
   one of the eight listed in "Current state". That means the tree drifted;
   report the extra symbol rather than deleting something this plan did not
   authorise.
-- Step 3's fail-closed guard makes more than the three named `extract-native`
+- Step 3's fail-closed guard makes more than the named `extract-native`
   tests fail. Only `baseEnv()`-based tests should need the new `COST_CAP_DO`
   stub; broader breakage means the guard landed in the wrong place.
+- The `INSERT OR IGNORE` probe in Step 5 prints `2` instead of `1`. That means
+  `pipeline_runs.run_id` is not a primary key on the live schema and the whole
+  deterministic-id argument collapses — report it, do not work around it.
+- Extending `DiscoveryResult` with two required fields in Step 6 surfaces more
+  than three construction sites. This plan located three
+  (`discover.ts:155-162`, `:165-171`, and the year loop's own return); a fourth
+  means the file drifted and you should re-read it before adding counters that
+  might be wrong for that path.
 - Step 5's `readControlCommand` import makes control tests throw
   `readControlCommand is not a function` — that means a `vi.mock` factory is
   missing the new export. Fix the mock; do not remove the import.
@@ -1487,12 +1995,34 @@ For whoever owns this Worker next:
   levers are `PIPELINE_MONTHLY_HARD_CAP_USD` in `wrangler.toml` or a
   `POST https://cost/reset` to that DO. There is no admin route for it — add one
   deliberately if the operator asks; do not weaken the fail-closed reads.
+- **The ceilings are bounded, not hard.** Check → pay → charge means a batch can
+  still exceed a ceiling by its own cost. With `immi-extract-queue` at
+  `max_concurrency = 1` the overspend is bounded to one batch per ledger. The
+  design that would make it a true hard cap: a *reservation* protocol — the
+  consumer POSTs `/reserve {attempt_id, usd_estimate}` to a single coordinating
+  ledger that holds run and month budgets together, the DO either grants or
+  refuses atomically, the consumer does the paid call, then POSTs
+  `/settle {attempt_id, usd_actual}`; an unsettled reservation expires. The
+  stable `attempt_id` also lets a redelivery reuse the earlier reservation
+  instead of double-reserving, and caching the paid result against that id would
+  remove the re-billing risk entirely. That needs a new `CostCapDO` shape and
+  therefore a new `[[migrations]]` tag, which is why it is not in this plan.
+- **The run and month ledgers are not updated atomically.** They are two DOs. A
+  crash between the two `/charge` calls leaves them disagreeing, always in the
+  direction of the month ledger under-counting. `extract.cost_cap.charge_failed`
+  is the signal; the single-coordinating-ledger design above is the fix.
 - **`COST_CAP_DO` is now required for extraction to run at all.** The deploy
-  gate `scripts/check_cloudflare_native_target.py:_validate_pipeline` still does
-  **not** require the binding, so a config missing it deploys clean and every
-  extract batch DLQs with `missing_cost_cap_do`. Adding that binding to the gate
-  is the obvious follow-up and was deliberately left out of this plan (that file
-  is owned elsewhere).
+  gate `scripts/check_cloudflare_native_target.py:_validate_pipeline`
+  (lines 161–195) still does **not** require the binding, so a config missing it
+  deploys clean and every extract batch DLQs with `missing_cost_cap_do`. Adding
+  `COST_CAP_DO` **and** `PIPELINE_MONTHLY_HARD_CAP_USD` to that gate is a
+  required follow-up on the plan that owns that file; until it lands, the manual
+  pre-deploy grep in Step 9's runbook is the only thing standing between an
+  operator and a fully DLQ'd pipeline.
+- **`workers/extraction-container.js` has no test harness in this repo and is
+  deployed as a separate Worker.** Step 7's fix is verified statically only.
+  JSCORR-13 is not closed until an operator reports a 200 from the deployed
+  bridge's `/health`; say so rather than implying otherwise.
 - **A charge failure is logged and alerted but never retried.** That is a
   deliberate trade: the LLM money is already spent when `chargeCostUsd` runs, so
   retrying would spend more. The consequence is that a persistently broken
@@ -1514,10 +2044,14 @@ For whoever owns this Worker next:
   this plan's blast radius small.
 - **What a reviewer should scrutinise**: (a) that `chargeCostUsd` really is
   called before `enqueueNativeExtractedResults` in `extract.ts` and nothing was
-  reordered back; (b) that neither `remainingForLedger` fallback path can return
-  anything but `0`; (c) that `processJob`'s 404 branch still records-and-acks
-  rather than joining the retry path; (d) that the per-item retry in step 4
-  cannot ack a message whose case is in `failedCaseIds`.
+  reordered back, and that it receives `budget.ledgers` rather than recomputing
+  the month; (b) that `readLedger` returns `unavailable` — never `exhausted` —
+  for every non-answer, and that the caller retries on `unavailable`; (c) that
+  `processJob`'s 404 branch still records-and-acks rather than joining the retry
+  path; (d) that the ack rule in step 4 is **positive**
+  (`stagedCaseIds.has(...)` → ack, everything else → retry) and has not been
+  flipped back to "not in `failedCaseIds`"; (e) that `courtWasProductive` reads
+  `successful_years` and not `candidate_urls.length`.
 - **Explicitly deferred**: making `extractMetadata` read whole-page text (the
   wrong comment at `index.ts:358` claimed it already did). Step 1 fixes the
   comment to match reality rather than changing extraction behaviour — a real
