@@ -203,4 +203,154 @@ describe("native extraction handoff", () => {
     expect(retry).toHaveBeenCalledOnce();
     expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
   });
+
+  it("charges the batch cost before staging results", async () => {
+    const current = baseEnv({
+      NATIVE_CASE_QUEUE: {
+        send: vi.fn(async () => { throw new Error("queue down"); }),
+      },
+    });
+    const retry = vi.fn();
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
+    } as never, current.env as never);
+    expect(current.costCalls.some((call) => call.url.includes("/charge") && call.usd === 0.1)).toBe(true);
+  });
+
+  it("retries only the case whose staging failed", async () => {
+    const secondCaseId = "abcdef654321";
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: secondCaseId,
+              base: { title: "", citation: "", full_text: "", text_snippet: "" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const ack1 = vi.fn();
+    const retry1 = vi.fn();
+    const ack2 = vi.fn();
+    const retry2 = vi.fn();
+    await handleExtractBatch({
+      messages: [
+        { body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: ack1, retry: retry1 },
+        { body: { phase: "extract", run_id: RUN_ID, case_id: secondCaseId, court_code: "FCA", r2_key: "runs/source2.json", scraped_at: new Date().toISOString() }, ack: ack2, retry: retry2 },
+      ],
+    } as never, current.env as never);
+    expect(ack1).toHaveBeenCalledOnce();
+    expect(retry1).not.toHaveBeenCalled();
+    expect(retry2).toHaveBeenCalledOnce();
+    expect(ack2).not.toHaveBeenCalled();
+  });
+
+  it("retries an input case the backend did not return", async () => {
+    const secondCaseId = "abcdef654321";
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [{
+            case_id: CASE_ID,
+            base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+            fields: {},
+          }],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const ack1 = vi.fn();
+    const retry1 = vi.fn();
+    const ack2 = vi.fn();
+    const retry2 = vi.fn();
+    await handleExtractBatch({
+      messages: [
+        { body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: ack1, retry: retry1 },
+        { body: { phase: "extract", run_id: RUN_ID, case_id: secondCaseId, court_code: "FCA", r2_key: "runs/source2.json", scraped_at: new Date().toISOString() }, ack: ack2, retry: retry2 },
+      ],
+    } as never, current.env as never);
+    expect(ack1).toHaveBeenCalledOnce();
+    expect(ack2).not.toHaveBeenCalled();
+    expect(retry2).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a case the backend returned that was not in the batch", async () => {
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: "ffffffffffff",
+              base: { title: "Stray", citation: "[2026] FCA 2", full_text: "stray text" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(current.ack).toHaveBeenCalledOnce();
+    expect(current.env.NATIVE_CASE_QUEUE.send).toHaveBeenCalledOnce();
+    const parsedLogs = errorSpy.mock.calls.map((call) => {
+      try {
+        return JSON.parse(String(call[0]));
+      } catch {
+        return null;
+      }
+    });
+    expect(parsedLogs).toContainEqual(expect.objectContaining({
+      event: "extract.enqueue.unexpected_case",
+      reason: "not_in_batch",
+    }));
+    errorSpy.mockRestore();
+  });
+
+  it("stages a duplicated case only once", async () => {
+    const current = baseEnv({
+      EXTRACTION_BACKEND: {
+        fetch: vi.fn(async () => Response.json({
+          extracted: [
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+            {
+              case_id: CASE_ID,
+              base: { title: "Example", citation: "[2026] FCA 1", full_text: "canonical source text" },
+              fields: {},
+            },
+          ],
+          llm_calls: 1,
+          cost_usd: 0.1,
+        })),
+      },
+    });
+    await handleExtractBatch({
+      messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
+    } as never, current.env as never);
+    expect(current.env.NATIVE_CASE_QUEUE.send).toHaveBeenCalledOnce();
+    expect(current.ack).toHaveBeenCalledOnce();
+  });
 });

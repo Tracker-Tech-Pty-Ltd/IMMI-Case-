@@ -95,21 +95,52 @@ async function handleRunExtractMessages(
     return;
   }
 
-  const upserted = await enqueueNativeExtractedResults(env, runId, response.extracted);
+  // Charge before any work that can fail. A throw between the paid container
+  // call and this line would let the platform redeliver the whole batch and
+  // re-bill the extraction against a ledger that never saw the first call.
+  // `budget.ledgers` (Step 3) are the ledgers this batch was checked against,
+  // so a batch that crosses a UTC month boundary charges the month it read.
   await chargeCostUsd(env, budget.ledgers, runId, response.cost_usd);
+
+  const inputCaseIds = new Set(messages.map((message) => message.body.case_id));
+  let outcome: EnqueueOutcome;
+  try {
+    outcome = await enqueueNativeExtractedResults(env, runId, response.extracted, inputCaseIds);
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "extract.enqueue.batch_failed",
+      run_id: runId,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    retryAll(messages, "native_enqueue_failed");
+    return;
+  }
+
   await addPipelineRunMetrics(env, runId, {
     extracted: response.extracted.length,
-    upserted,
+    upserted: outcome.upserted,
     llmCalls: response.llm_calls,
     costUsd: response.cost_usd,
   }).catch(() => undefined);
 
-  for (const message of messages) message.ack();
+  // Positive ack rule: a message is done ONLY if its case staged
+  // successfully. Anything else — failed, dropped by the backend, or
+  // returned twice — is retried. Re-publishing is idempotent
+  // (stageNativeOutboxEvent returns "published" for an event already sent),
+  // so a retry is cheap and cannot double-write.
+  let retried = 0;
+  for (const message of messages) {
+    if (outcome.stagedCaseIds.has(message.body.case_id)) message.ack();
+    else { message.retry(); retried += 1; }
+  }
   console.log(JSON.stringify({
     event: "extract.batch.ok",
     run_id: runId,
+    requested: messages.length,
     extracted: response.extracted.length,
-    upserted,
+    upserted: outcome.upserted,
+    staged: outcome.stagedCaseIds.size,
+    retried,
     llm_calls: response.llm_calls,
     cost_usd: response.cost_usd,
   }));
@@ -192,58 +223,106 @@ async function callInternalExtract(
   }
 }
 
+interface EnqueueOutcome {
+  upserted: number;
+  /** Input case ids that reached D1/R2/queue successfully. Ack ONLY these. */
+  stagedCaseIds: Set<string>;
+  failedCaseIds: Set<string>;
+}
+
 async function enqueueNativeExtractedResults(
   env: Env,
   runId: string,
   extracted: ExtractedCase[],
-): Promise<number> {
+  inputCaseIds: ReadonlySet<string>,
+): Promise<EnqueueOutcome> {
   if (!env.NATIVE_CASE_QUEUE) throw new Error("NATIVE_CASE_QUEUE is required for native extraction");
   let count = 0;
+  const stagedCaseIds = new Set<string>();
+  const failedCaseIds = new Set<string>();
+  const seen = new Set<string>();
   for (const item of extracted) {
-    const fields = Object.fromEntries(Object.entries(item.fields || {}).map(([name, envelope]) => [name, envelope.value]));
-    const record = { ...(item.base || {}), ...fields, case_id: item.case_id };
-    const canonicalText = String(item.base?.full_text || item.base?.text_snippet || `${record.title || ""} ${record.citation || ""}`).trim();
-    if (!canonicalText) throw new Error(`Missing canonical text for ${item.case_id}`);
-    const audit = Object.entries(item.fields || {}).map(([fieldName, envelope]) => ({
-      fieldName,
-      oldValue: null,
-      newValue: String(envelope.value ?? ""),
-      source: envelope.source,
-      confidence: envelope.confidence,
-    })).filter((entry) => entry.newValue !== "");
-    const payload = JSON.stringify({ record, canonicalText, audit });
-    const bytes = new TextEncoder().encode(payload);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    const sha256 = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    const payloadKey = `pipeline/${runId}/${item.case_id}.json`;
-    await env.CASE_RESULTS.put(payloadKey, bytes, {
-      httpMetadata: { contentType: "application/json" },
-      customMetadata: { sha256, bytes: String(bytes.byteLength) },
-    });
-    const event: NativeCaseEvent = {
-      kind: "case.extracted",
-      event_id: `case.extracted:${runId}:${item.case_id}`,
-      run_id: runId,
-      payload_key: payloadKey,
-      payload_sha256: sha256,
-      payload_size: bytes.byteLength,
-      payload_content_type: "application/json",
-    };
-    const outboxState = await stageNativeOutboxEvent(env, {
-      eventId: event.event_id,
-      runId,
-      eventKind: event.kind,
-      payloadKey,
-      payloadSha256: sha256,
-    });
-    if (outboxState !== "published") {
-      await markNativeOutboxAttempt(env, event.event_id);
-      await env.NATIVE_CASE_QUEUE.send(event);
-      await markNativeOutboxPublished(env, event.event_id);
+    // The backend is not trusted to echo the batch back faithfully. An id we
+    // did not send, or a second copy of one we did, is a protocol violation:
+    // log it and stage nothing, so the corresponding input (if any) stays
+    // un-acked and is retried rather than being marked done by a stray row.
+    if (!inputCaseIds.has(item.case_id) || seen.has(item.case_id)) {
+      console.error(JSON.stringify({
+        event: "extract.enqueue.unexpected_case",
+        run_id: runId,
+        case_id: item.case_id,
+        reason: seen.has(item.case_id) ? "duplicate" : "not_in_batch",
+      }));
+      failedCaseIds.add(item.case_id);
+      continue;
     }
-    count += 1;
+    seen.add(item.case_id);
+    try {
+      const fields = Object.fromEntries(Object.entries(item.fields || {}).map(([name, envelope]) => [name, envelope.value]));
+      const record = { ...(item.base || {}), ...fields, case_id: item.case_id };
+      const canonicalText = String(item.base?.full_text || item.base?.text_snippet || `${record.title || ""} ${record.citation || ""}`).trim();
+      if (!canonicalText) throw new Error(`Missing canonical text for ${item.case_id}`);
+      const audit = Object.entries(item.fields || {}).map(([fieldName, envelope]) => ({
+        fieldName,
+        oldValue: null,
+        newValue: String(envelope.value ?? ""),
+        source: envelope.source,
+        confidence: envelope.confidence,
+      })).filter((entry) => entry.newValue !== "");
+      const payload = JSON.stringify({ record, canonicalText, audit });
+      const bytes = new TextEncoder().encode(payload);
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const sha256 = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const payloadKey = `pipeline/${runId}/${item.case_id}.json`;
+      await env.CASE_RESULTS.put(payloadKey, bytes, {
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: { sha256, bytes: String(bytes.byteLength) },
+      });
+      const event: NativeCaseEvent = {
+        kind: "case.extracted",
+        event_id: `case.extracted:${runId}:${item.case_id}`,
+        run_id: runId,
+        payload_key: payloadKey,
+        payload_sha256: sha256,
+        payload_size: bytes.byteLength,
+        payload_content_type: "application/json",
+      };
+      const outboxState = await stageNativeOutboxEvent(env, {
+        eventId: event.event_id,
+        runId,
+        eventKind: event.kind,
+        payloadKey,
+        payloadSha256: sha256,
+      });
+      if (outboxState !== "published") {
+        await markNativeOutboxAttempt(env, event.event_id);
+        await env.NATIVE_CASE_QUEUE.send(event);
+        await markNativeOutboxPublished(env, event.event_id);
+      }
+      count += 1;
+      stagedCaseIds.add(item.case_id);
+    } catch (err) {
+      failedCaseIds.add(item.case_id);
+      console.error(JSON.stringify({
+        event: "extract.enqueue.item_failed",
+        run_id: runId,
+        case_id: item.case_id,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
   }
-  return count;
+  // An input the backend never mentioned is the dangerous case: it is in
+  // neither set, so a "not failed => ack" rule would drop it silently.
+  for (const caseId of inputCaseIds) {
+    if (!stagedCaseIds.has(caseId) && !failedCaseIds.has(caseId)) {
+      console.error(JSON.stringify({
+        event: "extract.enqueue.missing_case",
+        run_id: runId,
+        case_id: caseId,
+      }));
+    }
+  }
+  return { upserted: count, stagedCaseIds, failedCaseIds };
 }
 
 /** Ledger names. `run:` is per pipeline run; `month:` accumulates across runs. */
