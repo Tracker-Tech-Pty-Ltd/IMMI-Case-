@@ -291,6 +291,8 @@ async function handleDeleteSession(request, env, sessionId) {
   const authResult = await requireSessionAuth(request, env);
   if (authResult instanceof Response) return authResult;
   if (!SESSION_ID_RE.test(sessionId)) return errorResponse("session_id missing from path", 400);
+  const limited = await applyRateLimit(request, env);
+  if (!limited.success) return rateLimitFailure(limited);
   const { auth } = await councilStoresForClaims(env, authResult.claims);
   try {
     await getCouncilSessionStub(env, sessionId).deleteSession(auth, { sessionId });
