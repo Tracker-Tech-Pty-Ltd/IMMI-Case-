@@ -1043,6 +1043,7 @@ def _judge_profile_payload(
 
 _all_cases_cache: list[ImmigrationCase] = []
 _all_cases_ts: float = 0.0
+_all_cases_key: str = ""
 _all_cases_lock = threading.Lock()
 _CACHE_TTL = 300.0  # 5 min — same as stats; analytics warmup keeps this fresh
 
@@ -1050,23 +1051,40 @@ _CACHE_TTL = 300.0  # 5 min — same as stats; analytics warmup keeps this fresh
 # ~4x faster to load than the full all-cases cache (13s vs 57s on free tier).
 _analytics_cases_cache: list[ImmigrationCase] = []
 _analytics_cases_ts: float = 0.0
+_analytics_cases_key: str = ""
 _analytics_cases_lock = threading.Lock()
 _ANALYTICS_CASES_TTL = 300.0
 
 
+def _repo_identity(repo) -> str:
+    """A stable per-dataset key for the process-global case caches.
+
+    Two apps in one process get two repositories; without this they share one
+    cache and can serve each other's cases. `id()` is the last resort: it is
+    per-process, so it can only cause a miss, never a cross-dataset hit.
+    """
+    for attr in ("db_path", "base_dir"):
+        value = getattr(repo, attr, None)
+        if isinstance(value, str) and value:
+            return f"{type(repo).__name__}:{os.path.abspath(value)}"
+    return f"{type(repo).__name__}:{id(repo):x}"
+
+
 def _get_all_cases() -> list[ImmigrationCase]:
     """Return repo.load_all() with 60-second in-memory cache."""
-    global _all_cases_cache, _all_cases_ts
+    global _all_cases_cache, _all_cases_ts, _all_cases_key
+    repo = get_repo()
+    key = _repo_identity(repo)
     now = time.time()
-    if _all_cases_cache and (now - _all_cases_ts) < _CACHE_TTL:
+    if _all_cases_cache and _all_cases_key == key and (now - _all_cases_ts) < _CACHE_TTL:
         return _all_cases_cache
     with _all_cases_lock:
         # Double-check after acquiring lock (another thread may have refreshed)
-        if _all_cases_cache and (time.time() - _all_cases_ts) < _CACHE_TTL:
+        if _all_cases_cache and _all_cases_key == key and (time.time() - _all_cases_ts) < _CACHE_TTL:
             return _all_cases_cache
-        repo = get_repo()
         _all_cases_cache = repo.load_all()
         _all_cases_ts = time.time()
+        _all_cases_key = key
         return _all_cases_cache
 
 
@@ -1120,13 +1138,14 @@ def _fill_all_cases_cache() -> None:
     request is served from cache instead of triggering a 30-second
     Supabase paginated load.
     """
-    global _all_cases_cache, _all_cases_ts
+    global _all_cases_cache, _all_cases_ts, _all_cases_key
     try:
         repo = get_repo()
         cases = repo.load_all()
         with _all_cases_lock:
             _all_cases_cache = cases
             _all_cases_ts = time.time()
+            _all_cases_key = _repo_identity(repo)
     except Exception as exc:
         logger.warning("Warmup failed in _fill_all_cases_cache: %s", exc)
 
@@ -1138,25 +1157,31 @@ def _get_analytics_cases() -> list[ImmigrationCase]:
     only the 7 columns needed for analytics aggregation, making the load
     ~4x faster than the full load_all() (13s vs 57s on free tier).
     """
-    global _analytics_cases_cache, _analytics_cases_ts
+    global _analytics_cases_cache, _analytics_cases_ts, _analytics_cases_key
+    repo = get_repo()
+    key = _repo_identity(repo)
     now = time.time()
-    if _analytics_cases_cache and (now - _analytics_cases_ts) < _ANALYTICS_CASES_TTL:
+    if _analytics_cases_cache and _analytics_cases_key == key and (now - _analytics_cases_ts) < _ANALYTICS_CASES_TTL:
         return _analytics_cases_cache
     with _analytics_cases_lock:
-        if _analytics_cases_cache and (time.time() - _analytics_cases_ts) < _ANALYTICS_CASES_TTL:
+        if (
+            _analytics_cases_cache
+            and _analytics_cases_key == key
+            and (time.time() - _analytics_cases_ts) < _ANALYTICS_CASES_TTL
+        ):
             return _analytics_cases_cache
-        repo = get_repo()
         if hasattr(repo, "load_analytics_cases"):
             _analytics_cases_cache = repo.load_analytics_cases()
         else:
             _analytics_cases_cache = repo.load_all()
         _analytics_cases_ts = time.time()
+        _analytics_cases_key = key
         return _analytics_cases_cache
 
 
 def _fill_analytics_cases_cache() -> None:
     """Pre-warm the analytics cases cache at startup (background thread)."""
-    global _analytics_cases_cache, _analytics_cases_ts
+    global _analytics_cases_cache, _analytics_cases_ts, _analytics_cases_key
     try:
         repo = get_repo()
         if hasattr(repo, "load_analytics_cases"):
@@ -1166,6 +1191,7 @@ def _fill_analytics_cases_cache() -> None:
         with _analytics_cases_lock:
             _analytics_cases_cache = cases
             _analytics_cases_ts = time.time()
+            _analytics_cases_key = _repo_identity(repo)
     except Exception as exc:
         logger.warning("Warmup failed in _fill_analytics_cases_cache: %s", exc)
 

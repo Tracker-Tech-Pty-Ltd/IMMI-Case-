@@ -115,3 +115,52 @@ class TestCrossThreadClose:
         # A subsequent close() on the main thread does empty the list.
         repo.close()
         assert repo._all_conns == []
+
+
+# ── Step 6b: the module-level case caches must be scoped per repository ───
+
+
+def _app_over(tmp_path, subdir: str, cases: list[ImmigrationCase]):
+    """Build a CSV-backed Flask app over its own output directory."""
+    from immi_case_downloader.webapp import create_app
+
+    out_dir = os.path.join(str(tmp_path), subdir)
+    ensure_output_dirs(out_dir)
+    save_cases_csv(cases, out_dir)
+    save_cases_json(cases, out_dir)
+    application = create_app(out_dir)
+    application.config["TESTING"] = True
+    application.config["WTF_CSRF_ENABLED"] = False
+    return application
+
+
+class TestCaseCachesScopedPerRepository:
+    def test_analytics_cases_cache_is_scoped_per_repository(self, tmp_path):
+        from immi_case_downloader.web.routes.api import _get_analytics_cases
+
+        app_a = _app_over(tmp_path, "dir_a", _make_fallback_cases(3))
+        app_b = _app_over(tmp_path, "dir_b", _make_fallback_cases(1))
+
+        with app_a.app_context():
+            cases_a = _get_analytics_cases()
+        assert len(cases_a) == 3
+
+        with app_b.app_context():
+            cases_b = _get_analytics_cases()
+        # Must be B's single case, not A's three — a stale/shared cache would
+        # return A's list here because both fall within the 5-minute TTL.
+        assert len(cases_b) == 1
+
+    def test_all_cases_cache_is_scoped_per_repository(self, tmp_path):
+        from immi_case_downloader.web.routes.api import _get_all_cases
+
+        app_a = _app_over(tmp_path, "dir_a", _make_fallback_cases(3))
+        app_b = _app_over(tmp_path, "dir_b", _make_fallback_cases(1))
+
+        with app_a.app_context():
+            cases_a = _get_all_cases()
+        assert len(cases_a) == 3
+
+        with app_b.app_context():
+            cases_b = _get_all_cases()
+        assert len(cases_b) == 1
