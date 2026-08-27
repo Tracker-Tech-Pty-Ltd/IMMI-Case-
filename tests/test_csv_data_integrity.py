@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
+import immi_case_downloader.sqlite_repository as sr
 from immi_case_downloader.csv_repository import CsvRepository
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline, start_pipeline
@@ -25,6 +26,79 @@ from immi_case_downloader.storage import (
     load_all_cases,
     save_cases_csv,
 )
+
+# The pre-migration schema: the table DDL as it existed before Step 7, with
+# the inline UNIQUE on `url` that made a second blank-URL case raise
+# IntegrityError. Hardcoded (not derived from the current, already-fixed
+# _CASES_TABLE_SQL) so the migration tests exercise a genuine legacy database.
+_LEGACY_CASES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS cases (
+    case_id TEXT PRIMARY KEY,
+    citation TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    court TEXT NOT NULL DEFAULT '',
+    court_code TEXT NOT NULL DEFAULT '',
+    date TEXT NOT NULL DEFAULT '',
+    year INTEGER NOT NULL DEFAULT 0,
+    url TEXT NOT NULL DEFAULT '' UNIQUE,
+    judges TEXT NOT NULL DEFAULT '',
+    catchwords TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    visa_type TEXT NOT NULL DEFAULT '',
+    legislation TEXT NOT NULL DEFAULT '',
+    text_snippet TEXT NOT NULL DEFAULT '',
+    full_text_path TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    user_notes TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '',
+    case_nature TEXT NOT NULL DEFAULT '',
+    legal_concepts TEXT NOT NULL DEFAULT '',
+    visa_subclass TEXT NOT NULL DEFAULT '',
+    visa_class_code TEXT NOT NULL DEFAULT '',
+    applicant_name TEXT NOT NULL DEFAULT '',
+    respondent TEXT NOT NULL DEFAULT '',
+    country_of_origin TEXT NOT NULL DEFAULT '',
+    visa_subclass_number TEXT NOT NULL DEFAULT '',
+    hearing_date TEXT NOT NULL DEFAULT '',
+    is_represented TEXT NOT NULL DEFAULT '',
+    representative TEXT NOT NULL DEFAULT '',
+    visa_outcome_reason TEXT NOT NULL DEFAULT '',
+    legal_test_applied TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_court_code ON cases(court_code);
+CREATE INDEX IF NOT EXISTS idx_year ON cases(year);
+CREATE INDEX IF NOT EXISTS idx_court_year ON cases(court_code, year);
+CREATE INDEX IF NOT EXISTS idx_source ON cases(source);
+CREATE INDEX IF NOT EXISTS idx_outcome ON cases(outcome);
+CREATE INDEX IF NOT EXISTS idx_case_nature ON cases(case_nature);
+CREATE INDEX IF NOT EXISTS idx_visa_type ON cases(visa_type);
+CREATE INDEX IF NOT EXISTS idx_visa_subclass_number ON cases(visa_subclass_number);
+CREATE INDEX IF NOT EXISTS idx_court_outcome ON cases(court_code, outcome);
+"""
+
+
+def _legacy_db(tmp_path) -> str:
+    """A pre-migration database: the old schema with the inline UNIQUE on url,
+    two rows with real URLs and non-empty catchwords."""
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.executescript(_LEGACY_CASES_TABLE_SQL)
+    conn.executescript(sr._FTS_SQL)
+    conn.executescript(sr._TRIGGERS_SQL)
+    conn.execute(
+        "INSERT INTO cases (case_id, citation, title, url, catchwords) VALUES (?, ?, ?, ?, ?)",
+        ("legacy001", "[2020] AATA 1", "Legacy Case One",
+         "https://example.com/legacy-1", "protection visa refusal"),
+    )
+    conn.execute(
+        "INSERT INTO cases (case_id, citation, title, url, catchwords) VALUES (?, ?, ?, ?, ?)",
+        ("legacy002", "[2020] AATA 2", "Legacy Case Two",
+         "https://example.com/legacy-2", "character test cancellation"),
+    )
+    conn.commit()
+    conn.close()
+    return path
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
@@ -201,6 +275,134 @@ class TestSqliteSaveManyBugs:
 
         assert sqlite_repo.load_all() == []
         assert sqlite_repo._conn().in_transaction is False
+
+
+# ── SQLite one-time schema migration (drop legacy UNIQUE on url) ────────
+
+
+class TestSqliteMigration:
+    def test_sqlite_migration_removes_legacy_url_unique(self, tmp_path):
+        path = _legacy_db(tmp_path)
+        repo = SqliteRepository(path)
+        try:
+            assert SqliteRepository._has_legacy_url_unique(repo._conn()) is False
+            rows = repo.load_all()
+            assert len(rows) == 2
+            hits = repo.search_text("protection")
+            assert any(c.title == "Legacy Case One" for c in hits)
+        finally:
+            repo.close()
+
+    def test_sqlite_migration_preserves_indexes_and_triggers(self, tmp_path):
+        path = _legacy_db(tmp_path)
+        check_conn = sqlite3.connect(path)
+        check_conn.row_factory = sqlite3.Row
+        before_indexes = {
+            r["name"] for r in check_conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='cases' AND name IS NOT NULL AND sql IS NOT NULL"
+            )
+        }
+        before_triggers = {
+            r["name"] for r in check_conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='trigger'"
+            )
+        }
+        check_conn.close()
+
+        repo = SqliteRepository(path)
+        try:
+            conn = repo._conn()
+            after_indexes = {
+                r["name"] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name='cases' AND name IS NOT NULL AND sql IS NOT NULL"
+                )
+            }
+            after_triggers = {
+                r["name"] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger'"
+                )
+            }
+            assert before_indexes <= after_indexes
+            assert before_triggers <= after_triggers
+            assert "idx_url_unique" in after_indexes
+        finally:
+            repo.close()
+
+    def test_sqlite_migration_takes_a_backup(self, tmp_path):
+        path = _legacy_db(tmp_path)
+        repo = SqliteRepository(path)
+        try:
+            backups = list(tmp_path.glob("legacy.db.pre-url-unique-*.bak"))
+            assert len(backups) == 1
+            backup_conn = sqlite3.connect(str(backups[0]))
+            backup_conn.row_factory = sqlite3.Row
+            try:
+                assert SqliteRepository._has_legacy_url_unique(backup_conn) is True
+                count = backup_conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
+                assert count == 2
+            finally:
+                backup_conn.close()
+        finally:
+            repo.close()
+
+    def test_sqlite_still_rejects_duplicate_real_urls(self, tmp_path):
+        path = _legacy_db(tmp_path)
+        repo = SqliteRepository(path)
+        try:
+            dup = _case(citation="[2024] AATA 30", url="https://example.com/legacy-1")
+            with pytest.raises(sqlite3.IntegrityError):
+                repo.save_many([dup])
+        finally:
+            repo.close()
+
+    @pytest.mark.parametrize(
+        "failing_fragment",
+        ["INSERT INTO cases_migrated", "ALTER TABLE cases_migrated", "CREATE TRIGGER"],
+    )
+    def test_sqlite_migration_rolls_back_on_failure(self, tmp_path, monkeypatch, failing_fragment):
+        """A failure at any phase must leave the legacy database untouched."""
+        path = _legacy_db(tmp_path)
+
+        class _FailingConnProxy:
+            def __init__(self, real):
+                object.__setattr__(self, "_real", real)
+
+            def execute(self, sql, *args, **kwargs):
+                if failing_fragment in sql:
+                    raise RuntimeError("injected")
+                return self._real.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+        real_conn_method = SqliteRepository._conn
+
+        def fake_conn(self):
+            return _FailingConnProxy(real_conn_method(self))
+
+        monkeypatch.setattr(SqliteRepository, "_conn", fake_conn)
+
+        with pytest.raises(RuntimeError):
+            SqliteRepository(path)
+
+        # Bypass the patched _conn entirely: open the file directly to prove
+        # the on-disk state, not just what our own proxy reports.
+        check_conn = sqlite3.connect(path)
+        check_conn.row_factory = sqlite3.Row
+        try:
+            assert SqliteRepository._has_legacy_url_unique(check_conn) is True
+            count = check_conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
+            assert count == 2
+            triggers = {
+                r["name"] for r in check_conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger'"
+                )
+            }
+            assert {"cases_ai", "cases_ad", "cases_au"} <= triggers
+        finally:
+            check_conn.close()
 
 
 # ── Pipeline clean-phase dedup key ───────────────────────────────────────
