@@ -39,9 +39,22 @@ function clientIp(request) {
 
 async function applyRateLimit(request, env) {
   if (!env.RL_COUNCIL_TURN) {
+    // Fail closed on purpose: every Council POST spends paid CF AI Gateway
+    // credit, so a missing limiter must never degrade to "unlimited". The
+    // binding is declared in wrangler.toml and enforced by
+    // scripts/check_cloudflare_native_target.py.
+    console.error(JSON.stringify({ event: "council.rate_limiter_unconfigured" }));
     return { success: false, reason: "rate_limiter_unconfigured" };
   }
   return env.RL_COUNCIL_TURN.limit({ key: clientIp(request) });
+}
+
+// A misconfigured deploy must not masquerade as an over-eager user: 503 tells
+// the operator the binding is missing, 429 tells the caller to slow down.
+function rateLimitFailure(limited) {
+  return limited.reason === "rate_limiter_unconfigured"
+    ? errorResponse("LLM Council is misconfigured: rate limiter binding missing", 503, "rate_limiter_unconfigured")
+    : errorResponse("Rate limit exceeded — try again shortly", 429, "rate_limited");
 }
 
 function generateRetrieveCode() {
@@ -171,7 +184,7 @@ async function handleCreateSession(request, env) {
   const authResult = await requireSessionAuth(request, env);
   if (authResult instanceof Response) return authResult;
   const limited = await applyRateLimit(request, env);
-  if (!limited.success) return errorResponse("Rate limit exceeded — try again shortly", 429);
+  if (!limited.success) return rateLimitFailure(limited);
   const body = await readBody(request);
   if (!body) return errorResponse("Request body must be a JSON object");
   const invalid = validateBodyMessage(body);
@@ -209,7 +222,7 @@ async function handleAddTurn(request, env, sessionId) {
   if (authResult instanceof Response) return authResult;
   if (!SESSION_ID_RE.test(sessionId)) return errorResponse("session_id missing from path", 400);
   const limited = await applyRateLimit(request, env);
-  if (!limited.success) return errorResponse("Rate limit exceeded — try again shortly", 429);
+  if (!limited.success) return rateLimitFailure(limited);
   const body = await readBody(request);
   if (!body) return errorResponse("Request body must be a JSON object");
   const invalid = validateBodyMessage(body);
@@ -278,6 +291,8 @@ async function handleDeleteSession(request, env, sessionId) {
   const authResult = await requireSessionAuth(request, env);
   if (authResult instanceof Response) return authResult;
   if (!SESSION_ID_RE.test(sessionId)) return errorResponse("session_id missing from path", 400);
+  const limited = await applyRateLimit(request, env);
+  if (!limited.success) return rateLimitFailure(limited);
   const { auth } = await councilStoresForClaims(env, authResult.claims);
   try {
     await getCouncilSessionStub(env, sessionId).deleteSession(auth, { sessionId });
@@ -292,7 +307,7 @@ async function handleRestoreByCode(request, env) {
   const authResult = await requireSessionAuth(request, env);
   if (authResult instanceof Response) return authResult;
   const limited = await applyRateLimit(request, env);
-  if (!limited.success) return errorResponse("Rate limit exceeded — try again shortly", 429);
+  if (!limited.success) return rateLimitFailure(limited);
   const body = await readBody(request);
   const code = typeof body?.code === "string" ? body.code.trim().toUpperCase() : "";
   if (!/^[2-9A-HJ-NP-Z]{6}$/.test(code)) return errorResponse("code contains invalid characters", 400);
@@ -310,7 +325,7 @@ async function handleLegacyRun(request, env) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
   const limited = await applyRateLimit(request, env);
-  if (!limited.success) return errorResponse("Rate limit exceeded — try again shortly", 429);
+  if (!limited.success) return rateLimitFailure(limited);
   const body = await readBody(request);
   if (!body) return errorResponse("Request body must be a JSON object");
   const invalid = validateBodyMessage(body, "question");
@@ -336,7 +351,7 @@ async function handleStream(request, env, ctx) {
   const authResult = await requireSessionAuth(request, env);
   if (authResult instanceof Response) return authResult;
   const limited = await applyRateLimit(request, env);
-  if (!limited.success) return errorResponse("Rate limit exceeded — try again shortly", 429);
+  if (!limited.success) return rateLimitFailure(limited);
   const body = await readBody(request);
   if (!body) return errorResponse("Request body must be a JSON object");
   const invalid = validateBodyMessage(body);
@@ -385,6 +400,10 @@ async function handleHealth(request, env) {
   if (live) {
     const authResult = await requireAuth(request, env, verifyJwt);
     if (authResult instanceof Response) return authResult;
+    // A live probe is a paid CF AI Gateway call. Same limiter, same
+    // fail-closed contract as every other credit-spending Council route.
+    const limited = await applyRateLimit(request, env);
+    if (!limited.success) return rateLimitFailure(limited);
   }
   if (!live || !env.CF_AIG_TOKEN) {
     return jsonResponse({
