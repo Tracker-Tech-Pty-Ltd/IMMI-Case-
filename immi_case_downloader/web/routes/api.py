@@ -1705,7 +1705,9 @@ def analytics_outcomes():
     by_family: dict[str, dict[str, int]] = defaultdict(Counter)
 
     _rpc_ok = False
+    _rpc_attempted = False
     if hasattr(repo, "get_analytics_outcomes") and not _has_analytics_filters():
+        _rpc_attempted = True
         try:
             # Fast path: server-side SQL aggregation — Python only normalises
             # the small result set (~1500 rows) instead of 149k case objects.
@@ -1728,11 +1730,13 @@ def analytics_outcomes():
             logger.warning("analytics_outcomes RPC timed out, falling back to Python")
         except Exception:
             logger.warning("analytics_outcomes RPC failed, falling back to Python", exc_info=True)
-    # Skip Python fallback for Supabase repos — if the RPC timed out, the
-    # fallback (which also queries Supabase) will also timeout, wasting another
-    # 20 seconds and blowing the Cloudflare Worker 30 s wall-clock limit.
-    _supabase_backend = hasattr(repo, "count_cases")
-    if not _rpc_ok and not _supabase_backend:
+    # Skip the Python fallback only when an RPC was actually tried and failed:
+    # retrying would query the same remote database that just timed out, wasting
+    # another 15 s and blowing the Cloudflare Worker 30 s wall-clock limit.  If no
+    # RPC was attempted — CSV and SQLite have none, and even Supabase skips it when
+    # filters are present — then the fallback is the only path there is, and
+    # skipping it is how these endpoints came to return an empty 200.
+    if not _rpc_ok and not _rpc_attempted:
         # Fallback: load cases into Python (only for CSV/SQLite backends).
         try:
             cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
@@ -1779,7 +1783,9 @@ def analytics_judges():
 
     repo = get_repo()
     _rpc_ok = False
+    _rpc_attempted = False
     if hasattr(repo, "get_analytics_judges_raw") and not _has_analytics_filters():
+        _rpc_attempted = True
         try:
             # Fast path: RPC already split judge tokens server-side.
             # Each row is one pre-split name token (equiv. to _split_judges output).
@@ -1801,8 +1807,7 @@ def analytics_judges():
             logger.warning("analytics_judges RPC timed out, falling back to Python")
         except Exception:
             logger.warning("analytics_judges RPC failed, falling back to Python", exc_info=True)
-    _supabase_backend = hasattr(repo, "count_cases")
-    if not _rpc_ok and not _supabase_backend:
+    if not _rpc_ok and not _rpc_attempted:
         try:
             cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
@@ -1850,7 +1855,9 @@ def analytics_legal_concepts():
 
     repo = get_repo()
     _rpc_ok = False
+    _rpc_attempted = False
     if hasattr(repo, "get_analytics_concepts_raw") and not _has_analytics_filters():
+        _rpc_attempted = True
         try:
             # Fast path: RPC already split and counted concept tokens.
             # Each row is one canonical-mapped concept token.
@@ -1864,8 +1871,7 @@ def analytics_legal_concepts():
             logger.warning("analytics_legal_concepts RPC timed out, falling back to Python")
         except Exception:
             logger.warning("analytics_legal_concepts RPC failed, falling back to Python", exc_info=True)
-    _supabase_backend = hasattr(repo, "count_cases")
-    if not _rpc_ok and not _supabase_backend:
+    if not _rpc_ok and not _rpc_attempted:
         try:
             cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
@@ -1899,7 +1905,9 @@ def analytics_nature_outcome():
     repo = get_repo()
 
     _rpc_ok = False
+    _rpc_attempted = False
     if hasattr(repo, "get_analytics_nature_outcome") and not _has_analytics_filters():
+        _rpc_attempted = True
         try:
             # Fast path: RPC returns (case_nature, outcome, cnt) — Python normalises.
             for r in _call_with_timeout(repo.get_analytics_nature_outcome, timeout_seconds=ANALYTICS_RPC_TIMEOUT_SECONDS):
@@ -1912,8 +1920,7 @@ def analytics_nature_outcome():
             logger.warning("analytics_nature_outcome RPC timed out, falling back to Python")
         except Exception:
             logger.warning("analytics_nature_outcome RPC failed, falling back to Python", exc_info=True)
-    _supabase_backend = hasattr(repo, "count_cases")
-    if not _rpc_ok and not _supabase_backend:
+    if not _rpc_ok and not _rpc_attempted:
         try:
             cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
