@@ -9,7 +9,7 @@
  * Client-only (window/localStorage). Lazy-import in components.
  */
 
-import confetti from "canvas-confetti";
+import type confettiDefault from "canvas-confetti";
 
 // ---------------------------------------------------------------------------
 // localStorage-backed counter (try-catch wrapped per project convention)
@@ -252,44 +252,68 @@ const COUNCIL_PALETTE = [
   "#8b8580",
 ];
 
+type ConfettiFn = typeof confettiDefault;
+
+let confettiModule: Promise<ConfettiFn> | null = null;
+
+/**
+ * canvas-confetti only ever runs after a Council run succeeds, but as a static
+ * import it shipped inside the LlmCouncilPage chunk — downloaded and parsed
+ * before the user could type their first question. Loading it on first use
+ * keeps it out of that chunk entirely. The promise is cached so repeated
+ * celebrations do not re-import.
+ */
+function withConfetti(run: (confetti: ConfettiFn) => void): void {
+  if (!confettiModule) {
+    confettiModule = import("canvas-confetti").then((m) => m.default);
+  }
+  confettiModule.then(run).catch(() => {
+    /* swallow — confetti is non-essential delight, same policy as playCue() */
+  });
+}
+
 export function fireSubmitGavelBurst(): void {
   if (prefersReducedMotion()) return;
   if (!canRunConfetti()) return;
   // Downward burst from top-center suggesting a gavel strike
-  confetti({
-    particleCount: 30,
-    spread: 40,
-    startVelocity: 35,
-    angle: 270, // straight down
-    origin: { x: 0.5, y: 0 },
-    colors: COUNCIL_PALETTE,
-    scalar: 0.7,
-    ticks: 80,
+  withConfetti((confetti) => {
+    confetti({
+      particleCount: 30,
+      spread: 40,
+      startVelocity: 35,
+      angle: 270, // straight down
+      origin: { x: 0.5, y: 0 },
+      colors: COUNCIL_PALETTE,
+      scalar: 0.7,
+      ticks: 80,
+    });
   });
 }
 
 export function fireCouncilDoneCelebration(): void {
   if (prefersReducedMotion()) return;
   if (!canRunConfetti()) return;
-  // Two-side sweep — applause feel
-  const end = Date.now() + 600;
-  (function frame() {
-    confetti({
-      particleCount: 5,
-      angle: 60,
-      spread: 55,
-      origin: { x: 0, y: 0.7 },
-      colors: COUNCIL_PALETTE,
-    });
-    confetti({
-      particleCount: 5,
-      angle: 120,
-      spread: 55,
-      origin: { x: 1, y: 0.7 },
-      colors: COUNCIL_PALETTE,
-    });
-    if (Date.now() < end) requestAnimationFrame(frame);
-  })();
+  withConfetti((confetti) => {
+    // Two-side sweep — applause feel
+    const end = Date.now() + 600;
+    (function frame() {
+      confetti({
+        particleCount: 5,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 0.7 },
+        colors: COUNCIL_PALETTE,
+      });
+      confetti({
+        particleCount: 5,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 0.7 },
+        colors: COUNCIL_PALETTE,
+      });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    })();
+  });
 }
 
 export function fireFinalVerdictCelebration(label: string): void {
@@ -301,32 +325,34 @@ export function fireFinalVerdictCelebration(label: string): void {
       : label.toLowerCase() === "low"
         ? 0.6
         : 1.0;
-  confetti({
-    particleCount: Math.round(120 * intensity),
-    spread: 100,
-    startVelocity: 45,
-    origin: { y: 0.55 },
-    colors: COUNCIL_PALETTE,
-    ticks: 200,
+  withConfetti((confetti) => {
+    confetti({
+      particleCount: Math.round(120 * intensity),
+      spread: 100,
+      startVelocity: 45,
+      origin: { y: 0.55 },
+      colors: COUNCIL_PALETTE,
+      ticks: 200,
+    });
+    if (intensity > 1.1) {
+      setTimeout(() => {
+        confetti({
+          particleCount: 40,
+          angle: 60,
+          spread: 80,
+          origin: { x: 0, y: 0.8 },
+          colors: COUNCIL_PALETTE,
+        });
+        confetti({
+          particleCount: 40,
+          angle: 120,
+          spread: 80,
+          origin: { x: 1, y: 0.8 },
+          colors: COUNCIL_PALETTE,
+        });
+      }, 250);
+    }
   });
-  if (intensity > 1.1) {
-    setTimeout(() => {
-      confetti({
-        particleCount: 40,
-        angle: 60,
-        spread: 80,
-        origin: { x: 0, y: 0.8 },
-        colors: COUNCIL_PALETTE,
-      });
-      confetti({
-        particleCount: 40,
-        angle: 120,
-        spread: 80,
-        origin: { x: 1, y: 0.8 },
-        colors: COUNCIL_PALETTE,
-      });
-    }, 250);
-  }
 }
 
 // ---------------------------------------------------------------------------
