@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
-import React from "react";
 import { ApiError, CASE_MUTATIONS_DISABLED_CODE } from "@/lib/api";
 
 const { mockUseCreateCase } = vi.hoisted(() => ({

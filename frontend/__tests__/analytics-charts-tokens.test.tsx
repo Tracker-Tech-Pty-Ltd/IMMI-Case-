@@ -142,11 +142,11 @@ describe("Group 4 – Chart components render without crashing", () => {
 
   const effectivenessData: ConceptEffectivenessData = {
     concepts: [
-      { name: "Procedural Fairness", win_rate: 65, total: 200, lift: 1.3 },
-      { name: "Natural Justice", win_rate: 38, total: 150, lift: 0.9 },
-      { name: "Jurisdictional Error", win_rate: 55, total: 100, lift: 1.1 },
+      { name: "Procedural Fairness", win_rate: 65, total: 200, lift: 1.3, by_court: {} },
+      { name: "Natural Justice", win_rate: 38, total: 150, lift: 0.9, by_court: {} },
+      { name: "Jurisdictional Error", win_rate: 55, total: 100, lift: 1.1, by_court: {} },
     ],
-    baseline_win_rate: 50,
+    baseline_rate: 50,
   };
 
   it("ConceptEffectivenessChart renders with data", () => {

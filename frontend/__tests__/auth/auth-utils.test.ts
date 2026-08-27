@@ -117,7 +117,6 @@ describe("parseJwtPayload — base64url padding restoration", () => {
 
   it("decodes a payload whose stripped base64url length % 4 === 0 (no padding needed)", () => {
     // Verify the common case still works when length is already aligned.
-    const _raw = '{"ok":true}'; // 11 bytes → btoa → 'eyJvayI6dHJ1ZX0=' (16 chars, 1 =)
     // Actually let's just verify any 0-remainder case parses correctly.
     const payload = { ok: true, n: 1 };
     const token = makeToken(payload);

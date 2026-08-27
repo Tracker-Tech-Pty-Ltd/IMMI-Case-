@@ -89,6 +89,7 @@ const MOCK_SESSION: api.LlmCouncilSession = {
   title: "What are my review grounds?",
   status: "active",
   total_turns: 1,
+  retrieve_code: null,
   created_at: "2026-04-28T04:00:00.000Z",
   updated_at: "2026-04-28T04:00:00.000Z",
 };
@@ -273,6 +274,7 @@ describe("use-llm-council-sessions hooks", () => {
       mockCreateSession.mockResolvedValue({
         session_id: SESSION_ID,
         session_token: SESSION_TOKEN,
+        retrieve_code: "ABC123",
         turn: MOCK_TURN,
         total_turns: 1,
       });
@@ -297,6 +299,7 @@ describe("use-llm-council-sessions hooks", () => {
       mockCreateSession.mockResolvedValue({
         session_id: SESSION_ID,
         session_token: SESSION_TOKEN,
+        retrieve_code: "ABC123",
         turn: MOCK_TURN,
         total_turns: 1,
       });
@@ -324,6 +327,7 @@ describe("use-llm-council-sessions hooks", () => {
       mockCreateSession.mockResolvedValue({
         session_id: SESSION_ID,
         session_token: SESSION_TOKEN,
+        retrieve_code: "ABC123",
         turn: MOCK_TURN,
         total_turns: 1,
       });
@@ -352,6 +356,7 @@ describe("use-llm-council-sessions hooks", () => {
       mockCreateSession.mockResolvedValue({
         session_id: SESSION_ID,
         session_token: SESSION_TOKEN,
+        retrieve_code: "ABC123",
         turn: MOCK_TURN,
         total_turns: 1,
       });

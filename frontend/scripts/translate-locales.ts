@@ -1,12 +1,15 @@
 import * as fs from 'fs'
 import * as path from 'path'
 
-const API_KEY = process.env.GOOGLE_TRANSLATE_API_KEY
+const RAW_API_KEY = process.env.GOOGLE_TRANSLATE_API_KEY
 
-if (!API_KEY) {
+if (!RAW_API_KEY) {
   console.error('❌ GOOGLE_TRANSLATE_API_KEY environment variable is not set')
   process.exit(1)
 }
+
+// process.exit() returns never, so RAW_API_KEY is narrowed to string here.
+const API_KEY: string = RAW_API_KEY
 
 interface StringEntry {
   key: string

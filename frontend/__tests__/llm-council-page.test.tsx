@@ -163,6 +163,7 @@ function makeSession(totalTurns: number): LlmCouncilSession {
     title: "Test session",
     status: "active",
     total_turns: totalTurns,
+    retrieve_code: null,
     created_at: "2026-04-28T04:00:00.000Z",
     updated_at: "2026-04-28T04:00:00.000Z",
   };

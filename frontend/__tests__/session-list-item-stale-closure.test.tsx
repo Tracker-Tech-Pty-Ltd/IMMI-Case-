@@ -33,8 +33,11 @@ function makeSession(
 ): LlmCouncilSessionListItem {
   return {
     session_id: id,
+    case_id: null,
     title,
+    status: "active",
     total_turns: 1,
+    created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 }
