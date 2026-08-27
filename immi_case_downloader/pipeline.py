@@ -19,8 +19,10 @@ from .config import (
     OUTPUT_DIR,
     END_YEAR,
 )
+from .csv_write_lock import csv_write_lock
 from .models import ImmigrationCase
 from .storage import (
+    CASES_CSV,
     ensure_output_dirs,
     load_all_cases,
     save_cases_csv,
@@ -488,56 +490,58 @@ class SmartPipeline:
         self._update_status(phase="clean", phase_progress="Cleaning data...", overall_progress=40)
         self.log.add("clean", "info", "phase_start", "Clean phase started.")
 
-        cases = load_all_cases(self.output_dir)
         year_fixed = 0
         dupes_removed = 0
 
-        # Fix year=0: extract from citation [YYYY]
-        if self.config.fix_year_zero:
-            for case in cases:
-                if case.year == 0 and case.citation:
-                    match = re.search(r"\[(\d{4})\]", case.citation)
-                    if match:
-                        case.year = int(match.group(1))
-                        year_fixed += 1
-                elif case.year == 0 and case.url:
-                    match = re.search(r"/(\d{4})/", case.url)
-                    if match:
-                        case.year = int(match.group(1))
-                        year_fixed += 1
+        with csv_write_lock(os.path.join(self.output_dir, CASES_CSV)):
+            cases = load_all_cases(self.output_dir)
 
-            if year_fixed > 0:
-                self.log.add("clean", "info", "year_fix", f"Fixed {year_fixed} cases with year=0")
+            # Fix year=0: extract from citation [YYYY]
+            if self.config.fix_year_zero:
+                for case in cases:
+                    if case.year == 0 and case.citation:
+                        match = re.search(r"\[(\d{4})\]", case.citation)
+                        if match:
+                            case.year = int(match.group(1))
+                            year_fixed += 1
+                    elif case.year == 0 and case.url:
+                        match = re.search(r"/(\d{4})/", case.url)
+                        if match:
+                            case.year = int(match.group(1))
+                            year_fixed += 1
 
-        # Deduplicate by URL, falling back to case_id for URL-less cases
-        if self.config.deduplicate:
-            before_count = len(cases)
-            seen_keys = set()
-            unique = []
-            for case in cases:
-                case.ensure_id()
-                # Blank URLs are an expected state (manual adds, href parse
-                # failures). Keying on url alone collapsed every one of them
-                # into a single surviving row.
-                key = case.url or f"__noid__{case.case_id}"
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    unique.append(case)
-            dupes_removed = before_count - len(unique)
-            cases = unique
+                if year_fixed > 0:
+                    self.log.add("clean", "info", "year_fix", f"Fixed {year_fixed} cases with year=0")
 
-            if dupes_removed > 0:
-                self.log.add("clean", "info", "dedup", f"Removed {dupes_removed} duplicate cases")
+            # Deduplicate by URL, falling back to case_id for URL-less cases
+            if self.config.deduplicate:
+                before_count = len(cases)
+                seen_keys = set()
+                unique = []
+                for case in cases:
+                    case.ensure_id()
+                    # Blank URLs are an expected state (manual adds, href parse
+                    # failures). Keying on url alone collapsed every one of them
+                    # into a single surviving row.
+                    key = case.url or f"__noid__{case.case_id}"
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        unique.append(case)
+                dupes_removed = before_count - len(unique)
+                cases = unique
 
-        # Validate required fields
-        validated = sum(1 for c in cases if c.url and c.title and c.court_code)
-        invalid = len(cases) - validated
-        if invalid > 0:
-            self.log.add("clean", "warn", "validation", f"{invalid} cases missing required fields")
+                if dupes_removed > 0:
+                    self.log.add("clean", "info", "dedup", f"Removed {dupes_removed} duplicate cases")
 
-        # Save cleaned data
-        save_cases_csv(cases, self.output_dir)
-        save_cases_json(cases, self.output_dir)
+            # Validate required fields
+            validated = sum(1 for c in cases if c.url and c.title and c.court_code)
+            invalid = len(cases) - validated
+            if invalid > 0:
+                self.log.add("clean", "warn", "validation", f"{invalid} cases missing required fields")
+
+            # Save cleaned data
+            save_cases_csv(cases, self.output_dir)
+            save_cases_json(cases, self.output_dir)
 
         with self._lock:
             self._status["stats"]["clean"] = {
@@ -684,12 +688,13 @@ class SmartPipeline:
 
     def _save_download_progress(self, processed_targets):
         """Persist full_text_path from processed targets back to main CSV."""
-        all_cases = load_all_cases(self.output_dir)
-        target_map = {c.case_id: c for c in processed_targets}
-        for c in all_cases:
-            if c.case_id in target_map and target_map[c.case_id].full_text_path:
-                c.full_text_path = target_map[c.case_id].full_text_path
-        save_cases_csv(all_cases, self.output_dir)
+        with csv_write_lock(os.path.join(self.output_dir, CASES_CSV)):
+            all_cases = load_all_cases(self.output_dir)
+            target_map = {c.case_id: c for c in processed_targets}
+            for c in all_cases:
+                if c.case_id in target_map and target_map[c.case_id].full_text_path:
+                    c.full_text_path = target_map[c.case_id].full_text_path
+            save_cases_csv(all_cases, self.output_dir)
 
     # ── Helpers ──────────────────────────────────────────────────────
 

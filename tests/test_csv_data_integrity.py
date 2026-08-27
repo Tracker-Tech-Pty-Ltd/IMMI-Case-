@@ -12,6 +12,7 @@ downloaded_cases/.
 
 import ast
 import sqlite3
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +20,7 @@ import pytest
 
 import immi_case_downloader.sqlite_repository as sr
 from immi_case_downloader.csv_repository import CsvRepository
+from immi_case_downloader.csv_write_lock import csv_write_lock
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline, start_pipeline
 from immi_case_downloader.sqlite_repository import SqliteRepository
@@ -639,3 +641,75 @@ class TestCsvRoundTripVisaColumns:
 
         raw = csv_path.read_text()
         assert "866.0" not in raw
+
+
+# ── Cross-process advisory write lock ────────────────────────────────────
+
+
+class TestCsvWriteLock:
+    def test_csv_write_lock_is_exclusive(self, tmp_path):
+        """flock is per open file description, so two separate open() calls
+        in one process genuinely contend — this is a real test, not a no-op."""
+        target = str(tmp_path / "immigration_cases.csv")
+        holder_ready = threading.Event()
+        release_holder = threading.Event()
+
+        def hold_lock():
+            with csv_write_lock(target):
+                holder_ready.set()
+                release_holder.wait(timeout=5)
+
+        holder = threading.Thread(target=hold_lock)
+        holder.start()
+        assert holder_ready.wait(timeout=5), "lock holder never signalled ready"
+
+        with pytest.raises(TimeoutError):
+            with csv_write_lock(target, timeout=0.2):
+                pass
+
+        release_holder.set()
+        holder.join(timeout=5)
+        assert not holder.is_alive()
+
+        # Now that the holder released, acquiring must succeed.
+        with csv_write_lock(target, timeout=2):
+            pass
+
+    def test_concurrent_save_many_does_not_lose_rows(self, tmp_path):
+        """Two threads each save_many-ing 50 distinct cases, started together.
+        Looped 5 rounds so a missing lock fails reliably, not just luckily."""
+
+        def make_batch(prefix):
+            return [
+                _case(
+                    citation=f"[2024] AATA {prefix}{i}",
+                    url=f"https://example.com/{prefix}-{i}",
+                )
+                for i in range(50)
+            ]
+
+        for round_num in range(5):
+            base_dir = tmp_path / f"round{round_num}"
+            base_dir.mkdir()
+            repo = CsvRepository(str(base_dir))
+
+            batch_a = make_batch(f"a{round_num}")
+            batch_b = make_batch(f"b{round_num}")
+            errors = []
+
+            def worker(batch):
+                try:
+                    repo.save_many(batch)
+                except Exception as exc:  # noqa: BLE001 — surfaced via `errors`
+                    errors.append(exc)
+
+            t1 = threading.Thread(target=worker, args=(batch_a,))
+            t2 = threading.Thread(target=worker, args=(batch_b,))
+            t1.start()
+            t2.start()
+            t1.join(timeout=10)
+            t2.join(timeout=10)
+
+            assert not errors, errors
+            invalidate_cases_cache()
+            assert len(repo.load_all()) == 100, f"round {round_num} lost rows"

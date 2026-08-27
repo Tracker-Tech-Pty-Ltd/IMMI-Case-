@@ -1,10 +1,13 @@
 """CSV-backed CaseRepository — wraps existing storage.py functions."""
 
 import logging
+import os
 
+from .csv_write_lock import csv_write_lock
 from .models import ImmigrationCase
 from .storage import (
     CASE_FIELDS,
+    CASES_CSV,
     load_all_cases,
     get_case_by_id,
     update_case,
@@ -56,62 +59,65 @@ class CsvRepository:
         would let a re-crawl whose citation changed insert a second row for a
         page that is already stored.
         """
-        existing = load_all_cases(self.base_dir)
-        by_id: dict[str, ImmigrationCase] = {}
-        by_url: dict[str, ImmigrationCase] = {}
-        for stored in existing:
-            stored.ensure_id()
-            by_id.setdefault(stored.case_id, stored)
-            if stored.url:
-                by_url.setdefault(stored.url, stored)
+        with csv_write_lock(os.path.join(self.base_dir, CASES_CSV)):
+            existing = load_all_cases(self.base_dir)
+            by_id: dict[str, ImmigrationCase] = {}
+            by_url: dict[str, ImmigrationCase] = {}
+            for stored in existing:
+                stored.ensure_id()
+                by_id.setdefault(stored.case_id, stored)
+                if stored.url:
+                    by_url.setdefault(stored.url, stored)
 
-        added = 0
-        for case in cases:
-            case.ensure_id()
-            stored = by_id.get(case.case_id)
-            if stored is None and case.url:
-                stored = by_url.get(case.url)
-                if stored is not None and stored.case_id != case.case_id:
-                    # The incoming case_id is new but its URL is already stored
-                    # under a different id. Merging onto the URL row is the
-                    # right call (one URL is one case), but the id change is
-                    # worth a line in the log: it means citation/title drifted.
-                    logger.warning(
-                        "save_many: url %s already stored as case_id %s; "
-                        "merging incoming case_id %s into it",
-                        case.url, stored.case_id, case.case_id,
+            added = 0
+            for case in cases:
+                case.ensure_id()
+                stored = by_id.get(case.case_id)
+                if stored is None and case.url:
+                    stored = by_url.get(case.url)
+                    if stored is not None and stored.case_id != case.case_id:
+                        # The incoming case_id is new but its URL is already
+                        # stored under a different id. Merging onto the URL row
+                        # is the right call (one URL is one case), but the id
+                        # change is worth a line in the log: it means
+                        # citation/title drifted.
+                        logger.warning(
+                            "save_many: url %s already stored as case_id %s; "
+                            "merging incoming case_id %s into it",
+                            case.url, stored.case_id, case.case_id,
+                        )
+                if stored is None:
+                    existing.append(case)
+                    by_id[case.case_id] = case
+                    if case.url:
+                        by_url.setdefault(case.url, case)
+                    added += 1
+                    continue
+                if stored is case:
+                    continue
+                if stored.url and case.url and stored.url != case.url:
+                    # Two different pages claiming one case_id is a data
+                    # problem we must not paper over by silently overwriting
+                    # one with the other. ensure_id() hashes
+                    # citation-or-url-or-title, so this means two different
+                    # URLs produced the same citation.
+                    raise ValueError(
+                        f"case_id {case.case_id} maps to two different urls: "
+                        f"stored={stored.url!r} incoming={case.url!r}"
                     )
-            if stored is None:
-                existing.append(case)
-                by_id[case.case_id] = case
-                if case.url:
-                    by_url.setdefault(case.url, case)
-                added += 1
-                continue
-            if stored is case:
-                continue
-            if stored.url and case.url and stored.url != case.url:
-                # Two different pages claiming one case_id is a data problem we
-                # must not paper over by silently overwriting one with the
-                # other. ensure_id() hashes citation-or-url-or-title, so this
-                # means two different URLs produced the same citation.
-                raise ValueError(
-                    f"case_id {case.case_id} maps to two different urls: "
-                    f"stored={stored.url!r} incoming={case.url!r}"
-                )
-            for field in CASE_FIELDS:
-                if field == "case_id":
-                    continue
-                value = getattr(case, field, None)
-                # "" and 0 are this dataclass's "unset" markers — never let an
-                # unset incoming field erase a stored one.
-                if value is None or value == "" or value == 0:
-                    continue
-                setattr(stored, field, value)
+                for field in CASE_FIELDS:
+                    if field == "case_id":
+                        continue
+                    value = getattr(case, field, None)
+                    # "" and 0 are this dataclass's "unset" markers — never let
+                    # an unset incoming field erase a stored one.
+                    if value is None or value == "" or value == 0:
+                        continue
+                    setattr(stored, field, value)
 
-        save_cases_csv(existing, self.base_dir)
-        save_cases_json(existing, self.base_dir)
-        return added
+            save_cases_csv(existing, self.base_dir)
+            save_cases_json(existing, self.base_dir)
+            return added
 
     def update(self, case_id: str, updates: dict) -> bool:
         return update_case(case_id, updates, self.base_dir)

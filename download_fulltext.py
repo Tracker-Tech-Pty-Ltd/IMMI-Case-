@@ -8,6 +8,7 @@ Progress saved every 200 cases. Safe to interrupt and resume.
 
 import sys
 import os
+import shutil
 import time
 import pandas as pd
 from datetime import datetime
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from immi_case_downloader.sources.austlii import AustLIIScraper
 from immi_case_downloader.config import AUSTLII_DATABASES, IMMIGRATION_KEYWORDS
+from immi_case_downloader.csv_write_lock import csv_write_lock
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.storage import save_case_text
 
@@ -31,6 +33,53 @@ def log(msg):
     print(line, flush=True)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+_backup_taken = False
+
+
+def _new_backup_path() -> str:
+    """A backup path nothing else can be holding.
+
+    A plain seconds-resolution stamp is not enough: two runs started in the
+    same second write the same name and the second silently destroys the
+    first's copy of a 149k-row corpus that exists only on this machine. Create
+    the file exclusively (O_EXCL) and bump a suffix on collision, so the name
+    is proven free rather than assumed free.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    for attempt in range(100):
+        candidate = f"{CSV_PATH}.bak-{stamp}" + (f".{attempt}" if attempt else "")
+        try:
+            fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return candidate
+    raise RuntimeError(f"could not find a free backup name for {CSV_PATH}")
+
+
+def _write_csv_atomic(df):
+    """Write *df* over the master CSV atomically, after a one-time run backup.
+
+    The module docstring promises this script is safe to interrupt, but the
+    three writes it performs used to land straight on the 149k-row master file.
+    Matches the tmp-then-os.replace pattern in
+    immi_case_downloader/storage.save_cases_csv.
+    """
+    global _backup_taken
+    if not _backup_taken and os.path.exists(CSV_PATH):
+        backup = _new_backup_path()
+        shutil.copy2(CSV_PATH, backup)
+        log(f"  Backup: {backup}")
+        _backup_taken = True
+    # Per-process temp name: storage.save_cases_csv writes
+    # "<CSV_PATH>.tmp" too, and two writers sharing one temp path interleave
+    # into the same file and then os.replace() the mixture over the master.
+    tmp = f"{CSV_PATH}.tmp.{os.getpid()}"
+    with csv_write_lock(CSV_PATH):
+        df.to_csv(tmp, index=False)
+        os.replace(tmp, CSV_PATH)
 
 
 def retry_recent_crawl(scraper, df_existing):
@@ -72,8 +121,16 @@ def retry_recent_crawl(scraper, df_existing):
         new_rows = [c.to_dict() for c in new_cases]
         df_new = pd.DataFrame(new_rows)
         df_merged = pd.concat([df_existing, df_new], ignore_index=True)
-        df_merged = df_merged.drop_duplicates(subset="url", keep="first")
-        df_merged.to_csv(CSV_PATH, index=False)
+        # Blank/NaN urls all compare equal to each other, so a plain
+        # drop_duplicates(subset="url") collapses every URL-less case into one
+        # surviving row. Fall back to case_id for those.
+        df_merged["_dedup_key"] = df_merged["url"].where(
+            df_merged["url"].notna() & (df_merged["url"].astype(str).str.strip() != ""),
+            "__noid__" + df_merged["case_id"].astype(str),
+        )
+        df_merged = df_merged.drop_duplicates(subset="_dedup_key", keep="first")
+        df_merged = df_merged.drop(columns=["_dedup_key"])
+        _write_csv_atomic(df_merged)
         log(f"  Added {len(new_cases)} new cases. Total: {len(df_merged)}")
         return df_merged
     else:
@@ -165,11 +222,11 @@ def download_missing_fulltext(scraper, df):
 
         # Periodic save
         if (downloaded + failed) > 0 and (downloaded + failed) % SAVE_EVERY == 0:
-            df.to_csv(CSV_PATH, index=False)
+            _write_csv_atomic(df)
             log(f"  [Checkpoint saved at {downloaded + failed} downloads]")
 
     # Final save
-    df.to_csv(CSV_PATH, index=False)
+    _write_csv_atomic(df)
 
     elapsed = time.time() - start_time
     log(f"\nDONE! Downloaded: {downloaded}, Failed: {failed}, Skipped: {skipped}")
