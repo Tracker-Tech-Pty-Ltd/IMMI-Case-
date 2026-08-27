@@ -14,12 +14,26 @@ export class CloudflareCouncilStore {
   async createSession(auth, { sessionId, caseId = null, title = "", retrieveCode = null }) {
     const context = assertAuthContext(auth);
     const now = utcNow();
-    await this.db.prepare(`
+    // ON CONFLICT targets the `retrieve_code TEXT UNIQUE` constraint declared
+    // at migrations/d1/account/0001_account.sql:110. A collision then yields
+    // zero changes instead of a raw SQLite exception, so the caller gets a
+    // typed error rather than having to pattern-match D1's message text.
+    // NOTE: the conflict target is deliberately narrow — a session_id primary
+    // key collision still throws, because that is a genuine bug, not a
+    // re-rollable code clash.
+    const result = await this.db.prepare(`
       INSERT INTO council_sessions (
         session_id, tenant_id, created_by, case_id, title, status, retrieve_code,
         total_turns, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, 'active', ?, 0, ?, ?)
+      ON CONFLICT(retrieve_code) DO NOTHING
     `).bind(sessionId, context.tenantId, context.userId, caseId, title, retrieveCode, now, now).run();
+    if (changeCount(result) === 0) {
+      throw new StorageBoundaryError("Retrieve code already in use", {
+        code: "retrieve_code_conflict",
+        status: 409,
+      });
+    }
     return this.db.prepare(`
       SELECT session_id, case_id, title, status, retrieve_code, total_turns, created_at, updated_at
       FROM council_sessions WHERE session_id = ? AND tenant_id = ?

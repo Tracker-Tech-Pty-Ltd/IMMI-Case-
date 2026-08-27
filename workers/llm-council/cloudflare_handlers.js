@@ -58,9 +58,19 @@ function rateLimitFailure(limited) {
 }
 
 function generateRetrieveCode() {
-  const bytes = new Uint8Array(6);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((byte) => RETRIEVE_CODE_ALPHABET[byte % RETRIEVE_CODE_ALPHABET.length]).join("");
+  const size = RETRIEVE_CODE_ALPHABET.length;
+  // 256 % 31 === 8, so bytes >= 248 would over-represent the first 8 symbols.
+  // Reject that tail instead of folding it in with a plain modulo.
+  const limit = 256 - (256 % size);
+  const code = [];
+  while (code.length < 6) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(6))) {
+      if (byte >= limit) continue;
+      code.push(RETRIEVE_CODE_ALPHABET[byte % size]);
+      if (code.length === 6) break;
+    }
+  }
+  return code.join("");
 }
 
 async function requireSessionAuth(request, env) {
@@ -93,6 +103,23 @@ async function councilStoresForClaims(env, claims) {
   return { stores, auth };
 }
 
+/**
+ * The authoritative signal is the typed error raised by
+ * CloudflareCouncilStore.createSession (Step 5b): a UNIQUE conflict on
+ * retrieve_code becomes StorageBoundaryError{code:"retrieve_code_conflict"}.
+ *
+ * The message-shape branch below is a TRANSITIONAL fallback for a Worker
+ * deployed against an older store build during a rolling deploy. It matches a
+ * SQLite message this project does not control, so it must never be the only
+ * detection path — if you find yourself relying on it, the store change did
+ * not land. Delete this branch once one full deploy cycle has passed.
+ */
+function isRetrieveCodeConflict(err) {
+  if (err instanceof StorageBoundaryError) return err.code === "retrieve_code_conflict";
+  const message = String(err?.message || "");
+  return /constraint|unique/i.test(message) && message.includes("retrieve_code");
+}
+
 async function createSessionWithRetrieveCode(stores, auth, values, preferredRetrieveCode = null) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -103,10 +130,15 @@ async function createSessionWithRetrieveCode(stores, auth, values, preferredRetr
       return { session, retrieveCode };
     } catch (err) {
       lastError = err;
-      if (!String(err?.message || "").includes("retrieve_code")) throw err;
+      if (!isRetrieveCodeConflict(err)) throw err;
+      console.log(JSON.stringify({ event: "council.retrieve_code_conflict", attempt }));
     }
   }
-  throw lastError;
+  console.error(JSON.stringify({ event: "council.retrieve_code_exhausted", error: lastError?.message }));
+  throw new StorageBoundaryError("Could not allocate a unique retrieve code", {
+    code: "retrieve_code_conflict",
+    status: 503,
+  });
 }
 
 async function persistTurn({ env, auth, sessionId, turnId, message, caseContext, councilResult }) {
@@ -374,12 +406,25 @@ async function handleStream(request, env, ctx) {
     return errorResponse(`LLM Council stream error: ${err?.message || "unavailable"}`, 503);
   }
   const persist = stream.work.then(async (result) => {
+    // runner.js resolves work with null on client disconnect, all-experts-failed
+    // and orchestration throw. Persisting then would write a zero-turn session
+    // row and lose the turn, so skip the whole write path.
+    if (!result) {
+      console.log(JSON.stringify({ event: "council.stream.skipped_persist", session_id: sessionId }));
+      return;
+    }
     // Recheck at write time: membership could have been revoked while the
     // response streamed, and D1 itself has no transaction-local RLS claims.
     const current = await councilStoresForClaims(env, authResult.claims);
-    await createSessionWithRetrieveCode(current.stores, current.auth, {
+    const persisted = await createSessionWithRetrieveCode(current.stores, current.auth, {
       sessionId, caseId: body.case_id || null, title: message.slice(0, 80),
     }, retrieveCode);
+    if (persisted.retrieveCode !== retrieveCode) {
+      // The code already streamed to the client as `council.session` collided,
+      // so the session carries a different one. Astronomically rare (31^6
+      // space) but silent until now — log the fact, never the codes.
+      console.error(JSON.stringify({ event: "council.stream.retrieve_code_reissued", session_id: sessionId }));
+    }
     await persistTurn({ env, auth: current.auth, sessionId, turnId, message, caseContext, councilResult: result });
   }).catch((err) => console.error(JSON.stringify({ event: "council.stream.persist_error", error: err?.message })));
   if (ctx?.waitUntil) ctx.waitUntil(persist);
@@ -425,18 +470,18 @@ async function handleHealth(request, env) {
 /** Return null only for an unknown route; standalone entrypoint then fails closed. */
 export async function dispatchCloudflareCouncil(request, env, path, method, ctx) {
   try {
-    if (path === "/api/v1/llm-council/health" && method === "GET") return handleHealth(request, env);
-    if (path === "/api/v1/llm-council/sessions" && method === "POST") return handleCreateSession(request, env);
-    if (path === "/api/v1/llm-council/sessions" && method === "GET") return handleListSessions(request, env);
-    if (path === "/api/v1/llm-council/run" && method === "POST") return handleLegacyRun(request, env);
-    if (path === "/api/v1/llm-council/stream" && method === "POST") return handleStream(request, env, ctx);
-    if (path === "/api/v1/llm-council/sessions/restore" && method === "POST") return handleRestoreByCode(request, env);
+    if (path === "/api/v1/llm-council/health" && method === "GET") return await handleHealth(request, env);
+    if (path === "/api/v1/llm-council/sessions" && method === "POST") return await handleCreateSession(request, env);
+    if (path === "/api/v1/llm-council/sessions" && method === "GET") return await handleListSessions(request, env);
+    if (path === "/api/v1/llm-council/run" && method === "POST") return await handleLegacyRun(request, env);
+    if (path === "/api/v1/llm-council/stream" && method === "POST") return await handleStream(request, env, ctx);
+    if (path === "/api/v1/llm-council/sessions/restore" && method === "POST") return await handleRestoreByCode(request, env);
     const turn = path.match(/^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})\/turns$/);
-    if (turn && method === "POST") return handleAddTurn(request, env, turn[1]);
-    if (turn && method === "GET") return handleGetTurns(request, env, turn[1]);
+    if (turn && method === "POST") return await handleAddTurn(request, env, turn[1]);
+    if (turn && method === "GET") return await handleGetTurns(request, env, turn[1]);
     const session = path.match(/^\/api\/v1\/llm-council\/sessions\/([A-Za-z0-9_-]{21})$/);
-    if (session && method === "GET") return handleGetSession(request, env, session[1]);
-    if (session && method === "DELETE") return handleDeleteSession(request, env, session[1]);
+    if (session && method === "GET") return await handleGetSession(request, env, session[1]);
+    if (session && method === "DELETE") return await handleDeleteSession(request, env, session[1]);
     return null;
   } catch (err) {
     if (err instanceof StorageBoundaryError) return errorResponse(err.message, err.status, err.code);

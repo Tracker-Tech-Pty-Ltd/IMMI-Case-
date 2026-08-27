@@ -25,26 +25,34 @@ function first(cursor) {
   return null;
 }
 
+const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS council_turn_ledger (
+    turn_id TEXT PRIMARY KEY,
+    turn_index INTEGER NOT NULL UNIQUE,
+    completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1))
+  )`,
+  `CREATE TABLE IF NOT EXISTS council_turn_sequence (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    next_turn INTEGER NOT NULL
+  )`,
+  "INSERT OR IGNORE INTO council_turn_sequence (singleton, next_turn) VALUES (1, -1)",
+];
+
+/**
+ * deleteSession() calls storage.deleteAll(), which drops these tables on a
+ * SQLite-backed DO. The constructor only runs on a cold start, so appendTurn
+ * re-asserts the schema instead of throwing "no such table" on a DELETE that
+ * races an in-flight append.
+ */
+function ensureSchema(sql) {
+  for (const statement of SCHEMA_STATEMENTS) sql.exec(statement);
+}
+
 export class CouncilSessionDO extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS council_turn_ledger (
-          turn_id TEXT PRIMARY KEY,
-          turn_index INTEGER NOT NULL UNIQUE,
-          completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0, 1))
-        )
-      `);
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS council_turn_sequence (
-          singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-          next_turn INTEGER NOT NULL
-        )
-      `);
-      this.ctx.storage.sql.exec(
-        "INSERT OR IGNORE INTO council_turn_sequence (singleton, next_turn) VALUES (1, -1)",
-      );
+      ensureSchema(this.ctx.storage.sql);
     });
   }
 
@@ -60,6 +68,7 @@ export class CouncilSessionDO extends DurableObject {
     if (typeof role !== "string" || role.length === 0 || role.length > 32) {
       throw new StorageBoundaryError("Council turn role is invalid", { code: "invalid_council_role", status: 400 });
     }
+    ensureSchema(this.ctx.storage.sql);
 
     let ledger = first(this.ctx.storage.sql.exec(
       "SELECT turn_index, completed FROM council_turn_ledger WHERE turn_id = ?",
@@ -71,6 +80,12 @@ export class CouncilSessionDO extends DurableObject {
         SELECT ?, next_turn + 1, 0 FROM council_turn_sequence WHERE singleton = 1
         RETURNING turn_index, completed
       `, checkedTurnId));
+      if (!allocated) {
+        throw new StorageBoundaryError("Council session not found", {
+          code: "council_session_not_found",
+          status: 404,
+        });
+      }
       this.ctx.storage.sql.exec(
         "UPDATE council_turn_sequence SET next_turn = ? WHERE singleton = 1",
         allocated.turn_index,
@@ -82,6 +97,18 @@ export class CouncilSessionDO extends DurableObject {
     }
 
     const stores = createCloudflareStores(this.env);
+    // A deleteSession that already committed leaves a soft-deleted D1 row
+    // (deleted_at set) while this DO's tables were wiped and have just been
+    // re-seeded by ensureSchema(). Writing the R2 payload first would strand
+    // an orphan object, because appendTurnMetadata refuses a soft-deleted
+    // session. Check liveness before spending the write.
+    const live = await stores.councilStore.getSessionMetadata(context, checkedSessionId);
+    if (!live) {
+      throw new StorageBoundaryError("Council session not found", {
+        code: "council_session_not_found",
+        status: 404,
+      });
+    }
     const payloadPointer = await stores.objectStore.putCouncilPayload({
       auth: context,
       sessionId: checkedSessionId,

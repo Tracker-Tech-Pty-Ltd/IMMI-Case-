@@ -155,9 +155,9 @@ export async function dispatchCloudflareCaseAction(request, path, env) {
     const stores = createCloudflareStores(env);
     const writer = await requireWriter(request, env, stores);
     if (writer instanceof Response) return writer;
-    if (path === "/api/v1/cache/invalidate") return handleCacheInvalidate();
-    if (path === "/api/v1/taxonomy/guided-search") return handleGuidedSearch(request, stores);
-    return handleCollectionExport(request, stores);
+    if (path === "/api/v1/cache/invalidate") return await handleCacheInvalidate();
+    if (path === "/api/v1/taxonomy/guided-search") return await handleGuidedSearch(request, stores);
+    return await handleCollectionExport(request, stores);
   } catch (error) {
     if (clientError(error)) return errorResponse(error.message, error.status, error.code);
     console.error(JSON.stringify({ event: "cloudflare.action_error", path, error: error?.message }));
