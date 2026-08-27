@@ -1,7 +1,19 @@
 # RFC — Hyperdrive query-cache treatment for LLM Council write-affected reads
 
-**Status**: Spike complete. **Path 4 (quick-win) shipped 2026-04-28** and
-the **Path 3 code-side fresh-binding path shipped 2026-06-08**.
+> **HISTORICAL — SUPERSEDED. Nothing in this RFC is outstanding work.**
+> Hyperdrive, Supabase Postgres and `workers/proxy.js` were removed from the
+> production path in commit `f91f45f` (2026-08-21). Production runs on
+> `workers/cloudflare-native.js` over Cloudflare D1 / R2 / Vectorize — see
+> `docs/ARCHITECTURE.md` and `docs/adr/0001-cloudflare-native-d1-stack.md`.
+> The `getSqlFresh` / `withSqlFreshAsUser` helpers this RFC describes no longer
+> exist in the production Worker. **Do not create a Hyperdrive config, do not
+> add a `[[hyperdrive]]` binding to `wrangler.toml`, and do not act on §3.1 or
+> §6.** This file is retained only as a record of why the two-binding pattern
+> was chosen while the Hyperdrive stack was live.
+
+**Status**: SUPERSEDED (2026-08-21, commit `f91f45f`). Historical record only.
+Originally: spike complete; Path 4 (quick-win) shipped 2026-04-28 and the
+Path 3 code-side fresh-binding path shipped 2026-06-08.
 
 Current repo state:
 - Worker storage exposes `getSqlFresh` / `withSqlFreshAsUser`.
@@ -9,8 +21,9 @@ Current repo state:
   `HYPERDRIVE` only when `HYPERDRIVE_NO_CACHE` is not bound.
 - The frontend 10-second delayed invalidate workaround has been removed;
   create/delete now invalidate `['council-sessions']` immediately.
-- Production still needs the second Cloudflare Hyperdrive config id inserted
-  into `wrangler.toml`. The attempted `immi-case-db-fresh` create on
+- ~~Production still needs the second Cloudflare Hyperdrive config id inserted
+  into `wrangler.toml`.~~ **VOID as of `f91f45f` — there is no Hyperdrive in
+  production.** The attempted `immi-case-db-fresh` create on
   2026-06-08 failed with Cloudflare API code `2013` (`Invalid database
   credentials`), so the repo keeps the binding block commented until a valid
   Supabase origin password is supplied.
@@ -108,6 +121,9 @@ benefit measurably from caching against a 149K-row corpus that changes once
 per scrape cycle.
 
 ### 3.1 Cloudflare side (one-shot, requires CF Dashboard or API token)
+
+> **DO NOT RUN.** The command below provisions Hyperdrive against a Supabase
+> origin that is no longer part of production. Kept verbatim for the record.
 
 ```bash
 # Replace <DB_PASSWORD> with the value from Supabase Dashboard
@@ -217,7 +233,10 @@ After 3.1–3.5 ship:
   and retain their full Hyperdrive cache benefit against the 149K-row
   corpus.
 
-## 6. Production binding status
+## 6. Production binding status — VOID
+
+> This section described the last open item of a stack that was deleted in
+> `f91f45f`. There is no binding to add and no password to supply.
 
 The code and frontend cleanup are in repo. The Cloudflare-side fresh binding
 still needs a valid Supabase origin password. On 2026-06-08, `wrangler
