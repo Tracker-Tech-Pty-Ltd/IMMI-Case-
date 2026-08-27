@@ -77,6 +77,13 @@ jobs:
             exit 1
           fi
 
+      - name: Build production bundle
+        run: npm run build:cloudflare
+        working-directory: frontend
+
+      - name: Assert the committed design tokens are not stale
+        run: git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts
+
       - name: Run Vitest tests
         run: npx vitest run
         working-directory: frontend
