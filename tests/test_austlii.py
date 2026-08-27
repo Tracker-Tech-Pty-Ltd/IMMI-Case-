@@ -409,3 +409,24 @@ class TestSearchDatabase:
 
         assert len(cases) == 6
         assert all(c.title == "numbered" for c in cases)
+
+
+class TestExtractMetadataGuard:
+    """Unknown extractor keys must be dropped loudly, not set silently."""
+
+    def test_unknown_metadata_key_is_dropped(self, monkeypatch):
+        from bs4 import BeautifulSoup
+        from immi_case_downloader.models import ImmigrationCase
+
+        scraper = AustLIIScraper(delay=0)
+        monkeypatch.setattr(
+            scraper._metadata_extractor,
+            "extract",
+            lambda *a, **k: {"judges": "Smith J", "not_a_field": "x"},
+        )
+
+        case = ImmigrationCase(url="https://example.test/1")
+        scraper._extract_metadata(BeautifulSoup("<html></html>", "lxml"), case)
+
+        assert case.judges == "Smith J"
+        assert not hasattr(case, "not_a_field")

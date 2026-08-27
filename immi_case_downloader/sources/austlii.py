@@ -423,7 +423,17 @@ class AustLIIScraper(BaseScraper):
         extracted = self._metadata_extractor.extract(
             text, citation=case.citation or ""
         )
+        valid_fields = ImmigrationCase.__dataclass_fields__
         for key, value in extracted.items():
+            if key not in valid_fields:
+                # asdict() only serialises declared fields, so an undeclared
+                # key would be set on the instance and then vanish silently at
+                # persistence time. Same guard from_dict() already applies.
+                logger.warning(
+                    f"MetadataExtractor emitted unknown field '{key}' for "
+                    f"{case.url or case.citation or case.title}; dropping it"
+                )
+                continue
             setattr(case, key, value)
 
     @staticmethod
