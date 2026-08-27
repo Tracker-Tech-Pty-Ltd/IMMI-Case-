@@ -45,6 +45,10 @@
   `workers/llm-council/cloudflare_handlers.js`; see "Sequencing" below)
 - **Category**: bug
 - **Planned at**: commit `42826a3`, 2026-08-27
+- **Executed**: 2026-08-28, branch `advisor/004-fix-council-429-outage`,
+  commits `a246110`..`e974080` (Steps 1–7). All verification commands passed
+  as specified. Step 8 is operator handoff — not yet performed; see the
+  executor's report for the exact content to paste into the PR description.
 
 `Depends on: none` is deliberate. This is a live production outage fix whose
 verification commands (`cd workers && npx vitest run`, `make test-py`,
