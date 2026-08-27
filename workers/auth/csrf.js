@@ -12,6 +12,14 @@ function b64urlDecode(value) {
   return Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 }
 
+function b64urlDecodeOrNull(value) {
+  try {
+    return b64urlDecode(value);
+  } catch {
+    return null;
+  }
+}
+
 async function importHmacKey(secret) {
   return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
@@ -41,9 +49,13 @@ export async function verifyCsrf(request, env) {
   const payloadB64 = parts[0];
   const signatureB64 = parts[1];
   if (!payloadB64 || !signatureB64) return Response.json({ error: "csrf", code: "csrf" }, { status: 403 });
-  const payload = new TextDecoder().decode(b64urlDecode(payloadB64));
+  const payloadBytes = b64urlDecodeOrNull(payloadB64);
+  if (!payloadBytes) return Response.json({ error: "csrf", code: "csrf" }, { status: 403 });
+  const payload = new TextDecoder().decode(payloadBytes);
   const expiry = Number(payload.split(".")[1]);
   if (!Number.isFinite(expiry) || expiry < Date.now()) return Response.json({ error: "csrf_expired", code: "csrf_expired" }, { status: 403 });
-  const valid = await crypto.subtle.verify("HMAC", await importHmacKey(env.CSRF_SECRET), b64urlDecode(signatureB64), new TextEncoder().encode(payload));
+  const signatureBytes = b64urlDecodeOrNull(signatureB64);
+  if (!signatureBytes) return Response.json({ error: "csrf", code: "csrf" }, { status: 403 });
+  const valid = await crypto.subtle.verify("HMAC", await importHmacKey(env.CSRF_SECRET), signatureBytes, new TextEncoder().encode(payload));
   return valid ? null : Response.json({ error: "csrf", code: "csrf" }, { status: 403 });
 }
