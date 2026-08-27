@@ -1290,6 +1290,29 @@ def _call_with_timeout(
     return future.result(timeout=timeout_seconds)
 
 
+def _call_in_app_context(
+    func,
+    timeout_seconds: float = SUPABASE_RPC_TIMEOUT_SECONDS,
+    executor: ThreadPoolExecutor | None = None,
+):
+    """Run *func* in a worker thread that has its own Flask application context.
+
+    ``_call_with_timeout`` hands the callable to a ``ThreadPoolExecutor``, and
+    worker threads do not inherit the request's application context.  Any helper
+    that reads ``current_app`` — ``get_repo()``, ``get_output_dir()`` — therefore
+    raises ``RuntimeError: Working outside of application context`` inside the
+    worker, which the caller then misreports as a timeout.  Bind the app object
+    here, in the request thread, and push a fresh context inside the worker.
+    """
+    app = current_app._get_current_object()  # type: ignore[attr-defined]
+
+    def _run():
+        with app.app_context():
+            return func()
+
+    return _call_with_timeout(_run, timeout_seconds=timeout_seconds, executor=executor)
+
+
 
 
 def _empty_stats_payload(total_cases: int = 0, recent_cases: list | None = None) -> dict:
@@ -1710,7 +1733,7 @@ def analytics_outcomes():
     if not _rpc_ok and not _supabase_backend:
         # Fallback: load cases into Python (only for CSV/SQLite backends).
         try:
-            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=15.0)
+            cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
                 norm = _normalise_outcome(c.outcome)
                 if c.court_code:
@@ -1775,7 +1798,7 @@ def analytics_judges():
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
-            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=15.0)
+            cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
                 for raw_name in _split_judges(c.judges):
                     canonical_name, display_name = _judge_identity(raw_name, c.court_code, c.year)
@@ -1834,7 +1857,7 @@ def analytics_legal_concepts():
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
-            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=15.0)
+            cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
                 for concept in _split_concepts(c.legal_concepts):
                     concept_counter[concept] += 1
@@ -1878,7 +1901,7 @@ def analytics_nature_outcome():
     _supabase_backend = hasattr(repo, "count_cases")
     if not _rpc_ok and not _supabase_backend:
         try:
-            cases = _call_with_timeout(_get_analytics_cases, timeout_seconds=15.0)
+            cases = _call_in_app_context(_get_analytics_cases, timeout_seconds=15.0)
             for c in _apply_filters(cases):
                 if not c.case_nature:
                     continue
