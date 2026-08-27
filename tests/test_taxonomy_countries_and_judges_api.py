@@ -80,9 +80,9 @@ def test_taxonomy_countries_invalid_limit(api_client):
 
 def test_taxonomy_judges_autocomplete_includes_legacy_and_new_keys(api_client, mock_cases):
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=mock_cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value={},
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=sm&limit=5")
@@ -125,9 +125,9 @@ def test_taxonomy_judges_autocomplete_merges_aliases_with_overrides(api_client):
 
     overrides = {"street": "Judge Alexander 'Sandy' Whistler Street SC"}
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value=overrides,
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=street&limit=10")
@@ -168,9 +168,9 @@ def test_taxonomy_judges_autocomplete_maps_official_singleton_surname(api_client
 
     overrides = {"vasta": "Judge Salvatore Vasta"}
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value=overrides,
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=vasta&limit=10")
@@ -216,9 +216,9 @@ def test_taxonomy_judges_autocomplete_ranks_exact_match_above_substring(api_clie
         "dodds-streeton": "Julie Anne Dodds-Streeton KC",
     }
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value=overrides,
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=street&limit=10")
@@ -264,9 +264,9 @@ def test_judge_leaderboard_merges_aliases_with_overrides(api_client):
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
         "immi_case_downloader.web.routes.api._get_analytics_cases", return_value=cases
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value=overrides,
     ):
         resp = api_client.get("/api/v1/analytics/judge-leaderboard?min_cases=1")
@@ -313,9 +313,9 @@ def test_taxonomy_judges_autocomplete_disambiguates_downes_by_court_year(api_cli
     ]
 
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value={},
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=downes&limit=10")
@@ -362,9 +362,9 @@ def test_taxonomy_judges_autocomplete_disambiguates_graham_by_court_year(api_cli
 
     overrides = {"ann graham": "Ann Graham"}
     with patch("immi_case_downloader.web.routes.api._get_all_cases", return_value=cases), patch(
-        "immi_case_downloader.web.routes.api._load_judge_bios", return_value={}
+        "immi_case_downloader.web.judge_names._load_judge_bios", return_value={}
     ), patch(
-        "immi_case_downloader.web.routes.api._load_judge_name_overrides",
+        "immi_case_downloader.web.judge_names._load_judge_name_overrides",
         return_value=overrides,
     ):
         resp = api_client.get("/api/v1/taxonomy/judges/autocomplete?q=graham&limit=10")

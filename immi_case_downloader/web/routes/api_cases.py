@@ -42,7 +42,7 @@ from ...semantic_search_eval import (
 from ..helpers import get_repo, safe_int, EDITABLE_FIELDS, error_response as _error
 from ..security import rate_limit
 from . import api as _api
-from .api import (
+from .api_constants import (
     CASE_LIST_COLUMNS,
     ALLOWED_SORT_FIELDS,
     ALLOWED_SORT_DIRS,
