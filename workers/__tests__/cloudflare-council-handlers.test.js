@@ -196,4 +196,48 @@ describe("Cloudflare-native Council handlers", () => {
       "/api/v1/llm-council/unknown", "GET",
     )).toBeNull();
   });
+
+  it("fails closed with 503 rate_limiter_unconfigured on every rate-limited route when the binding is absent", async () => {
+    const routes = [
+      ["POST", "/api/v1/llm-council/sessions", { message: "x" }],
+      ["POST", `/api/v1/llm-council/sessions/${SESSION_ID}/turns`, { message: "x" }],
+      ["POST", "/api/v1/llm-council/sessions/restore", { code: "ABCDEF" }],
+      ["POST", "/api/v1/llm-council/run", { question: "x" }],
+      ["POST", "/api/v1/llm-council/stream", { message: "x" }],
+      ["DELETE", `/api/v1/llm-council/sessions/${SESSION_ID}`, undefined],
+    ];
+    for (const [method, path, body] of routes) {
+      const response = await dispatchCloudflareCouncil(
+        request(method, path, body),
+        { IMMI_STORAGE_MODE: "cloudflare", CSRF_SECRET: "secret" },
+        path, method,
+      );
+      expect(response.status).toBe(503);
+      expect((await response.json()).code).toBe("rate_limiter_unconfigured");
+    }
+  });
+
+  it("returns 429 rate_limited when the configured limiter rejects the caller", async () => {
+    const response = await dispatchCloudflareCouncil(
+      request("POST", "/api/v1/llm-council/sessions", { message: "x" }),
+      {
+        IMMI_STORAGE_MODE: "cloudflare", CSRF_SECRET: "secret",
+        RL_COUNCIL_TURN: { limit: vi.fn(async () => ({ success: false })) },
+      },
+      "/api/v1/llm-council/sessions", "POST",
+    );
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe("rate_limited");
+  });
+
+  it("rate-limits session deletion", async () => {
+    const rl = rateLimiter();
+    const response = await dispatchCloudflareCouncil(
+      request("DELETE", `/api/v1/llm-council/sessions/${SESSION_ID}`),
+      { IMMI_STORAGE_MODE: "cloudflare", RL_COUNCIL_TURN: rl },
+      `/api/v1/llm-council/sessions/${SESSION_ID}`, "DELETE",
+    );
+    expect(rl.limit).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+  });
 });
