@@ -36,6 +36,15 @@ index_name = "REPLACE_WITH_CASE_VECTORS_INDEX"
 [ai]
 binding = "AI"
 
+# Council routes fail closed without this binding (see
+# workers/llm-council/cloudflare_handlers.js applyRateLimit): every Council POST
+# spends paid CF AI Gateway credit, so "no limiter" must never mean "unlimited".
+# 30 requests / 60s / IP. `period` accepts only 10 or 60.
+[[ratelimits]]
+name = "RL_COUNCIL_TURN"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
 [[durable_objects.bindings]]
 name = "AUTH_NONCE"
 class_name = "AuthNonce"
