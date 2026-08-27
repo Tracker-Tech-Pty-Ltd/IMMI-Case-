@@ -149,6 +149,45 @@ def _validate_main(path: Path, errors: list[str]) -> None:
     if _is_placeholder(value):
         errors.append("vectorize[CASE_VECTORS].index_name is missing or still a placeholder")
     _require_binding(errors, config, "ai", "AI", "main")
+    council_limiter = next(
+        (item for item in _entries(config, "ratelimits") if item.get("name") == "RL_COUNCIL_TURN"),
+        None,
+    )
+    if council_limiter is None:
+        errors.append(
+            "main must declare ratelimits binding RL_COUNCIL_TURN "
+            "(every Council POST route fails closed without it)"
+        )
+    else:
+        if _is_placeholder(council_limiter.get("namespace_id")):
+            errors.append("ratelimits[RL_COUNCIL_TURN].namespace_id is missing or still a placeholder")
+        simple = council_limiter.get("simple")
+        limit = simple.get("limit") if isinstance(simple, dict) else None
+        # `type(limit) is int` rather than isinstance(): bool is a subclass of
+        # int in Python, so isinstance(True, int) is True and `limit = true`
+        # in the operator's TOML would sail through as "1 request/minute".
+        # A limit of 0 or a negative number would pass an isinstance check too
+        # and would throttle every Council POST to zero — i.e. reproduce this
+        # very outage while reporting a healthy config.
+        if (
+            not isinstance(simple, dict)
+            or type(limit) is not int
+            or limit < 1
+            or simple.get("period") not in (10, 60)
+        ):
+            errors.append(
+                "ratelimits[RL_COUNCIL_TURN].simple must set a positive integer "
+                "limit (not a boolean) and a period of 10 or 60"
+            )
+        elif limit != 30:
+            # 30/min/IP is the figure this plan decided on (see "Current
+            # state"). A different value is not necessarily wrong, but it must
+            # be a deliberate operator choice, not a typo — so warn loudly in
+            # the error stream rather than silently accepting it.
+            errors.append(
+                f"ratelimits[RL_COUNCIL_TURN].simple.limit is {limit}, not the "
+                "expected 30 — change this line in the gate if that is intentional"
+            )
     for binding in ("AUTH_NONCE", "COUNCIL_SESSION"):
         _require_binding(errors, config, "durable_objects.bindings", binding, "main", field="name")
     _require_binding(errors, config, "queues.producers", "CASE_MUTATION_QUEUE", "main")

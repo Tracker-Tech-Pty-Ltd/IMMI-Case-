@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -40,6 +42,10 @@ binding = "CASE_VECTORS"
 index_name = "case-vectors"
 [[ai]]
 binding = "AI"
+[[ratelimits]]
+name = "RL_COUNCIL_TURN"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
 [[durable_objects.bindings]]
 name = "AUTH_NONCE"
 class_name = "AuthNonce"
@@ -183,3 +189,48 @@ def test_operator_gate_requires_explicit_dlq_consumers(tmp_path: Path) -> None:
     MODULE._validate_pipeline(pipeline, errors)
     assert any("dead-letter queue immi-case-mutation-dlq" in error for error in errors)
     assert any("dead-letter queue immi-extract-dlq" in error for error in errors)
+
+
+def test_operator_gate_requires_council_rate_limiter(tmp_path: Path) -> None:
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    main.write_text(
+        _valid_main().replace('name = "RL_COUNCIL_TURN"', 'name = "RL_SOMETHING_ELSE"'),
+        encoding="utf-8",
+    )
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert errors
+    assert any("RL_COUNCIL_TURN" in error for error in errors)
+
+
+def test_operator_gate_rejects_invalid_council_rate_limit_window(tmp_path: Path) -> None:
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    main.write_text(_valid_main().replace("period = 60", "period = 30"), encoding="utf-8")
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert any("period of 10 or 60" in error for error in errors)
+
+
+@pytest.mark.parametrize("case", ["limit = 0", "limit = -1"])
+def test_operator_gate_rejects_a_non_positive_council_rate_limit(tmp_path: Path, case: str) -> None:
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    main.write_text(_valid_main().replace("limit = 30", case), encoding="utf-8")
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert any("positive integer" in error for error in errors)
+
+
+def test_operator_gate_rejects_a_boolean_council_rate_limit(tmp_path: Path) -> None:
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    main.write_text(_valid_main().replace("limit = 30", "limit = true"), encoding="utf-8")
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert any("positive integer" in error for error in errors)
