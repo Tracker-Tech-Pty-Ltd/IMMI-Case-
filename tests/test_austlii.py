@@ -5,7 +5,7 @@ import responses
 
 import pytest
 
-from immi_case_downloader.sources.austlii import AustLIIScraper
+from immi_case_downloader.sources.austlii import AustLIIScraper, YearListingUnavailable
 from immi_case_downloader.config import AUSTLII_BASE, AUSTLII_DATABASES, IMMIGRATION_KEYWORDS
 
 
@@ -88,8 +88,8 @@ class TestBrowseYear:
         assert len(responses.calls) >= 2
 
     @responses.activate
-    def test_both_fail_returns_empty(self):
-        """Both direct and viewdb failing returns empty list."""
+    def test_both_fail_raises_year_listing_unavailable(self):
+        """Both direct and viewdb failing is a signalled failure, not an empty year."""
         direct_url = f"{AUSTLII_BASE}/au/cases/cth/AATA/2024/"
         viewdb_url = f"{AUSTLII_BASE}/cgi-bin/viewdb/au/cases/cth/AATA/"
 
@@ -98,8 +98,25 @@ class TestBrowseYear:
 
         scraper = AustLIIScraper(delay=0)
         db_info = AUSTLII_DATABASES["AATA"]
-        cases = scraper._browse_year("AATA", db_info, 2024, IMMIGRATION_KEYWORDS)
-        assert cases == []
+        with pytest.raises(YearListingUnavailable) as excinfo:
+            scraper._browse_year("AATA", db_info, 2024, IMMIGRATION_KEYWORDS)
+        assert "AATA/2024" in str(excinfo.value)
+
+    @responses.activate
+    def test_listing_without_matches_returns_empty_list(self):
+        """A listing that loads but holds no immigration cases is [] — not a failure."""
+        url = f"{AUSTLII_BASE}/au/cases/cth/AATA/2024/"
+        responses.add(
+            responses.GET,
+            url,
+            body="<html><body><a href='/au/cases/cth/AATA/2024/1.html'>"
+                 "Jones v Commissioner of Taxation</a></body></html>",
+            status=200,
+        )
+
+        scraper = AustLIIScraper(delay=0)
+        db_info = AUSTLII_DATABASES["AATA"]
+        assert scraper._browse_year("AATA", db_info, 2024, IMMIGRATION_KEYWORDS) == []
 
     @responses.activate
     def test_citation_extracted(self, austlii_year_html):
@@ -301,3 +318,31 @@ class TestExtractMetadata:
         scraper._extract_metadata(soup, case)
 
         assert "[2024] AATA 100" in case.citation
+
+
+class TestSearchDatabase:
+    """Test _search_database's per-year failure handling and result cap."""
+
+    def _scraper(self):
+        scraper = AustLIIScraper(delay=0)
+        scraper._keyword_search = lambda *a, **k: []
+        return scraper
+
+    def test_failed_year_is_skipped_not_fatal(self):
+        """One unavailable year must not lose the years that did load."""
+        from immi_case_downloader.models import ImmigrationCase
+        from immi_case_downloader.sources.austlii import YearListingUnavailable
+
+        scraper = self._scraper()
+
+        def browse(db_code, db_info, year, keywords):
+            if year == 2023:
+                raise YearListingUnavailable("AATA/2023: listing unavailable (http_500)")
+            return [ImmigrationCase(title=f"case {year}", year=year,
+                                    url=f"https://example.test/{year}")]
+
+        scraper._browse_year = browse
+        cases = scraper._search_database(
+            "AATA", AUSTLII_DATABASES["AATA"], IMMIGRATION_KEYWORDS, 2023, 2024, 500
+        )
+        assert [c.year for c in cases] == [2024]

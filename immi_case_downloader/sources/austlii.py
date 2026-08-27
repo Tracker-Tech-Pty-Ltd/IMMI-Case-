@@ -30,6 +30,16 @@ from ..models import ImmigrationCase
 logger = logging.getLogger(__name__)
 
 
+class YearListingUnavailable(RuntimeError):
+    """AustLII would not serve a year listing at all.
+
+    Distinct from a listing that loaded fine and contained no immigration
+    cases, which is an empty list. SmartPipeline._crawl_with_fallback relies
+    on that distinction to rotate crawl strategies when AustLII rate-limits
+    us; returning [] for both made the rotation unreachable.
+    """
+
+
 class AustLIIScraper(BaseScraper):
     """Scraper for AustLII immigration case databases."""
 
@@ -90,12 +100,25 @@ class AustLIIScraper(BaseScraper):
         is only applied at the very end as a total cap.
         """
         cases = []
+        failed_years = []
 
         # Browse every year — no early exit so all years get coverage
         for year in range(start_year, end_year + 1):
-            year_cases = self._browse_year(db_code, db_info, year, keywords)
+            try:
+                year_cases = self._browse_year(db_code, db_info, year, keywords)
+            except YearListingUnavailable as exc:
+                failed_years.append(year)
+                logger.warning(f"  {exc}")
+                continue
             cases.extend(year_cases)
             logger.debug(f"  {db_code}/{year}: {len(year_cases)} cases found")
+
+        if failed_years:
+            logger.warning(
+                f"  {db_code}: {len(failed_years)} of "
+                f"{end_year - start_year + 1} years could not be fetched "
+                f"({failed_years}); results are incomplete"
+            )
 
         # Strategy 2: If browsing found few results, try keyword search
         if len(cases) < 10:
@@ -127,6 +150,10 @@ class AustLIIScraper(BaseScraper):
         use /cgi-bin/viewdoc/au/cases/cth/{DB}/{year}/{num}.html format.
         AATA cases conveniently include '(Migration)' or '(Refugee)' in titles.
         RRTA/MRTA/ARTA are dedicated immigration tribunals — all cases included.
+
+        Returns an empty list when the listing loaded but held no immigration
+        cases. Raises YearListingUnavailable when neither the direct listing
+        nor the viewdb fallback could be fetched.
         """
         # Try the year listing page directly
         url = f"{AUSTLII_BASE}/au/cases/cth/{db_code}/{year}/"
@@ -136,7 +163,10 @@ class AustLIIScraper(BaseScraper):
             url = f"{AUSTLII_BASE}/cgi-bin/viewdb/au/cases/cth/{db_code}/"
             response = self.fetch(url, params={"year": str(year)})
             if not response:
-                return []
+                raise YearListingUnavailable(
+                    f"{db_code}/{year}: listing unavailable "
+                    f"({self.last_error or 'no response'})"
+                )
 
         soup = BeautifulSoup(response.text, "lxml")
         cases = []
