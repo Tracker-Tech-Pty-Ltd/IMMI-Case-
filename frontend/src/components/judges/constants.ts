@@ -1,10 +1,12 @@
+// Chart series colours from the token layer (src/tokens/tokens.json →
+// color.chart / color.dark.chart) so they follow the active theme.
 export const OUTCOME_COLORS = [
-  "#1a5276",
-  "#2d7d46",
-  "#6c3483",
-  "#b9770e",
-  "#a83232",
-  "#117864",
+  "var(--color-chart-1)",
+  "var(--color-chart-3)",
+  "var(--color-chart-2)",
+  "var(--color-chart-5)",
+  "var(--color-chart-6)",
+  "var(--color-chart-7)",
 ];
 
 export function approvalBadgeClass(rate: number): string {

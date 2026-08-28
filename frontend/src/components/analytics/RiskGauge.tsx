@@ -15,15 +15,15 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function scoreColorClass(score: number): string {
-  if (score < 40) return "text-red-500";
-  if (score < 65) return "text-yellow-500";
-  return "text-green-500";
+  if (score < 40) return "text-danger";
+  if (score < 65) return "text-warning";
+  return "text-success";
 }
 
 function arcStrokeColor(score: number): string {
-  if (score < 40) return "#ef4444";
-  if (score < 65) return "#eab308";
-  return "#22c55e";
+  if (score < 40) return "var(--color-semantic-danger)";
+  if (score < 65) return "var(--color-semantic-warning)";
+  return "var(--color-semantic-success)";
 }
 
 export function RiskGauge({ score, label, baseline }: RiskGaugeProps) {
@@ -41,12 +41,22 @@ export function RiskGauge({ score, label, baseline }: RiskGaugeProps) {
 
   return (
     <div data-testid="risk-gauge" className="flex flex-col items-center">
-      <svg width={180} height={100} viewBox="0 0 180 100">
+      <svg
+        width={180}
+        height={100}
+        viewBox="0 0 180 100"
+        role="img"
+        aria-label={t("analytics.risk_gauge_aria", {
+          score: clamped,
+          label,
+          defaultValue: `Score ${clamped} out of 100: ${label}`,
+        })}
+      >
         {/* Background track */}
         <path
           d={`M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`}
           fill="none"
-          stroke="var(--color-border, #e5e7eb)"
+          stroke="var(--color-border)"
           strokeWidth={12}
           strokeLinecap="round"
         />
@@ -79,7 +89,7 @@ export function RiskGauge({ score, label, baseline }: RiskGaugeProps) {
             y="90%"
             textAnchor="middle"
             fontSize={10}
-            fill="var(--color-text-muted, #94a3b8)"
+            fill="var(--color-text-muted)"
           >
             {t("analytics.vs_avg", { defaultValue: "vs avg" })} {baseline}%
           </text>

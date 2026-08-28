@@ -20,10 +20,13 @@ export const tokens = {
       "surface-hover": "#e6e4e0"
     },
     "chart": {
+      "1": "#1a5276",
       "2": "#8b5cf6",
-      "3": "#10b981",
+      "3": "#0d9b6c",
       "4": "#3b82f6",
-      "5": "#f59e0b"
+      "5": "#bd7a08",
+      "6": "#c2410c",
+      "7": "#0f766e"
     },
     "border": {
       "DEFAULT": "#6e7177",
@@ -32,7 +35,7 @@ export const tokens = {
     "text": {
       "DEFAULT": "#1b2838",
       "secondary": "#4a5568",
-      "muted": "#8b8680"
+      "muted": "#6e6a65"
     },
     "semantic": {
       "success": "#236238",
@@ -51,8 +54,22 @@ export const tokens = {
       "MRTA": "#922b5f",
       "FMCA": "#b84c00"
     },
+    "outcome": {
+      "affirmed": "#a93226",
+      "dismissed": "#922b5f",
+      "refused": "#b64040",
+      "withdrawn": "#697787",
+      "remitted": "#1e8449",
+      "set-aside": "#1a5276",
+      "allowed": "#117864",
+      "granted": "#1e874a",
+      "other": "#6b7280"
+    },
     "overlay": {
       "DEFAULT": "#111820"
+    },
+    "on-solid": {
+      "DEFAULT": "#ffffff"
     },
     "dark": {
       "primary": {
@@ -68,6 +85,9 @@ export const tokens = {
       "overlay": {
         "DEFAULT": "#000000"
       },
+      "on-solid": {
+        "DEFAULT": "#111820"
+      },
       "background": {
         "DEFAULT": "#111820",
         "card": "#192230",
@@ -76,36 +96,50 @@ export const tokens = {
         "surface-hover": "#243144"
       },
       "chart": {
+        "1": "#2679ae",
         "2": "#a78bfa",
         "3": "#34d399",
         "4": "#60a5fa",
-        "5": "#fbbf24"
+        "5": "#fbbf24",
+        "6": "#fb923c",
+        "7": "#2dd4bf"
       },
       "border": {
-        "DEFAULT": "#4a5060",
+        "DEFAULT": "#687087",
         "light": "#2d3748"
       },
       "text": {
         "DEFAULT": "#e2dfda",
         "secondary": "#a4acb8",
-        "muted": "#6d7788"
+        "muted": "#858e9e"
       },
       "semantic": {
         "success": "#3da55d",
         "warning": "#d4a017",
-        "danger": "#d04848",
-        "info": "#4a90c4"
+        "danger": "#d96d6d",
+        "info": "#5094c6"
       },
       "court": {
-        "AATA": "#1a5276",
-        "ARTA": "#6c3483",
-        "FCA": "#117864",
+        "AATA": "#2679ae",
+        "ARTA": "#9d53bb",
+        "FCA": "#12816b",
         "FCCA": "#b9770e",
-        "FedCFamC2G": "#a93226",
-        "HCA": "#1b2631",
+        "FedCFamC2G": "#d03e2f",
+        "HCA": "#64748b",
         "RRTA": "#1e8449",
-        "MRTA": "#922b5f",
-        "FMCA": "#b84c00"
+        "MRTA": "#c63c82",
+        "FMCA": "#c25000"
+      },
+      "outcome": {
+        "affirmed": "#d7594c",
+        "dismissed": "#cd5692",
+        "refused": "#c86363",
+        "withdrawn": "#7d8a9a",
+        "remitted": "#219351",
+        "set-aside": "#2b87c3",
+        "allowed": "#159179",
+        "granted": "#28b463",
+        "other": "#7a8190"
       }
     }
   },

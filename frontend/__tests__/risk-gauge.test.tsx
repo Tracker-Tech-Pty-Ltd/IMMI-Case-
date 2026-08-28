@@ -28,13 +28,13 @@ describe("RiskGauge", () => {
 
   it("applies color classes based on score thresholds", () => {
     const { rerender } = render(<RiskGauge score={25} label="Poor" />);
-    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-red-500");
+    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-danger");
 
     rerender(<RiskGauge score={55} label="Moderate" />);
-    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-yellow-500");
+    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-warning");
 
     rerender(<RiskGauge score={80} label="Good" />);
-    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-green-500");
+    expect(screen.getByTestId("risk-gauge-label")).toHaveClass("text-success");
   });
 
   it("renders SVG arc element", () => {
