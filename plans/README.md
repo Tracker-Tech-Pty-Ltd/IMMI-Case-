@@ -58,7 +58,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 | [006](006-harden-auth-and-authorization.md) | Separate platform roles from tenant roles and close the auth gaps | P1 | L | HIGH | 005 | DONE — merged to main |
 | [007](007-harden-the-public-export-surface.md) | Authenticate, throttle and sanitise the bulk export endpoints | P1 | L | MED | 004 | DONE — merged to main |
 | [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | DONE — merged to main |
-| [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | TODO |
+| [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | DONE — merged to main |
 | [010](010-fix-analytics-win-rate.md) | Stop the monthly-trends win rate diverging from every other analytics endpoint | P1 | S | LOW | 009 | TODO |
 | [011](011-fix-scraper-cost-caps-and-retries.md) | Stop double-billing extraction and dropping cases on transient failures | P1 | L | MED | — | DONE — merged to main |
 
@@ -121,8 +121,8 @@ Dead code from the Supabase/Hyperdrive cutover, and duplicated implementations.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [030](030-delete-dead-supabase-era-code.md) | Delete the pre-cutover Supabase/Hyperdrive modules that production no longer loads | P2 | M | LOW | 004 | TODO |
-| [031](031-delete-dead-frontend-modules.md) | Remove the abandoned api.ts split and 8 unreferenced modules | P3 | S | LOW | 033 | TODO |
+| [030](030-delete-dead-supabase-era-code.md) | Delete the pre-cutover Supabase/Hyperdrive modules that production no longer loads | P2 | M | LOW | 004 | DONE — merged to main |
+| [031](031-delete-dead-frontend-modules.md) | Remove the abandoned api.ts split and 8 unreferenced modules | P3 | S | LOW | 033 | DONE — merged to main |
 | [032](032-consolidate-the-extraction-scripts.md) | Collapse ten divergent copies of one LLM extraction job | P3 | L | MED | 041 | DONE — merged to main |
 | [033](033-single-source-the-domain-vocabulary.md) | One visa registry, generated for both runtimes | P3 | M | MED | 002 | DONE — merged to main |
 | [034](034-split-the-god-modules.md) | Break up api.py, CloudflareCaseStore and the duplicated council engine | P3 | L | MED | — | DONE — merged to main |
@@ -145,7 +145,7 @@ Coverage where it protects production, not where it inflates a number.
 |------|-------|-----|-----|------|------------|--------|
 | [038](038-test-the-production-sql-layer.md) | Run the D1 query layer against a real schema | P1 | M | LOW | — | DONE — merged to main |
 | [039](039-fix-the-frontend-test-harness.md) | Make the mocks able to fail and the assertions about behaviour | P2 | M | LOW | 002 | DONE — merged to main |
-| [040](040-revive-the-e2e-suites.md) | Pick one E2E stack, make it run, and gate it | P2 | L | MED | 001, 002, 003 | TODO |
+| [040](040-revive-the-e2e-suites.md) | Pick one E2E stack, make it run, and gate it | P2 | L | MED | 001, 002, 003 | DONE — merged to main |
 | [041](041-cover-the-extraction-scripts.md) | Give the 2,821 unmeasured extraction lines a coverage story | P3 | M | LOW | 002 | DONE — merged to main |
 
 ### Tier 10 — Docs
