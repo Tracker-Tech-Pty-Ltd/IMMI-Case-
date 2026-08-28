@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 
 from .models import ImmigrationCase
-from .storage import CASE_FIELDS
+from .storage import CASE_FIELDS, TOP_VISA_SUBCLASS_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -142,15 +142,26 @@ class SqliteRepository:
         return conn
 
     def close(self):
-        """Close all connections across all threads."""
+        """Close every connection this repository can close from this thread.
+
+        A connection opened on another thread cannot be closed from here —
+        sqlite3's check_same_thread guard raises — so it stays in the tracking
+        list to be closed by its own thread (or at interpreter exit) instead of
+        being silently forgotten while still open. This matters because a Flask
+        `teardown_appcontext` pop can run this from a worker thread; clearing
+        the list unconditionally leaked the request thread's connection.
+        """
         with self._all_conns_lock:
+            still_open = []
             for conn in self._all_conns:
                 try:
                     conn.close()
                 except Exception:
-                    pass
-            self._all_conns.clear()
-        self._local.conn = None
+                    still_open.append(conn)
+            self._all_conns[:] = still_open
+        own = getattr(self._local, "conn", None)
+        if own is None or own not in still_open:
+            self._local.conn = None
 
     def __del__(self):
         try:
@@ -464,9 +475,13 @@ class SqliteRepository:
         conn = self._conn()
         total = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
 
+        # Group on court_code, not court: every other backend and every frontend
+        # colour map is keyed on the short code (AATA, FCA, ...).
         by_court = {}
-        for row in conn.execute("SELECT court, COUNT(*) as cnt FROM cases GROUP BY court ORDER BY court"):
-            by_court[row["court"] or "Unknown"] = row["cnt"]
+        for row in conn.execute(
+            "SELECT court_code, COUNT(*) as cnt FROM cases GROUP BY court_code ORDER BY court_code"
+        ):
+            by_court[row["court_code"] or "Unknown"] = row["cnt"]
 
         by_year = {}
         for row in conn.execute("SELECT year, COUNT(*) as cnt FROM cases WHERE year > 0 GROUP BY year ORDER BY year"):
@@ -478,6 +493,26 @@ class SqliteRepository:
             "GROUP BY case_nature ORDER BY cnt DESC"
         ):
             by_nature[row["case_nature"]] = row["cnt"]
+
+        # Counts every row, blank source bucketed as "Unknown" — matches storage.get_statistics().
+        by_source = {}
+        for row in conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM cases GROUP BY source ORDER BY cnt DESC"
+        ):
+            by_source[row["source"] or "Unknown"] = row["cnt"]
+
+        # The secondary sort is load-bearing, not decoration: `ORDER BY cnt DESC`
+        # alone leaves ties in an order SQLite may choose freely, so with more
+        # tied subclasses than the limit, "the top 20" would be a different 20
+        # here than in storage.get_statistics(). Both sides now order by
+        # (count descending, subclass ascending).
+        by_visa_subclass = {}
+        for row in conn.execute(
+            "SELECT visa_subclass, COUNT(*) as cnt FROM cases WHERE visa_subclass != '' "
+            "GROUP BY visa_subclass ORDER BY cnt DESC, visa_subclass ASC LIMIT ?",
+            (TOP_VISA_SUBCLASS_LIMIT,),
+        ):
+            by_visa_subclass[row["visa_subclass"]] = row["cnt"]
 
         visa_types = sorted(
             r["visa_type"]
@@ -498,6 +533,8 @@ class SqliteRepository:
             "by_court": dict(sorted(by_court.items())),
             "by_year": dict(sorted(by_year.items())),
             "by_nature": by_nature,
+            "by_visa_subclass": by_visa_subclass,
+            "by_source": by_source,
             "visa_types": visa_types,
             "with_full_text": with_text,
             "sources": sources,
