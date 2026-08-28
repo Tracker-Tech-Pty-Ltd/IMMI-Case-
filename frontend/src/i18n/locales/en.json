@@ -89,7 +89,9 @@
     "menu": "Toggle menu",
     "next": "Next",
     "close_menu": "Close menu",
-    "skip_to_content": "Skip to main content"
+    "skip_to_content": "Skip to main content",
+    "clear": "Clear",
+    "loading_message": "Preparing the latest data and interface state."
   },
   "buttons": {
     "browse_cases": "Browse Cases",
@@ -191,7 +193,9 @@
     "section_02_label": "Section 02 · Distribution",
     "section_02_title": "Court and Time Distribution",
     "section_03_label": "Section 03 · Composition",
-    "section_03_title": "Case Nature and Visa Composition"
+    "section_03_title": "Case Nature and Visa Composition",
+    "court_sparkline_aria": "{{court}}: {{total}} total cases",
+    "peak_year": "Peak: {{year}}"
   },
   "cases": {
     "title": "Cases",
@@ -248,7 +252,11 @@
     "legal_concepts_placeholder": "Semicolon-separated",
     "representation_yes": "Yes",
     "representation_no": "No",
-    "representation_self": "Self-represented"
+    "representation_self": "Self-represented",
+    "no_similar_cases": "No similar cases found.",
+    "page_subtitle": "Review, compare, and manage immigration case records from one workspace.",
+    "similar_cases": "Similar Cases",
+    "similarity_score": "Similarity score"
   },
   "case_detail": {
     "loading": "Loading case...",
@@ -409,7 +417,9 @@
     "section_concepts": "Concepts",
     "section_recent": "Recent Cases",
     "current_role": "Current Role",
-    "notable_cases": "Notable Cases"
+    "notable_cases": "Notable Cases",
+    "cases_unit": "cases",
+    "dual_metric_chart": "Dual metric comparison chart"
   },
   "saved_searches": {
     "title": "Saved Searches",
@@ -580,7 +590,27 @@
     "insights_top_outcome_label": "Top Outcome",
     "insights_top_nature_label": "Top Case Nature",
     "insights_top_visa_label": "Top Visa Class",
-    "insights_of_cases": "of cases"
+    "insights_of_cases": "of cases",
+    "deep_analysis_description": "Success rate analysis",
+    "flow_cases": "Cases",
+    "flow_sankey_aria": "Flow diagram showing case nature and outcome distribution",
+    "flow_source": "Source",
+    "flow_target": "Target",
+    "judge_profile_hint": "Win rate data on Judge Profile page",
+    "legal_concepts_aria": "Bar chart of top legal concepts by case count",
+    "legend": "Legend",
+    "losses": "Losses",
+    "most_active_judges": "Most Active Judges",
+    "outcome_distribution_aria": "Outcome distribution: {{summary}}",
+    "outcome_funnel_aria": "Wins: {{win}} ({{winPct}}%), Losses: {{loss}} ({{lossPct}}%)",
+    "sankey_view": "Flow View",
+    "show_count": "Count",
+    "show_pct": "% of row",
+    "table_view": "Table View",
+    "top_judges_aria": "Bar chart of most active judges by case count",
+    "trend_legend_note": "Affirmed Rate = tribunal upholds decision | Applicant Win Rate = Set Aside + Remitted",
+    "vs_avg": "vs avg",
+    "wins": "Wins"
   },
   "lineage": {
     "title": "Court Lineage Timeline",
@@ -850,7 +880,8 @@
     "try_again": "Try again",
     "something_went_wrong": "Something went wrong",
     "case_mutations_disabled_title": "Case editing is temporarily read-only",
-    "case_mutations_disabled_message": "We are migrating the case data platform, so saving, editing, and deleting cases is temporarily disabled. Your input has not been lost — it will remain here until editing is restored."
+    "case_mutations_disabled_message": "We are migrating the case data platform, so saving, editing, and deleting cases is temporarily disabled. Your input has not been lost — it will remain here until editing is restored.",
+    "stale_data_warning": "Live updates paused — this may be out of date. Retrying automatically."
   },
   "empty_states": {
     "no_cases_title": "No cases match your criteria",
@@ -897,7 +928,10 @@
       "subclass_chart": "Visa Subclasses",
       "chart_loading": "Loading chart...",
       "chart_no_data": "No data available",
-      "chart_cases": "Cases"
+      "chart_cases": "Cases",
+      "court_bar_aria": "Bar chart: cases by court",
+      "nature_bar_aria": "Horizontal bar chart: case categories by volume",
+      "subclass_bar_aria": "Horizontal bar chart: top visa subclasses by volume"
     },
     "case_card": {
       "no_data_text": "No metadata available"
@@ -965,7 +999,8 @@
       "court_type": "Court Type",
       "active_years": "Active Years",
       "loading": "Loading comparison...",
-      "loading_ellipsis": "Loading..."
+      "loading_ellipsis": "Loading...",
+      "description": "Pick two or more judges from the profiles list to see their outcomes side by side."
     },
     "job_status": {
       "title": "Job Status",
@@ -1075,7 +1110,8 @@
     "confirm_delete_collection_message": "This will delete \"{{name}}\". Bookmarked cases will not be affected.",
     "collection_detail_empty": "No cases in this collection yet.",
     "collection_detail_empty_desc": "Add cases from the case list or detail view.",
-    "clear_color": "Clear color"
+    "clear_color": "Clear color",
+    "collection_not_found_description": "This collection could not be found. It may have been deleted or renamed."
   },
   "taxonomy": {
     "title": "Search Taxonomy",
@@ -1290,6 +1326,69 @@
     "retrieved_cases_note": "These local IMMI-Case precedents were provided to the council as evidence context.",
     "open_case_source": "Open source case",
     "unknown_model_error": "Unknown model error",
-    "request_failed": "LLM council request failed"
+    "request_failed": "LLM council request failed",
+    "awaiting_label": "Awaiting panel",
+    "case_id_help": "If provided, the case context is auto-included in the prompt.",
+    "chairman_label": "Council Chairman",
+    "citation_confidence": "Citation overlap",
+    "deliberating": "Council deliberating",
+    "elapsed": "Elapsed",
+    "experts_ok_label": "OK",
+    "eyebrow": "Multi-Model Legal Research",
+    "follow_up_input_label": "Follow-up question",
+    "follow_up_label": "Follow-up Questions",
+    "follow_up_placeholder": "Ask a follow-up question — drill into a specific ground, request more case citations, or test counter-arguments...",
+    "ios_send_hint": "Tap Send button (no Cmd+Enter on iOS)",
+    "kbd_hint": "to send",
+    "law_section_col": "Statute / Regulation",
+    "law_sections_table_title": "Statute Citations Cross-Reference",
+    "moderator_section_title": "Moderator Synthesis",
+    "new_session_btn": "New Council Session",
+    "no_sessions_yet": "No past sessions yet.",
+    "past_sessions_heading": "Past Sessions",
+    "running_moderator_label": "Moderator",
+    "select_session_hint": "Select a session to view it.",
+    "send_btn": "Send",
+    "session_load_failed": "Failed to load session",
+    "session_not_found": "Session not found",
+    "sessions_load_error": "Failed to load sessions.",
+    "sessions_subtitle": "Browse and continue past council sessions.",
+    "sessions_title": "LLM Council Sessions",
+    "shared_col": "All Agree",
+    "sidebar_panel_title": "Panel Composition",
+    "sidebar_sample_prompts": "Sample Prompts",
+    "sidebar_tips_title": "Quick Tips",
+    "start_new_btn": "Start a new session",
+    "swipe_to_send_label": "Swipe right, or tap, to submit your question",
+    "tip_label": "Tip",
+    "turn_count_label": "Turn",
+    "turn_label": "Turn",
+    "turn_limit_placeholder": "Turn limit reached (15/15)",
+    "turn_limit_reached": "You have reached the maximum of 15 turns for this session.",
+    "turn_your_question": "Your question",
+    "session_delete_failed": "Could not delete this session. Please try again."
+  },
+  "auth": {
+    "logout": "Sign out",
+    "sign_in": "Sign in"
+  },
+  "semantic_search": {
+    "title": "Semantic Search",
+    "description": "Search by meaning, not just keywords. Uses AI embeddings to find semantically similar cases.",
+    "placeholder": "Describe the case situation… (min 3 chars)",
+    "searching": "Searching…",
+    "search_btn": "Search",
+    "model_label": "Model:",
+    "results_region_label": "Search results",
+    "unavailable": "Semantic search is temporarily unavailable. Keyword search still works — try the search box at the top of the page.",
+    "no_results_title": "No results found",
+    "no_results_desc": "Try rephrasing or using different terminology.",
+    "results_count_one": "{{count}} result",
+    "results_count_other": "{{count}} results"
+  },
+  "login": {
+    "description": "Australian immigration tribunal case research platform. Sign in with Telegram to save searches and collections.",
+    "telegram_failed": "Telegram sign-in failed. Please try again.",
+    "public_access_note": "All cases are publicly accessible without login. Login is only required to save searches and collections."
   }
 }

@@ -19,6 +19,7 @@ function OutcomeFunnelChartInner({ winCount, lossCount }: OutcomeFunnelChartProp
         win: winCount.toLocaleString(),
         loss: lossCount.toLocaleString(),
         winPct: winPct.toFixed(1),
+        lossPct: lossPct.toFixed(1),
         defaultValue: `Wins: ${winCount.toLocaleString()} (${winPct.toFixed(1)}%), Losses: ${lossCount.toLocaleString()} (${lossPct.toFixed(1)}%)`,
       })}
       data-testid="outcome-funnel-chart"
