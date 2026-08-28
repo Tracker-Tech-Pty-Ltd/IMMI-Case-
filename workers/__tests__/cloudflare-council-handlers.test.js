@@ -79,7 +79,7 @@ describe("Cloudflare-native Council handlers", () => {
   it("creates a tenant-scoped session and persists its first turn through the session DO", async () => {
     const current = mockCreateStores();
     const response = await dispatchCloudflareCouncil(
-      request("POST", "/api/v1/llm-council/sessions", { message: "Assess the visa issue", case_id: "0123456789ab" }),
+      request("POST", "/api/v1/llm-council/sessions", { message: "Assess the visa issue" }),
       { IMMI_STORAGE_MODE: "cloudflare", CSRF_SECRET: "secret", RL_COUNCIL_TURN: rateLimiter() },
       "/api/v1/llm-council/sessions", "POST",
     );
@@ -87,7 +87,7 @@ describe("Cloudflare-native Council handlers", () => {
     expect(response.status).toBe(200);
     expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);
     expect(current.councilStore.createSession).toHaveBeenCalledWith(AUTH, expect.objectContaining({
-      sessionId: SESSION_ID, caseId: "0123456789ab",
+      sessionId: SESSION_ID,
     }));
     expect(mockStub.appendTurn).toHaveBeenCalledWith(AUTH, expect.objectContaining({ sessionId: SESSION_ID }));
     expect(await response.json()).toMatchObject({ session_id: SESSION_ID, total_turns: 1 });
