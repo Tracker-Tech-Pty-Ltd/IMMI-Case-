@@ -153,4 +153,116 @@ describe("Cloudflare-native case mutation queue", () => {
     );
     expect(message.ack).toHaveBeenCalledOnce();
   });
+
+  it("isolates a poison message from the rest of its batch", async () => {
+    const current = stores();
+    current.objectStore.getVerifiedText = vi.fn(async ({ key }) => {
+      if (key === "poison") throw new Error("checksum mismatch");
+      return "canonical case text";
+    });
+    mockCreateStores.mockReturnValue(current);
+    const messages = [
+      {
+        body: {
+          kind: "case.reindex", case_id: "0123456789ab",
+          content_key: "cases/0123456789ab/source/" + "a".repeat(64) + ".txt",
+          content_sha256: "a".repeat(64), content_size: 20, content_type: "text/plain; charset=utf-8",
+        },
+        ack: vi.fn(), retry: vi.fn(),
+      },
+      {
+        body: {
+          kind: "case.reindex", case_id: "0123456789ad",
+          content_key: "poison",
+          content_sha256: "a".repeat(64), content_size: 20, content_type: "text/plain; charset=utf-8",
+        },
+        ack: vi.fn(), retry: vi.fn(),
+      },
+      {
+        body: {
+          kind: "case.reindex", case_id: "0123456789ac",
+          content_key: "cases/0123456789ac/source/" + "a".repeat(64) + ".txt",
+          content_sha256: "a".repeat(64), content_size: 20, content_type: "text/plain; charset=utf-8",
+        },
+        ack: vi.fn(), retry: vi.fn(),
+      },
+    ];
+    await worker.queue({ messages }, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(messages[0].ack).toHaveBeenCalledOnce();
+    expect(messages[0].retry).not.toHaveBeenCalled();
+    expect(messages[1].retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(messages[1].ack).not.toHaveBeenCalled();
+    expect(messages[2].ack).toHaveBeenCalledOnce();
+    expect(messages[2].retry).not.toHaveBeenCalled();
+    expect(current.caseStore.rebuildAggregates).toHaveBeenCalledOnce();
+  });
+
+  it("dead-letters a message whose kind no processor claims", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = { body: { kind: "case.unknown_v2", event_id: "case.unknown_v2:abc" }, ack: vi.fn(), retry: vi.fn() };
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    const matched = logs.mock.calls.some(([arg]) => {
+      try {
+        const parsed = JSON.parse(arg);
+        return parsed.event === "cloudflare.queue.unhandled_message" && parsed.kind === "case.unknown_v2";
+      } catch {
+        return false;
+      }
+    });
+    expect(matched).toBe(true);
+    logs.mockRestore();
+  });
+
+  it("dead-letters a case.reindex event whose case_id is not a string", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = { body: { kind: "case.reindex", event_id: "case.reindex:bad", case_id: 12345 }, ack: vi.fn(), retry: vi.fn() };
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    const matched = logs.mock.calls.some(([arg]) => {
+      try {
+        const parsed = JSON.parse(arg);
+        return parsed.event === "cloudflare.queue.unhandled_message" && parsed.kind === "case.reindex";
+      } catch {
+        return false;
+      }
+    });
+    expect(matched).toBe(true);
+    logs.mockRestore();
+  });
+
+  it("keeps messages un-acked when the aggregate rebuild fails", async () => {
+    const current = stores();
+    current.caseStore.rebuildAggregates = vi.fn().mockRejectedValue(new Error("D1 batch failed"));
+    mockCreateStores.mockReturnValue(current);
+    const message = {
+      body: {
+        kind: "case.reindex", case_id: "0123456789ab",
+        content_key: "cases/0123456789ab/source/" + "a".repeat(64) + ".txt",
+        content_sha256: "a".repeat(64), content_size: 20, content_type: "text/plain; charset=utf-8",
+      },
+      ack: vi.fn(), retry: vi.fn(),
+    };
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it("retries a dead-letter message when the DLQ recorder fails", async () => {
+    const current = stores();
+    current.pipelineStore.recordDeadLetter = vi.fn().mockRejectedValue(new Error("ops D1 down"));
+    mockCreateStores.mockReturnValue(current);
+    const message = { body: { kind: "case.reindex", event_id: "case.reindex:abc" }, ack: vi.fn(), retry: vi.fn() };
+    await worker.queue({ queue: "immi-case-mutation-dlq", messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
 });
