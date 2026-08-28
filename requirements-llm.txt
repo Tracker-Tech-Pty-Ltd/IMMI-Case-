@@ -1,0 +1,29 @@
+# Optional dependencies for the ad-hoc LLM extraction / audit batch jobs.
+#
+# NOT installed by `make install`, NOT installed in CI, and NOT covered by any
+# test — these scripts run by hand against the local downloaded_cases/ catalog.
+#
+# These scripts ALSO need the application closure (python-dotenv, pandas, ...),
+# so this file includes it rather than pretending to be self-sufficient.
+# Install on demand:
+#   pip install -c constraints.txt -r requirements-llm.txt
+-r requirements-app.txt
+
+# extract_llm_fields.py, extract_with_llm.py, extract_llm_structured.py,
+# extract_structured_fields_llm.py — direct Anthropic API calls.
+# Note: the LLM Council feature does NOT use this package; it routes through
+# the Cloudflare AI Gateway with CF_AIG_TOKEN and needs no per-provider SDK.
+# Ceiling = the major actually installed and imported on 2026-08-28.
+anthropic>=0.40,<2
+
+# scripts/run_gemini_audit.py, fill_country_gemini.py, fill_outcomes_gemini.py.
+# Deprecated SDK line, deliberately capped: fill_outcomes_gemini.py:168 documents
+# behaviour specific to 0.8.6 ("does not support ThinkingConfig"), and 0.8.6 is
+# the final release of that line.
+google-generativeai>=0.8.6,<0.9
+
+# scripts/fetch_judge_bios.py — the current SDK (`from google import genai`).
+# A different distribution from google-generativeai above; both are needed
+# until fetch_judge_bios.py's siblings are migrated.
+# Ceiling = the major actually installed and imported on 2026-08-28.
+google-genai>=1.47,<3
