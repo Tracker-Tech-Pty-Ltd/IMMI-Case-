@@ -93,7 +93,10 @@ export class CloudflareIdentityStore {
    *      grant the first operator before migration 0002 has been applied.
    *
    * Fails closed: any D1 error while reading the column (for example when
-   * migration 0002 has not been applied yet) denies rather than throwing.
+   * migration 0002 has not been applied yet) denies. It denies with a typed
+   * 503, not a 403 — "the grant table could not be read" and "you were looked
+   * up and hold no grant" are different facts, and collapsing them told an
+   * operator their access had been removed when the schema was simply missing.
    */
   async assertPlatformOperator(auth) {
     const context = await this.assertMembership(auth);
@@ -111,7 +114,10 @@ export class CloudflareIdentityStore {
         user_id: context.userId,
         error: error?.message,
       }));
-      row = null;
+      throw new StorageBoundaryError("Platform operator grant is unreadable", {
+        code: "platform_operator_unavailable",
+        status: 503,
+      });
     }
     if (Number(row?.platform_admin) === 1) {
       return { ...context, platformOperator: true, grant: "platform_admin" };

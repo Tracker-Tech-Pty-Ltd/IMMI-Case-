@@ -76,9 +76,24 @@ describe("CloudflareIdentityStore.assertPlatformOperator", () => {
     });
   });
 
-  it("fails closed (403, not throw) when the platform_admin column lookup errors", async () => {
+  it("fails closed as 503, not 403, when the platform_admin lookup errors", async () => {
+    // Still denies. But "the grant table could not be read" (for example
+    // migration 0002 not applied) is not "you were looked up and hold no
+    // grant" — collapsing them told an operator their access was revoked
+    // when the schema was simply missing, and hid the outage from anyone
+    // reading status codes.
     const store = createCloudflareIdentityStore(
       env({ IMMI_ACCOUNT_DB: accountDb({ throwOnUsers: true }) }),
+    );
+    await expect(store.assertPlatformOperator(AUTH)).rejects.toMatchObject({
+      code: "platform_operator_unavailable",
+      status: 503,
+    });
+  });
+
+  it("still 403s when the lookup succeeds and returns no grant", async () => {
+    const store = createCloudflareIdentityStore(
+      env({ IMMI_ACCOUNT_DB: accountDb({}) }),
     );
     await expect(store.assertPlatformOperator(AUTH)).rejects.toMatchObject({
       code: "platform_operator_required",

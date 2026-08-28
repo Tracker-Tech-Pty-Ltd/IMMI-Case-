@@ -52,14 +52,19 @@ function makeNamespace(fresh) {
 }
 
 describe("checkNonce — env binding name wiring", () => {
-  it("fail-closes (returns false) when env.AUTH_NONCE is missing", async () => {
-    const ok = await checkNonce({}, "abc123hash");
-    expect(ok).toBe(false);
+  it("fail-closes as unavailable when env.AUTH_NONCE is missing", async () => {
+    // Still a deny — but a misconfigured binding is our outage, not the
+    // caller replaying, and the handler turns "unavailable" into 503 rather
+    // than sending the user to re-authenticate against a broken login.
+    expect(await checkNonce({}, "abc123hash")).toEqual({
+      fresh: false,
+      reason: "unavailable",
+    });
   });
 
   it("fail-closes when env is null/undefined", async () => {
-    expect(await checkNonce(null, "abc")).toBe(false);
-    expect(await checkNonce(undefined, "abc")).toBe(false);
+    expect(await checkNonce(null, "abc")).toMatchObject({ fresh: false, reason: "unavailable" });
+    expect(await checkNonce(undefined, "abc")).toMatchObject({ fresh: false, reason: "unavailable" });
   });
 
   it("reads specifically env.AUTH_NONCE (not legacy AUTH_NONCE_DO)", async () => {
@@ -68,7 +73,7 @@ describe("checkNonce — env binding name wiring", () => {
     // on every Telegram login. Pin the binding name contract here.
     const wrongBinding = makeNamespace(true);
     const ok = await checkNonce({ AUTH_NONCE_DO: wrongBinding }, "abc123hash");
-    expect(ok).toBe(false);
+    expect(ok).toMatchObject({ fresh: false, reason: "unavailable" });
     expect(wrongBinding.idFromName).not.toHaveBeenCalled();
   });
 
@@ -76,7 +81,7 @@ describe("checkNonce — env binding name wiring", () => {
     const ns = makeNamespace(true);
     const ok = await checkNonce({ AUTH_NONCE: ns }, "abc123hash");
 
-    expect(ok).toBe(true);
+    expect(ok).toMatchObject({ fresh: true });
     // Verify the helper actually used the binding (i.e. did not fail-close
     // on a config check before getting to the DO call).
     expect(ns.idFromName).toHaveBeenCalledWith("global");
@@ -96,8 +101,9 @@ describe("checkNonce — env binding name wiring", () => {
   it("returns false (replay) when DO returns fresh=false", async () => {
     const ns = makeNamespace(false);
     const ok = await checkNonce({ AUTH_NONCE: ns }, "abc123hash");
-    expect(ok).toBe(false);
-    // DO was reached — this is a real replay rejection, not a config miss.
+    // Reached the DO and was told "seen before": the one case that is
+    // genuinely the caller's fault, and the only one that may 401.
+    expect(ok).toEqual({ fresh: false, reason: "replay" });
     expect(ns._stub.fetch).toHaveBeenCalledOnce();
   });
 
@@ -109,7 +115,8 @@ describe("checkNonce — env binding name wiring", () => {
       }),
     };
     const ok = await checkNonce({ AUTH_NONCE: ns }, "abc123hash");
-    expect(ok).toBe(false);
+    // An unreachable DO is an outage, not a replay.
+    expect(ok).toEqual({ fresh: false, reason: "unavailable" });
   });
 });
 

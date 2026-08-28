@@ -18,6 +18,7 @@ import {
   generateRefreshSessionDraft,
   validateRefreshPayload,
 } from "./refresh_sessions.js";
+import { readBoundedBodyText } from "../storage/body_limit.js";
 import { createCloudflareIdentityStore } from "../storage/cloudflare.js";
 import { StorageBoundaryError } from "../storage/contracts.js";
 
@@ -82,6 +83,34 @@ export function safeRedirectTarget(value, origin) {
   return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
+/**
+ * Ceiling for auth request bodies.
+ *
+ * Telegram login payloads and a bootstrap secret are well under a kilobyte;
+ * 8 KiB is generous. The point is that these three routes run BEFORE any
+ * authentication, so `request.json()` let an unauthenticated caller buffer an
+ * arbitrary body into isolate memory on every request, under Cloudflare's own
+ * outer request limit and therefore invisible to it.
+ */
+const AUTH_BODY_MAX_BYTES = 8 * 1024;
+
+/**
+ * Read and parse a bounded JSON body, or return the Response to send.
+ * Oversize is reported as 413, not as malformed JSON — a client that sent
+ * perfectly valid JSON should not be told its syntax was wrong.
+ */
+async function readBoundedJson(request) {
+  const text = await readBoundedBodyText(request, AUTH_BODY_MAX_BYTES);
+  if (text === null) {
+    return { response: error("Request body is too large", 413, "payload_too_large") };
+  }
+  try {
+    return { data: JSON.parse(text) };
+  } catch {
+    return { response: error("Invalid JSON body", 400, "bad_request") };
+  }
+}
+
 function clientError(err) {
   return err instanceof StorageBoundaryError && err.status >= 400 && err.status < 500;
 }
@@ -112,8 +141,14 @@ async function issueLoginPair(request, env, identity, user, tenant, tenantIds) {
 async function completeTelegramLogin(request, env, data) {
   const verified = await verifyTelegramAuth(data, env);
   if (!verified.valid) return { response: error("Telegram auth verification failed", 401, verified.reason || "invalid_hash") };
-  const fresh = await checkNonce(env, data.hash);
-  if (!fresh) return { response: error("Auth replay detected", 401, "replay") };
+  const nonce = await checkNonce(env, data.hash);
+  if (!nonce.fresh) {
+    if (nonce.reason === "unavailable") {
+      // Our replay store is down. Denying is right; blaming the user is not.
+      return { response: error("Auth replay check unavailable", 503, "nonce_unavailable") };
+    }
+    return { response: error("Auth replay detected", 401, "replay") };
+  }
   try {
     const identity = createCloudflareIdentityStore(env);
     const { user, tenant, tenants, tenantIds } = await identity.upsertTelegramUser(data);
@@ -126,8 +161,9 @@ async function completeTelegramLogin(request, env, data) {
 }
 
 export async function handleTelegramLogin(request, env) {
-  let data;
-  try { data = await request.json(); } catch { return error("Invalid JSON body", 400, "bad_request"); }
+  const body = await readBoundedJson(request);
+  if (body.response) return body.response;
+  const data = body.data;
   if (!data || typeof data !== "object") return error("Missing body", 400, "bad_request");
   const result = await completeTelegramLogin(request, env, data);
   if (result.response) return result.response;
@@ -201,8 +237,9 @@ export async function handleBootstrapLogin(request, env) {
   if (!env.BOOTSTRAP_ADMIN_SECRET || !env.BOOTSTRAP_ADMIN_USER_ID) {
     return error("Bootstrap login is not configured", 503, "bootstrap_unconfigured");
   }
-  let data;
-  try { data = await request.json(); } catch { return error("Invalid JSON body", 400, "bad_request"); }
+  const body = await readBoundedJson(request);
+  if (body.response) return body.response;
+  const data = body.data;
   if (!data || typeof data.secret !== "string" || !data.secret) {
     return error("Missing bootstrap secret", 401, "bootstrap_secret_required");
   }
@@ -312,8 +349,9 @@ export async function handleAuthRefresh(request, env) {
 export async function handleAuthSwitchTenant(request, env) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
-  let body;
-  try { body = await request.json(); } catch { return error("Invalid JSON body", 400, "bad_request"); }
+  const parsed = await readBoundedJson(request);
+  if (parsed.response) return parsed.response;
+  const body = parsed.data;
   if (!body?.tenant_id || typeof body.tenant_id !== "string") return error("tenant_id required", 400, "missing_tenant_id");
   try {
     const snapshot = await createCloudflareIdentityStore(env).getAuthSnapshot(authResult.claims.sub, body.tenant_id);

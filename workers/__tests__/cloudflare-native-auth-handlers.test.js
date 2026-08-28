@@ -60,7 +60,7 @@ function request(method, path, body, headers = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockVerifyTelegram.mockResolvedValue({ valid: true });
-  mockNonce.mockResolvedValue(true);
+  mockNonce.mockResolvedValue({ fresh: true, reason: "" });
   mockMakeAccess.mockResolvedValue("access-token");
   mockMakeRefresh.mockResolvedValue("refresh-token");
   mockVerifyJwt.mockResolvedValue({ valid: true, payload: { type: "refresh", sub: USER_ID, jti: JTI }, reason: "" });
@@ -208,6 +208,54 @@ describe("standalone native auth handlers", () => {
     // The switcher renders t.id/t.kind/t.name, so the response must carry
     // objects — bare ids produced undefined option values.
     expect(await response.json()).toMatchObject({ tenants: TENANTS });
+  });
+
+  it("reports an unreachable nonce store as 503, not as a user replay", async () => {
+    // A missing binding or an unreachable DO denied with the same 401 replay
+    // a genuine replay got, sending users to re-authenticate against a login
+    // that could not succeed and hiding the outage from status-code alerting.
+    mockNonce.mockResolvedValue({ fresh: false, reason: "unavailable" });
+    const response = await handleTelegramLogin(request("POST", "/api/v1/auth/telegram", {
+      id: 123456, hash: "valid-hash",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "nonce_unavailable" });
+  });
+
+  it("still reports a genuine replay as 401", async () => {
+    mockNonce.mockResolvedValue({ fresh: false, reason: "replay" });
+    const response = await handleTelegramLogin(request("POST", "/api/v1/auth/telegram", {
+      id: 123456, hash: "seen-before",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ code: "replay" });
+  });
+
+  it("bounds unauthenticated auth bodies and reports oversize as 413", async () => {
+    // These routes run before any authentication, so request.json() let an
+    // unauthenticated caller buffer an arbitrary body into isolate memory —
+    // under Cloudflare's own request limit and so invisible to it.
+    const huge = new Request("https://immi.example/api/v1/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, hash: "h", pad: "x".repeat(64 * 1024) }),
+    });
+    const response = await handleTelegramLogin(huge, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ code: "payload_too_large" });
+    // And it must not have been buffered into a login attempt.
+    expect(mockVerifyTelegram).not.toHaveBeenCalled();
+  });
+
+  it("still reports malformed JSON as 400, not 413", async () => {
+    const bad = new Request("https://immi.example/api/v1/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    const response = await handleTelegramLogin(bad, { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "bad_request" });
   });
 
   it("keeps the refresh cookie when logout revocation fails", async () => {

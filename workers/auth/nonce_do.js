@@ -139,15 +139,21 @@ export class AuthNonce {
  * Forwards to the AuthNonce Durable Object via its stub. The DO is addressed
  * by a fixed name so all Workers share a single nonce store globally.
  *
+ * Denial is discriminated. Every deny still fails closed, but a missing
+ * binding or an unreachable DO is an outage on our side, not a replay by the
+ * caller — reporting both as `401 replay` sent users to re-authenticate
+ * against a login that could not succeed, and hid the outage from anyone
+ * reading status codes.
+ *
  * @param {{AUTH_NONCE: DurableObjectNamespace}} env
  * @param {string} hash  hex hash from Telegram auth payload
- * @returns {Promise<boolean>}  true = fresh (allow), false = replay (deny)
+ * @returns {Promise<{fresh: boolean, reason: "" | "replay" | "unavailable"}>}
  */
 export async function checkNonce(env, hash) {
   if (!env?.AUTH_NONCE) {
     console.error(JSON.stringify({ event: "auth.fail.config", reason: "AUTH_NONCE binding missing" }));
-    // Fail closed — treat as replay to prevent auth bypass on misconfiguration
-    return false;
+    // Fail closed — deny to prevent auth bypass on misconfiguration.
+    return { fresh: false, reason: "unavailable" };
   }
 
   try {
@@ -159,10 +165,11 @@ export async function checkNonce(env, hash) {
       body: JSON.stringify({ hash, timestamp: Date.now() }),
     });
     const data = await resp.json();
-    return data.fresh === true;
+    if (data.fresh === true) return { fresh: true, reason: "" };
+    return { fresh: false, reason: "replay" };
   } catch (err) {
     console.error(JSON.stringify({ event: "auth.fail.nonce_error", error: String(err) }));
-    // Fail closed on unexpected errors
-    return false;
+    // Fail closed on unexpected errors, but as a dependency failure.
+    return { fresh: false, reason: "unavailable" };
   }
 }
