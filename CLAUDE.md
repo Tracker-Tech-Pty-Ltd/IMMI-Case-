@@ -165,7 +165,11 @@ workers/
 
 ### Key Design Patterns
 
-- **Dual UI**: React SPA at `/app/` + legacy Jinja2 at `/`. API at `/api/v1/*`.
+- **Single UI**: the React SPA is the only UI. In production the Worker serves it
+  from Workers Static Assets; in local dev Flask serves the React build from a
+  catch-all at `/`. The legacy Jinja2 dashboard is gone — there is no
+  `immi_case_downloader/templates/` directory and no Jinja2 blueprint. API at
+  `/api/v1/*`.
 - **CaseRepository Protocol**: Abstracts storage backend. CSV (default), SQLite (FTS5+WAL), Supabase (PostgreSQL).
 - **Scraper hierarchy**: `BaseScraper` handles HTTP session, rate limiting (1s delay), retry. `AustLIIScraper` and `FederalCourtScraper` inherit.
 - **Two-phase data collection**: Stage 1 (search) populates basic metadata. Stage 2 (download) extracts detailed fields via regex.
@@ -187,7 +191,7 @@ workers/
 - `workers/auth/jwt.js` — HS256 sign/verify with kid rotation (unchanged)
 - `workers/auth/telegram.js` — HMAC-SHA256 Telegram hash verification (unchanged)
 - `workers/auth/nonce_do.js` — AuthNonce Durable Object (replay protection, Oceania-pinned; unchanged)
-- `workers/auth/cloudflare_handlers.js` — Auth route handlers, D1-backed (replaces the deleted Supabase-era `workers/auth/handlers.js` path)
+- `workers/auth/cloudflare_handlers.js` — the D1-backed auth route handlers; the only auth handler module `workers/cloudflare-native.js` imports
 - `workers/storage/cloudflare.js` — `CloudflareIdentityStore`: `assertMembership()`, `upsertTelegramUser()` — the tenant-isolation boundary, backed by `IMMI_ACCOUNT_DB`
 - `immi_case_downloader/web/auth.py` — Flask JWT middleware; **local-dev only**, not in the production request path
 - `migrations/d1/account/0001_account.sql` — D1 schema: users, tenants, memberships, immi_refresh_sessions (replaces the deleted `supabase/migrations/20260503_001_tenancy.sql` in production)
