@@ -480,16 +480,70 @@ export class CloudflareCaseStore {
     `).bind(size).all());
   }
 
-  async analyticsJudgeAggregate() {
-    const [outcomes, years, visas] = await Promise.all([
-      this.db.prepare(`
-        SELECT o.judge_id, j.canonical_name AS name, o.court_code, o.outcome, o.case_count AS cnt
-        FROM aggregate_judge_outcome o JOIN judges j ON j.judge_id = o.judge_id
-      `).all(),
-      this.db.prepare("SELECT judge_id, year, case_count AS cnt FROM aggregate_judge_year").all(),
-      this.db.prepare("SELECT judge_id, visa_subclass, case_count AS cnt FROM aggregate_judge_visa").all(),
+  /**
+   * Judge-leaderboard aggregate read.
+   *
+   * `court` and `minCases` are pushed into SQL so D1 returns only rows the
+   * caller can use. The caller keeps its own equivalent JS filters as a
+   * backstop, so the response is byte-identical to the unfiltered path.
+   * `aggregate_judge_year` / `aggregate_judge_visa` are not read at all when a
+   * court filter is set, because the caller discards them in that case.
+   *
+   * `limit` and the name query are deliberately NOT pushed down: the caller
+   * reports `total_judges` as the pre-limit count, and JS `toLowerCase()` is
+   * Unicode-aware where SQLite `lower()` is ASCII-only.
+   */
+  async analyticsJudgeAggregate({ court = "", minCases = 1 } = {}) {
+    const courtCode = typeof court === "string" ? court.trim() : "";
+    const parsedFloor = Number.parseInt(String(minCases ?? ""), 10);
+    const floor = Number.isFinite(parsedFloor) ? Math.max(1, parsedFloor) : 1;
+    // A floor of 1 excludes nothing (case_count >= 0 and every judge in this
+    // table has at least one outcome row), so anything built to enforce it is
+    // pure cost on the most common request. Same for an empty court code.
+    const filtersRows = floor > 1;
+
+    const courtClause = courtCode ? "WHERE o.court_code = ?" : "";
+    const base = `
+      SELECT o.judge_id, j.canonical_name AS name, o.court_code, o.outcome, o.case_count AS cnt
+      FROM aggregate_judge_outcome o JOIN judges j ON j.judge_id = o.judge_id
+      ${courtClause}
+    `;
+    const outcomes = filtersRows
+      // Only when a real floor is set do we pay for the window sum. It is
+      // evaluated AFTER the WHERE, so the partition total is the post-court
+      // sum — exactly what the handler accumulates into judge.total.
+      ? rows(await bindAll(this.db, `
+          SELECT judge_id, name, court_code, outcome, cnt FROM (
+            SELECT o.judge_id, j.canonical_name AS name, o.court_code, o.outcome, o.case_count AS cnt,
+                   SUM(o.case_count) OVER (PARTITION BY o.judge_id) AS judge_total
+            FROM aggregate_judge_outcome o JOIN judges j ON j.judge_id = o.judge_id
+            ${courtClause}
+          ) WHERE judge_total >= ?
+        `, courtCode ? [courtCode, floor] : [floor]).all())
+      : rows(await bindAll(this.db, base, courtCode ? [courtCode] : []).all());
+
+    if (courtCode) return { outcomes, years: [], visas: [] };
+
+    // Same rule for the year/visa reads: the HAVING subquery is a second full
+    // aggregation of aggregate_judge_outcome, so only issue it when the floor
+    // can actually exclude a judge.
+    const floorFilter = filtersRows
+      ? `WHERE judge_id IN (
+           SELECT judge_id FROM aggregate_judge_outcome GROUP BY judge_id HAVING SUM(case_count) >= ?
+         )`
+      : "";
+    const floorParams = filtersRows ? [floor] : [];
+    const [years, visas] = await Promise.all([
+      bindAll(this.db, `
+        SELECT judge_id, year, case_count AS cnt FROM aggregate_judge_year
+        ${floorFilter}
+      `, floorParams).all(),
+      bindAll(this.db, `
+        SELECT judge_id, visa_subclass, case_count AS cnt FROM aggregate_judge_visa
+        ${floorFilter}
+      `, floorParams).all(),
     ]);
-    return { outcomes: rows(outcomes), years: rows(years), visas: rows(visas) };
+    return { outcomes, years: rows(years), visas: rows(visas) };
   }
 
   async getJudgeCases(name, { limit = 5000 } = {}) {
