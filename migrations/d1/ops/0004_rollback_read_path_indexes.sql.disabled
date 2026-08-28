@@ -1,0 +1,6 @@
+-- ops rollback: drop what 0003_read_path_indexes.sql added AND restore the
+-- index it dropped, so the schema returns to its pre-change shape exactly.
+DROP INDEX IF EXISTS pipeline_runs_started_idx;
+DROP INDEX IF EXISTS pipeline_control_action_idx;
+CREATE INDEX IF NOT EXISTS pipeline_control_status_idx
+  ON pipeline_control_commands(status, created_at);

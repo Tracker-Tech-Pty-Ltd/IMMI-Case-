@@ -1,0 +1,4 @@
+-- catalog rollback: drop what 0002_read_path_indexes.sql added.
+DROP INDEX IF EXISTS cases_year_case_idx;
+DROP INDEX IF EXISTS cases_nature_year_idx;
+DROP INDEX IF EXISTS aggregate_judge_outcome_court_idx;
