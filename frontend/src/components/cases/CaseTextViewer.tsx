@@ -11,6 +11,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 interface CaseTextViewerProps {
   text: string;
@@ -52,6 +53,9 @@ function classifyLine(line: string): LineType {
   if (!trimmed) return "blank";
   return "body";
 }
+
+/** Upper bound on highlighted hits, so a 1-letter term cannot blow up the tree. */
+const MAX_HIGHLIGHTED_MATCHES = 500;
 
 // Smart line rendering function for reading mode
 function renderSmartLines(text: string): React.ReactNode {
@@ -214,19 +218,25 @@ export function CaseTextViewer({ text, citation }: CaseTextViewerProps) {
   // Parse sections for TOC
   const sections = useMemo(() => parseSections(text), [text]);
 
-  // Find all matches
-  const matches = useMemo(() => {
-    if (!searchTerm || searchTerm.length < 2) return [];
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 200);
+
+  // Find matches, capped so a pathological term cannot blow up the tree.
+  const { matches, totalMatches } = useMemo(() => {
+    if (!debouncedSearchTerm || debouncedSearchTerm.length < 2) {
+      return { matches: [] as number[], totalMatches: 0 };
+    }
     const results: number[] = [];
     const lower = text.toLowerCase();
-    const term = searchTerm.toLowerCase();
+    const term = debouncedSearchTerm.toLowerCase();
     let idx = lower.indexOf(term);
+    let total = 0;
     while (idx !== -1) {
-      results.push(idx);
+      total += 1;
+      if (results.length < MAX_HIGHLIGHTED_MATCHES) results.push(idx);
       idx = lower.indexOf(term, idx + 1);
     }
-    return results;
-  }, [text, searchTerm]);
+    return { matches: results, totalMatches: total };
+  }, [text, debouncedSearchTerm]);
   const activeMatch = matches.length
     ? Math.min(activeMatchIdx, matches.length - 1)
     : 0;
@@ -313,12 +323,18 @@ export function CaseTextViewer({ text, citation }: CaseTextViewerProps) {
     w.print();
   }, [text, citation]);
 
+  // Reading-mode tree depends on `text` alone: typing must not rebuild it.
+  const readingModeNodes = useMemo(
+    () => (text ? renderSmartLines(text) : null),
+    [text],
+  );
+
   // Render text with search highlights and section formatting
   const rendered = useMemo(() => {
     if (!text) return null;
 
     // Search mode: preserve existing whitespace-pre-wrap + span rendering
-    if (searchTerm && searchTerm.length >= 2 && matches.length > 0) {
+    if (debouncedSearchTerm && debouncedSearchTerm.length >= 2 && matches.length > 0) {
       const parts: Array<{ text: string; isMatch: boolean; matchIdx: number }> =
         [];
       let lastEnd = 0;
@@ -331,11 +347,11 @@ export function CaseTextViewer({ text, citation }: CaseTextViewerProps) {
           });
         }
         parts.push({
-          text: text.slice(start, start + searchTerm.length),
+          text: text.slice(start, start + debouncedSearchTerm.length),
           isMatch: true,
           matchIdx: i,
         });
-        lastEnd = start + searchTerm.length;
+        lastEnd = start + debouncedSearchTerm.length;
       });
       if (lastEnd < text.length) {
         parts.push({ text: text.slice(lastEnd), isMatch: false, matchIdx: -1 });
@@ -360,8 +376,8 @@ export function CaseTextViewer({ text, citation }: CaseTextViewerProps) {
     }
 
     // Reading mode: use smart line classification rendering
-    return renderSmartLines(text);
-  }, [text, searchTerm, matches, activeMatch]);
+    return readingModeNodes;
+  }, [text, debouncedSearchTerm, matches, activeMatch, readingModeNodes]);
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -391,6 +407,13 @@ export function CaseTextViewer({ text, citation }: CaseTextViewerProps) {
               {matches.length > 0 && (
                 <span className="text-xs text-muted-text whitespace-nowrap">
                   {activeMatch + 1}/{matches.length}
+                  {totalMatches > matches.length
+                    ? ` ${t("components.case_text_viewer.match_cap_note", {
+                        defaultValue: `(first ${MAX_HIGHLIGHTED_MATCHES} of ${totalMatches})`,
+                        shown: MAX_HIGHLIGHTED_MATCHES,
+                        total: totalMatches,
+                      })}`
+                    : ""}
                 </span>
               )}
               <button

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { CaseCard } from "@/components/cases/CaseCard";
@@ -6,6 +7,22 @@ import { OutcomeBadge } from "@/components/shared/OutcomeBadge";
 import { NatureBadge } from "@/components/shared/NatureBadge";
 import { cn } from "@/lib/utils";
 import type { ImmigrationCase } from "@/types/case";
+
+const DESKTOP_QUERY = "(min-width: 768px)"; // Tailwind `md`
+
+function subscribeToDesktopQuery(onChange: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const mql = window.matchMedia(DESKTOP_QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+// jsdom does not implement matchMedia, and neither does SSR. Default to
+// desktop so the table branch (and its tests) behave exactly as before.
+function isDesktopViewport(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return true;
+  return window.matchMedia(DESKTOP_QUERY).matches;
+}
 
 function formatDateCompact(date: string): string {
   if (!date) return "";
@@ -41,6 +58,11 @@ export function CasesTable({
 }: CasesTableProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const isDesktop = useSyncExternalStore(
+    subscribeToDesktopQuery,
+    isDesktopViewport,
+    () => true,
+  );
 
   if (viewMode === "cards") {
     return (
@@ -59,22 +81,26 @@ export function CasesTable({
 
   return (
     <>
-      <div className="md:hidden rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-text">
-        {t("cases.mobile_table_note", {
-          defaultValue:
-            "Table view is optimized for larger screens. Showing card view on mobile for easier reading.",
-        })}
-      </div>
-      <div className="grid auto-rows-fr gap-4 md:hidden">
-        {cases.map((c) => (
-          <CaseCard
-            key={c.case_id}
-            case_={c}
-            onClick={() => navigate(`/cases/${c.case_id}`)}
-            className="h-full"
-          />
-        ))}
-      </div>
+      {!isDesktop && (
+        <>
+          <div className="md:hidden rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-text">
+            {t("cases.mobile_table_note", {
+              defaultValue:
+                "Table view is optimized for larger screens. Showing card view on mobile for easier reading.",
+            })}
+          </div>
+          <div className="grid auto-rows-fr gap-4 md:hidden">
+            {cases.map((c) => (
+              <CaseCard
+                key={c.case_id}
+                case_={c}
+                onClick={() => navigate(`/cases/${c.case_id}`)}
+                className="h-full"
+              />
+            ))}
+          </div>
+        </>
+      )}
       <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
         <table data-testid="cases-table" className="w-full min-w-[1100px] text-sm">
           <thead>
