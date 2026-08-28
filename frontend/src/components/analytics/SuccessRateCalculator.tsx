@@ -40,8 +40,12 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
   const { data: filterOptions, isError: isFilterOptionsError } =
     useFilterOptions();
   const { data: outcomes, isError: isOutcomesError } = useOutcomes(filters);
+  // Default limit (20) on purpose: this shares one cache entry — and therefore
+  // one request — with OutcomeAnalysisSection's identical call.
+  // `limit` is part of the query key (hooks/use-analytics.ts:67), so any other
+  // value forks a second full-table aggregation. Only 12 are rendered below.
   const { data: conceptOptions, isError: isConceptOptionsError } =
-    useLegalConcepts(filters, 18);
+    useLegalConcepts(filters);
 
   const successParams = useMemo(
     () => ({
