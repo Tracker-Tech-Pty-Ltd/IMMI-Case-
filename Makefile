@@ -1,7 +1,7 @@
 # IMMI-Case Makefile — common development commands
 # Usage: make <target>
 
-.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-rls-guards clean
+.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-rls-guards clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -25,10 +25,19 @@ help:
 	@echo "  make ui           Vite dev server only (http://localhost:5173)"
 	@echo "  make build        Build React frontend → static/react/"
 	@echo ""
-	@echo "  make test         All tests (Python unit + frontend Vitest)"
-	@echo "  make test-py      Python unit tests only (pytest, no E2E)"
+	@echo "  make check        Everything CI checks, in one command (start here)"
+	@echo "  make check-vitest-collection  Assert every Vitest file on disk is collected once"
+	@echo "  make check-native Cloudflare-native reference + bundle boundary gates"
+	@echo "  make build-fe     Production bundle (build:cloudflare -> gitignored dist/)"
+	@echo ""
+	@echo "  make test         Python unit + frontend + both Worker suites"
+	@echo "  make test-py      Python unit tests only (no E2E, no integration)"
 	@echo "  make test-fe      Frontend Vitest tests only"
-	@echo "  make test-e2e     Playwright E2E tests (requires running server)"
+	@echo "  make test-workers Main Cloudflare Worker Vitest suite"
+	@echo "  make test-pipeline  austlii-scraper (pipeline Worker) Vitest suite"
+	@echo "  make test-preflight Deploy secret-preflight parser tests"
+	@echo "  make test-e2e     Python Playwright E2E (needs make install-e2e + a server)"
+	@echo "  make test-integration  Supabase-era checks, opt-in (needs env vars)"
 	@echo "  make coverage     Python unit tests with HTML coverage report"
 	@echo "  make coverage-fe  Frontend Vitest with coverage thresholds"
 	@echo ""
@@ -36,9 +45,11 @@ help:
 	@echo "  make lint-py      Ruff lint Python source only"
 	@echo "  make lint-fe      ESLint the frontend only"
 	@echo "  make typecheck    TypeScript type check (tsc -b --noEmit, all projects)"
+	@echo "  make typecheck-pipeline  tsc gate for workers/austlii-scraper"
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
-	@echo "  make install      Install all Python + Node dependencies"
+	@echo "  make install      Install all Python + Node deps (creates .venv)"
+	@echo "  make install-e2e  Playwright + chromium, for make test-e2e"
 	@echo "  make migrate      Push pending Supabase migrations"
 	@echo ""
 	@echo "Options: PORT=8080 BACKEND=auto|sqlite|csv|supabase"
