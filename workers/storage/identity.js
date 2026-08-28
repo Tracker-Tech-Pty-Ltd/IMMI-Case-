@@ -180,8 +180,16 @@ export class CloudflareIdentityStore {
     return this.getAuthSnapshot(user.user_id);
   }
 
-  /** Return a current, tenant-scoped token profile; never rely on stale JWT membership. */
-  async getAuthSnapshot(userId, activeTenantId = null) {
+  /**
+   * Return a current, tenant-scoped token profile; never rely on stale JWT membership.
+   *
+   * `fallbackToDefault` distinguishes the two callers. An explicit
+   * switch-tenant request must 403 when the user is not a member. A silent
+   * refresh only carries the UI's *preferred* tenant, so a preference that no
+   * longer resolves (membership revoked, stale localStorage) must degrade to
+   * the default tenant rather than end the session.
+   */
+  async getAuthSnapshot(userId, activeTenantId = null, { fallbackToDefault = false } = {}) {
     const checkedUserId = assertUuid(userId, "user_id");
     const checkedTenantId = activeTenantId === null ? null : assertUuid(activeTenantId, "tenant_id");
     const user = await this.db.prepare(`
@@ -198,15 +206,16 @@ export class CloudflareIdentityStore {
     if (memberships.length === 0) {
       throw refreshSessionError("Tenant membership not found", "tenant_membership_denied");
     }
-    const selected = checkedTenantId
+    const matched = checkedTenantId
       ? memberships.find((membership) => membership.tenant_id === checkedTenantId)
       : memberships[0];
-    if (!selected) {
+    if (!matched && !fallbackToDefault) {
       throw new StorageBoundaryError("Not a member of that tenant", {
         code: "forbidden",
         status: 403,
       });
     }
+    const selected = matched ?? memberships[0];
     return {
       user: {
         id: user.user_id,
@@ -214,7 +223,16 @@ export class CloudflareIdentityStore {
         role: selected.role || "member",
       },
       tenant: { id: selected.tenant_id, kind: selected.kind, name: selected.name },
-      tenants: memberships.map((membership) => membership.tenant_id),
+      // Two shapes on purpose. `tenants` is the API contract the SPA renders
+      // (frontend/src/lib/auth.ts AuthTenant[]); `tenantIds` is the JWT claim
+      // shape assertAuthContext() compares against (storage/contracts.js),
+      // which string-matches and would silently reject objects.
+      tenants: memberships.map((membership) => ({
+        id: membership.tenant_id,
+        kind: membership.kind,
+        name: membership.name,
+      })),
+      tenantIds: memberships.map((membership) => membership.tenant_id),
     };
   }
 
@@ -283,15 +301,58 @@ export class CloudflareIdentityStore {
     return changeCount(result);
   }
 
-  async loadRefreshAuthSnapshot({ jti, userId }) {
+  /**
+   * Read a refresh session only if it is still usable. Returns null for
+   * missing, revoked or expired rows — callers decide what that means.
+   */
+  async loadLiveRefreshSession({ jti, userId }) {
+    const checkedJti = assertUuid(jti, "refresh.jti");
+    const checkedUserId = assertUuid(userId, "refresh.userId");
+    const row = await this.db.prepare(`
+      SELECT jti, user_id, family_id, expires_at, revoked_at
+      FROM immi_refresh_sessions WHERE jti = ? AND user_id = ? LIMIT 1
+    `).bind(checkedJti, checkedUserId).first();
+    if (!row || row.revoked_at) return null;
+    const expiresAt = new Date(row.expires_at).getTime();
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+    return row;
+  }
+
+  async loadRefreshAuthSnapshot({
+    jti,
+    userId,
+    activeTenantId = null,
+    expectedSuccessorJti = null,
+  }) {
     const checkedJti = assertUuid(jti, "refresh.jti");
     const checkedUserId = assertUuid(userId, "refresh.userId");
     const session = await this.db.prepare(`
-      SELECT jti, user_id, family_id, expires_at, revoked_at, revoked_reason
+      SELECT jti, user_id, family_id, expires_at, revoked_at, revoked_reason, replaced_by_jti
       FROM immi_refresh_sessions WHERE jti = ? AND user_id = ? LIMIT 1
     `).bind(checkedJti, checkedUserId).first();
     if (!session) throw refreshSessionError("Refresh session not found", "refresh_session_not_found");
     if (session.revoked_at) {
+      // Idempotent-retry escape hatch, checked BEFORE the reuse verdict.
+      //
+      // `expectedSuccessorJti` is derived from the caller's rotation id, so a
+      // match proves this exact client drove this exact rotation and simply
+      // never received the response. Re-serving the successor it already
+      // created is not a second rotation and must not read as reuse — that is
+      // what turned a dropped response into a forced sign-out. A thief holding
+      // only the stolen cookie cannot produce the rotation id, so a real
+      // replay still falls through to family revocation below.
+      const replayed = await this.#resolveRotationReplay(session, checkedUserId, expectedSuccessorJti);
+      if (replayed) {
+        console.log(JSON.stringify({
+          event: "auth.refresh.rotation_replayed",
+          user_id: checkedUserId,
+          family_id: session.family_id,
+        }));
+        const snapshot = await this.getAuthSnapshot(checkedUserId, activeTenantId, {
+          fallbackToDefault: true,
+        });
+        return { session: replayed, replayed: true, ...snapshot };
+      }
       // Primary reuse-detection point: handleAuthRefresh calls this BEFORE
       // rotateRefreshSession, so an already-rotated token lands here, not in
       // the CAS backstop. A stolen refresh cookie redeemed after the victim's
@@ -321,8 +382,25 @@ export class CloudflareIdentityStore {
       await this.revokeRefreshSession({ jti: checkedJti, userId: checkedUserId, reason: "expired" });
       throw refreshSessionError("Refresh token expired", "expired_refresh_token");
     }
-    const snapshot = await this.getAuthSnapshot(checkedUserId);
-    return { session, ...snapshot };
+    const snapshot = await this.getAuthSnapshot(checkedUserId, activeTenantId, {
+      fallbackToDefault: true,
+    });
+    return { session, replayed: false, ...snapshot };
+  }
+
+  /**
+   * Resolve a revoked row to the still-live successor this same caller
+   * created, or null when the replay is not provably its own.
+   */
+  async #resolveRotationReplay(session, userId, expectedSuccessorJti) {
+    if (!expectedSuccessorJti) return null;
+    if (session.revoked_reason !== "rotated") return null;
+    const successorJti = session.replaced_by_jti;
+    if (typeof successorJti !== "string" || !successorJti) return null;
+    if (successorJti.toLowerCase() !== String(expectedSuccessorJti).toLowerCase()) return null;
+    // The successor must still be live. If it was itself rotated the client
+    // demonstrably *did* receive it, so replaying its parent is suspicious.
+    return this.loadLiveRefreshSession({ jti: successorJti, userId });
   }
 
   /**
@@ -354,6 +432,26 @@ export class CloudflareIdentityStore {
       `).bind(now, next.jti, now, previousJti, previousUserId, now),
     ]);
     if (changeCount(result[0]) !== 1 || changeCount(result[1]) !== 1) {
+      // Losing the compare-and-swap means someone else rotated this exact jti
+      // between our read and our write. Letting the loser fail with a bare 401
+      // left the *winner's* successor alive, so a thief who simply won the race
+      // kept a working session while the victim was signed out — the family
+      // revocation this design promises never fired. Revoke the family here so
+      // the outcome does not depend on who won.
+      //
+      // The benign same-client case never reaches this branch: an idempotent
+      // retry recomputes the same successor jti and is served by the replay
+      // path in loadRefreshAuthSnapshot without rotating at all.
+      await this.revokeRefreshFamily({
+        familyId: next.familyId,
+        userId: previousUserId,
+        reason: "reuse_detected",
+      });
+      console.log(JSON.stringify({
+        event: "auth.refresh.rotation_conflict",
+        user_id: previousUserId,
+        family_id: next.familyId,
+      }));
       throw refreshSessionError("Refresh token has been revoked", "revoked_refresh_token");
     }
   }

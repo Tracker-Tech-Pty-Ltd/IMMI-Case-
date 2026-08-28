@@ -24,6 +24,7 @@ vi.mock("../storage/cloudflare.js", () => ({
 }));
 
 import {
+  handleAuthLogout,
   handleAuthRefresh,
   handleAuthSwitchTenant,
   handleBootstrapLogin,
@@ -34,10 +35,18 @@ import {
 const USER_ID = "11111111-2222-4333-8444-555555555555";
 const TENANT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const JTI = "99999999-2222-4333-8444-555555555555";
+const OTHER_TENANT_ID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+const TENANTS = [
+  { id: TENANT_ID, kind: "individual", name: "Ada" },
+  { id: OTHER_TENANT_ID, kind: "organization", name: "Team" },
+];
 const SNAPSHOT = {
   user: { id: USER_ID, telegram_id: 123456, role: "owner" },
   tenant: { id: TENANT_ID, kind: "individual", name: "Ada" },
-  tenants: [TENANT_ID],
+  // Two shapes on purpose: `tenants` is the AuthTenant[] the SPA renders,
+  // `tenantIds` is the bare-id JWT claim assertAuthContext() string-matches.
+  tenants: TENANTS,
+  tenantIds: [TENANT_ID, OTHER_TENANT_ID],
 };
 
 function request(method, path, body, headers = {}) {
@@ -83,8 +92,110 @@ describe("standalone native auth handlers", () => {
       Cookie: "immi_refresh=refresh",
     }), { IMMI_STORAGE_MODE: "cloudflare" });
     expect(response.status).toBe(200);
-    expect(store.loadRefreshAuthSnapshot).toHaveBeenCalledWith({ userId: USER_ID, jti: JTI });
+    expect(store.loadRefreshAuthSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USER_ID, jti: JTI }),
+    );
     expect(store.rotateRefreshSession).toHaveBeenCalledWith({ userId: USER_ID, jti: JTI }, expect.objectContaining({ userId: USER_ID }));
+  });
+
+  it("mints the access token from tenant ids, never from tenant objects", async () => {
+    // makeAccessToken's `tenants` claim is what assertAuthContext() string-
+    // matches against. Handing it the AuthTenant[] the SPA renders would
+    // stringify to "[object Object]" and fail every tenant check.
+    await handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(mockMakeAccess).toHaveBeenCalledWith(
+      SNAPSHOT.user, SNAPSHOT.tenant, SNAPSHOT.tenantIds, expect.anything(),
+    );
+  });
+
+  it("returns the identity on refresh so a recovering client is not user-less", async () => {
+    const response = await handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(await response.json()).toMatchObject({
+      access_token: "access-token",
+      user: SNAPSHOT.user,
+      tenant: SNAPSHOT.tenant,
+      tenants: TENANTS,
+    });
+  });
+
+  it("carries the UI's active tenant into the refresh so a switch survives it", async () => {
+    const store = mockCreateIdentity();
+    await handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+      "X-Active-Tenant-Id": OTHER_TENANT_ID,
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(store.loadRefreshAuthSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ activeTenantId: OTHER_TENANT_ID }),
+    );
+  });
+
+  it("ignores a malformed active-tenant header rather than trusting it", async () => {
+    const store = mockCreateIdentity();
+    await handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+      "X-Active-Tenant-Id": "'; DROP TABLE memberships;--",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(store.loadRefreshAuthSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ activeTenantId: null }),
+    );
+  });
+
+  it("does not rotate again when replaying its own committed rotation", async () => {
+    // The lost-response retry. Rotating here would consume the live successor
+    // the first attempt already created.
+    const store = mockCreateIdentity();
+    store.loadRefreshAuthSnapshot = vi.fn(async () => ({
+      ...SNAPSHOT,
+      session: { jti: "77777777-2222-4333-8444-555555555555", family_id: JTI },
+      replayed: true,
+    }));
+    const response = await handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+      "X-Refresh-Rotation-Id": "12345678-1234-4234-8234-123456789abc",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(200);
+    expect(store.rotateRefreshSession).not.toHaveBeenCalled();
+    expect(mockMakeRefresh).toHaveBeenCalledWith(
+      USER_ID, "77777777-2222-4333-8444-555555555555", expect.anything(),
+    );
+  });
+
+  it("derives the successor jti from the rotation id so a retry is idempotent", async () => {
+    const store = mockCreateIdentity();
+    const rotationId = "12345678-1234-4234-8234-123456789abc";
+    const refreshWithRotationId = () => handleAuthRefresh(
+      request("POST", "/api/v1/auth/refresh", undefined, {
+        Cookie: "immi_refresh=refresh",
+        "X-Refresh-Rotation-Id": rotationId,
+      }),
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+    await refreshWithRotationId();
+    await refreshWithRotationId();
+    const [first, second] = store.rotateRefreshSession.mock.calls;
+    // Same rotation id ⇒ same successor, which is exactly what lets the store
+    // recognise a retry as its own rather than as reuse.
+    expect(second[1].jti).toBe(first[1].jti);
+    expect(store.loadRefreshAuthSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedSuccessorJti: first[1].jti }),
+    );
+    // And it must not simply echo the client's key back as the primary key.
+    expect(first[1].jti).not.toBe(rotationId);
+  });
+
+  it("uses a fresh successor when no rotation id is supplied", async () => {
+    const store = mockCreateIdentity();
+    const bare = () => handleAuthRefresh(request("POST", "/api/v1/auth/refresh", undefined, {
+      Cookie: "immi_refresh=refresh",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    await bare();
+    await bare();
+    const [first, second] = store.rotateRefreshSession.mock.calls;
+    expect(second[1].jti).not.toBe(first[1].jti);
   });
 
   it("uses live Account D1 membership for tenant switching", async () => {
@@ -94,6 +205,49 @@ describe("standalone native auth handlers", () => {
     }), { IMMI_STORAGE_MODE: "cloudflare" });
     expect(response.status).toBe(200);
     expect(store.getAuthSnapshot).toHaveBeenCalledWith(USER_ID, TENANT_ID);
+    // The switcher renders t.id/t.kind/t.name, so the response must carry
+    // objects — bare ids produced undefined option values.
+    expect(await response.json()).toMatchObject({ tenants: TENANTS });
+  });
+
+  it("keeps the refresh cookie when logout revocation fails", async () => {
+    // Expiring it here would destroy the only credential that can retry the
+    // revocation — JS cannot read an HttpOnly cookie back — leaving a stolen
+    // copy refreshable for the remaining 7 days with no way to kill it.
+    const store = mockCreateIdentity();
+    store.revokeRefreshSession = vi.fn(async () => { throw new Error("D1 unavailable"); });
+    const response = await handleAuthLogout(request("POST", "/api/v1/auth/logout", undefined, {
+      Cookie: "immi_refresh=refresh",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(503);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.some((c) => c.startsWith("immi_access=;"))).toBe(true);
+    expect(cookies.some((c) => c.startsWith("immi_refresh="))).toBe(false);
+  });
+
+  it("clears both cookies when logout revocation succeeds", async () => {
+    const store = mockCreateIdentity();
+    store.revokeRefreshSession = vi.fn(async () => undefined);
+    const response = await handleAuthLogout(request("POST", "/api/v1/auth/logout", undefined, {
+      Cookie: "immi_refresh=refresh",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.some((c) => c.startsWith("immi_access=;"))).toBe(true);
+    expect(cookies.some((c) => c.startsWith("immi_refresh=;"))).toBe(true);
+  });
+
+  it("returns renderable tenant objects on login, not bare ids", async () => {
+    const response = await handleTelegramLogin(request("POST", "/api/v1/auth/telegram", {
+      id: 123456, first_name: "Ada", hash: "valid-hash",
+    }), { IMMI_STORAGE_MODE: "cloudflare" });
+    const body = await response.json();
+    expect(body.tenants).toEqual(TENANTS);
+    for (const tenant of body.tenants) {
+      expect(typeof tenant).toBe("object");
+      expect(tenant.id).toEqual(expect.any(String));
+      expect(tenant.name).toEqual(expect.any(String));
+    }
   });
 });
 

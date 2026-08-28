@@ -38,6 +38,63 @@ export function extractRefreshToken(request) {
   return match ? match[1] : null;
 }
 
+/** Header carrying the client's idempotency key for one logical rotation. */
+export const ROTATION_ID_HEADER = "X-Refresh-Rotation-Id";
+
+/** Header carrying the tenant the UI currently has selected. */
+export const ACTIVE_TENANT_HEADER = "X-Active-Tenant-Id";
+
+function uuidHeader(request, name) {
+  const value = request.headers.get(name);
+  return typeof value === "string" && UUID_RE.test(value) ? value.toLowerCase() : null;
+}
+
+/**
+ * The client's idempotency key for one logical rotation.
+ *
+ * A refresh POST has a side effect (it consumes the presented token), so a
+ * blind retry after a lost response presents an already-rotated token and is
+ * indistinguishable from token theft — the server revokes the whole family and
+ * a transient network blip costs the session. The client therefore stamps each
+ * logical rotation with a random id and reuses that id on every retry of it.
+ */
+export function extractRotationId(request) {
+  return uuidHeader(request, ROTATION_ID_HEADER);
+}
+
+/**
+ * Tenant the UI believes is active. A *preference*, never an authorization
+ * claim: the server still resolves it against live memberships and falls back
+ * to the default tenant when it is not one of them.
+ */
+export function extractActiveTenantId(request) {
+  return uuidHeader(request, ACTIVE_TENANT_HEADER);
+}
+
+/**
+ * Derive the successor jti deterministically from (previous jti, rotation id).
+ *
+ * Deriving rather than letting the client send the successor jti outright
+ * keeps a primary key out of attacker control while still making the rotation
+ * idempotent: the same retry recomputes the same successor, so the server can
+ * recognise its own committed rotation by comparing `replaced_by_jti`.
+ * An attacker holding only a stolen cookie cannot guess the victim's rotation
+ * id, so a genuine replay still mismatches and still revokes the family.
+ */
+export async function deriveSuccessorJti(previousJti, rotationId) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`immi-refresh-rotation:${previousJti}:${rotationId}`),
+  );
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version nibble 5 — inside UUID_RE's [1-5]
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant — inside UUID_RE's [89ab]
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return [
+    hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20, 32),
+  ].join("-");
+}
+
 export function validateRefreshPayload(payload) {
   if (!payload || payload.type !== "refresh") {
     throw new RefreshSessionError("Invalid or expired refresh token", 401, "invalid_refresh_token");

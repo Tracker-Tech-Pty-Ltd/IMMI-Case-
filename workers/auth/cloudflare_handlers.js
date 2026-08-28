@@ -11,7 +11,10 @@ import { makeAccessToken, makeRefreshToken, verifyJwt } from "./jwt.js";
 import { requireAuth, extractToken } from "./request_auth.js";
 import { checkNonce } from "./nonce_do.js";
 import {
+  deriveSuccessorJti,
+  extractActiveTenantId,
   extractRefreshToken,
+  extractRotationId,
   generateRefreshSessionDraft,
   validateRefreshPayload,
 } from "./refresh_sessions.js";
@@ -95,11 +98,11 @@ async function optionalRefreshClaims(request, env) {
   }
 }
 
-async function issueLoginPair(request, env, identity, user, tenant, tenants) {
+async function issueLoginPair(request, env, identity, user, tenant, tenantIds) {
   const previous = await optionalRefreshClaims(request, env);
   const draft = generateRefreshSessionDraft(user.id);
   const [accessToken, refreshToken] = await Promise.all([
-    makeAccessToken(user, tenant, tenants, env),
+    makeAccessToken(user, tenant, tenantIds, env),
     makeRefreshToken(user.id, draft.jti, env),
   ]);
   await identity.createRefreshSession(draft, previous);
@@ -113,8 +116,8 @@ async function completeTelegramLogin(request, env, data) {
   if (!fresh) return { response: error("Auth replay detected", 401, "replay") };
   try {
     const identity = createCloudflareIdentityStore(env);
-    const { user, tenant, tenants } = await identity.upsertTelegramUser(data);
-    const { accessToken, refreshToken } = await issueLoginPair(request, env, identity, user, tenant, tenants);
+    const { user, tenant, tenants, tenantIds } = await identity.upsertTelegramUser(data);
+    const { accessToken, refreshToken } = await issueLoginPair(request, env, identity, user, tenant, tenantIds);
     return { user, tenant, tenants, accessToken, refreshToken };
   } catch (err) {
     console.error(JSON.stringify({ event: "auth.cloudflare.telegram_error", error: err?.message }));
@@ -163,10 +166,22 @@ export async function handleAuthMe(request, env) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
   const { claims } = authResult;
+  // `claims.tenants` is the JWT claim shape: bare tenant ids, which is what
+  // assertAuthContext() compares against. The SPA needs AuthTenant objects to
+  // render the workspace switcher, so read the memberships rather than
+  // forwarding ids into a field typed as objects.
+  let tenants = [];
+  try {
+    const snapshot = await createCloudflareIdentityStore(env)
+      .getAuthSnapshot(claims.sub, claims.tenant_id || null, { fallbackToDefault: true });
+    tenants = snapshot.tenants;
+  } catch (err) {
+    console.error(JSON.stringify({ event: "auth.cloudflare.me_tenants_error", error: err?.message }));
+  }
   return json({
     user: { id: claims.sub, role: claims.role || "member", tg_id: claims.tg_id || null },
     tenant: { id: claims.tenant_id, kind: claims.tenant_kind || "individual", name: claims.tenant_name || "" },
-    tenants: claims.tenants || [],
+    tenants,
     access_token: extractToken(request),
   });
 }
@@ -197,8 +212,8 @@ export async function handleBootstrapLogin(request, env) {
   try {
     const identity = createCloudflareIdentityStore(env);
     const snapshot = await identity.getAuthSnapshot(env.BOOTSTRAP_ADMIN_USER_ID);
-    const { user, tenant, tenants } = snapshot;
-    const { accessToken, refreshToken } = await issueLoginPair(request, env, identity, user, tenant, tenants);
+    const { user, tenant, tenants, tenantIds } = snapshot;
+    const { accessToken, refreshToken } = await issueLoginPair(request, env, identity, user, tenant, tenantIds);
     return authResponse({
       access_token: accessToken,
       token_type: "Bearer",
@@ -226,7 +241,18 @@ export async function handleAuthLogout(request, env) {
     });
   } catch (err) {
     console.error(JSON.stringify({ event: "auth.cloudflare.logout_error", error: err?.message }));
-    return clearCookies({ ok: false, error: "Logout revoke failed", code: "db_error" }, 503);
+    // The server session is still live. Expiring the refresh cookie here would
+    // destroy the only credential that can retry the revocation — JS cannot
+    // read an HttpOnly cookie back — leaving a stolen copy refreshable for the
+    // remaining 7 days with no way for the user to kill it. Drop the access
+    // cookie (so the tab stops acting signed-in) and keep the refresh cookie
+    // so a retry can still revoke.
+    const headers = new Headers({ "Content-Type": "application/json" });
+    headers.append("Set-Cookie", "immi_access=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+    return new Response(
+      JSON.stringify({ ok: false, error: "Logout revoke failed", code: "db_error" }),
+      { status: 503, headers },
+    );
   }
   return clearCookies({ ok: true });
 }
@@ -240,16 +266,42 @@ export async function handleAuthRefresh(request, env) {
   }
   let claims;
   try { claims = validateRefreshPayload(verified.payload); } catch (err) { return error(err.message, err.status, err.code); }
+  const rotationId = extractRotationId(request);
+  const expectedSuccessorJti = rotationId ? await deriveSuccessorJti(claims.jti, rotationId) : null;
   try {
     const identity = createCloudflareIdentityStore(env);
-    const snapshot = await identity.loadRefreshAuthSnapshot(claims);
-    const draft = generateRefreshSessionDraft(snapshot.user.id, snapshot.session.family_id);
+    const snapshot = await identity.loadRefreshAuthSnapshot({
+      ...claims,
+      // The UI's selected workspace, so a silent refresh does not silently
+      // revert to the first membership and desync the tenant the SPA shows
+      // from the tenant the access token actually scopes.
+      activeTenantId: extractActiveTenantId(request),
+      expectedSuccessorJti,
+    });
+    // Replay of a rotation this same client already committed: re-serve that
+    // successor instead of rotating again. Rotating would consume the live
+    // token and orphan the session.
+    const draft = snapshot.replayed
+      ? null
+      : generateRefreshSessionDraft(snapshot.user.id, snapshot.session.family_id);
+    if (draft && expectedSuccessorJti) draft.jti = expectedSuccessorJti;
+    const nextJti = draft ? draft.jti : snapshot.session.jti;
     const [accessToken, refreshToken] = await Promise.all([
-      makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenants, env),
-      makeRefreshToken(snapshot.user.id, draft.jti, env),
+      makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenantIds, env),
+      makeRefreshToken(snapshot.user.id, nextJti, env),
     ]);
-    await identity.rotateRefreshSession(claims, draft);
-    return authResponse({ access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_MAX_AGE }, accessToken, refreshToken);
+    if (draft) await identity.rotateRefreshSession(claims, draft);
+    return authResponse({
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: ACCESS_MAX_AGE,
+      // Carry the identity too. A client recovering from a bootstrap failure
+      // otherwise lands authenticated with user=null because the refresh
+      // response used to be access_token only.
+      user: snapshot.user,
+      tenant: snapshot.tenant,
+      tenants: snapshot.tenants,
+    }, accessToken, refreshToken);
   } catch (err) {
     if (clientError(err)) return error(err.message, err.status, err.code);
     console.error(JSON.stringify({ event: "auth.cloudflare.refresh_error", error: err?.message }));
@@ -265,11 +317,15 @@ export async function handleAuthSwitchTenant(request, env) {
   if (!body?.tenant_id || typeof body.tenant_id !== "string") return error("tenant_id required", 400, "missing_tenant_id");
   try {
     const snapshot = await createCloudflareIdentityStore(env).getAuthSnapshot(authResult.claims.sub, body.tenant_id);
-    const accessToken = await makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenants, env);
+    const accessToken = await makeAccessToken(snapshot.user, snapshot.tenant, snapshot.tenantIds, env);
     const headers = new Headers({ "Content-Type": "application/json" });
     headers.append("Set-Cookie", `immi_access=${accessToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ACCESS_MAX_AGE}`);
     return new Response(JSON.stringify({
-      access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_MAX_AGE, tenant: snapshot.tenant,
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: ACCESS_MAX_AGE,
+      tenant: snapshot.tenant,
+      tenants: snapshot.tenants,
     }), { status: 200, headers });
   } catch (err) {
     if (clientError(err)) return error(err.message, err.status, err.code);
