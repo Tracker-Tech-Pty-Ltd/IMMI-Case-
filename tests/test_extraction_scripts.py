@@ -262,3 +262,87 @@ def test_print_fill_rates_tolerates_none_values(capsys):
     validate_script.print_fill_rates(rows)
 
     assert "applicant_name" in capsys.readouterr().out
+
+
+# ── compare_to_baseline must see whole rows disappear ────────────────────
+
+
+def _write_baseline(tmp_path, rows):
+    path = tmp_path / "baseline.csv"
+    fieldnames = ["case_id", "citation", *validate_script.STRUCTURED_FIELDS]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in fieldnames})
+    return path
+
+
+def test_compare_to_baseline_fails_when_rows_disappear(tmp_path, capsys):
+    """A case_id in the baseline and absent now is the loudest possible loss.
+
+    The comparison iterated the *current* rows only, so a deleted row was
+    invisible: it could not be missing a field it no longer had. A bulk
+    UPDATE that dropped tens of thousands of cases still printed
+    "Total regressions: 0".
+    """
+    baseline_path = _write_baseline(
+        tmp_path,
+        [
+            {"case_id": "keep1", "citation": "[2024] AATA 1", "applicant_name": "Jane"},
+            {"case_id": "gone1", "citation": "[2024] AATA 2", "applicant_name": "John"},
+            {"case_id": "gone2", "citation": "[2024] AATA 3", "applicant_name": "Ann"},
+        ],
+    )
+    current = [
+        {"case_id": "keep1", "citation": "[2024] AATA 1", "applicant_name": "Jane"}
+    ]
+
+    ok = validate_script.compare_to_baseline(current, baseline_path)
+
+    out = capsys.readouterr().out
+    assert ok is False, "two rows vanished and the comparison reported success"
+    assert "case_ids removed : 2" in out
+    assert "Total regressions: 0," not in out
+
+
+def test_compare_to_baseline_passes_on_a_clean_superset(tmp_path, capsys):
+    """The gate must not cry wolf when the run only added rows and values."""
+    baseline_path = _write_baseline(
+        tmp_path,
+        [{"case_id": "keep1", "citation": "[2024] AATA 1", "applicant_name": ""}],
+    )
+    current = [
+        {"case_id": "keep1", "citation": "[2024] AATA 1", "applicant_name": "Jane"},
+        {"case_id": "new1", "citation": "[2024] AATA 9", "applicant_name": "Bob"},
+    ]
+
+    assert validate_script.compare_to_baseline(current, baseline_path) is True
+    assert "case_ids added   : 1" in capsys.readouterr().out
+
+
+def test_compare_to_baseline_fails_on_duplicate_and_blank_ids(tmp_path):
+    """Duplicate ids silently halve the corpus on the next id-keyed merge."""
+    baseline_path = _write_baseline(
+        tmp_path, [{"case_id": "keep1", "citation": "[2024] AATA 1"}]
+    )
+    duplicated = [
+        {"case_id": "keep1", "citation": "[2024] AATA 1"},
+        {"case_id": "keep1", "citation": "[2024] AATA 1 (dup)"},
+    ]
+    assert validate_script.compare_to_baseline(duplicated, baseline_path) is False
+
+    blank = [
+        {"case_id": "keep1", "citation": "[2024] AATA 1"},
+        {"case_id": "", "citation": "[2024] AATA 7"},
+    ]
+    assert validate_script.compare_to_baseline(blank, baseline_path) is False
+
+
+def test_compare_to_baseline_fails_when_current_is_empty(tmp_path):
+    """An emptied CSV is total loss, not "nothing to compare"."""
+    baseline_path = _write_baseline(
+        tmp_path, [{"case_id": "keep1", "citation": "[2024] AATA 1"}]
+    )
+
+    assert validate_script.compare_to_baseline([], baseline_path) is False

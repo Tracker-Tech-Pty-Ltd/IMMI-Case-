@@ -160,17 +160,47 @@ def sample_values(rows: list[dict], field: str, n: int = 15):
         print(f"  [{r.get('court_code','?')}] {r.get('citation','?'):35s} → {repr(r.get(field,'')[:80])}")
 
 
-def compare_to_baseline(current: list[dict], baseline_path: Path):
+def compare_to_baseline(current: list[dict], baseline_path: Path) -> bool:
+    """Compare ``current`` against a baseline CSV. Returns False on data loss.
+
+    Fails closed on rows that vanished. The per-field loop below can only see
+    a case_id that is present in *both* files, so a row deleted outright — the
+    worst outcome an extraction run can produce, and the one a bulk UPDATE
+    accident actually causes — contributed nothing to the regression count and
+    printed "Total regressions: 0" while tens of thousands of cases were gone.
+    """
     baseline = load_csv(baseline_path)
     baseline_map = {r["case_id"]: r for r in baseline if r.get("case_id")}
 
     if not current:
         print("No current rows to compare.")
-        return
+        # An empty current file against a non-empty baseline is total loss,
+        # not "nothing to say".
+        return not baseline_map
 
     print(f"\n{'='*70}")
     print(f"Comparison: Current vs {baseline_path.name}")
     print(f"{'='*70}")
+
+    current_ids = [r.get("case_id") or "" for r in current]
+    current_id_set = {cid for cid in current_ids if cid}
+    removed = sorted(baseline_map.keys() - current_id_set)
+    added = sorted(current_id_set - baseline_map.keys())
+    duplicates = sorted(
+        cid for cid, n in Counter(cid for cid in current_ids if cid).items() if n > 1
+    )
+    blank_ids = sum(1 for cid in current_ids if not cid)
+
+    print(f"\n  rows: {len(baseline):,} baseline → {len(current):,} current")
+    print(f"  case_ids removed : {len(removed):,}")
+    print(f"  case_ids added   : {len(added):,}")
+    print(f"  duplicate ids    : {len(duplicates):,}")
+    print(f"  blank ids        : {blank_ids:,}")
+    for cid in removed[:5]:
+        row = baseline_map[cid]
+        print(f"    - removed {cid} [{row.get('citation', '')}]")
+    if len(removed) > 5:
+        print(f"    - ...and {len(removed) - 5:,} more")
 
     regressions = 0
     improvements = 0
@@ -204,7 +234,31 @@ def compare_to_baseline(current: list[dict], baseline_path: Path):
         sign = "+" if delta >= 0 else ""
         print(f"  {field:30s}: {prev_filled:>7,} → {curr_filled:>7,} ({sign}{delta:,}) | reg:{reg} imp:{imp}")
 
-    print(f"\nTotal regressions: {regressions}, improvements: {improvements}")
+    # A removed row lost every field it had filled. Counting those alongside
+    # the field-level regressions keeps a deletion from reading as an
+    # improvement just because the surviving rows got better.
+    removed_field_losses = sum(
+        1
+        for cid in removed
+        for field in STRUCTURED_FIELDS
+        if (baseline_map[cid].get(field) or "").strip()
+    )
+    regressions += removed_field_losses
+
+    print(
+        f"\nTotal regressions: {regressions} "
+        f"({removed_field_losses} from {len(removed):,} removed rows), "
+        f"improvements: {improvements}"
+    )
+
+    if removed or duplicates or blank_ids:
+        print(
+            "\nFAIL: the current CSV is not a superset of the baseline "
+            f"({len(removed):,} removed, {len(duplicates):,} duplicate, "
+            f"{blank_ids:,} blank ids)."
+        )
+        return False
+    return True
 
 
 def main():
@@ -232,8 +286,13 @@ def main():
                 sample_values(rows, field, n=8)
 
     if args.compare_to:
-        compare_to_baseline(rows, Path(args.compare_to))
+        if not compare_to_baseline(rows, Path(args.compare_to)):
+            # Exit non-zero so a caller that pipes this into a release gate
+            # actually stops. Printing the loss and exiting 0 is how a
+            # validator becomes decorative.
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
