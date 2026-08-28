@@ -79,7 +79,8 @@ postprocess.py        → Post-download field extraction (regex + LLM sub-agents
 download_fulltext.py  → Bulk full-text downloader (resumable, saves every 200)
 
 immi_case_downloader/
-  models.py           → ImmigrationCase dataclass (22 fields, SHA-256 ID generation)
+  models.py           → ImmigrationCase dataclass (31 fields, SHA-256 ID generation);
+                        always build instances via ImmigrationCase.from_dict()
   config.py           → Constants: AustLII URLs, court database definitions, keywords
   storage.py          → CSV/JSON persistence (pandas), CRUD helpers
   repository.py       → CaseRepository Protocol (runtime_checkable)
@@ -98,38 +99,40 @@ immi_case_downloader/
                         the generated file goes stale.
   cli.py              → argparse CLI with search/download/list-databases subcommands
   web/
-    __init__.py       → Flask factory with API blueprint + SPA catch-all at /app/
+    __init__.py       → Flask factory: registers 7 API blueprints + internal_extract_bp,
+                        plus a React-build catch-all at / (every non-/api/ path)
     helpers.py        → get_repo(), safe_int(), safe_float(), EDITABLE_FIELDS
     cache.py          → AnalyticsCache: TTL-based in-memory cache for analytics RPCs
     jobs.py           → 4 background job runners with repo param
     security.py       → CSRF config + rate_limit decorator
-    routes/
-      api.py          → /api/v1/* JSON endpoints (~30 endpoints) for React SPA
-      legislations.py → /api/v1/legislations/* endpoints (3 routes: list, detail, search)
-      dashboard.py    → Legacy Jinja2 dashboard
-      cases.py        → Legacy Jinja2 case CRUD
-      search.py       → Legacy Jinja2 search
-      export.py       → CSV/JSON export
-      pipeline_routes.py → Pipeline actions
-      update_db.py    → Legacy update DB
+    routes/           → 7 blueprints; no Jinja2 routes remain
+      api.py          → /api/v1: csrf-token, stats, stats/trends, analytics/*
+      api_cases.py    → /api/v1: cases, cases/count, cases/<case_id> (CRUD)
+      api_export.py   → /api/v1: export/csv, export/json
+      api_pipeline.py → /api/v1: job-status, download/start, pipeline-status,
+                        pipeline-action, llm-council/*
+      api_taxonomy.py → /api/v1: court-lineage, visa-registry, taxonomy/*
+      bookmarks.py    → /api/v1/collections/* (collections + bookmarks)
+      legislations.py → /api/v1/legislations/* (list, search, detail, update)
+      api_constants.py → shared config constants only, no Blueprint; exists so
+                        route modules import from here instead of each other
   sources/
     base.py           → BaseScraper: requests.Session with retry, rate limiting
     austlii.py        → AustLIIScraper: browse year listings + keyword search fallback
     federal_court.py  → FederalCourtScraper: search2.fedcourt.gov.au (DNS broken)
 
-frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v4)
+frontend/             → React SPA (Vite 7 + React 19 + TypeScript 5.9 + Tailwind v4)
   src/
-    pages/            → 26 pages including:
+    pages/            → 26 pages (authoritative list: ls frontend/src/pages/):
                         DashboardPage, CasesPage, CaseDetailPage, CaseEditPage,
                         CaseAddPage, CaseComparePage, AnalyticsPage,
                         JudgeProfilesPage, JudgeDetailPage, JudgeComparePage,
                         LegislationsPage, LegislationDetailPage,
-                        CourtLineagePage, DownloadPage, PipelinePage,
-                        CollectionsPage, CollectionDetailPage,
+                        CourtLineagePage, CollectionsPage, CollectionDetailPage,
                         GuidedSearchPage, SemanticSearchPage, SavedSearchesPage,
                         LlmCouncilPage, LlmCouncilSessionsPage, DataDictionaryPage,
-                        SearchTaxonomyPage,
-                        DesignTokensPage, JobStatusPage
+                        SearchTaxonomyPage, DataToolsPage,
+                        AdminPipelineRunsPage, LoginPage, DesignTokensPage
     components/       → Shared (Breadcrumb, CourtBadge, ConfirmModal, etc.) + layout
     hooks/            → TanStack Query hooks (use-cases, use-stats, use-theme,
                         use-keyboard, use-legislations, etc.)
