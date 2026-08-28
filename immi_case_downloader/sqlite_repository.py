@@ -119,6 +119,10 @@ class SqliteRepository:
 
     supports_seek_pagination = True
     pagination_backend_kind = "sqlite"
+    # COUNT(*) here is always exact (see count_cases), so total_pages and the
+    # final page's size can be derived from it. Backends whose totals are
+    # planner estimates (Supabase) must leave this False.
+    counts_are_exact = True
 
     def __init__(self, db_path: str):
         self.db_path = db_path

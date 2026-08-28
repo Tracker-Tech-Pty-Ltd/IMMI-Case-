@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -15,12 +16,17 @@ from dataclasses import dataclass
 from typing import Any
 
 
-SEEK_SORT_FIELDS = frozenset({"date", "year"})
+# "date" is deliberately absent: the seek path orders by (year, case_id) while
+# the offset path orders date-sorted queries by (year, month, day, case_id).
+# Admitting "date" here makes a listing duplicate some rows and hide others as
+# soon as paging crosses the seek/offset boundary. Re-adding it requires
+# teaching SeekAnchor and list_cases_seek() the full composite date key.
+SEEK_SORT_FIELDS = frozenset({"year"})
 ANCHOR_INTERVAL_PAGES = 10
 ANCHOR_TTL_SECONDS = 300
 MAX_ANCHOR_SIGNATURES = 128
 HEAD_SEEK_MAX_PAGE = 3
-TAIL_SEEK_WINDOW_PAGES = 2
+TAIL_SEEK_WINDOW_PAGES = 0
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,7 @@ class CaseListQuery:
     keyword: str = ""
     sort_by: str = "date"
     sort_dir: str = "desc"
+    page_size: int = 0
 
     def canonical_payload(self) -> dict[str, Any]:
         """Return a stable JSON payload for cache key generation."""
@@ -57,6 +64,7 @@ class CaseListQuery:
             "keyword": self.keyword or "",
             "sort_by": self.sort_by or "date",
             "sort_dir": self.sort_dir or "desc",
+            "page_size": int(self.page_size or 0),
         }
 
     def signature_hash(self) -> str:
@@ -87,6 +95,26 @@ def backend_kind_for_repo(repo: Any) -> str:
     return type(repo).__name__.strip().lower()
 
 
+def dataset_id_for_repo(repo: Any) -> str:
+    """Return a stable per-dataset identity for cache partitioning.
+
+    `backend_kind_for_repo` only says *what kind* of store this is; two
+    SqliteRepository instances over two different files both answer "sqlite".
+    The anchor cache is process-global, so without this two apps in one process
+    (tests, a dev loop that recreates the app) can serve each other's cursors.
+    Falls back to the object's identity, which is per-process and therefore
+    conservative: it never shares, it can only miss.
+    """
+    explicit = getattr(repo, "pagination_dataset_id", None)
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    for attr in ("db_path", "base_dir"):
+        value = getattr(repo, attr, None)
+        if isinstance(value, str) and value.strip():
+            return os.path.abspath(value.strip())
+    return f"obj:{id(repo):x}"
+
+
 def anchor_from_case(case: Any) -> SeekAnchor:
     """Extract the stable seek cursor from a case-like object."""
     return SeekAnchor(
@@ -108,8 +136,8 @@ class _AnchorCache:
         self._lock = threading.Lock()
         self._entries: OrderedDict[str, _AnchorBucket] = OrderedDict()
 
-    def _cache_key(self, backend_kind: str, query: CaseListQuery) -> str:
-        return f"{backend_kind}:{query.signature_hash()}:{query.sort_dir}"
+    def _cache_key(self, backend_kind: str, dataset_id: str, query: CaseListQuery) -> str:
+        return f"{backend_kind}:{dataset_id}:{query.signature_hash()}:{query.sort_dir}"
 
     def _prune_locked(self, now: float) -> None:
         expired = [
@@ -129,12 +157,13 @@ class _AnchorCache:
         backend_kind: str,
         query: CaseListQuery,
         target_page: int,
+        dataset_id: str = "",
     ) -> tuple[int, SeekAnchor] | None:
         if target_page < 1:
             return None
 
         now = time.time()
-        key = self._cache_key(backend_kind, query)
+        key = self._cache_key(backend_kind, dataset_id, query)
         with self._lock:
             self._prune_locked(now)
             bucket = self._entries.get(key)
@@ -161,12 +190,13 @@ class _AnchorCache:
         query: CaseListQuery,
         page: int,
         anchor: SeekAnchor,
+        dataset_id: str = "",
     ) -> None:
         if page < 1 or page % ANCHOR_INTERVAL_PAGES != 0 or not anchor.case_id:
             return
 
         now = time.time()
-        key = self._cache_key(backend_kind, query)
+        key = self._cache_key(backend_kind, dataset_id, query)
         with self._lock:
             self._prune_locked(now)
             bucket = self._entries.get(key)
@@ -219,12 +249,17 @@ def choose_pagination_plan(
     if total_pages > 0 and page > total_pages:
         return PaginationPlan("offset_fallback", fallback_reason="page_out_of_range")
 
-    if total_pages > 0 and page >= max(1, total_pages - TAIL_SEEK_WINDOW_PAGES):
+    if (
+        total_pages > 0
+        and page >= max(1, total_pages - TAIL_SEEK_WINDOW_PAGES)
+        and getattr(repo, "counts_are_exact", False)
+    ):
         return PaginationPlan("seek_reverse")
 
     backend_kind = backend_kind_for_repo(repo)
     anchor_hit = _ANCHOR_CACHE.get_nearest_anchor(
         backend_kind=backend_kind,
+        dataset_id=dataset_id_for_repo(repo),
         query=query,
         target_page=page - 1,
     )
@@ -258,6 +293,7 @@ def remember_page_anchor(
 
     _ANCHOR_CACHE.store_anchor(
         backend_kind=backend_kind_for_repo(repo),
+        dataset_id=dataset_id_for_repo(repo),
         query=query,
         page=page,
         anchor=anchor_from_case(page_cases[-1]),

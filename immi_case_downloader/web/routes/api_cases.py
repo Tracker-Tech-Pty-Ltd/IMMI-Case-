@@ -30,6 +30,7 @@ from ...config import START_YEAR, END_YEAR
 from ...cases_pagination import (
     CaseListQuery,
     backend_kind_for_repo,
+    can_seek_cases_query,
     choose_pagination_plan,
     remember_page_anchor,
 )
@@ -177,6 +178,7 @@ def _build_case_list_query(
     keyword: str,
     sort_by: str,
     sort_dir: str,
+    page_size: int,
 ) -> CaseListQuery:
     """Create the normalized query signature for `/api/v1/cases`."""
     return CaseListQuery(
@@ -189,6 +191,7 @@ def _build_case_list_query(
         keyword=keyword,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        page_size=page_size,
     )
 
 
@@ -274,6 +277,7 @@ def _load_cases_via_seek(
     page: int,
     page_size: int,
     total_pages: int,
+    total: int,
 ) -> tuple[list[ImmigrationCase], str, str | None]:
     """Execute the seek strategy chosen for `/api/v1/cases`."""
     strategy = plan.strategy
@@ -286,11 +290,16 @@ def _load_cases_via_seek(
         return [], "offset_fallback", "page_out_of_range"
 
     if strategy == "seek_reverse":
+        last_page_size = total - (total_pages - 1) * page_size
+        if last_page_size <= 0 or last_page_size > page_size:
+            return [], "offset_fallback", "tail_size_unreliable"
+
         reverse_steps = max(0, total_pages - page)
         reverse_anchor = None
         final_page: list[ImmigrationCase] = []
 
         for current_page in range(total_pages, page - 1, -1):
+            step_size = last_page_size if current_page == total_pages else page_size
             raw_rows = repo.list_cases_seek(
                 court=query.court,
                 year=query.year,
@@ -301,7 +310,7 @@ def _load_cases_via_seek(
                 keyword=query.keyword,
                 sort_by=query.sort_by,
                 sort_dir=query.sort_dir,
-                page_size=page_size,
+                page_size=step_size,
                 anchor=reverse_anchor,
                 reverse=True,
                 columns=CASE_LIST_COLUMNS,
@@ -369,6 +378,35 @@ def _load_cases_via_seek(
         current_page += 1
 
     return final_page, strategy, fallback_reason
+
+
+def _maybe_remember_offset_anchor(
+    repo,
+    *,
+    query: CaseListQuery,
+    page: int,
+    page_size: int,
+    page_cases: list[ImmigrationCase],
+) -> None:
+    """Record a seek anchor from a page the offset path just served.
+
+    The offset and seek paths order seek-eligible queries identically
+    (`ORDER BY year <dir>, case_id <dir>`), so the last row of an offset page is
+    a valid forward cursor. Without this, a cold forward walk never reaches the
+    anchor interval and the cache is never populated.
+    """
+    if not can_seek_cases_query(query):
+        return
+    if not getattr(repo, "supports_seek_pagination", False):
+        return
+    if len(page_cases) != page_size:
+        return
+    remember_page_anchor(
+        repo=repo,
+        query=query,
+        page=page,
+        page_cases=page_cases,
+    )
 
 
 # ── Filter-options helpers ────────────────────────────────────────────────────
@@ -755,6 +793,7 @@ def list_cases():
         keyword=keyword,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        page_size=page_size,
     )
     strategy = "offset_fallback"
     fallback_reason: str | None = None
@@ -820,6 +859,7 @@ def list_cases():
                             page=page,
                             page_size=page_size,
                             total_pages=total_pages,
+                            total=total,
                         )
                     except Exception as exc:
                         logger.warning("list_cases_seek failed; falling back to offset path", exc_info=True)
@@ -856,6 +896,13 @@ def list_cases():
                         page=page,
                         page_size=page_size,
                         count_mode=count_mode,
+                    )
+                    _maybe_remember_offset_anchor(
+                        repo,
+                        query=query,
+                        page=page,
+                        page_size=page_size,
+                        page_cases=page_cases,
                     )
                     total_pages = max(1, (total + page_size - 1) // page_size)
     except Exception:

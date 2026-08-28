@@ -23,6 +23,7 @@ from immi_case_downloader.cases_pagination import (
     can_seek_cases_query,
     choose_pagination_plan,
     clear_cases_anchor_cache,
+    dataset_id_for_repo,
     remember_page_anchor,
 )
 
@@ -92,8 +93,9 @@ class TestCaseListQuery:
 # ── can_seek_cases_query ──────────────────────────────────────────────────────
 
 class TestCanSeekCasesQuery:
-    def test_date_sort_no_keyword_returns_true(self):
-        assert can_seek_cases_query(_query(sort_by="date")) is True
+    def test_date_sort_returns_false(self):
+        """date sorting must use the offset path — the seek path orders by year."""
+        assert can_seek_cases_query(_query(sort_by="date")) is False
 
     def test_year_sort_no_keyword_returns_true(self):
         assert can_seek_cases_query(_query(sort_by="year")) is True
@@ -295,13 +297,22 @@ class TestChoosePaginationPlan:
     def test_tail_pages_return_seek_reverse(self, offset):
         total = 20
         page = total - offset
-        plan = self._plan(_seek_repo(), query=_query(sort_by="year"), page=page, total_pages=total)
+        # counts_are_exact=True: the reverse tail walk is only sound when the
+        # backend's total is exact (see cases_pagination.choose_pagination_plan).
+        repo = _seek_repo(counts_are_exact=True)
+        plan = self._plan(repo, query=_query(sort_by="year"), page=page, total_pages=total)
         assert plan.strategy == "seek_reverse"
+
+    def test_tail_page_without_exact_counts_falls_back_to_offset(self):
+        """A backend whose total is an estimate must never seek_reverse."""
+        repo = _seek_repo()  # no counts_are_exact
+        plan = self._plan(repo, query=_query(sort_by="year"), page=20, total_pages=20)
+        assert plan.strategy != "seek_reverse"
 
     def test_head_seek_for_pages_up_to_max(self):
         repo = _seek_repo()
         for p in range(2, HEAD_SEEK_MAX_PAGE + 1):
-            plan = self._plan(repo, query=_query(sort_by="date"), page=p, total_pages=100)
+            plan = self._plan(repo, query=_query(sort_by="year"), page=p, total_pages=100)
             assert plan.strategy == "seek_forward", f"page={p} should be seek_forward"
             assert plan.anchor is None
 
@@ -318,6 +329,7 @@ class TestChoosePaginationPlan:
         target_page = 15
         _ANCHOR_CACHE.store_anchor(
             backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
             query=q,
             page=ANCHOR_INTERVAL_PAGES,
             anchor=anchor,
@@ -341,7 +353,10 @@ class TestRememberPageAnchor:
             repo=repo, query=q, page=ANCHOR_INTERVAL_PAGES, page_cases=[case]
         )
         hit = _ANCHOR_CACHE.get_nearest_anchor(
-            backend_kind="test", query=q, target_page=ANCHOR_INTERVAL_PAGES
+            backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
+            query=q,
+            target_page=ANCHOR_INTERVAL_PAGES,
         )
         assert hit is not None
         _, anchor = hit
@@ -387,7 +402,10 @@ class TestRememberPageAnchor:
             repo=repo, query=q, page=ANCHOR_INTERVAL_PAGES, page_cases=cases
         )
         hit = _ANCHOR_CACHE.get_nearest_anchor(
-            backend_kind="test", query=q, target_page=ANCHOR_INTERVAL_PAGES
+            backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
+            query=q,
+            target_page=ANCHOR_INTERVAL_PAGES,
         )
         assert hit is not None
         _, anchor = hit
