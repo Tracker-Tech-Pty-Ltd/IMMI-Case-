@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Nightly full E2E run. 15:30 UTC is ~02:30 in Australia/Sydney, i.e. after
+  # the working day for this project's only operator.
+  schedule:
+    - cron: "30 15 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -171,3 +176,105 @@ jobs:
       - name: Run native pipeline tests
         run: npm test
         working-directory: workers/austlii-scraper
+
+  e2e-smoke:
+    # Blocking PR gate. Runs the two E2E files proven green in plan 040 Step 3.
+    # The Flask app is local-dev only (production is workers/cloudflare-native.js),
+    # so this is a local-dev-parity gate, not a production gate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python + E2E dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
+
+      - name: Install Playwright chromium
+        run: .venv/bin/python -m playwright install --with-deps chromium
+
+      # Build THIS PR's SPA over the committed bundle. Without this the Flask
+      # fixture serves the bundle that was committed on main, so a frontend
+      # regression in the PR cannot fail the E2E job.
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Mark the pre-build state
+        run: touch "$RUNNER_TEMP/pre-build-marker"
+
+      - name: Build the SPA under test
+        run: npm run build
+        working-directory: frontend
+
+      - name: Assert the served bundle is this PR's build
+        run: |
+          test -f immi_case_downloader/static/react/index.html
+          # Fails if the build step is ever removed or silently no-ops: the
+          # served directory must contain assets written AFTER the marker.
+          if ! find immi_case_downloader/static/react -type f -newer "$RUNNER_TEMP/pre-build-marker" | grep -q .; then
+            echo "::error::E2E would run against the committed bundle, not this PR's build"
+            exit 1
+          fi
+
+      # tests/e2e/conftest.py launches Flask in-process on a free port with 10
+      # seeded cases; no external server is required.
+      - name: Run E2E smoke subset
+        run: >-
+          .venv/bin/pytest
+          tests/e2e/test_smoke.py
+          tests/e2e/react/test_react_smoke.py
+          -q --no-cov --timeout=180
+
+  e2e-nightly:
+    # Full suite — too slow for every PR. Scheduled and manual only.
+    # tests/e2e/playwright/ is excluded on purpose: test_council_thread_visual.py
+    # defaults to E2E_BASE_URL=https://immi.trackit.today and makes real LLM calls
+    # against production. It must never run from CI.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python + E2E dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
+
+      - name: Install Playwright chromium
+        run: .venv/bin/python -m playwright install --with-deps chromium
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build the SPA under test
+        run: npm run build
+        working-directory: frontend
+
+      - name: Run full E2E suite
+        run: >-
+          .venv/bin/pytest
+          tests/e2e
+          -q --no-cov --timeout=300
+          --ignore=tests/e2e/playwright
