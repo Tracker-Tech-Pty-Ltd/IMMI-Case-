@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useEffect } from "react";
 import { act, render, screen } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
@@ -45,8 +46,14 @@ function meOk(token: string) {
 let ctx: ReturnType<typeof useAuth> | null = null;
 
 function Probe() {
-  ctx = useAuth();
-  return <div data-testid="is-auth">{String(ctx.isAuthenticated)}</div>;
+  const value = useAuth();
+  // Mirror into the outer variable inside an effect, not during render —
+  // render must stay pure; a commit-time effect is the correct place for
+  // this test-only side channel.
+  useEffect(() => {
+    ctx = value;
+  });
+  return <div data-testid="is-auth">{String(value.isAuthenticated)}</div>;
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
