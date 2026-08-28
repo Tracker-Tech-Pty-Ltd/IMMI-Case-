@@ -1,6 +1,5 @@
 """Test suite for legal concepts normalization"""
 
-import pytest
 from immi_case_downloader.normalize_legal_concepts import normalize_concept
 
 

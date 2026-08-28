@@ -3,9 +3,8 @@
 import os
 import responses
 
-import pytest
 
-from immi_case_downloader.sources.federal_court import FederalCourtScraper, FEDCOURT_BASE
+from immi_case_downloader.sources.federal_court import FederalCourtScraper
 from immi_case_downloader.config import FEDERAL_COURT_SEARCH
 from immi_case_downloader.models import ImmigrationCase
 

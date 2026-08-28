@@ -10,12 +10,9 @@ Covers:
 
 import os
 import threading
-import time
 from unittest.mock import patch
 
-import pytest
 
-from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.storage import (
     get_case_full_text,
     save_case_text,

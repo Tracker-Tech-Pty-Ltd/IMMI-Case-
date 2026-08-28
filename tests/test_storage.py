@@ -3,7 +3,6 @@
 import json
 import os
 
-import pytest
 
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.storage import (

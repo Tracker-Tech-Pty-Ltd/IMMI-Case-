@@ -3,12 +3,10 @@
 import threading
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from immi_case_downloader.pipeline import (
     PipelineConfig,
     PipelineLog,
-    PipelineEvent,
     SmartPipeline,
     get_pipeline_status,
     request_pipeline_stop,

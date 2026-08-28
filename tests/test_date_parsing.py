@@ -1,5 +1,4 @@
 """Test date parsing and monthly trends logic."""
-import pytest
 
 
 class TestDateParsing:

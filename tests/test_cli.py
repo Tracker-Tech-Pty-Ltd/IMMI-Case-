@@ -1,10 +1,8 @@
 """Tests for immi_case_downloader.cli merge and dedup logic."""
 
-import os
 from argparse import Namespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.cli import cmd_search, cmd_download, cmd_list_databases

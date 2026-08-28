@@ -5,7 +5,6 @@ TDD: these tests are written BEFORE implementation and must fail initially.
 
 import base64
 import json
-import pytest
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

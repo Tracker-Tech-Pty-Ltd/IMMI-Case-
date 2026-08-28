@@ -1,8 +1,6 @@
 """Tests for immi_case_downloader.models.ImmigrationCase."""
 
-import math
 
-import pytest
 
 from immi_case_downloader.models import ImmigrationCase
 

@@ -1,14 +1,12 @@
 """Tests for immi_case_downloader.sources.base — Phase 2 Issue 2.2."""
 
 import time
-from unittest.mock import patch, MagicMock
 
-import pytest
 import requests
 import responses
 
 from immi_case_downloader.sources.base import BaseScraper
-from immi_case_downloader.config import USER_AGENT, MAX_RETRIES, REQUEST_TIMEOUT
+from immi_case_downloader.config import USER_AGENT, MAX_RETRIES
 
 
 class TestSessionConfiguration:

@@ -4,7 +4,6 @@ from playwright.sync_api import Page, expect
 from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
-    get_toast_text,
 )
 
 

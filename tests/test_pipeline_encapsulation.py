@@ -53,7 +53,7 @@ def test_get_status_returns_copy():
 
 def test_module_get_pipeline_status_without_active():
     """get_pipeline_status() returns initial state when no pipeline has run."""
-    from immi_case_downloader.pipeline import get_pipeline_status, _INITIAL_STATUS
+    from immi_case_downloader.pipeline import get_pipeline_status
     status = get_pipeline_status()
     assert status["running"] is False
     assert "stats" in status
