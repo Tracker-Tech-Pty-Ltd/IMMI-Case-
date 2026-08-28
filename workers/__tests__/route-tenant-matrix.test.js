@@ -62,6 +62,16 @@ function grant(role, tenantId = TENANT_ID, revokedAt = null) {
   );
 }
 
+/**
+ * Grant platform-operator status via the durable `users.platform_admin`
+ * column (migration 0002) — deliberately separate from `grant()`, which only
+ * ever writes a tenant-scoped `memberships.role`. SEC-01 is precisely the bug
+ * where those two were conflated.
+ */
+function grantPlatformOperator() {
+  env.IMMI_ACCOUNT_DB.exec(`UPDATE users SET platform_admin = 1 WHERE user_id = '${USER_ID}'`);
+}
+
 async function callAdmin(tenantId = TENANT_ID) {
   const token = await signJwt(
     { sub: USER_ID, tenant_id: tenantId, tenants: [tenantId], exp: Math.floor(Date.now() / 1000) + 300 },
@@ -103,13 +113,22 @@ describe("GET /api/v1/admin/pipeline-runs enforces membership at the route", () 
     });
   });
 
-  it("403 admin_required for a live membership with an insufficient role", async () => {
+  it("403 platform_operator_required for a live membership with an insufficient role", async () => {
     grant("viewer");
-    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "admin_required" } });
+    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "platform_operator_required" } });
   });
 
-  it("serves the route for a live owner membership", async () => {
+  it("403 platform_operator_required for a live tenant owner with no platform-operator grant (SEC-01)", async () => {
+    // SEC-01: `memberships.role` is self-granted at Telegram signup (every
+    // first login gets role='owner' on its own personal tenant), so a bare
+    // tenant owner must NOT be treated as a platform operator.
     grant("owner");
+    expect(await callAdmin()).toMatchObject({ status: 403, body: { code: "platform_operator_required" } });
+  });
+
+  it("serves the route for a live tenant owner who also holds a platform-operator grant", async () => {
+    grant("owner");
+    grantPlatformOperator();
     const result = await callAdmin();
     expect(result.status).toBe(200);
     expect(result.body).not.toBeNull();
