@@ -360,23 +360,6 @@ export class CloudflareCaseStore {
     return rows(await this.db.prepare("SELECT case_nature, outcome, case_count AS cnt FROM aggregate_nature_outcome").all());
   }
 
-  async analyticsScope({ court = "", yearFrom = 0, yearTo = 0, visaSubclass = "", caseNature = "" } = {}) {
-    const clauses = [];
-    const params = [];
-    if (court) { clauses.push("court_code = ?"); params.push(String(court)); }
-    if (visaSubclass) { clauses.push("visa_subclass = ?"); params.push(String(visaSubclass)); }
-    if (caseNature) { clauses.push("lower(case_nature) = lower(?)"); params.push(String(caseNature)); }
-    if (yearFrom) { clauses.push("year >= ?"); params.push(Number(yearFrom)); }
-    if (yearTo) { clauses.push("year <= ?"); params.push(Number(yearTo)); }
-    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return rows(await bindAll(this.db, `
-      SELECT court_code, year, outcome, visa_subclass, visa_type, source, case_nature,
-             has_full_text, case_count AS cnt
-      FROM aggregate_scope ${where}
-      ORDER BY year ASC, court_code ASC, outcome ASC
-    `, params).all());
-  }
-
   async analyticsRateRows({ court = "", yearFrom = 0, yearTo = 0, visaSubclass = "", caseNature = "" } = {}) {
     const clauses = [];
     const params = [];
