@@ -18,16 +18,23 @@ from __future__ import annotations
 import csv
 import os
 import re
-from collections.abc import Iterator
-from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
+
+from ..csv_write_lock import CatalogLockedError, catalog_lock
 
 _JOB_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
-
-class CatalogLockedError(RuntimeError):
-    """Raised when a catalog lock is already held by another job."""
+# Re-exported so the repo-root batch jobs keep importing both from here. The
+# implementations live in ``immi_case_downloader.csv_write_lock`` because the
+# web/CLI writers take the *same* lock on the *same* file: two lock protocols
+# over one path is how the catalog gets two concurrent writers.
+__all__ = [
+    "CatalogLockedError",
+    "atomic_write_rows",
+    "catalog_lock",
+    "load_project_env",
+    "temp_path_for",
+]
 
 
 def temp_path_for(csv_path: Path, job_name: str) -> Path:
@@ -80,37 +87,6 @@ def atomic_write_rows(
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
-
-
-@contextmanager
-def catalog_lock(csv_path: Path, job_name: str) -> Iterator[None]:
-    """Mutual-exclusion lock over ``csv_path``, held for the duration of the block.
-
-    Never steals a stale lock automatically: a wrong steal risks concurrent
-    writers destroying the catalog, which is unrecoverable, so a held lock
-    always raises ``CatalogLockedError`` naming the job that holds it. An
-    operator who is certain no other job is running deletes the lock file by
-    hand.
-    """
-    lock_path = csv_path.with_name(f"{csv_path.name}.lock")
-    try:
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError as exc:
-        existing = lock_path.read_text(encoding="utf-8") if lock_path.exists() else ""
-        raise CatalogLockedError(
-            f"Catalog lock already held: {lock_path}\n{existing}"
-            "Delete the lock file if you are certain no other job is running."
-        ) from exc
-
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(f"{job_name} pid={os.getpid()} started={datetime.now().isoformat()}\n")
-        yield
-    finally:
-        try:
-            os.unlink(str(lock_path))
-        except FileNotFoundError:
-            pass
 
 
 def load_project_env() -> None:
