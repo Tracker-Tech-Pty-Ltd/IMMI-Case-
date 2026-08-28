@@ -22,7 +22,14 @@
 #                    NOT as Worker secrets.
 #   JWT_SECRET_CURRENT / JWT_KID_CURRENT — Worker auth signing material.
 #   TELEGRAM_BOT_TOKEN — Telegram Login HMAC verification secret.
-#   AUTH_TOKEN        — pipeline enqueue authentication (pipeline worker only).
+#   EXTRACTION_SHARED_SECRET — pipeline worker only. Sent to the extraction
+#                    backend as X-Extraction-Token
+#                    (workers/austlii-scraper/src/extract.ts:142) and
+#                    required before any extract batch runs (extract.ts:45).
+#                    AUTH_TOKEN was removed from this list on 2026-08-27:
+#                    the scraper Worker is cron-only and exposes no HTTP
+#                    trigger, so nothing reads env.AUTH_TOKEN any more
+#                    (workers/austlii-scraper/src/index.ts:166-168).
 #
 # Exit codes:
 #   0 — all required secrets present
@@ -43,7 +50,7 @@ case "$WORKER_KIND" in
     )
     ;;
   pipeline)
-    REQUIRED_SECRETS=(AUTH_TOKEN EXTRACTION_SHARED_SECRET)
+    REQUIRED_SECRETS=(EXTRACTION_SHARED_SECRET)
     ;;
   *)
     echo "[preflight] FATAL: WORKER_KIND must be main or pipeline" >&2

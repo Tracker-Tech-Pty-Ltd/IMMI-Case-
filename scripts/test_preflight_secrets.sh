@@ -105,10 +105,16 @@ run_case "exit-0 wrangler banner tolerated" \
 [{"name":"CSRF_SECRET","type":"secret_text"},{"name":"CF_AIG_TOKEN","type":"secret_text"},{"name":"JWT_SECRET_CURRENT","type":"secret_text"},{"name":"JWT_KID_CURRENT","type":"secret_text"},{"name":"TELEGRAM_BOT_TOKEN","type":"secret_text"}]' \
   0
 
-run_case "pipeline requires only AUTH_TOKEN" \
-  '[{"name":"AUTH_TOKEN","type":"secret_text"},{"name":"EXTRACTION_SHARED_SECRET","type":"secret_text"}]' \
+run_case "pipeline requires only EXTRACTION_SHARED_SECRET" \
+  '[{"name":"EXTRACTION_SHARED_SECRET","type":"secret_text"}]' \
   0 \
   "" \
+  pipeline
+
+run_case "pipeline fails without EXTRACTION_SHARED_SECRET" \
+  '[{"name":"AUTH_TOKEN","type":"secret_text"}]' \
+  1 \
+  "EXTRACTION_SHARED_SECRET" \
   pipeline
 
 if (( FAIL == 0 )); then
