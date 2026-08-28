@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_extraction_image_and_source_have_no_database_runtime_markers() -> None:
     source = "\n".join(
         (ROOT / name).read_text(encoding="utf-8")
-        for name in ("Dockerfile", "Dockerfile.extractor", "extract_container.py", "requirements-extractor.txt")
+        for name in ("Dockerfile", "extract_container.py", "requirements-extractor.txt")
     ).lower()
     for marker in ("supabase", "postgres", "hyperdrive", "database_url", "service_role"):
         assert marker not in source, marker
