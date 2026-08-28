@@ -52,14 +52,14 @@ function Probe() {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 function refreshCalls(): number {
-  return fetchMock.mock.calls.filter(([u]: [unknown]) =>
-    String(u).includes("/auth/refresh"),
+  return fetchMock.mock.calls.filter((call: unknown[]) =>
+    String(call[0]).includes("/auth/refresh"),
   ).length;
 }
 
 function meCalls(): number {
-  return fetchMock.mock.calls.filter(([u]: [unknown]) =>
-    String(u).includes("/auth/me"),
+  return fetchMock.mock.calls.filter((call: unknown[]) =>
+    String(call[0]).includes("/auth/me"),
   ).length;
 }
 
