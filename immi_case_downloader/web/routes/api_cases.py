@@ -276,6 +276,7 @@ def _load_cases_via_seek(
     page: int,
     page_size: int,
     total_pages: int,
+    total: int,
 ) -> tuple[list[ImmigrationCase], str, str | None]:
     """Execute the seek strategy chosen for `/api/v1/cases`."""
     strategy = plan.strategy
@@ -288,11 +289,16 @@ def _load_cases_via_seek(
         return [], "offset_fallback", "page_out_of_range"
 
     if strategy == "seek_reverse":
+        last_page_size = total - (total_pages - 1) * page_size
+        if last_page_size <= 0 or last_page_size > page_size:
+            return [], "offset_fallback", "tail_size_unreliable"
+
         reverse_steps = max(0, total_pages - page)
         reverse_anchor = None
         final_page: list[ImmigrationCase] = []
 
         for current_page in range(total_pages, page - 1, -1):
+            step_size = last_page_size if current_page == total_pages else page_size
             raw_rows = repo.list_cases_seek(
                 court=query.court,
                 year=query.year,
@@ -303,7 +309,7 @@ def _load_cases_via_seek(
                 keyword=query.keyword,
                 sort_by=query.sort_by,
                 sort_dir=query.sort_dir,
-                page_size=page_size,
+                page_size=step_size,
                 anchor=reverse_anchor,
                 reverse=True,
                 columns=CASE_LIST_COLUMNS,
@@ -823,6 +829,7 @@ def list_cases():
                             page=page,
                             page_size=page_size,
                             total_pages=total_pages,
+                            total=total,
                         )
                     except Exception as exc:
                         logger.warning("list_cases_seek failed; falling back to offset path", exc_info=True)

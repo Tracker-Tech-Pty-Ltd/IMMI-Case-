@@ -297,8 +297,17 @@ class TestChoosePaginationPlan:
     def test_tail_pages_return_seek_reverse(self, offset):
         total = 20
         page = total - offset
-        plan = self._plan(_seek_repo(), query=_query(sort_by="year"), page=page, total_pages=total)
+        # counts_are_exact=True: the reverse tail walk is only sound when the
+        # backend's total is exact (see cases_pagination.choose_pagination_plan).
+        repo = _seek_repo(counts_are_exact=True)
+        plan = self._plan(repo, query=_query(sort_by="year"), page=page, total_pages=total)
         assert plan.strategy == "seek_reverse"
+
+    def test_tail_page_without_exact_counts_falls_back_to_offset(self):
+        """A backend whose total is an estimate must never seek_reverse."""
+        repo = _seek_repo()  # no counts_are_exact
+        plan = self._plan(repo, query=_query(sort_by="year"), page=20, total_pages=20)
+        assert plan.strategy != "seek_reverse"
 
     def test_head_seek_for_pages_up_to_max(self):
         repo = _seek_repo()

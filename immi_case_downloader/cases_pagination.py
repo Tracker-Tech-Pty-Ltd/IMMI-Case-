@@ -26,7 +26,7 @@ ANCHOR_INTERVAL_PAGES = 10
 ANCHOR_TTL_SECONDS = 300
 MAX_ANCHOR_SIGNATURES = 128
 HEAD_SEEK_MAX_PAGE = 3
-TAIL_SEEK_WINDOW_PAGES = 2
+TAIL_SEEK_WINDOW_PAGES = 0
 
 
 @dataclass(frozen=True)
@@ -249,7 +249,11 @@ def choose_pagination_plan(
     if total_pages > 0 and page > total_pages:
         return PaginationPlan("offset_fallback", fallback_reason="page_out_of_range")
 
-    if total_pages > 0 and page >= max(1, total_pages - TAIL_SEEK_WINDOW_PAGES):
+    if (
+        total_pages > 0
+        and page >= max(1, total_pages - TAIL_SEEK_WINDOW_PAGES)
+        and getattr(repo, "counts_are_exact", False)
+    ):
         return PaginationPlan("seek_reverse")
 
     backend_kind = backend_kind_for_repo(repo)
