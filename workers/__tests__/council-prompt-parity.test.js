@@ -24,7 +24,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ANTHROPIC_GROUNDED_SYSTEM_PROMPT,
   DEFAULT_ANTHROPIC_SYSTEM_PROMPT,
@@ -99,6 +99,15 @@ describe("council prompt parity with the canonical JSON", () => {
 });
 
 describe("the grounded variant reaches only the path that sends a tool", () => {
+  // Every test in this block installs a vi.spyOn(globalThis, "fetch"). In
+  // vitest 4, spying on an already-spied global returns the EXISTING spy
+  // (with its accumulated call history) instead of a fresh one, so a spy
+  // left installed at the end of one test silently pollutes the next
+  // test's fetchSpy.mock.calls. Restore after every test so each one starts
+  // from a clean, unspied globalThis.fetch — matching the convention used
+  // throughout llm-council-runner.test.js.
+  afterEach(() => vi.restoreAllMocks());
+
   it("streamAnthropicNative posts the grounded prompt AND a web_search tool block", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(makeEmptyStreamResponse());
 
