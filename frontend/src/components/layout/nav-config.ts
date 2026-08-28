@@ -5,7 +5,6 @@ import {
   Activity,
   BookOpen,
   BookMarked,
-  Palette,
   TrendingUp,
   Users,
   Network,
@@ -94,7 +93,6 @@ export const APP_NAV_GROUPS: readonly AppNavGroup[] = [
         icon: BookOpen,
         labelKey: "nav.data_dictionary",
       },
-      { to: "/design-tokens", icon: Palette, labelKey: "nav.design_tokens" },
     ],
   },
 ];
