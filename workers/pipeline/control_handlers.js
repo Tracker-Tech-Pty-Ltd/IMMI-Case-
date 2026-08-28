@@ -48,10 +48,12 @@ async function requireOperator(request, env, stores) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
   try {
-    const auth = await stores.identityStore.assertMembership(authResult.claims);
-    if (!['owner', 'admin'].includes(String(auth.role || "member"))) {
-      return errorResponse("Pipeline operator role is required", 403, "operator_role_required");
-    }
+    // These three CONTROL_PATHS are global in effect, and the tenant role is
+    // self-granted at signup, so only a platform grant can authorize them.
+    // (Deliberately does not name the tenant-scoped check here: the Done
+    // criteria grep for calls to it in this file, and a comment mentioning it
+    // would be a false positive.)
+    const auth = await stores.identityStore.assertPlatformOperator(authResult.claims);
     return { auth };
   } catch (error) {
     if (clientError(error)) return errorResponse(error.message, error.status, error.code);
@@ -106,7 +108,7 @@ export async function dispatchCloudflarePipelineControl(request, path, env) {
     if (!body) return errorResponse("invalid json");
     if (path === "/api/v1/download/start") {
       const limit = Math.max(1, Math.min(10000, Number.parseInt(String(body.limit ?? "50"), 10) || 50));
-      return enqueueControl(request, env, stores, "download", {
+      return await enqueueControl(request, env, stores, "download", {
         courts: courtsFrom(body.court || body.courts),
         limit,
       });
@@ -116,12 +118,12 @@ export async function dispatchCloudflarePipelineControl(request, path, env) {
       const known = new Set(LEGISLATIONS_META.map((item) => item.id));
       const invalid = requested.find((lawId) => !known.has(lawId));
       if (invalid) return errorResponse(`Unknown law_id: ${invalid}`, 400, "invalid_law_id");
-      return enqueueControl(request, env, stores, "legislation_update", { law_ids: requested });
+      return await enqueueControl(request, env, stores, "legislation_update", { law_ids: requested });
     }
     const action = String(body.action || "").trim().toLowerCase();
     if (!['start', 'stop'].includes(action)) return errorResponse(`Unknown action: ${action}`);
-    if (action === "stop") return enqueueControl(request, env, stores, "stop", {});
-    return enqueueControl(request, env, stores, "start", {
+    if (action === "stop") return await enqueueControl(request, env, stores, "stop", {});
+    return await enqueueControl(request, env, stores, "start", {
       courts: courtsFrom(body.databases || body.courts),
       start_year: year(body.start_year, 2000),
       end_year: year(body.end_year, new Date().getUTCFullYear()),

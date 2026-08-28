@@ -9,6 +9,7 @@ vi.mock("../auth/request_auth.js", () => ({ requireAuth: (...args) => mockRequir
 vi.mock("../auth/csrf.js", () => ({ verifyCsrf: (...args) => mockVerifyCsrf(...args) }));
 vi.mock("../auth/jwt.js", () => ({ verifyJwt: vi.fn() }));
 
+import { StorageBoundaryError } from "../storage/contracts.js";
 import { dispatchCloudflarePipelineControl } from "../pipeline/control_handlers.js";
 
 const CLAIMS = {
@@ -27,7 +28,10 @@ function request(path, body) {
 
 function stores() {
   return {
-    identityStore: { assertMembership: vi.fn(async () => ({ ...CLAIMS, role: "admin" })) },
+    identityStore: {
+      assertMembership: vi.fn(async () => ({ ...CLAIMS, role: "admin" })),
+      assertPlatformOperator: vi.fn(async () => ({ ...CLAIMS, platformOperator: true, grant: "platform_admin" })),
+    },
     pipelineStore: {
       recordControlCommand: vi.fn(async () => true),
       updateControlCommand: vi.fn(async () => undefined),
@@ -88,18 +92,61 @@ describe("Cloudflare-native pipeline controls", () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ action: "download", limit: 12 }));
   });
 
-  it("requires an operator role", async () => {
-    mockStores.mockReturnValue({
-      identityStore: { assertMembership: vi.fn(async () => ({ ...CLAIMS, role: "viewer" })) },
-      pipelineStore: { recordControlCommand: vi.fn(), updateControlCommand: vi.fn() },
+  it("requires a platform operator grant, not a tenant role", async () => {
+    const current = stores();
+    // A tenant `viewer` and a tenant `owner` are equally irrelevant now: the
+    // signup flow self-grants `owner`, so only the platform grant decides.
+    current.identityStore.assertMembership = vi.fn(async () => ({ ...CLAIMS, role: "viewer" }));
+    current.identityStore.assertPlatformOperator = vi.fn(async () => {
+      throw new StorageBoundaryError("Platform operator access is required", {
+        code: "platform_operator_required",
+        status: 403,
+      });
     });
+    mockStores.mockReturnValue(current);
     const response = await dispatchCloudflarePipelineControl(
       request("/api/v1/pipeline-action", { action: "stop" }),
       "/api/v1/pipeline-action",
       { IMMI_STORAGE_MODE: "cloudflare", PIPELINE_CONTROL_QUEUE: { send: vi.fn() } },
     );
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: "operator_role_required" });
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+  });
+
+  it("returns a typed response when the control queue rejects", async () => {
+    const current = stores();
+    mockStores.mockReturnValue(current);
+    const send = vi.fn(async () => { throw new Error("queue unavailable"); });
+    const response = await dispatchCloudflarePipelineControl(
+      request("/api/v1/pipeline-action", { action: "start" }),
+      "/api/v1/pipeline-action",
+      { IMMI_STORAGE_MODE: "cloudflare", PIPELINE_CONTROL_QUEUE: { send } },
+    );
+    // Before the `await` fix this rejects out of the dispatcher entirely and
+    // the runtime turns it into a bodyless 500 with no `code` field.
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(await response.json()).toHaveProperty("code");
+  });
+
+  it("denies a self-granted tenant owner who is not a platform operator", async () => {
+    const current = stores();
+    current.identityStore.assertPlatformOperator = vi.fn(async () => {
+      throw new StorageBoundaryError("Platform operator access is required", {
+        code: "platform_operator_required",
+        status: 403,
+      });
+    });
+    mockStores.mockReturnValue(current);
+    const send = vi.fn(async () => undefined);
+    const response = await dispatchCloudflarePipelineControl(
+      request("/api/v1/pipeline-action", { action: "start" }),
+      "/api/v1/pipeline-action",
+      { IMMI_STORAGE_MODE: "cloudflare", PIPELINE_CONTROL_QUEUE: { send } },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+    expect(send).not.toHaveBeenCalled();
+    expect(current.pipelineStore.recordControlCommand).not.toHaveBeenCalled();
   });
 
   it("validates and queues a native legislation update command", async () => {

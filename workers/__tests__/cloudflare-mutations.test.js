@@ -9,6 +9,7 @@ vi.mock("../auth/request_auth.js", () => ({ requireAuth: (...args) => mockRequir
 vi.mock("../auth/csrf.js", () => ({ verifyCsrf: (...args) => mockVerifyCsrf(...args) }));
 vi.mock("../auth/jwt.js", () => ({ verifyJwt: vi.fn() }));
 
+import { StorageBoundaryError } from "../storage/contracts.js";
 import { dispatchCloudflareCaseMutation } from "../case-api/cloudflare_mutations.js";
 
 const CLAIMS = {
@@ -27,7 +28,10 @@ function request(path, body, method = "POST") {
 
 function stores() {
   return {
-    identityStore: { assertMembership: vi.fn(async (claims) => ({ ...claims, role: "owner" })) },
+    identityStore: {
+      assertMembership: vi.fn(async (claims) => ({ ...claims, role: "owner" })),
+      assertPlatformOperator: vi.fn(async (claims) => ({ ...claims, platformOperator: true, grant: "platform_admin" })),
+    },
     objectStore: { putCaseSource: vi.fn(async ({ caseId }) => ({ key: `cases/${caseId}/source/${"a".repeat(64)}.txt`, sha256: "a".repeat(64), size: 4, contentType: "text/plain; charset=utf-8" })) },
     caseStore: {
       putImportedCase: vi.fn(async () => undefined),
@@ -88,7 +92,7 @@ describe("Cloudflare-native case mutations", () => {
     expect((await response.json())).toMatchObject({ semantic_ready: false, semantic_queued: true });
   });
 
-  it("uses tenant auth and CSRF for metadata update", async () => {
+  it("requires a platform operator grant and CSRF for metadata update", async () => {
     const current = stores();
     mockStores.mockReturnValue(current);
     const queue = { send: vi.fn(async () => undefined) };
@@ -98,7 +102,7 @@ describe("Cloudflare-native case mutations", () => {
       { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
     );
     expect(response.status).toBe(200);
-    expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);
+    expect(current.identityStore.assertPlatformOperator).toHaveBeenCalledWith(CLAIMS);
     expect(current.caseStore.updateCaseFields).toHaveBeenCalledWith("0123456789ab", { title: "Updated" });
   });
 
@@ -244,6 +248,7 @@ describe("Cloudflare-native case mutations", () => {
     expect(mockVerifyCsrf).not.toHaveBeenCalled();
     expect(mockRequireAuth).not.toHaveBeenCalled();
     expect(current.identityStore.assertMembership).not.toHaveBeenCalled();
+    expect(current.identityStore.assertPlatformOperator).not.toHaveBeenCalled();
     expect(current.caseStore.putImportedCase).toHaveBeenCalledOnce();
   });
 
@@ -264,6 +269,98 @@ describe("Cloudflare-native case mutations", () => {
     expect(response.status).toBe(201);
     expect(mockVerifyCsrf).toHaveBeenCalled();
     expect(mockRequireAuth).toHaveBeenCalled();
-    expect(current.identityStore.assertMembership).toHaveBeenCalledWith(CLAIMS);
+    expect(current.identityStore.assertPlatformOperator).toHaveBeenCalledWith(CLAIMS);
+  });
+});
+
+describe("Cloudflare-native case mutations — platform operator gate (SEC-02)", () => {
+  function denyOperator(current) {
+    current.identityStore.assertPlatformOperator = vi.fn(async () => {
+      throw new StorageBoundaryError("Platform operator access is required", {
+        code: "platform_operator_required",
+        status: 403,
+      });
+    });
+    return current;
+  }
+
+  it("denies POST /api/v1/cases without a platform operator grant", async () => {
+    const current = denyOperator(stores());
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const response = await dispatchCloudflareCaseMutation(
+      request("/api/v1/cases", { title: "Example", citation: "[2026] FCA 1", text: "case text" }),
+      "/api/v1/cases",
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+    expect(current.caseStore.putImportedCase).not.toHaveBeenCalled();
+  });
+
+  it("denies PUT /api/v1/cases/:id without a platform operator grant", async () => {
+    const current = denyOperator(stores());
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const response = await dispatchCloudflareCaseMutation(
+      request("/api/v1/cases/0123456789ab", { title: "Updated" }, "PUT"),
+      "/api/v1/cases/0123456789ab",
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+    expect(current.caseStore.updateCaseFields).not.toHaveBeenCalled();
+  });
+
+  it("denies DELETE /api/v1/cases/:id without a platform operator grant", async () => {
+    const current = denyOperator(stores());
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const response = await dispatchCloudflareCaseMutation(
+      request("/api/v1/cases/0123456789ab", {}, "DELETE"),
+      "/api/v1/cases/0123456789ab",
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+    expect(current.caseStore.deleteCase).not.toHaveBeenCalled();
+  });
+
+  it("denies a batch delete without a platform operator grant", async () => {
+    const current = denyOperator(stores());
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const response = await dispatchCloudflareCaseMutation(
+      request("/api/v1/cases/batch", { action: "delete", case_ids: ["0123456789ab", "0123456789ac"] }),
+      "/api/v1/cases/batch",
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "platform_operator_required" });
+    expect(current.caseStore.batchDeleteCases).not.toHaveBeenCalled();
+  });
+
+  it("still accepts the crawler service token, bypassing the platform operator check", async () => {
+    const current = denyOperator(stores());
+    mockStores.mockReturnValue(current);
+    const queue = { send: vi.fn(async () => undefined) };
+    const req = new Request("https://immi.example/api/v1/cases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer s3cret" },
+      body: JSON.stringify({ title: "Example", citation: "[2024] AATA 2", text: "case text" }),
+    });
+    const response = await dispatchCloudflareCaseMutation(
+      req,
+      "/api/v1/cases",
+      {
+        IMMI_STORAGE_MODE: "cloudflare",
+        IMMI_CASE_MUTATIONS_ENABLED: "true",
+        CASE_MUTATION_QUEUE: queue,
+        CRAWLER_WRITE_TOKEN: "s3cret",
+      },
+    );
+    expect(response.status).toBe(201);
+    expect(current.identityStore.assertPlatformOperator).not.toHaveBeenCalled();
+    expect(current.caseStore.putImportedCase).toHaveBeenCalledOnce();
   });
 });

@@ -13,7 +13,23 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { checkNonce } from "../auth/nonce_do.js";
+import { AuthNonce, checkNonce } from "../auth/nonce_do.js";
+
+/** Fake Durable Object storage for exercising AuthNonce.fetch()/alarm() directly. */
+function fakeState(initial = new Map()) {
+  let alarm = null;
+  const storage = {
+    _map: initial,
+    async get(key) { return initial.get(key); },
+    async put(key, value) { initial.set(key, value); },
+    async list() { return new Map(initial); },
+    async delete(keys) { for (const k of [].concat(keys)) initial.delete(k); },
+    async getAlarm() { return alarm; },
+    async setAlarm(when) { alarm = when; },
+    get _alarm() { return alarm; },
+  };
+  return { storage };
+}
 
 /**
  * Build a fake DurableObjectNamespace whose stub.fetch() returns the given
@@ -94,5 +110,57 @@ describe("checkNonce — env binding name wiring", () => {
     };
     const ok = await checkNonce({ AUTH_NONCE: ns }, "abc123hash");
     expect(ok).toBe(false);
+  });
+});
+
+describe("AuthNonce storage pruning", () => {
+  it("persists a nonce without an options argument (expirationTtl is a no-op KV option)", async () => {
+    const { storage } = fakeState();
+    const putSpy = vi.spyOn(storage, "put");
+    const nonce = new AuthNonce({ storage }, {});
+    await nonce.fetch(new Request("https://internal/nonce", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hash: "hash-1" }),
+    }));
+    expect(putSpy).toHaveBeenCalledOnce();
+    expect(putSpy.mock.calls[0]).toHaveLength(2);
+  });
+
+  it("schedules an alarm on first write when none exists", async () => {
+    const { storage } = fakeState();
+    const nonce = new AuthNonce({ storage }, {});
+    expect(await storage.getAlarm()).toBeNull();
+    await nonce.fetch(new Request("https://internal/nonce", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hash: "hash-1" }),
+    }));
+    expect(typeof (await storage.getAlarm())).toBe("number");
+  });
+
+  it("alarm() deletes entries older than one hour and keeps fresh ones", async () => {
+    const now = Date.now();
+    const { storage } = fakeState(new Map([
+      ["old", now - 7_200_000],
+      ["fresh", now],
+    ]));
+    const nonce = new AuthNonce({ storage }, {});
+    await nonce.alarm();
+    const remaining = await storage.list();
+    expect([...remaining.keys()]).toEqual(["fresh"]);
+  });
+
+  it("re-arms only while entries remain", async () => {
+    const now = Date.now();
+    const { storage: storageWithFresh } = fakeState(new Map([["fresh", now]]));
+    const nonceWithFresh = new AuthNonce({ storage: storageWithFresh }, {});
+    await nonceWithFresh.alarm();
+    expect(typeof (await storageWithFresh.getAlarm())).toBe("number");
+
+    const { storage: storageAllExpired } = fakeState(new Map([["old", now - 7_200_000]]));
+    const nonceAllExpired = new AuthNonce({ storage: storageAllExpired }, {});
+    await nonceAllExpired.alarm();
+    expect(await storageAllExpired.getAlarm()).toBeNull();
   });
 });

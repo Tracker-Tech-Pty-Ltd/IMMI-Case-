@@ -53,9 +53,30 @@ function redirect(next, accessToken, refreshToken) {
   return new Response(null, { status: 302, headers });
 }
 
-function safeRedirectTarget(value) {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return "/app/";
-  return value;
+const DEFAULT_REDIRECT = "/app/";
+
+/**
+ * Resolve the post-login `next` target to a same-origin path, or the default.
+ *
+ * Prefix checks alone are not sufficient: `/\evil.example` passes a
+ * `startsWith("//")` test but browsers resolve it as a protocol-relative URL
+ * (WHATWG URL "special authority ignore slashes" state), producing an open
+ * redirect from a genuine immi.trackit.today login link. Parse against the
+ * request origin and accept only when the resolved origin still matches.
+ */
+export function safeRedirectTarget(value, origin) {
+  if (typeof value !== "string" || !value.startsWith("/")) return DEFAULT_REDIRECT;
+  // Reject C0 controls, DEL and backslashes outright — none belong in a path
+  // and all of them are URL-parser ambiguity vectors.
+  if (/[\u0000-\u001f\u007f\\]/.test(value)) return DEFAULT_REDIRECT;
+  let resolved;
+  try {
+    resolved = new URL(value, origin);
+  } catch {
+    return DEFAULT_REDIRECT;
+  }
+  if (resolved.origin !== new URL(origin).origin) return DEFAULT_REDIRECT;
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
 function clientError(err) {
@@ -126,7 +147,7 @@ export async function handleTelegramLogin(request, env) {
 
 export async function handleTelegramCallback(request, env) {
   const url = new URL(request.url);
-  const next = safeRedirectTarget(url.searchParams.get("next"));
+  const next = safeRedirectTarget(url.searchParams.get("next"), url.origin);
   const data = Object.fromEntries(url.searchParams.entries());
   delete data.next;
   if (!data.hash) return Response.redirect(`${url.origin}/app/login?auth_error=missing_telegram_payload`, 302);

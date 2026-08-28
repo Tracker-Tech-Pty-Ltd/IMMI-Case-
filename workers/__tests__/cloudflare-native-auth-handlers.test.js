@@ -28,6 +28,7 @@ import {
   handleAuthSwitchTenant,
   handleBootstrapLogin,
   handleTelegramLogin,
+  safeRedirectTarget,
 } from "../auth/cloudflare_handlers.js";
 
 const USER_ID = "11111111-2222-4333-8444-555555555555";
@@ -135,5 +136,46 @@ describe("Cloudflare-native Bootstrap login", () => {
     expect(body.access_token).toBe("access-token");
     const cookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
     expect(cookies.some((c) => c.startsWith("immi_refresh=refresh-token"))).toBe(true);
+  });
+});
+
+
+describe("safeRedirectTarget", () => {
+  const ORIGIN = "https://immi.example";
+
+  it("accepts a same-origin path", () => {
+    expect(safeRedirectTarget("/cases/abc", ORIGIN)).toBe("/cases/abc");
+  });
+
+  it("accepts a same-origin path with query and hash", () => {
+    expect(safeRedirectTarget("/cases?year=2024#top", ORIGIN)).toBe("/cases?year=2024#top");
+  });
+
+  it("rejects a backslash-prefixed target (WHATWG special-authority-ignore-slashes)", () => {
+    expect(safeRedirectTarget("/\\evil.example", ORIGIN)).toBe("/app/");
+  });
+
+  it("rejects a protocol-relative target", () => {
+    expect(safeRedirectTarget("//evil.example", ORIGIN)).toBe("/app/");
+  });
+
+  it("rejects an absolute URL to another origin", () => {
+    expect(safeRedirectTarget("https://evil.example", ORIGIN)).toBe("/app/");
+  });
+
+  it("rejects a slash-backslash-slash target", () => {
+    expect(safeRedirectTarget("/\\/evil.example", ORIGIN)).toBe("/app/");
+  });
+
+  it("rejects a target containing a NUL byte", () => {
+    expect(safeRedirectTarget("/cases\u0000evil", ORIGIN)).toBe("/app/");
+  });
+
+  it("falls back to the default for null", () => {
+    expect(safeRedirectTarget(null, ORIGIN)).toBe("/app/");
+  });
+
+  it("falls back to the default for an empty string", () => {
+    expect(safeRedirectTarget("", ORIGIN)).toBe("/app/");
   });
 });

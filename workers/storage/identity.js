@@ -41,9 +41,24 @@ function refreshDraftValues(draft) {
   return { jti, userId, familyId, expiresAt: expiresAt.toISOString() };
 }
 
+/** Parse the operator break-glass allowlist: comma/space separated user UUIDs. */
+function parseOperatorAllowlist(value) {
+  if (typeof value !== "string" || !value.trim()) return new Set();
+  return new Set(
+    value
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 export class CloudflareIdentityStore {
   constructor(env) {
     this.db = requireD1(env.IMMI_ACCOUNT_DB, "IMMI_ACCOUNT_DB");
+    // Break-glass operator grant. Operator-supplied Worker var, absent from
+    // the checked-in wrangler.toml by design (same policy as the resource IDs
+    // and JWT secrets). Unset => nobody is a platform operator.
+    this.platformOperatorIds = parseOperatorAllowlist(env?.IMMI_PLATFORM_OPERATOR_IDS);
   }
 
   async assertMembership(auth) {
@@ -60,6 +75,51 @@ export class CloudflareIdentityStore {
       });
     }
     return { ...context, role: membership.role };
+  }
+
+  /**
+   * Assert *platform* authority, which is deliberately NOT the tenant role.
+   *
+   * `memberships.role` is self-granted — upsertTelegramUser() inserts
+   * role='owner' for the personal tenant it creates on first Telegram login —
+   * so it can only ever authorize tenant-scoped resources. Global surfaces
+   * (pipeline controls, platform admin reads, shared-catalog writes) must call
+   * this instead.
+   *
+   * Two grant sources, both defaulting to "nobody":
+   *   1. `users.platform_admin = 1` (migration 0002) — the durable grant.
+   *   2. `IMMI_PLATFORM_OPERATOR_IDS` — an operator-supplied Worker var with a
+   *      comma-separated list of user UUIDs. Break-glass, and the only way to
+   *      grant the first operator before migration 0002 has been applied.
+   *
+   * Fails closed: any D1 error while reading the column (for example when
+   * migration 0002 has not been applied yet) denies rather than throwing.
+   */
+  async assertPlatformOperator(auth) {
+    const context = await this.assertMembership(auth);
+    if (this.platformOperatorIds.has(context.userId)) {
+      return { ...context, platformOperator: true, grant: "allowlist" };
+    }
+    let row = null;
+    try {
+      row = await this.db.prepare(`
+        SELECT platform_admin FROM users WHERE user_id = ? LIMIT 1
+      `).bind(context.userId).first();
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "auth.platform_operator.lookup_failed",
+        user_id: context.userId,
+        error: error?.message,
+      }));
+      row = null;
+    }
+    if (Number(row?.platform_admin) === 1) {
+      return { ...context, platformOperator: true, grant: "platform_admin" };
+    }
+    throw new StorageBoundaryError("Platform operator access is required", {
+      code: "platform_operator_required",
+      status: 403,
+    });
   }
 
   /**
@@ -203,15 +263,59 @@ export class CloudflareIdentityStore {
     `).bind(now, reason, checkedReplacement, now, checkedJti, checkedUserId).run();
   }
 
+  /**
+   * Revoke every live session in a refresh-token family.
+   *
+   * COALESCE keeps the original revocation metadata on rows that were already
+   * rotated, so this is idempotent and does not rewrite history.
+   */
+  async revokeRefreshFamily({ familyId, userId, reason = "reuse_detected" }) {
+    const checkedFamilyId = assertUuid(familyId, "refresh.familyId");
+    const checkedUserId = assertUuid(userId, "refresh.userId");
+    const now = utcNow();
+    const result = await this.db.prepare(`
+      UPDATE immi_refresh_sessions
+      SET revoked_at = COALESCE(revoked_at, ?),
+          revoked_reason = COALESCE(revoked_reason, ?),
+          last_used_at = COALESCE(last_used_at, ?)
+      WHERE family_id = ? AND user_id = ?
+    `).bind(now, reason, now, checkedFamilyId, checkedUserId).run();
+    return changeCount(result);
+  }
+
   async loadRefreshAuthSnapshot({ jti, userId }) {
     const checkedJti = assertUuid(jti, "refresh.jti");
     const checkedUserId = assertUuid(userId, "refresh.userId");
     const session = await this.db.prepare(`
-      SELECT jti, user_id, family_id, expires_at, revoked_at
+      SELECT jti, user_id, family_id, expires_at, revoked_at, revoked_reason
       FROM immi_refresh_sessions WHERE jti = ? AND user_id = ? LIMIT 1
     `).bind(checkedJti, checkedUserId).first();
     if (!session) throw refreshSessionError("Refresh session not found", "refresh_session_not_found");
-    if (session.revoked_at) throw refreshSessionError("Refresh token has been revoked", "revoked_refresh_token");
+    if (session.revoked_at) {
+      // Primary reuse-detection point: handleAuthRefresh calls this BEFORE
+      // rotateRefreshSession, so an already-rotated token lands here, not in
+      // the CAS backstop. A stolen refresh cookie redeemed after the victim's
+      // next refresh must kill the whole lineage, not just the presented jti.
+      //
+      // No time-based exemption, deliberately. A grace window would let an
+      // attacker who rotated first keep a live successor family whenever the
+      // victim's replay happens to land inside it, and a background tab's
+      // proactive-refresh timer lands inside any window worth having. Benign
+      // simultaneity is handled by the CAS branch in rotateRefreshSession,
+      // where the loser never held a revoked token.
+      await this.revokeRefreshFamily({
+        familyId: session.family_id,
+        userId: checkedUserId,
+        reason: "reuse_detected",
+      });
+      console.log(JSON.stringify({
+        event: "auth.refresh.reuse_detected",
+        user_id: checkedUserId,
+        family_id: session.family_id,
+        revoked_reason: session.revoked_reason || null,
+      }));
+      throw refreshSessionError("Refresh token has been revoked", "revoked_refresh_token");
+    }
     const expiresAt = new Date(session.expires_at).getTime();
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       await this.revokeRefreshSession({ jti: checkedJti, userId: checkedUserId, reason: "expired" });

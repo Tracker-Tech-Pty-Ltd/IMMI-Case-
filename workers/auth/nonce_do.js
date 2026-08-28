@@ -8,9 +8,11 @@
  *
  * Storage strategy:
  *   - In-memory Map for O(1) lookup within the same DO instance lifetime.
- *   - DO storage (KV) for cross-restart survival.
- *   - Expired nonces (>1 hr) are swept from memory on each request; DO storage
- *     entries are written with a 1-hour TTL via `expirationTtl`.
+ *   - DO storage for cross-restart survival.
+ *   - Expired nonces (>1 hr) are swept from memory on each request, and from
+ *     DO storage by the alarm() handler below. DurableObjectStorage.put() has
+ *     no built-in TTL option — the KV-only expiry argument this file used to
+ *     pass was silently ignored here, so entries accumulated forever.
  *
  * Binding requirement (wrangler.toml):
  *   [[durable_objects.bindings]]
@@ -38,6 +40,8 @@
  * `fresh: true`  → first time this hash has been seen; recorded.
  * `fresh: false` → replay detected; reject the login.
  */
+const NONCE_TTL_MS = 3_600_000;
+
 export class AuthNonce {
   /**
    * @param {DurableObjectState} state
@@ -73,7 +77,7 @@ export class AuthNonce {
 
     // Sweep expired in-memory nonces (>1 hour) to bound memory usage
     for (const [k, ts] of this.nonces) {
-      if (now - ts > 3_600_000) this.nonces.delete(k);
+      if (now - ts > NONCE_TTL_MS) this.nonces.delete(k);
     }
 
     // Check in-memory map first (fast path — avoids DO storage round-trip)
@@ -93,10 +97,35 @@ export class AuthNonce {
     const ts = typeof timestamp === "number" ? timestamp : now;
     this.nonces.set(hash, ts);
 
-    // Persist with 1-hour TTL so DO storage self-cleans
-    await this.state.storage.put(hash, ts, { expirationTtl: 3600 });
+    // DO storage has no TTL; alarm() below prunes expired entries instead.
+    await this.state.storage.put(hash, ts);
+    const existingAlarm = await this.state.storage.getAlarm();
+    if (existingAlarm === null || existingAlarm === undefined) {
+      await this.state.storage.setAlarm(Date.now() + NONCE_TTL_MS);
+    }
 
     return Response.json({ fresh: true });
+  }
+
+  /**
+   * Prune nonces older than the TTL from DO storage, then re-arm while any
+   * entries remain. Without this the store grows by ~100 bytes per successful
+   * Telegram login, forever, in a single globally-shared Durable Object.
+   */
+  async alarm() {
+    const now = Date.now();
+    const stored = await this.state.storage.list();
+    const expired = [];
+    let remaining = 0;
+    for (const [key, ts] of stored) {
+      if (typeof ts === "number" && now - ts > NONCE_TTL_MS) expired.push(key);
+      else remaining += 1;
+    }
+    if (expired.length) {
+      await this.state.storage.delete(expired);
+      for (const key of expired) this.nonces.delete(key);
+    }
+    if (remaining > 0) await this.state.storage.setAlarm(now + NONCE_TTL_MS);
   }
 }
 

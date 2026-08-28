@@ -7,18 +7,15 @@ function json(body, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function isAdmin(claims) {
-  return claims?.is_admin === true || claims?.role === "owner" || claims?.role === "admin";
-}
-
 export async function handleAdminPipelineRuns(request, env, url) {
   if (env.AUTH_ENABLED === "false") return json({ error: "Admin auth is disabled", code: "admin_auth_disabled" }, 403);
   const auth = await requireAuth(request, env, verifyJwt);
   if (auth instanceof Response) return auth;
   try {
     const stores = createCloudflareStores(env);
-    const membership = await stores.identityStore.assertMembership(auth.claims);
-    if (!isAdmin({ role: membership.role })) return json({ error: "Admin access required", code: "admin_required" }, 403);
+    // Platform-wide read: gate on the operator grant, not the self-granted
+    // tenant role.
+    await stores.identityStore.assertPlatformOperator(auth.claims);
     const limit = Number.parseInt(url.searchParams.get("limit") || "30", 10);
     const result = await stores.pipelineStore.listRuns(Number.isFinite(limit) ? limit : 30);
     return json(result);
