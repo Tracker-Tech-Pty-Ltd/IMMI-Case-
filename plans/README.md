@@ -155,7 +155,7 @@ Actively-wrong docs are worse than missing ones.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [042](042-rewrite-the-agent-facing-docs.md) | Make AGENTS.md and CLAUDE.md describe the architecture that exists | P1 | M | LOW | 001 | TODO |
-| [043](043-correct-the-readme.md) | Fix the counts, the stack facts and the commands that do not work | P2 | M | LOW | 002 | TODO |
+| [043](043-correct-the-readme.md) | Fix the counts, the stack facts and the commands that do not work | P2 | M | LOW | 002 | DONE (code) — awaiting operator merge |
 | [044](044-retire-the-stale-planning-docs.md) | Archive the retired-stack docs and start an ADR trail | P3 | M | LOW | 040 | DONE — merged to main |
 
 ### Tier 11 — Config & observability
