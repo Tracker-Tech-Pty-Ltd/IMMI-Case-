@@ -103,15 +103,15 @@ export const tokens = {
         "info": "#5094c6"
       },
       "court": {
-        "AATA": "#1a5276",
-        "ARTA": "#6c3483",
-        "FCA": "#117864",
+        "AATA": "#2679ae",
+        "ARTA": "#9d53bb",
+        "FCA": "#12816b",
         "FCCA": "#b9770e",
-        "FedCFamC2G": "#a93226",
-        "HCA": "#1b2631",
+        "FedCFamC2G": "#d03e2f",
+        "HCA": "#64748b",
         "RRTA": "#1e8449",
-        "MRTA": "#922b5f",
-        "FMCA": "#b84c00"
+        "MRTA": "#c63c82",
+        "FMCA": "#c25000"
       }
     }
   },
