@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,51 @@ class TestBackendSelection:
 
         app.config["TESTING"] = True
         assert app.config["BACKEND"] == "csv"
+
+
+class TestSupabaseBackendSelection:
+    """backend='supabase' always builds SupabaseRepository after the direct-
+    psycopg2 Hyperdrive backend's removal — including when only the
+    Hyperdrive URL is set."""
+
+    def test_hyperdrive_url_alone_no_longer_selects_a_second_backend(self, tmp_path):
+        """Only HYPERDRIVE_DATABASE_URL set → SupabaseRepository is attempted,
+        and it fails loudly for missing credentials rather than silently
+        swapping in a different repository class.
+
+        SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are pinned to "" rather than
+        popped: SupabaseRepository.__init__() calls load_dotenv(), which walks
+        up the directory tree and would otherwise refill a *popped* (i.e.
+        absent) key from this repo's real local-dev .env — an empty-but-present
+        key is left alone by dotenv's default override=False.
+        """
+        from immi_case_downloader.web import create_app
+
+        env = {
+            "HYPERDRIVE_DATABASE_URL": "postgresql://edge/db",
+            "SUPABASE_URL": "",
+            "SUPABASE_SERVICE_ROLE_KEY": "",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(ValueError, match="SUPABASE_URL"):
+                create_app(backend="supabase", output_dir=str(tmp_path))
+
+    def test_supabase_and_hyperdrive_both_set_still_selects_supabase(self, tmp_path):
+        """Both env shapes present → BACKEND is 'supabase', never 'hyperdrive'."""
+        from immi_case_downloader.web import create_app
+
+        env = {
+            "HYPERDRIVE_DATABASE_URL": "postgresql://edge/db",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "test-service-role-key",
+        }
+        with patch.dict(os.environ, env, clear=False), patch(
+            "immi_case_downloader.supabase_repository.create_client",
+            return_value=MagicMock(),
+        ):
+            app = create_app(backend="supabase", output_dir=str(tmp_path))
+        assert app.config["BACKEND"] == "supabase"
+        assert type(app.config["REPO"]).__name__ == "SupabaseRepository"
 
 
 # ── SPA static asset serving in test mode ────────────────────────────────────

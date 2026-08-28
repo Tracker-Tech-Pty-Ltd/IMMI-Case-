@@ -85,22 +85,10 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
         backend = "sqlite" if os.path.exists(db_path) else "csv"
 
     if backend == "supabase":
-        # When HYPERDRIVE_DATABASE_URL is injected by the Cloudflare Worker proxy,
-        # use direct psycopg2 via Hyperdrive (bypasses Supabase REST API and external
-        # DNS — which is unreachable inside Cloudflare Containers).
-        _hyperdrive_url = os.environ.get("HYPERDRIVE_DATABASE_URL")
-        if _hyperdrive_url:
-            from ..hyperdrive_repository import HyperdriveRepository
-            app.config["REPO"] = HyperdriveRepository(
-                _hyperdrive_url, output_dir=output_dir
-            )
-            app.config["BACKEND"] = "hyperdrive"
-            logger.info("Backend: Hyperdrive (direct psycopg2 via Cloudflare edge)")
-        else:
-            from ..supabase_repository import SupabaseRepository
-            app.config["REPO"] = SupabaseRepository(output_dir=output_dir)
-            app.config["BACKEND"] = "supabase"
-            logger.info("Backend: Supabase REST API")
+        from ..supabase_repository import SupabaseRepository
+        app.config["REPO"] = SupabaseRepository(output_dir=output_dir)
+        app.config["BACKEND"] = "supabase"
+        logger.info("Backend: Supabase REST API")
     elif backend == "sqlite":
         from ..sqlite_repository import SqliteRepository
         app.config["REPO"] = SqliteRepository(db_path)
