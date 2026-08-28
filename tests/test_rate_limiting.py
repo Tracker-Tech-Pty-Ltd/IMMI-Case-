@@ -1,8 +1,6 @@
 """Tests for rate limiting and API caching."""
 from __future__ import annotations
 
-import time
-from unittest.mock import patch
 
 
 def test_flask_limiter_installed():

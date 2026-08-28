@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-from immi_case_downloader.models import ImmigrationCase
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

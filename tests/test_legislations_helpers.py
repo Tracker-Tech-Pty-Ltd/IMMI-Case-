@@ -368,7 +368,7 @@ class TestRunScrapeJob:
         assert os.path.exists(json_path)
         with open(json_path) as f:
             saved = json.load(f)
-        assert any(l["id"] == law_id for l in saved["legislations"])
+        assert any(entry["id"] == law_id for entry in saved["legislations"])
         assert leg_mod._legislations_cache is None  # cache invalidated
 
     def test_failed_scrape_recorded_in_job_status(self, tmp_path):

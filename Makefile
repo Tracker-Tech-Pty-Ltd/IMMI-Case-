@@ -182,7 +182,7 @@ coverage:
 lint: lint-py lint-fe
 
 lint-py:
-	"$(PYTHON)" -m ruff check immi_case_downloader/ scripts/ *.py
+	"$(PYTHON)" -m ruff check immi_case_downloader/ scripts/ tests/ *.py
 
 lint-fe:
 	cd "$(REPO_ROOT)/frontend" && npm run lint

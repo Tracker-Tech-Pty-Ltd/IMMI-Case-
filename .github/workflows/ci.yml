@@ -42,7 +42,7 @@ jobs:
           .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt
 
       - name: Lint with ruff
-        run: .venv/bin/ruff check immi_case_downloader/ scripts/ *.py
+        run: .venv/bin/ruff check immi_case_downloader/ scripts/ tests/ *.py
 
       # The two bundle/reference --ignore entries below shell out to node/esbuild and
       # need worker node_modules, which this job does not install; the test-worker job

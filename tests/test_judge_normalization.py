@@ -1,6 +1,5 @@
 """Test suite for judge name normalization and deduplication"""
 
-import pytest
 from immi_case_downloader.normalize_judge_names import (
     normalize_judge_name,
     find_duplicate_judges,

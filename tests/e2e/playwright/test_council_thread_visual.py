@@ -302,7 +302,7 @@ class TestCouncilThreadFlow:
             expect(
                 council_page.get_by_test_id("turn-card").first
             ).to_be_visible(timeout=30_000)
-        except Exception as e:
+        except Exception:
             # On failure, dump page snapshot + screenshot for diagnosis
             ss = _screenshot(council_page, "step4-failure")
             html_snippet = council_page.content()[:2000]

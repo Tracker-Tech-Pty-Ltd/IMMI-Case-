@@ -7,7 +7,7 @@ import pytest
 
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.supabase_repository import (
-    SupabaseRepository, ALLOWED_UPDATE_FIELDS, BATCH_SIZE, PAGE_MAX,
+    SupabaseRepository, BATCH_SIZE, PAGE_MAX,
 )
 
 

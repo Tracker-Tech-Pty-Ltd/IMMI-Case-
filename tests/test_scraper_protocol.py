@@ -1,6 +1,5 @@
 """Tests for CaseScraper protocol and MetadataExtractor."""
 
-import pytest
 from immi_case_downloader.sources.protocol import CaseScraper
 from immi_case_downloader.sources.austlii import AustLIIScraper
 from immi_case_downloader.sources.federal_court import FederalCourtScraper

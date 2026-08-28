@@ -13,7 +13,6 @@ import requests
 from immi_case_downloader.sources.legislation_scraper import (
     KNOWN_LAWS,
     LegislationScraper,
-    SectionLink,
 )
 
 # ── HTML fixtures ─────────────────────────────────────────────────────────────

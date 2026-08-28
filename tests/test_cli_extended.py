@@ -1,7 +1,7 @@
 """Extended CLI tests — covers cmd_search, cmd_download argument parsing."""
 
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from argparse import Namespace
 
 import pytest

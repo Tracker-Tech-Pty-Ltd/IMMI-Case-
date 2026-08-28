@@ -3,7 +3,6 @@
 import json
 import time
 
-import pytest
 
 import immi_case_downloader.web.routes.api as api_module
 import immi_case_downloader.web.routes.api_cases as api_cases_module
