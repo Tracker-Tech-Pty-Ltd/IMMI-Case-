@@ -177,6 +177,7 @@ def _build_case_list_query(
     keyword: str,
     sort_by: str,
     sort_dir: str,
+    page_size: int,
 ) -> CaseListQuery:
     """Create the normalized query signature for `/api/v1/cases`."""
     return CaseListQuery(
@@ -189,6 +190,7 @@ def _build_case_list_query(
         keyword=keyword,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        page_size=page_size,
     )
 
 
@@ -755,6 +757,7 @@ def list_cases():
         keyword=keyword,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        page_size=page_size,
     )
     strategy = "offset_fallback"
     fallback_reason: str | None = None

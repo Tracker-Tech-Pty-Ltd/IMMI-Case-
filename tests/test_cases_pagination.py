@@ -23,6 +23,7 @@ from immi_case_downloader.cases_pagination import (
     can_seek_cases_query,
     choose_pagination_plan,
     clear_cases_anchor_cache,
+    dataset_id_for_repo,
     remember_page_anchor,
 )
 
@@ -319,6 +320,7 @@ class TestChoosePaginationPlan:
         target_page = 15
         _ANCHOR_CACHE.store_anchor(
             backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
             query=q,
             page=ANCHOR_INTERVAL_PAGES,
             anchor=anchor,
@@ -342,7 +344,10 @@ class TestRememberPageAnchor:
             repo=repo, query=q, page=ANCHOR_INTERVAL_PAGES, page_cases=[case]
         )
         hit = _ANCHOR_CACHE.get_nearest_anchor(
-            backend_kind="test", query=q, target_page=ANCHOR_INTERVAL_PAGES
+            backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
+            query=q,
+            target_page=ANCHOR_INTERVAL_PAGES,
         )
         assert hit is not None
         _, anchor = hit
@@ -388,7 +393,10 @@ class TestRememberPageAnchor:
             repo=repo, query=q, page=ANCHOR_INTERVAL_PAGES, page_cases=cases
         )
         hit = _ANCHOR_CACHE.get_nearest_anchor(
-            backend_kind="test", query=q, target_page=ANCHOR_INTERVAL_PAGES
+            backend_kind="test",
+            dataset_id=dataset_id_for_repo(repo),
+            query=q,
+            target_page=ANCHOR_INTERVAL_PAGES,
         )
         assert hit is not None
         _, anchor = hit
