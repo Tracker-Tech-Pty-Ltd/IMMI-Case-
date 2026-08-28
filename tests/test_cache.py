@@ -1,5 +1,7 @@
 """Tests for TTL cache in storage.load_all_cases."""
 
+import time
+
 from immi_case_downloader.models import ImmigrationCase
 from immi_case_downloader.storage import (
     ensure_output_dirs,
@@ -10,6 +12,7 @@ from immi_case_downloader.storage import (
     _cases_cache_lock,
     _CACHE_TTL,
 )
+from immi_case_downloader.web.cache import AnalyticsCache, DEFAULT_MAX_ENTRIES
 
 
 class TestCasesCacheTTL:
@@ -95,3 +98,38 @@ class TestCasesCacheTTL:
     def test_cache_ttl_is_positive(self):
         """Cache TTL should be a positive number."""
         assert _CACHE_TTL > 0
+
+
+class TestAnalyticsCacheBounds:
+    """AnalyticsCache (immi_case_downloader/web/cache.py) — TTL eviction,
+    capacity bound, and LRU order (PYCORR-13)."""
+
+    def test_fresh_entry_is_returned(self):
+        cache = AnalyticsCache(ttl=300.0)
+        cache.set("k", {"v": 1})
+        assert cache.get("k") == {"v": 1}
+
+    def test_expired_entry_is_evicted_on_read(self):
+        cache = AnalyticsCache(ttl=0.01)
+        cache.set("k", {"v": 1})
+        time.sleep(0.03)
+        assert cache.get("k") is None
+        assert "k" not in cache._store
+
+    def test_capacity_is_bounded(self):
+        cache = AnalyticsCache(ttl=300.0, max_entries=3)
+        for i in range(50):
+            cache.set(f"k{i}", {"v": i})
+        assert len(cache._store) == 3
+
+    def test_least_recently_used_is_evicted_first(self):
+        cache = AnalyticsCache(ttl=300.0, max_entries=2)
+        cache.set("a", {"v": "a"})
+        cache.set("b", {"v": "b"})
+        cache.get("a")  # touch "a" so "b" becomes the LRU entry
+        cache.set("c", {"v": "c"})
+        assert cache.get("b") is None
+        assert cache.get("a") == {"v": "a"}
+
+    def test_default_max_entries_is_positive(self):
+        assert DEFAULT_MAX_ENTRIES > 0
