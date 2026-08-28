@@ -496,25 +496,35 @@ class TestSidebarIntegration:
 class TestEmptyStates:
     """Empty state handling when no saved searches exist."""
 
-    def test_panel_empty_state(self, react_page):
-        """SavedSearchPanel shows empty state when no searches saved."""
+    def test_panel_shows_empty_state_when_no_searches_saved(self, react_page):
+        """SavedSearchPanel shows its empty state on a fresh browser context.
+
+        react_page creates a new Playwright context per test with no
+        storage_state, so localStorage — and therefore the saved-search list —
+        starts empty regardless of what TestSaveSearch did earlier in this
+        module. SavedSearchPanel renders collapsed when count == 0
+        (frontend/src/components/saved-searches/SavedSearchPanel.tsx:25), so the
+        header must be clicked before the empty body is visible.
+        """
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
 
-        # If no searches exist, panel might show empty state
-        # or might not be visible at all
-        empty_text_options = [
-            "No saved searches",
-            "Create your first",
-            "Apply filters and click Save Search",
-        ]
+        # The count badge is in the always-visible header, even when collapsed.
+        count_badge = react_page.get_by_test_id("saved-search-count")
+        expect(count_badge).to_have_text("0/50")
 
-        # Check if any empty state text is visible
-        page_text = react_page.locator("main").inner_text()
-        has_empty_state = any(text in page_text for text in empty_text_options)
+        # Expand the panel; it starts collapsed because count == 0.
+        header = react_page.get_by_role("button", name="Saved Searches")
+        expect(header).to_have_attribute("aria-expanded", "false")
+        header.click()
+        expect(header).to_have_attribute("aria-expanded", "true")
 
-        # This is acceptable - either empty state shows or panel is collapsed
-        assert True  # Pass - empty state handling is implementation detail
+        expect(react_page.get_by_text("No saved searches yet")).to_be_visible()
+        expect(
+            react_page.get_by_text(
+                "Apply filters and click Save Search to create your first saved search."
+            )
+        ).to_be_visible()
 
     def test_dashboard_hides_section_when_no_searches(self, react_page):
         """Dashboard doesn't show Saved Searches section when empty."""
