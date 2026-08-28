@@ -251,7 +251,7 @@ install:
 	else \
 	  echo "==> reusing existing virtualenv at $(REPO_ROOT)/.venv"; \
 	fi
-	"$(VENV_PYTHON)" -m pip install -r requirements-app.txt -r requirements-test.txt
+	"$(VENV_PYTHON)" -m pip install -c constraints.txt -r requirements-app.txt -r requirements-test.txt
 	# Root deps hold vitest + wrangler; workers/ has no package.json of its own,
 	# so test-workers resolves against the root node_modules.
 	npm install
@@ -262,7 +262,7 @@ install:
 	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm ci --ignore-scripts
 
 install-e2e:
-	"$(VENV_PYTHON)" -m pip install -r requirements-e2e.txt
+	"$(VENV_PYTHON)" -m pip install -c constraints.txt -r requirements-e2e.txt
 	"$(VENV_PYTHON)" -m playwright install chromium
 
 # `supabase db push` targets the RETIRED Supabase Postgres project, and it acts

@@ -1,3 +1,22 @@
-# Compatibility shim for external tooling that still expects requirements.txt.
-# New consumers must use requirements-app.txt or requirements-extractor.txt explicitly.
--r requirements-extractor.txt
+# The project's APPLICATION runtime closure, pinned — and the compatibility
+# entry point for external tooling that expects a root requirements.txt
+# (dependency scanners above all). Previously this resolved to Flask alone,
+# so a scanner pointed at the repository default reported a clean one-package
+# project over 16 unpinned application dependencies.
+#
+# CONTRACT: application runtime only. Tests, the extraction Container image and
+# the ad-hoc LLM batch jobs each have their own manifest and are deliberately
+# NOT pulled in here — installing this file must never drag pytest or ruff into
+# a production environment.
+#
+# Humans and build files must name a manifest explicitly instead:
+#   application / CLI / local dev  → requirements-app.txt   (this file's target)
+#   tests                          → requirements-test.txt
+#   extraction Container image     → requirements-extractor.txt (Dockerfile)
+#   ad-hoc LLM batch jobs          → requirements-llm.txt
+#
+# When configuring a scanner (Dependabot, pip-audit, Snyk), add the other three
+# manifests explicitly, and point it at constraints.txt as well — that is the
+# pinned closure and the only file that says which versions are installed.
+-c constraints.txt
+-r requirements-app.txt

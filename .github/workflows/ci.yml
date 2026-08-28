@@ -40,11 +40,12 @@ jobs:
           cache-dependency-path: |
             requirements-app.txt
             requirements-test.txt
+            constraints.txt
 
       - name: Install Python dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt
+          .venv/bin/pip install --quiet -c constraints.txt -r requirements-app.txt -r requirements-test.txt
 
       - name: Lint with ruff
         run: .venv/bin/ruff check immi_case_downloader/ scripts/ tests/ *.py

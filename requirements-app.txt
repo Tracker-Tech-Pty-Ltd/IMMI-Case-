@@ -1,19 +1,32 @@
 # Application/runtime dependencies for the Flask app, CLI, and local development.
 # Test-only dependencies live in requirements-test.txt.
 # The Cloudflare extraction Container uses requirements-extractor.txt.
+# LLM batch-job dependencies live in requirements-llm.txt (not installed by
+# `make install`).
+#
+# Every entry carries an upper bound at the next major version. Exact versions
+# for the whole transitive closure live in constraints.txt; install with
+#   pip install -c constraints.txt -r requirements-app.txt -r requirements-test.txt
 flask>=3.0.0,<4
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-pandas>=2.0.0
-tqdm>=4.65.0
-python-dateutil>=2.8.0
-flask-wtf>=1.2.0
-Flask-Limiter>=3.5
-supabase>=2.0.0
-psycopg2-binary>=2.9.0
-python-dotenv>=1.0.0
-fuzzywuzzy>=0.18.0
-numpy>=1.24.0
-Pillow>=10.0.0
-pypdf>=4.0.0
+requests>=2.31.0,<3
+beautifulsoup4>=4.12.0,<5
+lxml>=4.9.0,<7
+pandas>=2.0.0,<4
+# Transitive dependency of pandas and freezegun. Declared directly on purpose so
+# the date-parsing floor is explicit and does not silently move when pandas
+# changes its own requirement. Not imported anywhere in this repository.
+python-dateutil>=2.8.0,<3
+flask-wtf>=1.2.0,<2
+Flask-Limiter>=3.5,<5
+supabase>=2.0.0,<3
+psycopg2-binary>=2.9.0,<3
+python-dotenv>=1.0.0,<2
+# Unmaintained: 0.18.0 (2020) is the final upstream release, and importing it
+# emits "Using slow pure-python SequenceMatcher". Sole consumer in this repo is
+# immi_case_downloader/normalize_judge_names.py, whose own sole consumer is
+# tests/test_judge_normalization.py. Migration target if it ever breaks:
+# rapidfuzz (drop-in fuzz.ratio, C++ backed, no separate Levenshtein extra).
+fuzzywuzzy>=0.18.0,<1
+numpy>=1.24.0,<3
+Pillow>=10.0.0,<13
+pypdf>=4.0.0,<7
