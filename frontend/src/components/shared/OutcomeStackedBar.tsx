@@ -1,27 +1,28 @@
 import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-// Semantic colors for common outcomes
+// Outcome colours come from the token layer (src/tokens/tokens.json →
+// color.outcome / color.dark.outcome) so they follow the active theme.
 const OUTCOME_SEGMENT_COLORS: Record<string, string> = {
-  Affirmed: "#a93226",      // red - tribunal upholds rejection
-  Dismissed: "#922b5f",
-  Refused: "#b64040",
-  Withdrawn: "#7d8a9a",
-  Remitted: "#1e8449",      // green - applicant wins
-  "Set Aside": "#1a5276",   // blue - set aside
-  Allowed: "#117864",
-  Granted: "#28b463",
-  Other: "#6b7280",
+  Affirmed: "var(--color-outcome-affirmed)",
+  Dismissed: "var(--color-outcome-dismissed)",
+  Refused: "var(--color-outcome-refused)",
+  Withdrawn: "var(--color-outcome-withdrawn)",
+  Remitted: "var(--color-outcome-remitted)",
+  "Set Aside": "var(--color-outcome-set-aside)",
+  Allowed: "var(--color-outcome-allowed)",
+  Granted: "var(--color-outcome-granted)",
+  Other: "var(--color-outcome-other)",
 };
 
 const FALLBACK_COLORS = [
-  "#1a5276",
-  "#117864",
-  "#6c3483",
-  "#b9770e",
-  "#a93226",
-  "#1e8449",
-  "#2e86c1",
+  "var(--color-chart-1)",
+  "var(--color-chart-7)",
+  "var(--color-chart-2)",
+  "var(--color-chart-5)",
+  "var(--color-chart-6)",
+  "var(--color-chart-3)",
+  "var(--color-chart-4)",
 ];
 
 function getSegmentColor(outcome: string, index: number): string {
@@ -86,7 +87,7 @@ function OutcomeStackedBarInner({ data, height = 28 }: OutcomeStackedBarProps) {
               key={seg.outcome}
               title={`${seg.outcome}: ${seg.count.toLocaleString()} (${seg.pct.toFixed(1)}%)`}
               style={{ width: `${seg.pct}%`, backgroundColor: seg.color }}
-              className="flex items-center justify-center text-white transition-all"
+              className="flex items-center justify-center text-on-solid transition-all"
             >
               {seg.pct >= 10 && (
                 <span className="text-[10px] font-semibold">
