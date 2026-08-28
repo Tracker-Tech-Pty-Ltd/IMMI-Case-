@@ -11,13 +11,18 @@ Targets:
 Usage: python normalize_metadata.py [--dry-run]
 """
 
+import os
 import re
 import sys
 import shutil
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
+
+from immi_case_downloader.extraction.batch_runner import catalog_lock, temp_path_for
 
 CSV_PATH = "downloaded_cases/immigration_cases.csv"
+JOB_NAME = "normalize_metadata"
 
 
 def log(msg):
@@ -284,7 +289,16 @@ def infer_legal_concepts(row):
 
 def main():
     dry_run = "--dry-run" in sys.argv
+    if dry_run:
+        return _run(dry_run=True)
+    # Read and write inside one lock: this is a read-modify-write over the
+    # whole catalog, so anything committed between the read and the write
+    # would be erased by it.
+    with catalog_lock(Path(CSV_PATH), JOB_NAME):
+        return _run(dry_run=False)
 
+
+def _run(dry_run: bool):
     df = pd.read_csv(
         CSV_PATH,
         encoding="utf-8-sig",
@@ -294,7 +308,11 @@ def main():
     log(f"Loaded {len(df):,} records")
 
     if not dry_run:
-        backup = f"{CSV_PATH}.bak-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Microseconds and pid, not seconds: two runs started in the same
+        # second used to overwrite each other's backup, and the backup is the
+        # only copy of a 149k-row file that cannot be regenerated.
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup = f"{CSV_PATH}.bak-{stamp}-{os.getpid()}"
         shutil.copy2(CSV_PATH, backup)
         log(f"Backup: {backup}")
 
@@ -359,7 +377,15 @@ def main():
         log("\ncase_nature distribution:")
         print(df["case_nature"].value_counts().head(20).to_string())
     else:
-        df.to_csv(CSV_PATH, index=False)
+        # tmp-then-replace, not a direct write: writing onto the live path
+        # meant an interruption mid-write left a truncated master catalog.
+        tmp_path = temp_path_for(Path(CSV_PATH), JOB_NAME)
+        try:
+            df.to_csv(tmp_path, index=False)
+            os.replace(str(tmp_path), CSV_PATH)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
         log(f"\nCSV saved: {CSV_PATH}")
 
 

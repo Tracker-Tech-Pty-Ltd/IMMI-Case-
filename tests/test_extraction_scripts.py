@@ -5,6 +5,10 @@ import csv
 import pytest
 
 import extract_structured_fields as extract_script
+from immi_case_downloader.extraction.batch_runner import (
+    CatalogLockedError,
+    catalog_lock,
+)
 import validate_extraction as validate_script
 
 
@@ -346,3 +350,59 @@ def test_compare_to_baseline_fails_when_current_is_empty(tmp_path):
     )
 
     assert validate_script.compare_to_baseline([], baseline_path) is False
+
+
+# ── normalize_metadata.py joins the one lock protocol ────────────────────
+
+
+def test_normalize_metadata_refuses_to_run_while_the_catalog_lock_is_held(
+    tmp_path, monkeypatch
+):
+    """It rewrites the master CSV, so it must contend with every other writer.
+
+    It read the catalog, transformed five columns, and wrote it back with no
+    lock at all — so it silently reverted whatever a concurrent extraction job
+    had just committed. CSV_PATH points at a file that does not exist: without
+    the lock the run gets as far as pandas and fails on the missing file, so
+    only a real lock produces CatalogLockedError.
+    """
+    import normalize_metadata
+
+    csv_path = tmp_path / "immigration_cases.csv"
+    monkeypatch.setattr(normalize_metadata, "CSV_PATH", str(csv_path))
+
+    with catalog_lock(csv_path, "some_other_job"):
+        with pytest.raises(CatalogLockedError) as excinfo:
+            normalize_metadata.main()
+
+    assert "some_other_job" in str(excinfo.value)
+
+
+def test_normalize_metadata_never_writes_the_live_csv_directly():
+    """The write must be tmp-then-replace, or an interruption truncates it.
+
+    `df.to_csv(CSV_PATH)` opens the live 149k-row catalog for writing in
+    place; a crash, a full disk, or a Ctrl-C part-way through leaves a
+    truncated file and no way back. Asserted statically because reproducing a
+    partial pandas write is not something a unit test can do reliably.
+    """
+    import ast
+    import inspect
+
+    import normalize_metadata
+
+    tree = ast.parse(inspect.getsource(normalize_metadata))
+    direct_writes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "to_csv"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "CSV_PATH"
+    ]
+    assert direct_writes == [], (
+        "normalize_metadata writes the live catalog in place; "
+        "write to temp_path_for(...) and os.replace() onto it"
+    )
