@@ -645,6 +645,8 @@ export class CloudflareCaseStore {
     // normaliseRelationLabels().
     const relationStatements = [];
     if (Object.prototype.hasOwnProperty.call(updates, "judges")) {
+      // judge_id is a hash of the RAW label, so every spelling variant and
+      // every prose fragment becomes a separate judge. See docs/adr/0051-judge-identity.md.
       const labels = normaliseRelationLabels(updates.judges, "judge");
       const entries = await Promise.all(labels.map(async (label) => ({
         id: (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32),
@@ -1073,6 +1075,8 @@ export class CloudflareCaseStore {
     ]);
     await insertCase.run();
 
+    // judge_id is a hash of the RAW label, so every spelling variant and
+    // every prose fragment becomes a separate judge. See docs/adr/0051-judge-identity.md.
     const judgeLabels = normaliseRelationLabels(record.judges, "judge");
     const conceptLabels = normaliseRelationLabels(record.legal_concepts, "legal concept");
     const judgeStatements = [this.db.prepare(`DELETE FROM case_judges WHERE case_id = ?`).bind(caseId)];
