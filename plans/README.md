@@ -68,9 +68,9 @@ Read-path cost and latency.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [012](012-restore-edge-caching.md) | Bring back the Cache API layer the proxy.js deletion removed | P2 | M | MED | 009, 010, 013 | TODO |
+| [012](012-restore-edge-caching.md) | Bring back the Cache API layer the proxy.js deletion removed | P2 | M | MED | 009, 010, 013 | DONE — merged to main |
 | [013](013-fix-d1-query-shapes.md) | Add the missing indexes and stop the full scans on the hot read paths | P2 | M | MED | 009, 010 | DONE — merged to main |
-| [014](014-bound-the-aggregate-workload.md) | Bound the judge-leaderboard aggregate read inside D1 instead of in Worker memory | P2 | M | MED | 013 | TODO |
+| [014](014-bound-the-aggregate-workload.md) | Bound the judge-leaderboard aggregate read inside D1 instead of in Worker memory | P2 | M | MED | 013 | DONE — merged to main |
 
 ### Tier 3 — Frontend correctness
 
@@ -154,7 +154,7 @@ Actively-wrong docs are worse than missing ones.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [042](042-rewrite-the-agent-facing-docs.md) | Make AGENTS.md and CLAUDE.md describe the architecture that exists | P1 | M | LOW | 001 | TODO |
+| [042](042-rewrite-the-agent-facing-docs.md) | Make AGENTS.md and CLAUDE.md describe the architecture that exists | P1 | M | LOW | 001 | DONE — merged to main |
 | [043](043-correct-the-readme.md) | Fix the counts, the stack facts and the commands that do not work | P2 | M | LOW | 002 | DONE (code) — awaiting operator merge |
 | [044](044-retire-the-stale-planning-docs.md) | Archive the retired-stack docs and start an ADR trail | P3 | M | LOW | 040 | DONE — merged to main |
 
