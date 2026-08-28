@@ -1,0 +1,25 @@
+# Ruff configuration only. Deliberately no [project] or [build-system] table:
+# this repository is run in place (web.py, run.py, `make api`), it is not
+# pip-installed, and adding packaging metadata would change how setuptools and
+# pytest discover the tree for no benefit.
+
+[tool.ruff]
+# Lowest interpreter the project supports, per README.md's prerequisites table
+# ("Python | 3.11+ | 3.14 已驗證可用"). CI exercises 3.12; the extraction
+# container image is python:3.12-slim; the local .venv is 3.14. target-version
+# is the floor, so it must stay at the lowest of those.
+target-version = "py311"
+# E501 (line-too-long) is NOT selected below, so this value is not yet enforced.
+# It records the agreed target for when E501 is adopted: 166 lines under
+# immi_case_downloader/ + scripts/ + *.py exceed 120 today, versus 1109 at
+# ruff's default 88.
+line-length = 120
+
+[tool.ruff.lint]
+# These four prefixes are exactly ruff 0.15.18's unconfigured default select.
+# Stating them here is a deliberate no-op that stops the ruff version pin in
+# requirements-test.txt from being the rule selection. Widening this list is a
+# separate, code-editing change: measured 2026-08-27, `--select
+# E,W,F,I,UP,B,SIM,C4,ARG,PTH,RUF` over the same paths reports 1683 findings
+# (162 auto-fixable). Adopt one family per commit; do not bulk-enable.
+select = ["E4", "E7", "E9", "F"]
