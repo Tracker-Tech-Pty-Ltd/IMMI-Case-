@@ -92,8 +92,9 @@ class TestCaseListQuery:
 # ── can_seek_cases_query ──────────────────────────────────────────────────────
 
 class TestCanSeekCasesQuery:
-    def test_date_sort_no_keyword_returns_true(self):
-        assert can_seek_cases_query(_query(sort_by="date")) is True
+    def test_date_sort_returns_false(self):
+        """date sorting must use the offset path — the seek path orders by year."""
+        assert can_seek_cases_query(_query(sort_by="date")) is False
 
     def test_year_sort_no_keyword_returns_true(self):
         assert can_seek_cases_query(_query(sort_by="year")) is True
@@ -301,7 +302,7 @@ class TestChoosePaginationPlan:
     def test_head_seek_for_pages_up_to_max(self):
         repo = _seek_repo()
         for p in range(2, HEAD_SEEK_MAX_PAGE + 1):
-            plan = self._plan(repo, query=_query(sort_by="date"), page=p, total_pages=100)
+            plan = self._plan(repo, query=_query(sort_by="year"), page=p, total_pages=100)
             assert plan.strategy == "seek_forward", f"page={p} should be seek_forward"
             assert plan.anchor is None
 

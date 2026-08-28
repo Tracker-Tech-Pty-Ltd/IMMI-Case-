@@ -15,7 +15,12 @@ from dataclasses import dataclass
 from typing import Any
 
 
-SEEK_SORT_FIELDS = frozenset({"date", "year"})
+# "date" is deliberately absent: the seek path orders by (year, case_id) while
+# the offset path orders date-sorted queries by (year, month, day, case_id).
+# Admitting "date" here makes a listing duplicate some rows and hide others as
+# soon as paging crosses the seek/offset boundary. Re-adding it requires
+# teaching SeekAnchor and list_cases_seek() the full composite date key.
+SEEK_SORT_FIELDS = frozenset({"year"})
 ANCHOR_INTERVAL_PAGES = 10
 ANCHOR_TTL_SECONDS = 300
 MAX_ANCHOR_SIGNATURES = 128
