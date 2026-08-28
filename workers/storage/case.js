@@ -615,17 +615,21 @@ export class CloudflareCaseStore {
       params.push(...concepts);
     }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const total = clauses.length
-      ? Number((await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first())?.total || 0)
-      : Number((await this.db.prepare("SELECT value_int FROM catalog_summary WHERE summary_key = 'total_cases'").first())?.value_int || 0);
     const size = clampLimit(limit, { fallback: 50, max: 200 });
-    const results = rows(await bindAll(this.db, `
-      SELECT ${LEGACY_CASE_PROJECTION}
-      FROM cases c ${where}
-      ORDER BY c.year DESC, c.case_id ASC
-      LIMIT ?
-    `, [...params, size]).all());
-    return { total, results };
+    const [total, found] = await Promise.all([
+      // The only opt-in to the queue-maintained aggregate: this method has read
+      // catalog_summary since before this plan, and /api/v1/guided-search makes
+      // no `count_mode: "exact"` claim. Do NOT copy this flag to listPage or
+      // countCompat — see Step 3.
+      compatTotal(this.db, clauses, params, where, { allowAggregate: true }),
+      bindAll(this.db, `
+        SELECT ${LEGACY_CASE_PROJECTION}
+        FROM cases c ${where}
+        ORDER BY c.year DESC, c.case_id ASC
+        LIMIT ?
+      `, [...params, size]).all(),
+    ]);
+    return { total, results: rows(found) };
   }
 
   async guidedJudge(name) {
