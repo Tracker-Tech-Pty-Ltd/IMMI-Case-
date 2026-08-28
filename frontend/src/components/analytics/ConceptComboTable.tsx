@@ -27,12 +27,17 @@ function ConceptComboTableInner({ combos }: ConceptComboTableProps) {
   return (
     <div className="overflow-x-auto -mx-1 px-1">
       <table className="w-full min-w-[420px] text-sm">
+        <caption className="sr-only">
+          {t("analytics.concept_combo_caption", {
+            defaultValue: "Legal concept combinations",
+          })}
+        </caption>
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-text">
-            <th className="py-2 pr-2">{t("analytics.concepts_col")}</th>
-            <th className="py-2 pr-2">{t("analytics.cases_col")}</th>
-            <th className="py-2 pr-2">{t("analytics.win_rate")}</th>
-            <th className="py-2">{t("analytics.lift")}</th>
+            <th scope="col" className="py-2 pr-2">{t("analytics.concepts_col")}</th>
+            <th scope="col" className="py-2 pr-2">{t("analytics.cases_col")}</th>
+            <th scope="col" className="py-2 pr-2">{t("analytics.win_rate")}</th>
+            <th scope="col" className="py-2">{t("analytics.lift")}</th>
           </tr>
         </thead>
         <tbody>

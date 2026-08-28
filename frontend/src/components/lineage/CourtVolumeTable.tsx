@@ -71,31 +71,36 @@ export function CourtVolumeTable({ stats }: CourtVolumeTableProps) {
     <div className="rounded-lg border border-border bg-card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">
+            {t("lineage.court_volume_caption", {
+              defaultValue: "Case volume by court",
+            })}
+          </caption>
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="px-3 py-2 text-left">
+              <th scope="col" className="px-3 py-2 text-left">
                 {headerBtn("code", "lineage.court_table_code")}
               </th>
-              <th className="hidden sm:table-cell px-3 py-2 text-left">
+              <th scope="col" className="hidden sm:table-cell px-3 py-2 text-left">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-text">
                   {t("lineage.court_table_name")}
                 </span>
               </th>
-              <th className="px-3 py-2 text-left">
+              <th scope="col" className="px-3 py-2 text-left">
                 {headerBtn("years", "lineage.court_table_years")}
               </th>
-              <th className="px-3 py-2 text-center">
+              <th scope="col" className="px-3 py-2 text-center">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-text">
                   {t("lineage.court_table_status")}
                 </span>
               </th>
-              <th className="px-3 py-2 text-right">
+              <th scope="col" className="px-3 py-2 text-right">
                 {headerBtn("totalCases", "lineage.court_table_total")}
               </th>
-              <th className="px-3 py-2 text-right">
+              <th scope="col" className="px-3 py-2 text-right">
                 {headerBtn("peakYear", "lineage.court_table_peak")}
               </th>
-              <th className="hidden sm:table-cell px-3 py-2 text-right">
+              <th scope="col" className="hidden sm:table-cell px-3 py-2 text-right">
                 {headerBtn("avgPerYear", "lineage.court_table_avg")}
               </th>
             </tr>

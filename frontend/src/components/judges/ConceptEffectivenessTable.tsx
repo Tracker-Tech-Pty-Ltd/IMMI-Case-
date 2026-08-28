@@ -32,12 +32,17 @@ export function ConceptEffectivenessTable({
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card p-3">
       <table className="w-full text-sm">
+        <caption className="sr-only">
+          {t("judges.concept_effectiveness_caption", {
+            defaultValue: "Legal concept effectiveness by judge",
+          })}
+        </caption>
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-text">
-            <th className="py-2 pr-2">{t("judges.concept")}</th>
-            <th className="py-2 pr-2">{t("judges.total")}</th>
-            <th className="py-2 pr-2">{t("judges.win_rate")}</th>
-            <th className="py-2">{t("judges.lift")}</th>
+            <th scope="col" className="py-2 pr-2">{t("judges.concept")}</th>
+            <th scope="col" className="py-2 pr-2">{t("judges.total")}</th>
+            <th scope="col" className="py-2 pr-2">{t("judges.win_rate")}</th>
+            <th scope="col" className="py-2">{t("judges.lift")}</th>
           </tr>
         </thead>
         <tbody>

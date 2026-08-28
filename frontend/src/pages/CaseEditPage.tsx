@@ -1,13 +1,14 @@
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Save } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import { useCase, useUpdateCase } from "@/hooks/use-cases";
 import { isCaseMutationsDisabledError } from "@/lib/api";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { CaseMutationsDisabledNotice } from "@/components/shared/CaseMutationsDisabledNotice";
 import { PageLoader } from "@/components/shared/PageLoader";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { toast } from "sonner";
 import type { ImmigrationCase } from "@/types/case";
 
@@ -204,6 +205,8 @@ export function CaseEditPage() {
           </span>
         )}
       </div>
+
+      <PageHeader title={t("pages.case_edit.title")} />
 
       <form onSubmit={handleSubmit}>
         <div className="grid gap-6 lg:grid-cols-3">
@@ -416,12 +419,14 @@ function Field({
   placeholder?: string;
   span2?: boolean;
 }) {
+  const id = useId();
   return (
     <div className={span2 ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-xs font-medium text-muted-text">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-text">
         {label}
       </label>
       <input
+        id={id}
         type={type}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
@@ -444,12 +449,14 @@ function SelectField({
   onChange: (v: string) => void;
 }) {
   const { t } = useTranslation();
+  const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted-text">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-text">
         {label}
       </label>
       <select
+        id={id}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
@@ -483,12 +490,14 @@ function TextareaField({
   onChange: (v: string) => void;
   rows?: number;
 }) {
+  const id = useId();
   return (
     <div className="sm:col-span-2">
-      <label className="mb-1 block text-xs font-medium text-muted-text">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-text">
         {label}
       </label>
       <textarea
+        id={id}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         rows={rows}

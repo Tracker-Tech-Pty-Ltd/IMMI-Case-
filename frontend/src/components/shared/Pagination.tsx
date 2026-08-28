@@ -27,8 +27,12 @@ export function Pagination({
   const pages = getVisiblePages(currentPage, totalPages);
 
   return (
-    <div className="flex items-center justify-between">
-      <p className="text-sm text-muted-text">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p
+        role="status"
+        aria-live="polite"
+        className="w-full text-sm text-muted-text sm:w-auto"
+      >
         {t("pagination.showing", { start, end, total: totalItems })}
       </p>
       <div className="flex items-center gap-1">
