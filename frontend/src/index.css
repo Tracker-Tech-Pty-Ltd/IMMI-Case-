@@ -270,6 +270,22 @@ textarea::placeholder {
   --color-accent-hover: color-mix(in oklab, var(--color-accent) 86%, white);
 }
 
+/* Select chevron: one data URI per theme — currentColor does not resolve
+   inside a background-image document, so the stroke must be baked in.
+   %23 is a URL-encoded "#".
+   These two greys are the tokens.json (parchment) --color-text-muted values.
+   They do NOT track the ten alternate presets, which write their own
+   --color-text-muted inline on <html>; a data URI cannot read a custom
+   property. That is a known, measured limitation — see the note below the
+   block and the guard in Step 8 (test 16). */
+:root {
+  --select-chevron: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e6a65' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.dark {
+  --select-chevron: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23858e9e' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -278,7 +294,7 @@ select {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background-color: var(--color-background-card);
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e7177' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right var(--spacing-2, 0.5rem) center;
   background-size: 1.25em 1.25em;
