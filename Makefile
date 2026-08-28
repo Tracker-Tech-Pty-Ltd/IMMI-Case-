@@ -13,7 +13,19 @@ BACKEND ?= auto
 # breaks under "Active Projects" paths.
 REPO_ROOT := $(CURDIR)
 VENV_PYTHON := $(REPO_ROOT)/.venv/bin/python
-PYTHON ?= $(if $(wildcard $(VENV_PYTHON)),$(VENV_PYTHON),python3)
+
+# Detect the repo venv with the shell, NOT $(wildcard). Make's text functions
+# are word-oriented, so under a path containing a space they see two words:
+#   $(words /Users/d/Developer/Active Projects/IMMI-Case-/.venv/bin/python) -> 2
+#   $(wildcard <same>)                                -> /Users/d/Developer/Active
+# The first word happens to be an existing directory on this machine, so the
+# old `$(if $(wildcard $(VENV_PYTHON)),...)` always took the true branch and the
+# python3 fallback never fired. In the main checkout that is accidentally right
+# (the venv does exist); in a fresh worktree with no venv it resolves PYTHON to
+# a path that is not there, and every Python target dies with
+# "No such file or directory" instead of falling back.
+# `test -x` gets a single quoted argument from the shell, so the space is safe.
+PYTHON ?= $(shell test -x "$(VENV_PYTHON)" && printf '%s' "$(VENV_PYTHON)" || printf '%s' python3)
 
 # ── Meta ──────────────────────────────────────────────────────────────────────
 
