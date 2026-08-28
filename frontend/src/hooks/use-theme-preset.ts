@@ -106,7 +106,7 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
   parchment: {
     label: "Parchment",
     colors: ["#1b2838", "#5c4306", "#f5f4f1", "#6e7177"],
-    darkColors: ["#111820", "#c9942e", "#192230", "#4a5060"],
+    darkColors: ["#111820", "#c9942e", "#192230", "#687087"],
     // The "Legal Codex" baseline. These are the same values the generated
     // src/tokens/tokens.css writes to :root / .dark — stated explicitly here so
     // the default preset is not defined by the absence of overrides.
@@ -126,7 +126,7 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-border-light": "#eae8e3",
       "--color-text": "#1b2838",
       "--color-text-secondary": "#4a5568",
-      "--color-text-muted": "#8b8680",
+      "--color-text-muted": "#6e6a65",
       "--color-overlay": "#111820",
     },
     darkVars: {
@@ -141,11 +141,11 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-sidebar": "#141c28",
       "--color-background-surface": "#1c2535",
       "--color-background-surface-hover": "#243144",
-      "--color-border": "#4a5060",
+      "--color-border": "#687087",
       "--color-border-light": "#2d3748",
       "--color-text": "#e2dfda",
       "--color-text-secondary": "#a4acb8",
-      "--color-text-muted": "#6d7788",
+      "--color-text-muted": "#858e9e",
       "--color-overlay": "#000000",
     },
   },
