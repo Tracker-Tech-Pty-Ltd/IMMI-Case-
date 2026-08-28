@@ -683,16 +683,24 @@ def _get_all_cases() -> list[ImmigrationCase]:
 def _invalidate_cases_cache() -> None:
     """Reset all in-memory caches so the next read fetches fresh data.
 
-    Clears the full-cases cache, the lightweight analytics-cases cache, and
-    the pre-computed analytics results cache so CRUD mutations are immediately
-    reflected across all endpoints (instead of serving stale data for up to
-    10 minutes).
+    Clears the full-cases cache, the lightweight analytics-cases cache, the
+    pre-computed analytics results cache, and the /api/v1/cases seek-pagination
+    anchor cache, so CRUD mutations are immediately reflected across all
+    endpoints (instead of serving stale data for up to 10 minutes).
     """
+    from ...cases_pagination import clear_cases_anchor_cache
+
     global _all_cases_ts, _analytics_cases_ts
     _all_cases_ts = 0.0
     _analytics_cases_ts = 0.0
     with _analytics_cache_lock:
         _analytics_cache.clear()
+    # A seek anchor is a cursor into a specific row ordering. Any insert or
+    # delete above that cursor shifts every later row, so an anchor that
+    # outlives a mutation makes the seek path serve a window the offset path
+    # would not. Dropping the whole cache is the cheap, always-correct answer:
+    # it costs one uncached deep page.
+    clear_cases_anchor_cache()
 
 
 # The only query params any cached analytics endpoint reads.  Building the cache
