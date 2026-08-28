@@ -13,12 +13,50 @@ export type PresetName =
   | "terracotta"
   | "lavender";
 
+/**
+ * Every CSS custom property a theme preset is responsible for.
+ *
+ * A preset that omits one does not fall back to something neutral — it inherits
+ * the Legal Codex value from the generated src/tokens/tokens.css, because
+ * applyTheme() writes back only the keys the preset declares. That is why this
+ * list is a compile-time contract rather than a comment.
+ */
+export const THEME_VAR_NAMES = [
+  "--color-primary",
+  "--color-primary-light",
+  "--color-primary-lighter",
+  "--color-accent",
+  "--color-accent-light",
+  "--color-accent-muted",
+  "--color-background",
+  "--color-background-card",
+  "--color-background-sidebar",
+  "--color-background-surface",
+  "--color-background-surface-hover",
+  "--color-border",
+  "--color-border-light",
+  "--color-text",
+  "--color-text-secondary",
+  "--color-text-muted",
+  "--color-overlay",
+] as const;
+
+export type ThemeVarName = (typeof THEME_VAR_NAMES)[number];
+
+/**
+ * The Record<ThemeVarName, string> half makes an omitted token a type error.
+ * The Record<string, string> half keeps arbitrary-string indexing legal for
+ * consumers such as getBaseColor() in src/pages/DesignTokensPage.tsx.
+ */
+type ThemePresetVars = Readonly<Record<ThemeVarName, string>> &
+  Readonly<Record<string, string>>;
+
 interface ThemePreset {
   readonly label: string;
   readonly colors: readonly [string, string, string, string];
   readonly darkColors: readonly [string, string, string, string];
-  readonly vars: Readonly<Record<string, string>>;
-  readonly darkVars: Readonly<Record<string, string>>;
+  readonly vars: ThemePresetVars;
+  readonly darkVars: ThemePresetVars;
 }
 
 export const PRESETS: Record<PresetName, ThemePreset> = {
@@ -37,11 +75,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#faf9f5",
       "--color-background-sidebar": "#f4f3ee",
       "--color-background-surface": "#e8e6dc",
+      "--color-background-surface-hover": "#dfddd3",
       "--color-border": "#d5d3c8",
       "--color-border-light": "#e0ded5",
       "--color-text": "#3d3929",
       "--color-text-secondary": "#6b6651",
       "--color-text-muted": "#6d6857",
+      "--color-overlay": "#141413",
     },
     darkVars: {
       "--color-primary": "#e8e4d8",
@@ -54,19 +94,60 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#1e1e1c",
       "--color-background-sidebar": "#191918",
       "--color-background-surface": "#2a2a27",
+      "--color-background-surface-hover": "#373733",
       "--color-border": "#4a4a44",
       "--color-border-light": "#555550",
       "--color-text": "#e8e5da",
       "--color-text-secondary": "#b0ad9f",
       "--color-text-muted": "#b0ad9f",
+      "--color-overlay": "#000000",
     },
   },
   parchment: {
     label: "Parchment",
     colors: ["#1b2838", "#5c4306", "#f5f4f1", "#6e7177"],
     darkColors: ["#111820", "#c9942e", "#192230", "#4a5060"],
-    vars: {},
-    darkVars: {},
+    // The "Legal Codex" baseline. These are the same values the generated
+    // src/tokens/tokens.css writes to :root / .dark — stated explicitly here so
+    // the default preset is not defined by the absence of overrides.
+    vars: {
+      "--color-primary": "#1b2838",
+      "--color-primary-light": "#2a3f55",
+      "--color-primary-lighter": "#3a5572",
+      "--color-accent": "#5c4306",
+      "--color-accent-light": "#d4a017",
+      "--color-accent-muted": "rgba(184,134,11,0.12)",
+      "--color-background": "#f5f4f1",
+      "--color-background-card": "#ffffff",
+      "--color-background-sidebar": "#faf9f7",
+      "--color-background-surface": "#f0efec",
+      "--color-background-surface-hover": "#e6e4e0",
+      "--color-border": "#6e7177",
+      "--color-border-light": "#eae8e3",
+      "--color-text": "#1b2838",
+      "--color-text-secondary": "#4a5568",
+      "--color-text-muted": "#8b8680",
+      "--color-overlay": "#111820",
+    },
+    darkVars: {
+      "--color-primary": "#d0d4da",
+      "--color-primary-light": "#a8b2be",
+      "--color-primary-lighter": "#5a7f9f",
+      "--color-accent": "#c9942e",
+      "--color-accent-light": "#e0b04a",
+      "--color-accent-muted": "rgba(201, 148, 46, 0.12)",
+      "--color-background": "#111820",
+      "--color-background-card": "#192230",
+      "--color-background-sidebar": "#141c28",
+      "--color-background-surface": "#1c2535",
+      "--color-background-surface-hover": "#243144",
+      "--color-border": "#4a5060",
+      "--color-border-light": "#2d3748",
+      "--color-text": "#e2dfda",
+      "--color-text-secondary": "#a4acb8",
+      "--color-text-muted": "#6d7788",
+      "--color-overlay": "#000000",
+    },
   },
   ocean: {
     label: "Ocean",
@@ -83,11 +164,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f5f9fc",
       "--color-background-surface": "#e8f1f8",
+      "--color-background-surface-hover": "#dfe7ee",
       "--color-border": "#cde0ed",
       "--color-border-light": "#dfeaf3",
       "--color-text": "#0f2942",
       "--color-text-secondary": "#3d5a73",
       "--color-text-muted": "#577286",
+      "--color-overlay": "#0a1929",
     },
     darkVars: {
       "--color-primary": "#b0cfe0",
@@ -100,11 +183,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#0f2137",
       "--color-background-sidebar": "#0c1c30",
       "--color-background-surface": "#142840",
+      "--color-background-surface-hover": "#1a3453",
       "--color-border": "#1a3450",
       "--color-border-light": "#1e3a58",
       "--color-text": "#d8e8f2",
       "--color-text-secondary": "#8fafc4",
       "--color-text-muted": "#5f86a2",
+      "--color-overlay": "#000000",
     },
   },
   forest: {
@@ -122,11 +207,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f6f9f7",
       "--color-background-surface": "#eaf0ec",
+      "--color-background-surface-hover": "#e1e6e3",
       "--color-border": "#cdddd3",
       "--color-border-light": "#dde9e1",
       "--color-text": "#1b3426",
       "--color-text-secondary": "#3d5a48",
       "--color-text-muted": "#5d7467",
+      "--color-overlay": "#0e1f16",
     },
     darkVars: {
       "--color-primary": "#b0d4bc",
@@ -139,11 +226,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#162419",
       "--color-background-sidebar": "#111f15",
       "--color-background-surface": "#1e3528",
+      "--color-background-surface-hover": "#274534",
       "--color-border": "#254232",
       "--color-border-light": "#2d4d3a",
       "--color-text": "#d4e8da",
       "--color-text-secondary": "#8fb8a0",
       "--color-text-muted": "#638c73",
+      "--color-overlay": "#000000",
     },
   },
   slate: {
@@ -161,11 +250,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f1f5f9",
       "--color-background-surface": "#f1f5f9",
+      "--color-background-surface-hover": "#e7ebef",
       "--color-border": "#e2e8f0",
       "--color-border-light": "#eef2f7",
       "--color-text": "#1e293b",
       "--color-text-secondary": "#475569",
       "--color-text-muted": "#607490",
+      "--color-overlay": "#0f172a",
     },
     darkVars: {
       "--color-primary": "#cbd5e1",
@@ -178,11 +269,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#1e293b",
       "--color-background-sidebar": "#141d2e",
       "--color-background-surface": "#253348",
+      "--color-background-surface-hover": "#30425e",
       "--color-border": "#334155",
       "--color-border-light": "#3b4c64",
       "--color-text": "#e2e8f0",
       "--color-text-secondary": "#94a3b8",
       "--color-text-muted": "#73839a",
+      "--color-overlay": "#000000",
     },
   },
   rose: {
@@ -200,11 +293,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#fdf8f9",
       "--color-background-surface": "#f9edf1",
+      "--color-background-surface-hover": "#efe4e7",
       "--color-border": "#f0d4dc",
       "--color-border-light": "#f5e4ea",
       "--color-text": "#3d1f2e",
       "--color-text-secondary": "#6b4555",
       "--color-text-muted": "#946376",
+      "--color-overlay": "#1f0f17",
     },
     darkVars: {
       "--color-primary": "#e0c4cc",
@@ -217,11 +312,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#2a1520",
       "--color-background-sidebar": "#24111b",
       "--color-background-surface": "#3d2030",
+      "--color-background-surface-hover": "#4f2a3e",
       "--color-border": "#4a2838",
       "--color-border-light": "#553040",
       "--color-text": "#f0dce2",
       "--color-text-secondary": "#c0909f",
       "--color-text-muted": "#9c7283",
+      "--color-overlay": "#000000",
     },
   },
   midnight: {
@@ -239,11 +336,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#ebebf5",
       "--color-background-surface": "#e4e4f0",
+      "--color-background-surface-hover": "#dbdbe6",
       "--color-border": "#d0d0e4",
       "--color-border-light": "#dddded",
       "--color-text": "#1a1a3e",
       "--color-text-secondary": "#4a4a6e",
       "--color-text-muted": "#68688d",
+      "--color-overlay": "#0d0d1f",
     },
     darkVars: {
       "--color-primary": "#c8c8e8",
@@ -256,11 +355,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#161630",
       "--color-background-sidebar": "#111128",
       "--color-background-surface": "#1e1e42",
+      "--color-background-surface-hover": "#272756",
       "--color-border": "#2a2a52",
       "--color-border-light": "#32325e",
       "--color-text": "#ddddf0",
       "--color-text-secondary": "#9898c0",
       "--color-text-muted": "#7b7ba2",
+      "--color-overlay": "#000000",
     },
   },
   amber: {
@@ -278,11 +379,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f7f2ea",
       "--color-background-surface": "#f0e8db",
+      "--color-background-surface-hover": "#e6dfd2",
       "--color-border": "#e4d5be",
       "--color-border-light": "#eee2d0",
       "--color-text": "#3d2b14",
       "--color-text-secondary": "#6b5538",
       "--color-text-muted": "#816d51",
+      "--color-overlay": "#1a1208",
     },
     darkVars: {
       "--color-primary": "#e0cdb5",
@@ -295,11 +398,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#251c0e",
       "--color-background-sidebar": "#1e1508",
       "--color-background-surface": "#322514",
+      "--color-background-surface-hover": "#41301a",
       "--color-border": "#40301a",
       "--color-border-light": "#4a3820",
       "--color-text": "#f0e8d8",
       "--color-text-secondary": "#c0a480",
       "--color-text-muted": "#967c58",
+      "--color-overlay": "#000000",
     },
   },
   nordic: {
@@ -317,11 +422,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#eaeef1",
       "--color-background-surface": "#e2e8ec",
+      "--color-background-surface-hover": "#d9dfe3",
       "--color-border": "#ced6dd",
       "--color-border-light": "#dde3e8",
       "--color-text": "#2c3e50",
       "--color-text-secondary": "#546e7a",
       "--color-text-muted": "#5a6f7e",
+      "--color-overlay": "#121a22",
     },
     darkVars: {
       "--color-primary": "#b0c4d4",
@@ -334,11 +441,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#1a2530",
       "--color-background-sidebar": "#152028",
       "--color-background-surface": "#22303d",
+      "--color-background-surface-hover": "#2c3e4f",
       "--color-border": "#2c3e50",
       "--color-border-light": "#344858",
       "--color-text": "#dce4ea",
       "--color-text-secondary": "#8da0ae",
       "--color-text-muted": "#6f8799",
+      "--color-overlay": "#000000",
     },
   },
   terracotta: {
@@ -356,11 +465,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f5eee8",
       "--color-background-surface": "#eee4db",
+      "--color-background-surface-hover": "#e4dbd2",
       "--color-border": "#e0d0c2",
       "--color-border-light": "#eaddd0",
       "--color-text": "#5d2e1a",
       "--color-text-secondary": "#7d5040",
       "--color-text-muted": "#88695a",
+      "--color-overlay": "#1c120c",
     },
     darkVars: {
       "--color-primary": "#d4b8a8",
@@ -373,11 +484,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#281a12",
       "--color-background-sidebar": "#20150e",
       "--color-background-surface": "#352418",
+      "--color-background-surface-hover": "#452f1f",
       "--color-border": "#453020",
       "--color-border-light": "#503828",
       "--color-text": "#f0e4da",
       "--color-text-secondary": "#b89080",
       "--color-text-muted": "#957b69",
+      "--color-overlay": "#000000",
     },
   },
   lavender: {
@@ -395,11 +508,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#ffffff",
       "--color-background-sidebar": "#f0e8f5",
       "--color-background-surface": "#e8e0f0",
+      "--color-background-surface-hover": "#dfd7e6",
       "--color-border": "#d8cceb",
       "--color-border-light": "#e5ddf0",
       "--color-text": "#3b2655",
       "--color-text-secondary": "#5a4575",
       "--color-text-muted": "#796691",
+      "--color-overlay": "#150e20",
     },
     darkVars: {
       "--color-primary": "#c8b8e0",
@@ -412,11 +527,13 @@ export const PRESETS: Record<PresetName, ThemePreset> = {
       "--color-background-card": "#1e152c",
       "--color-background-sidebar": "#1a1125",
       "--color-background-surface": "#2a2040",
+      "--color-background-surface-hover": "#372a53",
       "--color-border": "#382850",
       "--color-border-light": "#40305a",
       "--color-text": "#e8e0f0",
       "--color-text-secondary": "#a090c0",
       "--color-text-muted": "#87779f",
+      "--color-overlay": "#000000",
     },
   },
 };
@@ -461,22 +578,21 @@ function applyTheme(
 
 /* ── Stored state readers ─────────────────────────────────────── */
 
+/**
+ * The shipped design direction ("Legal Codex"): warm off-white #f5f4f1, deep
+ * navy #1b2838, amber #d4a017. Its values are the same ones tokens.json feeds
+ * into :root, so changing this constant is the only edit needed to change the
+ * app's default palette.
+ */
+const DEFAULT_PRESET: PresetName = "parchment";
+
 function readStoredPreset(): PresetName {
-  if (typeof window === "undefined") return "claude";
+  if (typeof window === "undefined") return DEFAULT_PRESET;
   try {
     const stored = localStorage.getItem(PRESET_KEY);
-    // Migrate old default "parchment" → "claude"
-    if (stored === "parchment") {
-      try {
-        localStorage.setItem(PRESET_KEY, "claude");
-      } catch {
-        /* ignore */
-      }
-      return "claude";
-    }
-    return stored && stored in PRESETS ? (stored as PresetName) : "claude";
+    return stored && stored in PRESETS ? (stored as PresetName) : DEFAULT_PRESET;
   } catch {
-    return "claude";
+    return DEFAULT_PRESET;
   }
 }
 
@@ -573,7 +689,7 @@ export function useThemePreset() {
   }, []);
 
   const resetPreset = useCallback(() => {
-    setState({ preset: "claude", isDark: false, customVars: {} });
+    setState({ preset: DEFAULT_PRESET, isDark: false, customVars: {} });
   }, []);
 
   const setCustomVar = useCallback((name: string, value: string) => {
