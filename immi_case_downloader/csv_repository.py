@@ -58,9 +58,17 @@ class CsvRepository:
         SQLite backend enforces it with a partial unique index) — dropping it
         would let a re-crawl whose citation changed insert a second row for a
         page that is already stored.
+
+        The merge runs on detached objects read from disk inside the lock, not
+        on the shared ``load_all_cases`` cache. Mutating cached objects would
+        publish a half-applied batch to every reader in this process the moment
+        a later case in the same batch raised — a state that is on nobody's
+        disk and that the next successful save would then commit. Reading from
+        disk rather than cache also stops a snapshot up to _CACHE_TTL seconds
+        old from overwriting a row another process has just written.
         """
         with csv_write_lock(os.path.join(self.base_dir, CASES_CSV)):
-            existing = load_all_cases(self.base_dir)
+            existing = load_all_cases(self.base_dir, use_cache=False)
             by_id: dict[str, ImmigrationCase] = {}
             by_url: dict[str, ImmigrationCase] = {}
             for stored in existing:

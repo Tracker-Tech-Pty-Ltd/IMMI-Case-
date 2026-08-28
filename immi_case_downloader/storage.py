@@ -208,20 +208,31 @@ def invalidate_cases_cache():
         _cases_cache["ts"] = 0.0
 
 
-def load_all_cases(base_dir: str = OUTPUT_DIR) -> list[ImmigrationCase]:
+def load_all_cases(
+    base_dir: str = OUTPUT_DIR, *, use_cache: bool = True
+) -> list[ImmigrationCase]:
     """Load all cases from CSV as ImmigrationCase objects.
 
     Results are cached for up to _CACHE_TTL seconds. The cache is also
     automatically invalidated when save_cases_csv() is called.
+
+    The returned list is a copy, but the ``ImmigrationCase`` objects in it are
+    the *same objects* held by the cache. A caller that mutates them in place
+    has edited the cache — before, and regardless of whether, anything reaches
+    disk. Pass ``use_cache=False`` for a read-modify-write: it reads the file
+    (so a writer in another process cannot be overwritten from a stale
+    snapshot) and returns freshly built, detached objects that no other reader
+    shares, and it neither consults nor fills the cache.
     """
     now = time.monotonic()
-    with _cases_cache_lock:
-        if (
-            _cases_cache["cases"] is not None
-            and _cases_cache["base_dir"] == base_dir
-            and (now - _cases_cache["ts"]) < _CACHE_TTL
-        ):
-            return list(_cases_cache["cases"])  # return a copy
+    if use_cache:
+        with _cases_cache_lock:
+            if (
+                _cases_cache["cases"] is not None
+                and _cases_cache["base_dir"] == base_dir
+                and (now - _cases_cache["ts"]) < _CACHE_TTL
+            ):
+                return list(_cases_cache["cases"])  # return a copy
 
     records = load_cases_csv(base_dir)
     cases = []
@@ -229,6 +240,9 @@ def load_all_cases(base_dir: str = OUTPUT_DIR) -> list[ImmigrationCase]:
         case = ImmigrationCase.from_dict(r)
         case.ensure_id()
         cases.append(case)
+
+    if not use_cache:
+        return cases
 
     with _cases_cache_lock:
         _cases_cache["cases"] = cases

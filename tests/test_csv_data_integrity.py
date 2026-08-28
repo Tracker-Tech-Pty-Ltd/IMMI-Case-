@@ -256,6 +256,82 @@ class TestCsvSaveManyUpsert:
         assert len(loaded) == 1
         assert loaded[0].url == "https://example.com/24"
 
+    def test_failed_save_many_leaves_no_uncommitted_mutation_in_cache(self, repo):
+        """A batch that raises must not publish its earlier cases to readers.
+
+        save_many used to merge onto the very objects held by the
+        load_all_cases cache, so a batch that raised on its *second* case had
+        already applied its *first* one to every reader in the process — a
+        state on nobody's disk, which the next successful save would then
+        commit. The test above hides this by calling invalidate_cases_cache()
+        before it reads; this one deliberately does not.
+        """
+        first = _case(citation="[2024] AATA 30", url="https://example.com/30")
+        second = _case(citation="[2024] AATA 31", url="https://example.com/31")
+        repo.save_many([first, second])
+        invalidate_cases_cache()
+
+        good_update = ImmigrationCase(
+            case_id=first.case_id,
+            citation="[2024] AATA 30",
+            url="https://example.com/30",
+            user_notes="NEVER COMMITTED",
+        )
+        conflicting = ImmigrationCase(
+            case_id=second.case_id,
+            citation="[2024] AATA 31",
+            url="https://example.com/DIFFERENT",
+        )
+
+        with pytest.raises(ValueError):
+            repo.save_many([good_update, conflicting])
+
+        # No invalidate_cases_cache() here: seeing the in-memory state is the
+        # whole point.
+        cached = load_all_cases(repo.base_dir)
+        assert [c.user_notes for c in cached] == ["", ""], (
+            "a batch that raised leaked its earlier mutation into the cache"
+        )
+
+        on_disk = (Path(repo.base_dir) / "immigration_cases.csv").read_text(
+            encoding="utf-8-sig"
+        )
+        assert "NEVER COMMITTED" not in on_disk
+
+    def test_save_many_does_not_overwrite_from_a_stale_cache(self, repo):
+        """The read inside the lock must come from disk, not a 60s-old cache.
+
+        Process A warms its cache, process B appends a row, then A saves. If A
+        merges onto its stale snapshot, B's row is silently dropped by A's
+        write. Here the "other process" is a direct save_cases_csv() that
+        bypasses A's in-process cache, which is exactly what a second process
+        looks like from A's side.
+        """
+        first = _case(citation="[2024] AATA 40", url="https://example.com/40")
+        repo.save_many([first])
+        invalidate_cases_cache()
+
+        repo.load_all()  # warm this process's cache at 1 row
+
+        other_process_rows = load_all_cases(repo.base_dir, use_cache=False)
+        other_process_rows.append(
+            _case(citation="[2024] AATA 41", url="https://example.com/41")
+        )
+        with patch("immi_case_downloader.storage.invalidate_cases_cache"):
+            # Leave the stale cache in place — a write in another process
+            # cannot invalidate this process's cache either.
+            save_cases_csv(other_process_rows, repo.base_dir)
+
+        repo.save_many([_case(citation="[2024] AATA 42", url="https://example.com/42")])
+
+        invalidate_cases_cache()
+        urls = {c.url for c in repo.load_all()}
+        assert urls == {
+            "https://example.com/40",
+            "https://example.com/41",
+            "https://example.com/42",
+        }
+
 
 # ── SQLite save_many: blank-URL UNIQUE crash + rollback ─────────────────
 
