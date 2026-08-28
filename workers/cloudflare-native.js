@@ -27,6 +27,8 @@ import { sha256Hex, VECTOR_DIMENSIONS, StorageBoundaryError } from "./storage/co
 import { coordinateExtractedCase } from "./storage/pipeline_coordinator.js";
 import { handleJobStatus, handlePipelineStatus } from "./pipeline/cloudflare_handlers.js";
 import { dispatchCloudflarePipelineControl } from "./pipeline/control_handlers.js";
+import { extractToken } from "./auth/request_auth.js";
+import { verifyJwt } from "./auth/jwt.js";
 
 export { AuthNonce } from "./auth/nonce_do.js";
 export { CouncilSessionDO } from "./llm-council/session_do.js";
@@ -282,6 +284,65 @@ function withTransportSecurity(request, response) {
   return hardened;
 }
 
+/**
+ * Per-request correlation id.
+ *
+ * Cloudflare's Workers Trace Events dataset already groups every console line
+ * from one invocation together with that invocation's URL, method, status and
+ * timing, so this id is not what makes the logs joinable — it is what a user
+ * can quote from a request that failed. `cf-ray` is preferred so the id matches
+ * the one Cloudflare itself recorded; randomUUID() covers `wrangler dev` and
+ * tests, where no Ray ID exists.
+ */
+function requestIdFor(request) {
+  const ray = request.headers.get("cf-ray");
+  if (ray) return ray;
+  try {
+    return crypto.randomUUID();
+  } catch (_) {
+    return `rid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function withRequestId(response, requestId) {
+  try {
+    response.headers.set("X-Request-Id", requestId);
+    return response;
+  } catch (_) {
+    // Responses handed back by env.ASSETS.fetch() have immutable headers.
+    const copy = new Response(response.body, response);
+    copy.headers.set("X-Request-Id", requestId);
+    return copy;
+  }
+}
+
+/**
+ * Application-level attribution for the access log.
+ *
+ * Cloudflare records the URL, status and timing of every invocation; what it
+ * cannot know is which tenant and user a request belonged to — and that is the
+ * per-tenant activity monitoring this Worker's structured logs are supposed to
+ * support. The token is *verified*, never merely decoded, so a forged
+ * Authorization header cannot write an arbitrary tenant id into the logs.
+ * Never throws: a logging path must not be able to fail a request.
+ */
+async function accessLogPrincipal(request, env) {
+  if (env.AUTH_ENABLED === "false") return {};
+  try {
+    const token = extractToken(request);
+    if (!token) return {};
+    const result = await verifyJwt(token, env);
+    if (!result.valid || !result.payload) return {};
+    if (result.payload.type === "refresh") return {};
+    return {
+      user_id: result.payload.sub || null,
+      tenant_id: result.payload.tenant_id || null,
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
 async function dispatchAuth(request, env, path, method) {
   if (env.AUTH_ENABLED === "false") return null;
   if (path === "/api/v1/auth/telegram" && method === "POST") {
@@ -362,7 +423,46 @@ export default {
     }
     await handleCaseMutationQueue(batch, env);
   },
+  // Wrapped so every response picks up an X-Request-Id and every API request
+  // produces one access line. Deliberately no try/catch that RETURNS a
+  // Response on failure: an unhandled rejection must still surface as an
+  // unhandled rejection — see the comment on the catch branch below.
   async fetch(request, env, ctx) {
-    return withTransportSecurity(request, await route(request, env, ctx));
+    const requestId = requestIdFor(request);
+    const startedAt = Date.now();
+    const { pathname } = new URL(request.url);
+    // Static-asset fetches are deliberately not logged: Trace Events already
+    // carry their URL and status, and they would dominate Logpush volume.
+    const logged = pathname.startsWith("/api/") || pathname === "/health";
+    let response;
+    let failure = null;
+    try {
+      response = await route(request, env, ctx);
+    } catch (err) {
+      // Record, then RE-THROW unchanged. This is not an error-handling
+      // try/catch and must never become one: an unhandled rejection must
+      // keep surfacing as an unhandled rejection. Without this branch a
+      // failing request produced NO access line at all, which is the one
+      // case an operator most needs to find.
+      failure = err;
+    }
+    if (logged) {
+      const principal = await accessLogPrincipal(request, env);
+      console.log(JSON.stringify({
+        event: "cloudflare.request",
+        request_id: requestId,
+        method: request.method,
+        path: pathname,
+        // No Response exists on the throw path, so there is no status to
+        // report and no header to attach — see outcome.
+        status: failure ? null : response.status,
+        outcome: failure ? "handler_threw" : "ok",
+        error: failure ? String(failure?.message || failure).slice(0, 200) : undefined,
+        duration_ms: Date.now() - startedAt,
+        ...principal,
+      }));
+    }
+    if (failure) throw failure;
+    return withRequestId(withTransportSecurity(request, response), requestId);
   },
 };
