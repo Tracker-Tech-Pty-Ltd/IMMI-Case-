@@ -150,38 +150,60 @@ export function DashboardPage() {
     };
   }, [isInitialLoading, filters.court, filters.yearFrom, filters.yearTo]);
 
+  // Chart datasets are memoised so the memo() wrappers on CourtChart /
+  // NatureChart / SubclassChart / CourtSparklineGrid can actually hit.
+  // These sit above the early returns below to keep hook order stable.
+  const courtDistribution = useMemo(
+    () => toRenderableDistribution(stats?.courts as Record<string, unknown>),
+    [stats?.courts],
+  );
+  const yearDistribution = useMemo(
+    () => toRenderableDistribution(stats?.years as Record<string, unknown>),
+    [stats?.years],
+  );
+  const sourceDistribution = useMemo(
+    () => toRenderableDistribution(stats?.sources as Record<string, unknown>),
+    [stats?.sources],
+  );
+  const natureDistribution = useMemo(
+    () => toRenderableDistribution(stats?.natures as Record<string, unknown>),
+    [stats?.natures],
+  );
+  const visaSubclassDistribution = useMemo(
+    () =>
+      toRenderableDistribution(
+        normalizeVisaSubclassKeys(stats?.visa_subclasses || {}) as Record<
+          string,
+          unknown
+        >,
+      ),
+    [stats?.visa_subclasses],
+  );
+  const trends = useMemo(
+    () =>
+      normalizeTrendEntries(
+        (trendsData?.trends ?? []) as Record<string, unknown>[],
+      ),
+    [trendsData?.trends],
+  );
+  const sortedCourts = useMemo(
+    () => Object.entries(courtDistribution).toSorted(([, a], [, b]) => b - a),
+    [courtDistribution],
+  );
+
   useEffect(() => {
     if (!import.meta.env.DEV || !stats) return;
 
-    const devCourtDistribution = toRenderableDistribution(
-      stats.courts as Record<string, unknown>,
-    );
-    const devYearDistribution = toRenderableDistribution(
-      stats.years as Record<string, unknown>,
-    );
-    const devSourceDistribution = toRenderableDistribution(
-      stats.sources as Record<string, unknown>,
-    );
-    const devNatureDistribution = toRenderableDistribution(
-      stats.natures as Record<string, unknown>,
-    );
-    const devVisaSubclassDistribution = toRenderableDistribution(
-      normalizeVisaSubclassKeys(stats.visa_subclasses || {}) as Record<string, unknown>,
-    );
-    const devTrends = normalizeTrendEntries(
-      (trendsData?.trends ?? []) as Record<string, unknown>[],
-    );
-
-    const hasCourtData = Object.keys(devCourtDistribution).length > 0;
-    const hasYearBars = Object.keys(devYearDistribution).length > 0;
-    const hasSourceData = Object.keys(devSourceDistribution).length > 0;
-    const hasNatureData = Object.keys(devNatureDistribution).length > 0;
+    const hasCourtData = Object.keys(courtDistribution).length > 0;
+    const hasYearBars = Object.keys(yearDistribution).length > 0;
+    const hasSourceData = Object.keys(sourceDistribution).length > 0;
+    const hasNatureData = Object.keys(natureDistribution).length > 0;
     const hasVisaSubclassData =
-      Object.keys(devVisaSubclassDistribution).length > 0;
-    const hasTrendSeries = hasRenderableTrendSeries(devTrends);
+      Object.keys(visaSubclassDistribution).length > 0;
+    const hasTrendSeries = hasRenderableTrendSeries(trends);
     const fallbackDistribution = hasSourceData
-      ? devSourceDistribution
-      : devCourtDistribution;
+      ? sourceDistribution
+      : courtDistribution;
     const hasFallbackDistribution =
       Object.keys(fallbackDistribution).length > 0;
     const fallbackDataset: ChartSourceDataset = hasSourceData
@@ -193,7 +215,7 @@ export function DashboardPage() {
         ? {
             status: "raw",
             dataset: "courts",
-            pointCount: Object.keys(devCourtDistribution).length,
+            pointCount: Object.keys(courtDistribution).length,
           }
         : hasFallbackDistribution
           ? {
@@ -203,19 +225,19 @@ export function DashboardPage() {
             }
           : { status: "empty", dataset: "none", pointCount: 0 },
       year: hasTrendSeries
-        ? { status: "raw", dataset: "trends", pointCount: devTrends.length }
+        ? { status: "raw", dataset: "trends", pointCount: trends.length }
         : hasYearBars
           ? {
               status: "fallback",
               dataset: "years",
-              pointCount: Object.keys(devYearDistribution).length,
+              pointCount: Object.keys(yearDistribution).length,
             }
           : { status: "empty", dataset: "none", pointCount: 0 },
       nature: hasNatureData
         ? {
             status: "raw",
             dataset: "natures",
-            pointCount: Object.keys(devNatureDistribution).length,
+            pointCount: Object.keys(natureDistribution).length,
           }
         : hasFallbackDistribution
           ? {
@@ -228,7 +250,7 @@ export function DashboardPage() {
         ? {
             status: "raw",
             dataset: "visa_subclasses",
-            pointCount: Object.keys(devVisaSubclassDistribution).length,
+            pointCount: Object.keys(visaSubclassDistribution).length,
           }
         : hasFallbackDistribution
           ? {
@@ -248,7 +270,15 @@ export function DashboardPage() {
         degradedCharts,
       );
     }
-  }, [stats, trendsData, filters.court, filters.yearFrom, filters.yearTo]);
+  }, [
+    stats,
+    courtDistribution,
+    yearDistribution,
+    sourceDistribution,
+    natureDistribution,
+    visaSubclassDistribution,
+    trends,
+  ]);
 
   if (isInitialLoading) {
     const isSlow = loadingPhase === "slow";
@@ -430,25 +460,7 @@ export function DashboardPage() {
     );
   }
 
-  const courtDistribution = toRenderableDistribution(
-    stats.courts as Record<string, unknown>,
-  );
   const isDegradedStats = Boolean(stats.degraded);
-  const yearDistribution = toRenderableDistribution(
-    stats.years as Record<string, unknown>,
-  );
-  const sourceDistribution = toRenderableDistribution(
-    stats.sources as Record<string, unknown>,
-  );
-  const natureDistribution = toRenderableDistribution(
-    stats.natures as Record<string, unknown>,
-  );
-  const visaSubclassDistribution = toRenderableDistribution(
-    normalizeVisaSubclassKeys(stats.visa_subclasses || {}) as Record<string, unknown>,
-  );
-  const trends = normalizeTrendEntries(
-    (trendsData?.trends ?? []) as Record<string, unknown>[],
-  );
   const hasTrendSeries = hasRenderableTrendSeries(trends);
   const hasYearBars = Object.keys(yearDistribution).length > 0;
   const hasCourtData = Object.keys(courtDistribution).length > 0;
@@ -459,9 +471,6 @@ export function DashboardPage() {
       ? sourceDistribution
       : courtDistribution;
   const hasFallbackDistribution = Object.keys(fallbackDistribution).length > 0;
-  const sortedCourts = Object.entries(courtDistribution).toSorted(
-    ([, a], [, b]) => b - a,
-  );
   const natureCount = Object.keys(natureDistribution).length;
   const fallbackDataset: ChartSourceDataset =
     Object.keys(sourceDistribution).length > 0 ? "sources" : "courts";
