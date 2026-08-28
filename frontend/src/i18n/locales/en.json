@@ -263,7 +263,9 @@
     "copy_citation": "Copy citation",
     "catchwords": "Catchwords",
     "tags": "Tags",
-    "notes": "Notes"
+    "notes": "Notes",
+    "ask_council": "Ask the Council about this case",
+    "ask_council_hint": "The Council sees this case's citation, court, catchwords and summary — not the full judgment text."
   },
   "filters": {
     "filter": "Filter",
