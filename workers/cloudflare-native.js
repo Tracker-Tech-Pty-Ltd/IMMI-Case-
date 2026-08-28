@@ -43,6 +43,35 @@ async function processCaseReindex(message, stores) {
     await stores.semanticIndex.deleteCase(event.case_id);
     return true;
   }
+  // IDEMPOTENCE GUARD — this message may be a redelivery.
+  //
+  // handleCaseMutationQueue runs every message and then does ONE corpus-wide
+  // rebuildAggregates(). A rebuild failure retries EVERY message in the batch,
+  // including reindexes that had already completed their R2 read, their Workers
+  // AI embedding and their Vectorize upsert. Without this check the platform
+  // re-buys all of that up to max_retries and can finally DLQ the message over
+  // an analytics fault that has nothing to do with it.
+  //
+  // `semantic_ready` alone is not sufficient evidence: the row may have been
+  // re-ingested with different text since the vector was written. Every writer
+  // that changes case content resets semantic_ready to 0 (see storage/case.js
+  // updateCase / setTags / upsert), so `semantic_ready = 1` AND a content hash
+  // equal to the one this event names together mean the stored vector already
+  // describes exactly this content. Anything less falls through and re-embeds:
+  // paying twice is wasteful, but a stale vector is wrong.
+  if (
+    current.semantic_ready
+    && typeof event.content_sha256 === "string"
+    && event.content_sha256
+    && current.content_sha256 === event.content_sha256
+  ) {
+    console.log(JSON.stringify({
+      event: "cloudflare.case_reindex.already_current",
+      case_id: event.case_id,
+      content_sha256: event.content_sha256,
+    }));
+    return true;
+  }
   const text = await stores.objectStore.getVerifiedText({
     key: event.content_key,
     sha256: event.content_sha256,
