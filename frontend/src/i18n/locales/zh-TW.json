@@ -263,7 +263,9 @@
     "copy_citation": "複製引述標識",
     "catchwords": "關鍵詞摘要",
     "tags": "標籤",
-    "notes": "備註"
+    "notes": "備註",
+    "ask_council": "就此案件詢問委員會",
+    "ask_council_hint": "委員會僅能看到此案件的引述標識、法院、關鍵詞與摘要——並非完整判決全文。"
   },
   "filters": {
     "filter": "篩選",

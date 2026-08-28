@@ -159,7 +159,11 @@ export interface UseCouncilStreamResult {
   state: CouncilStreamState;
   isStreaming: boolean;
   /** Open the SSE connection and start streaming. */
-  start: (params: { message: string; case_context?: string }) => Promise<CouncilStreamState>;
+  start: (params: {
+    message: string;
+    case_context?: string;
+    case_id?: string;
+  }) => Promise<CouncilStreamState>;
   /** Abort an in-flight stream. */
   abort: () => void;
   /** Reset state (call after consumer has persisted final result). */
@@ -190,7 +194,11 @@ export function useCouncilStream(): UseCouncilStreamResult {
   }, []);
 
   const start = useCallback(
-    async (params: { message: string; case_context?: string }): Promise<CouncilStreamState> => {
+    async (params: {
+      message: string;
+      case_context?: string;
+      case_id?: string;
+    }): Promise<CouncilStreamState> => {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
