@@ -44,7 +44,7 @@ Nothing downstream is trustworthy until these land. 001 must be first.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [001](001-restore-the-frontend-compile-gate.md) | Make CI actually type-check and build the frontend | P1 | M | LOW | — | DONE — merged to main |
-| [002](002-fix-test-collection-and-install.md) | Collect every test that exists and make a fresh clone installable | P1 | M | LOW | 001 | TODO |
+| [002](002-fix-test-collection-and-install.md) | Collect every test that exists and make a fresh clone installable | P1 | M | LOW | 001 | DONE — merged to main |
 | [003](003-lint-the-test-suite.md) | Lint `tests/` and fix the 43 violations hiding behind the narrowed path | P1 | S | LOW | 002 | TODO |
 
 ### Tier 1 — Production-breaking Worker defects
@@ -54,7 +54,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [004](004-fix-council-429-outage.md) | Restore LLM Council — every POST currently fails because its rate-limiter binding is not declared anywhere | P1 | M | MED | — | DONE (code) — awaiting operator deploy |
-| [005](005-fix-worker-async-error-handling.md) | Make the Worker dispatchers' try/catch actually catch handler rejections | P1 | M | MED | 004 | TODO |
+| [005](005-fix-worker-async-error-handling.md) | Make the Worker dispatchers' try/catch actually catch handler rejections | P1 | M | MED | 004 | DONE — merged to main |
 | [006](006-harden-auth-and-authorization.md) | Separate platform roles from tenant roles and close the auth gaps | P1 | L | HIGH | 005 | TODO |
 | [007](007-harden-the-public-export-surface.md) | Authenticate, throttle and sanitise the bulk export endpoints | P1 | L | MED | 004 | TODO |
 | [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | TODO |
@@ -79,7 +79,7 @@ Silent failures the user cannot see or recover from.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [015](015-surface-frontend-errors.md) | Replace infinite spinners and silent failures with real error states | P1 | L | MED | 001 | TODO |
-| [016](016-fix-query-cache-correctness.md) | Fix stale-data bleed, query keys and CSRF token lifetime | P2 | M | LOW | 001 | TODO |
+| [016](016-fix-query-cache-correctness.md) | Fix stale-data bleed, query keys and CSRF token lifetime | P2 | M | LOW | 001 | DONE — merged to main |
 | [017](017-fix-frontend-async-and-navigation.md) | Clipboard, blob downloads, share links and stream re-entrancy | P3 | M | LOW | — | DONE — merged to main |
 | [018](018-complete-the-i18n-catalogue.md) | Define the 88 missing keys and translate the hardcoded strings | P2 | M | LOW | 001 | TODO |
 
@@ -90,7 +90,7 @@ Bundle composition and render cost.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [019](019-fix-the-entry-bundle.md) | Stop preloading charts, both locales and a render-blocking font on every route | P2 | M | MED | 001 | DONE — merged to main |
-| [020](020-fix-render-performance.md) | Debounce search, memoise the dashboard, and stop double-rendering the case list | P2 | M | MED | 001 | TODO |
+| [020](020-fix-render-performance.md) | Debounce search, memoise the dashboard, and stop double-rendering the case list | P2 | M | MED | 001 | DONE — merged to main |
 
 ### Tier 5 — Design system & accessibility
 
@@ -98,7 +98,7 @@ The decided 'Legal Codex' direction and WCAG conformance.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [021](021-restore-legal-codex-default.md) | Ship the decided Legal Codex palette instead of migrating users off it | P1 | M | MED | 001 | TODO |
+| [021](021-restore-legal-codex-default.md) | Ship the decided Legal Codex palette instead of migrating users off it | P1 | M | MED | 001 | DONE — merged to main |
 | [022](022-fix-contrast-tokens.md) | Bring the colour tokens up to WCAG AA in both themes | P2 | L | MED | — | TODO |
 | [023](023-fix-accessibility-semantics.md) | Labels, focus management, table semantics and heading hierarchy | P2 | M | MED | 001 | TODO |
 | [024](024-add-accessibility-gates.md) | Make lint and tests able to catch contrast and a11y regressions | P2 | M | LOW | — | TODO |
@@ -112,7 +112,7 @@ Real bugs, lower blast radius: the Flask app is not in production.
 |------|-------|-----|-----|------|------------|--------|
 | [026](026-fix-seek-pagination.md) | Make the seek pagination return the right rows on every page | P2 | M | MED | 027 | TODO |
 | [027](027-fix-csv-data-integrity.md) | Stop silently destroying rows and columns in the master CSV | P1 | L | MED | — | DONE — merged to main |
-| [028](028-fix-flask-analytics-fallback.md) | Stop returning empty analytics and calling it a timeout | P2 | M | MED | 027 | TODO |
+| [028](028-fix-flask-analytics-fallback.md) | Stop returning empty analytics and calling it a timeout | P2 | M | MED | 027 | DONE — merged to main |
 | [029](029-harden-scraper-and-extraction.md) | Checkpointing, honest failure reporting and safe result truncation | P2 | L | MED | — | DONE — merged to main |
 
 ### Tier 7 — Tech debt
