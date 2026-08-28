@@ -1013,7 +1013,7 @@ async function handleAnalyticsJudgeLeaderboard(url, stores) {
   const limit = intParam(url.searchParams.get("limit"), 50, 1, 200);
   const minCases = intParam(url.searchParams.get("min_cases"), 1, 1, 100000);
   if (!["cases", "approval_rate", "name"].includes(sortBy)) return jsonErr("Invalid sort_by. Allowed: approval_rate, cases, name");
-  const aggregate = await stores.caseStore.analyticsJudgeAggregate();
+  const aggregate = await stores.caseStore.analyticsJudgeAggregate({ court, minCases });
   const judges = new Map();
   for (const row of aggregate.outcomes) {
     if (court && row.court_code !== court) continue;
