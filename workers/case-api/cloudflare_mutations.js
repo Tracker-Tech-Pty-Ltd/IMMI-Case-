@@ -67,7 +67,10 @@ async function requireWriter(request, env, stores) {
   const authResult = await requireAuth(request, env, verifyJwt);
   if (authResult instanceof Response) return authResult;
   try {
-    const auth = await stores.identityStore.assertMembership(authResult.claims);
+    // The `cases` table has no tenant column — every write here mutates the
+    // shared catalog, so tenant membership is not sufficient authorization.
+    // The tenant role is self-granted at signup; require the platform grant.
+    const auth = await stores.identityStore.assertPlatformOperator(authResult.claims);
     return { auth };
   } catch (error) {
     if (clientError(error)) return errorResponse(error.message, error.status, error.code);

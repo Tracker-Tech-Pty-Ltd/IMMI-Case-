@@ -49,7 +49,10 @@ describe("Dispatcher error propagation", () => {
 
   it("surfaces a typed storage error from a case mutation handler", async () => {
     mockStores.mockReturnValue({
-      identityStore: { assertMembership: vi.fn(async () => AUTH) },
+      identityStore: {
+        assertMembership: vi.fn(async () => AUTH),
+        assertPlatformOperator: vi.fn(async () => AUTH),
+      },
       objectStore: {
         putCaseSource: vi.fn(async () => {
           throw new StorageBoundaryError("Case source checksum mismatch", { code: "r2_checksum_mismatch", status: 503 });
