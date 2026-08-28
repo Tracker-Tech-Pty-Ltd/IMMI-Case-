@@ -89,7 +89,9 @@
     "menu": "切換選單",
     "next": "下一步",
     "close_menu": "關閉選單",
-    "skip_to_content": "跳到主要內容"
+    "skip_to_content": "跳到主要內容",
+    "clear": "清除",
+    "loading_message": "正在準備最新資料與介面狀態。"
   },
   "buttons": {
     "browse_cases": "瀏覽案例",
@@ -191,7 +193,9 @@
     "section_02_label": "章節 02 · 分布結構",
     "section_02_title": "法院與時間分布",
     "section_03_label": "章節 03 · 組成分析",
-    "section_03_title": "案件性質與簽證子類別組成"
+    "section_03_title": "案件性質與簽證子類別組成",
+    "court_sparkline_aria": "{{court}}：共 {{total}} 件案例",
+    "peak_year": "高峰：{{year}}"
   },
   "cases": {
     "title": "案例",
@@ -248,7 +252,11 @@
     "legal_concepts_placeholder": "以分號分隔",
     "representation_yes": "有代理",
     "representation_no": "無代理",
-    "representation_self": "自行代理"
+    "representation_self": "自行代理",
+    "no_similar_cases": "查無相似案例。",
+    "page_subtitle": "於單一工作區檢閱、比較並管理移民案件紀錄。",
+    "similar_cases": "相似案例",
+    "similarity_score": "相似度分數"
   },
   "case_detail": {
     "loading": "案件載入中⋯",
@@ -272,7 +280,8 @@
     "all_visa_types": "所有簽證類型",
     "all_sources": "所有來源",
     "all_tags": "所有標籤",
-    "date": "日期"
+    "date": "日期",
+    "remove_filter": "移除篩選"
   },
   "pagination": {
     "showing": "顯示第 {{start}}–{{end}} 筆，共 {{total}} 筆",
@@ -409,7 +418,11 @@
     "section_concepts": "法律概念",
     "section_recent": "近期案件",
     "current_role": "現職",
-    "notable_cases": "代表案件"
+    "notable_cases": "代表案件",
+    "cases_unit": "件案例",
+    "dual_metric_chart": "雙指標比較圖",
+    "comparison_table_caption": "法官比較指標",
+    "concept_effectiveness_caption": "各法官之法律概念成效"
   },
   "saved_searches": {
     "title": "已儲存搜尋",
@@ -580,7 +593,29 @@
     "insights_top_outcome_label": "最常見結果",
     "insights_top_nature_label": "最常見案件性質",
     "insights_top_visa_label": "最常見簽證類別",
-    "insights_of_cases": "的案件"
+    "insights_of_cases": "的案件",
+    "deep_analysis_description": "勝訴率分析",
+    "flow_cases": "案件數",
+    "flow_sankey_aria": "顯示案件性質與結果分布的流向圖",
+    "flow_source": "來源",
+    "flow_target": "目標",
+    "judge_profile_hint": "勝訴率資料請見法官檔案頁面",
+    "legal_concepts_aria": "依案件數排序之主要法律概念長條圖",
+    "legend": "圖例",
+    "losses": "敗訴",
+    "most_active_judges": "最活躍法官",
+    "outcome_distribution_aria": "結果分布：{{summary}}",
+    "outcome_funnel_aria": "勝訴：{{win}} 件（{{winPct}}%），敗訴：{{loss}} 件（{{lossPct}}%）",
+    "sankey_view": "流向檢視",
+    "show_count": "件數",
+    "show_pct": "列百分比",
+    "table_view": "表格檢視",
+    "top_judges_aria": "依案件數排序之最活躍法官長條圖",
+    "trend_legend_note": "維持原判率＝法庭維持原決定｜申請人勝訴率＝撤銷＋發回重審",
+    "vs_avg": "對比平均",
+    "wins": "勝訴",
+    "concept_combo_caption": "法律概念組合",
+    "risk_gauge_aria": "分數 {{score}}（滿分 100）：{{label}}"
   },
   "lineage": {
     "title": "法院沿革時間軸",
@@ -629,7 +664,8 @@
     "court_table_status_active": "運作中",
     "court_table_status_dissolved": "已裁撤",
     "loading_hint": "法院沿革彙整在大型資料集上可能需要數秒，請稍候。",
-    "now": "現在"
+    "now": "現在",
+    "court_volume_caption": "各法院案件量"
   },
   "chart": {
     "loading": "載入中⋯",
@@ -850,7 +886,8 @@
     "try_again": "再試一次",
     "something_went_wrong": "發生錯誤",
     "case_mutations_disabled_title": "案件編輯功能暫時唯讀",
-    "case_mutations_disabled_message": "系統正在遷移案件資料平台，新增、編輯與刪除案件功能暫時停用。您輸入的內容不會遺失，將保留在此處，直到編輯功能恢復。"
+    "case_mutations_disabled_message": "系統正在遷移案件資料平台，新增、編輯與刪除案件功能暫時停用。您輸入的內容不會遺失，將保留在此處，直到編輯功能恢復。",
+    "stale_data_warning": "即時更新已暫停，畫面內容可能非最新。系統將自動重試。"
   },
   "empty_states": {
     "no_cases_title": "查無符合條件之案例",
@@ -897,7 +934,10 @@
       "subclass_chart": "簽證子類別",
       "chart_loading": "圖表載入中⋯",
       "chart_no_data": "尚無資料",
-      "chart_cases": "案件數"
+      "chart_cases": "案件數",
+      "court_bar_aria": "長條圖：各法院案件數",
+      "nature_bar_aria": "橫向長條圖：各案件類別數量",
+      "subclass_bar_aria": "橫向長條圖：主要簽證類別數量"
     },
     "case_card": {
       "no_data_text": "暫無後設資料"
@@ -912,7 +952,8 @@
       "collapse_tooltip": "收合",
       "table_of_contents": "目錄",
       "case_not_available": "案件全文不可用",
-      "no_text_error": "無法載入案件全文"
+      "no_text_error": "無法載入案件全文",
+      "match_cap_note": "（前 {{shown}} 筆，共 {{total}} 筆）"
     },
     "badges": {
       "outcome": "裁決結果",
@@ -965,7 +1006,8 @@
       "court_type": "法院類型",
       "active_years": "在職期間",
       "loading": "比較資料載入中⋯",
-      "loading_ellipsis": "載入中⋯"
+      "loading_ellipsis": "載入中⋯",
+      "description": "請從法官檔案清單挑選兩位以上法官，即可並列比較其裁決結果。"
     },
     "job_status": {
       "title": "作業狀態",
@@ -1075,7 +1117,8 @@
     "confirm_delete_collection_message": "此操作將刪除「{{name}}」。書籤案件不受影響。",
     "collection_detail_empty": "此收藏尚無案件。",
     "collection_detail_empty_desc": "從案例列表或詳情頁面新增案件。",
-    "clear_color": "清除顏色"
+    "clear_color": "清除顏色",
+    "collection_not_found_description": "找不到此收藏集，可能已被刪除或更名。"
   },
   "taxonomy": {
     "title": "分類搜尋",
@@ -1290,6 +1333,69 @@
     "retrieved_cases_note": "以下本地 IMMI-Case 先例已提供給評議會作為證據上下文。",
     "open_case_source": "開啟原始案例來源",
     "unknown_model_error": "未知模型錯誤",
-    "request_failed": "LLM 評議請求失敗"
+    "request_failed": "LLM 評議請求失敗",
+    "awaiting_label": "等待評議中",
+    "case_id_help": "若已填寫，系統會自動將案件內容納入提示。",
+    "chairman_label": "評議會主席",
+    "citation_confidence": "引用重疊度",
+    "deliberating": "評議會審議中",
+    "elapsed": "已耗時",
+    "experts_ok_label": "正常",
+    "eyebrow": "多模型法律研究",
+    "follow_up_input_label": "追問問題",
+    "follow_up_label": "追問問題",
+    "follow_up_placeholder": "提出追問——深入特定理由、要求更多案例引用，或檢驗反面論點⋯",
+    "ios_send_hint": "請點擊送出按鈕（iOS 不支援 Cmd+Enter）",
+    "kbd_hint": "送出",
+    "law_section_col": "法條／法規",
+    "law_sections_table_title": "法條引用交叉對照",
+    "moderator_section_title": "Moderator 綜合整理",
+    "new_session_btn": "新增評議會工作階段",
+    "no_sessions_yet": "尚無歷史工作階段。",
+    "past_sessions_heading": "歷史工作階段",
+    "running_moderator_label": "Moderator",
+    "select_session_hint": "請選擇欲檢視的工作階段。",
+    "send_btn": "送出",
+    "session_load_failed": "工作階段載入失敗",
+    "session_not_found": "查無此工作階段",
+    "sessions_load_error": "工作階段清單載入失敗。",
+    "sessions_subtitle": "瀏覽並接續過往的評議會工作階段。",
+    "sessions_title": "LLM 評議會工作階段",
+    "shared_col": "三方一致",
+    "sidebar_panel_title": "評議小組組成",
+    "sidebar_sample_prompts": "範例提問",
+    "sidebar_tips_title": "快速提示",
+    "start_new_btn": "開始新的工作階段",
+    "swipe_to_send_label": "向右滑動或點擊以送出問題",
+    "tip_label": "提示",
+    "turn_count_label": "回合",
+    "turn_label": "回合",
+    "turn_limit_placeholder": "已達回合上限（15/15）",
+    "turn_limit_reached": "此工作階段已達 15 回合上限。",
+    "turn_your_question": "你的提問",
+    "session_delete_failed": "無法刪除此工作階段，請再試一次。"
+  },
+  "auth": {
+    "logout": "登出",
+    "sign_in": "登入"
+  },
+  "semantic_search": {
+    "title": "語意搜尋",
+    "description": "以語意而非僅關鍵字搜尋。運用 AI 向量嵌入找出語意相近的案例。",
+    "placeholder": "描述案件情境⋯（至少 3 個字元）",
+    "searching": "搜尋中⋯",
+    "search_btn": "搜尋",
+    "model_label": "模型：",
+    "results_region_label": "搜尋結果",
+    "unavailable": "語意搜尋暫時無法使用。關鍵字搜尋仍可正常運作，請改用頁面上方的搜尋框。",
+    "no_results_title": "查無結果",
+    "no_results_desc": "請嘗試換個說法或使用不同的用語。",
+    "results_count_one": "{{count}} 筆結果",
+    "results_count_other": "{{count}} 筆結果"
+  },
+  "login": {
+    "description": "澳洲移民法庭案件研究平台。以 Telegram 登入即可儲存搜尋與收藏集。",
+    "telegram_failed": "Telegram 登入失敗，請再試一次。",
+    "public_access_note": "所有案例無須登入即可公開瀏覽。僅在儲存搜尋與收藏集時才需登入。"
   }
 }

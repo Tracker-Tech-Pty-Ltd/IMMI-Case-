@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { TelegramLoginButton } from "@/components/auth/TelegramLoginButton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,6 +8,7 @@ import { PageLoader } from "@/components/shared/PageLoader";
 const BOT_NAME = import.meta.env.VITE_TELEGRAM_BOT_NAME || "immi_case_bot";
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -19,7 +21,9 @@ export function LoginPage() {
 
   const authError = searchParams.get("auth_error");
   const visibleError = authError
-    ? "Telegram sign-in failed. Please try again."
+    ? t("login.telegram_failed", {
+        defaultValue: "Telegram sign-in failed. Please try again.",
+      })
     : null;
 
   if (isLoading) return <PageLoader />;
@@ -27,15 +31,20 @@ export function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-background">
       <div className="max-w-md w-full p-8 rounded-xl shadow-lg bg-card border border-border">
-        <h1 className="text-2xl font-bold text-foreground mb-2 font-serif">
+        <h1 className="text-2xl font-bold text-foreground mb-2 font-heading">
           IMMI Case
         </h1>
         <p className="text-muted-text mb-8 text-sm">
-          Australian immigration tribunal case research platform. Sign in with
-          Telegram to save searches and collections.
+          {t("login.description", {
+            defaultValue:
+              "Australian immigration tribunal case research platform. Sign in with Telegram to save searches and collections.",
+          })}
         </p>
         {visibleError && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300"
+          >
             {visibleError}
           </div>
         )}
@@ -43,8 +52,10 @@ export function LoginPage() {
           <TelegramLoginButton botName={BOT_NAME} />
         </div>
         <p className="mt-6 text-xs text-muted-text text-center">
-          All 149,016 cases are publicly accessible without login. Login is only
-          required to save searches and collections.
+          {t("login.public_access_note", {
+            defaultValue:
+              "All cases are publicly accessible without login. Login is only required to save searches and collections.",
+          })}
         </p>
       </div>
     </main>
