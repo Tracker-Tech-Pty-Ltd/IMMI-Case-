@@ -96,6 +96,8 @@ export interface Env {
   PIPELINE_INSERT_ONLY?: string;
   PIPELINE_RUN_COST_CAP_USD?: string;
   PIPELINE_MONTHLY_HARD_CAP_USD?: string;
+  /** Upper-bound USD per case used to reserve budget before the paid call. */
+  PIPELINE_ESTIMATED_CASE_COST_USD?: string;
   PIPELINE_LLM_CALL_TIMEOUT_MS?: string;
   PIPELINE_CONTAINER_EXTRACT_TIMEOUT_MS?: string;
   PIPELINE_EXTRACT_BATCH_SIZE?: string;

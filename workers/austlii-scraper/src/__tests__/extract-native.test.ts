@@ -49,6 +49,10 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
           cost_usd: 0.1,
         })),
       },
+      // Models the CostCapDO protocol as of the reservation rework: the paid
+      // call is gated on /reserve succeeding, and the real figure lands via
+      // /settle rather than the old post-hoc /charge. A double that answers
+      // only /remaining would make every reserve read as a refusal.
       COST_CAP_DO: {
         idFromName: (name: string) => name,
         get: (ledger: string) => ({
@@ -56,7 +60,9 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
             const usd = init?.body ? Number(JSON.parse(String(init.body)).usd) : null;
             costCalls.push({ ledger, url: input, usd });
             if (input.includes("/remaining")) return Response.json({ remaining_usd: 5 });
-            return Response.json({ spent_usd: usd ?? 0 });
+            if (input.includes("/reserve")) return Response.json({ ok: true, reserved_usd: usd ?? 0 });
+            if (input.includes("/release")) return Response.json({ ok: true, released: true });
+            return Response.json({ ok: true, spent_usd: usd ?? 0 });
           }),
         }),
       },
@@ -125,12 +131,19 @@ describe("native extraction handoff", () => {
     expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
   });
 
-  it("charges both the run and the month ledger", async () => {
+  it("settles both the run and the month ledger", async () => {
     const current = baseEnv();
     await handleExtractBatch({
       messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry: vi.fn() }],
     } as never, current.env as never);
-    expect(current.costCalls.filter((call) => call.url.includes("/charge")).map((call) => call.ledger)).toEqual([
+    // Was /charge before the reservation rework. Both ledgers must still be
+    // touched, in the same order, so a batch that crosses a UTC month boundary
+    // settles the month it reserved against.
+    expect(current.costCalls.filter((call) => call.url.includes("/settle")).map((call) => call.ledger)).toEqual([
+      `run:${RUN_ID}`,
+      `month:${new Date().toISOString().slice(0, 7)}`,
+    ]);
+    expect(current.costCalls.filter((call) => call.url.includes("/reserve")).map((call) => call.ledger)).toEqual([
       `run:${RUN_ID}`,
       `month:${new Date().toISOString().slice(0, 7)}`,
     ]);
@@ -204,7 +217,7 @@ describe("native extraction handoff", () => {
     expect(current.env.EXTRACTION_BACKEND.fetch).not.toHaveBeenCalled();
   });
 
-  it("charges the batch cost before staging results", async () => {
+  it("settles the batch cost before staging results", async () => {
     const current = baseEnv({
       NATIVE_CASE_QUEUE: {
         send: vi.fn(async () => { throw new Error("queue down"); }),
@@ -214,7 +227,9 @@ describe("native extraction handoff", () => {
     await handleExtractBatch({
       messages: [{ body: { phase: "extract", run_id: RUN_ID, case_id: CASE_ID, court_code: "FCA", r2_key: "runs/source.json", scraped_at: new Date().toISOString() }, ack: current.ack, retry }],
     } as never, current.env as never);
-    expect(current.costCalls.some((call) => call.url.includes("/charge") && call.usd === 0.1)).toBe(true);
+    // Staging failed, but the money was already spent, so the ledger must carry
+    // the real figure before the message is retried.
+    expect(current.costCalls.some((call) => call.url.includes("/settle") && call.usd === 0.1)).toBe(true);
   });
 
   it("retries only the case whose staging failed", async () => {

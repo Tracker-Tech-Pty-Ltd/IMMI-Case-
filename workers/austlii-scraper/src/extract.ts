@@ -19,6 +19,20 @@ const DEFAULT_CONTAINER_TIMEOUT_MS = 300_000;
 const DEFAULT_RUN_COST_CAP_USD = 5;
 const DEFAULT_MONTHLY_COST_CAP_USD = 10;
 
+/**
+ * Upper-bound cost assumed per case when reserving budget, before the container
+ * reports what it actually spent.
+ *
+ * A reservation has to be made BEFORE the paid call, and the true price is not
+ * known until after it — so some estimate is unavoidable. Over-estimating is the
+ * safe direction: the settle immediately returns whatever was not used, so the
+ * only cost of a high estimate is that the last batch before the cap may be
+ * refused slightly early. Under-estimating would reintroduce the overspend this
+ * machinery exists to prevent. Override with PIPELINE_ESTIMATED_CASE_COST_USD
+ * once real per-case figures are in the run metrics.
+ */
+const DEFAULT_ESTIMATED_CASE_COST_USD = 0.1;
+
 export async function handleExtractBatch(
   batch: MessageBatch<ExtractJob>,
   env: Env,
@@ -62,45 +76,89 @@ async function handleRunExtractMessages(
     return;
   }
 
-  const budget = await checkCostBudget(env, runId);
-  if (budget.state === "unavailable") {
-    // A ledger we cannot read is an infrastructure fault, not a spent budget.
-    // Retry (max_retries then DLQ) so the work survives and an operator sees it.
-    retryAll(messages, "cost_ledger_unavailable");
-    await sendPipelineAlert(env, "cost ledger unavailable", { run_id: runId });
-    return;
-  }
-  if (budget.state === "exhausted") {
-    await updatePipelineRun(env, runId, {
-      status: "aborted",
-      abortReason: "cost_cap_hit",
-    }).catch(() => undefined);
-    for (const message of messages) message.ack();
-    console.warn(JSON.stringify({ event: "extract.aborted.cost_cap_hit", run_id: runId }));
-    await sendPipelineAlert(env, "cost cap hit", { run_id: runId, remaining_usd: budget.remaining });
-    return;
-  }
+  // IDEMPOTENCY KEY for the whole paid step. Derived from the run and the exact
+  // set of cases in this batch, so a redelivery of the same message computes the
+  // same key and finds the result the first delivery already bought. Sorted, so
+  // the platform is free to reorder messages within a batch.
+  const ledgers = costLedgerNames(runId);
+  const batchDigest = await sha256Hex(`${runId}\n${messages.map((m) => m.body.case_id).slice().sort().join(",")}`);
+  const batchKey = `pipeline/${runId}/_batches/${batchDigest}.json`;
+  const reservationId = `extract:${runId}:${batchDigest}`;
 
-  let payloadBatch;
-  try {
-    payloadBatch = await Promise.all(messages.map((message) => buildInternalExtractItem(env, message.body)));
-  } catch (err) {
-    retryAll(messages, err instanceof Error ? err.message : String(err));
-    return;
-  }
+  // Was this exact batch already extracted? The backend response is persisted
+  // BEFORE the ledger is settled, so a crash anywhere after the paid call still
+  // leaves the result recoverable. Previously the only de-duplication was the
+  // outbox check inside the staging loop — far too late, because the container
+  // had already been called and billed by the time it ran.
+  let response = await readCachedBatchResponse(env, batchKey, runId);
 
-  const response = await callInternalExtract(env, runId, payloadBatch);
   if (!response) {
-    retryAll(messages, "internal_extract_unavailable");
-    return;
+    const budget = await checkCostBudget(env, runId);
+    if (budget.state === "unavailable") {
+      // A ledger we cannot read is an infrastructure fault, not a spent budget.
+      // Retry (max_retries then DLQ) so the work survives and an operator sees it.
+      retryAll(messages, "cost_ledger_unavailable");
+      await sendPipelineAlert(env, "cost ledger unavailable", { run_id: runId });
+      return;
+    }
+    if (budget.state === "exhausted") {
+      await abortRunForCostCap(env, runId, messages, budget.remaining);
+      return;
+    }
+
+    // Built before the reservation on purpose: a missing or malformed R2 scrape
+    // result must not leave budget held while the message retries.
+    let payloadBatch;
+    try {
+      payloadBatch = await Promise.all(messages.map((message) => buildInternalExtractItem(env, message.body)));
+    } catch (err) {
+      retryAll(messages, err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    // RESERVE BEFORE SPENDING. `remaining > 0` is not permission to spend an
+    // unknown amount: a run with $0.01 left must not start a batch that will
+    // cost $0.10. The reservation is the only point at which the cap can still
+    // refuse, because after this line the money is committed.
+    const estimateUsd = estimateBatchCostUsd(env, messages.length);
+    const reservation = await reserveCostUsd(env, ledgers, runId, reservationId, estimateUsd);
+    if (reservation === "refused") {
+      await abortRunForCostCap(env, runId, messages, estimateUsd);
+      return;
+    }
+    if (reservation === "unavailable") {
+      retryAll(messages, "cost_ledger_unavailable");
+      await sendPipelineAlert(env, "cost ledger unavailable", { run_id: runId });
+      return;
+    }
+
+    response = await callInternalExtract(env, runId, payloadBatch);
+    if (!response) {
+      // Nothing was billed, so give the headroom straight back rather than
+      // letting a transient 503 shrink the run's budget.
+      await releaseCostReservation(env, ledgers, runId, reservationId);
+      retryAll(messages, "internal_extract_unavailable");
+      return;
+    }
+
+    // Durable BEFORE the settle, and before anything else that can fail. This
+    // is what makes the redelivery above cheap instead of a second purchase.
+    if (!await persistBatchResponse(env, batchKey, response, runId)) {
+      // We cannot prove the result is recoverable, so treat the spend as
+      // unreconciled: leave the reservation held (it blocks further paid work)
+      // and retry. Better to stall the run than to buy this batch repeatedly.
+      retryAll(messages, "batch_result_not_persisted");
+      await sendPipelineAlert(env, "extraction result could not be persisted", { run_id: runId, batch_key: batchKey });
+      return;
+    }
   }
 
-  // Charge before any work that can fail. A throw between the paid container
-  // call and this line would let the platform redeliver the whole batch and
-  // re-bill the extraction against a ledger that never saw the first call.
-  // `budget.ledgers` (Step 3) are the ledgers this batch was checked against,
-  // so a batch that crosses a UTC month boundary charges the month it read.
-  await chargeCostUsd(env, budget.ledgers, runId, response.cost_usd);
+  // Settle with the ACTUAL cost. Idempotent by reservation id, so the cached
+  // path above may re-enter here safely: a settle whose reservation is already
+  // gone is a no-op, never a second charge. A settle that fails leaves the hold
+  // in place, which is deliberate — unreconciled spend must block new paid work
+  // rather than be logged and walked past.
+  await settleCostUsd(env, ledgers, runId, reservationId, response.cost_usd);
 
   const inputCaseIds = new Set(messages.map((message) => message.body.case_id));
   let outcome: EnqueueOutcome;
@@ -395,37 +453,219 @@ async function checkCostBudget(env: Env, runId: string): Promise<CostBudget> {
   return { state, remaining: Math.min(runReading.remaining, monthReading.remaining), ledgers };
 }
 
+function ledgerCap(env: Env, ledger: string): number {
+  return ledger.startsWith("month:")
+    ? positiveNumber(env.PIPELINE_MONTHLY_HARD_CAP_USD, DEFAULT_MONTHLY_COST_CAP_USD)
+    : positiveNumber(env.PIPELINE_RUN_COST_CAP_USD, DEFAULT_RUN_COST_CAP_USD);
+}
+
+/** Upper bound this batch is allowed to cost. See DEFAULT_ESTIMATED_CASE_COST_USD. */
+function estimateBatchCostUsd(env: Env, caseCount: number): number {
+  const perCase = positiveNumber(env.PIPELINE_ESTIMATED_CASE_COST_USD, DEFAULT_ESTIMATED_CASE_COST_USD);
+  return Math.max(perCase, perCase * Math.max(1, caseCount));
+}
+
+type ReservationOutcome = "granted" | "refused" | "unavailable";
+
 /**
- * Charge both ledgers. A charge failure is loud but never triggers a retry:
- * the money is already spent, so re-running the batch would spend more.
- * Takes the ledger names the caller checked, so the check and the charge
- * cannot land in different months.
+ * Hold `usd` on BOTH ledgers, or hold on neither.
+ *
+ * The two ledgers are separate Durable Objects, so there is no single atomic
+ * operation across them. The compensating release below is what keeps a partial
+ * reservation from stranding the run ledger's budget when the month ledger is
+ * the one that refuses.
  */
-async function chargeCostUsd(
+async function reserveCostUsd(
   env: Env,
   ledgers: readonly [string, string],
   runId: string,
+  reservationId: string,
+  usd: number,
+): Promise<ReservationOutcome> {
+  if (!env.COST_CAP_DO) return "unavailable";
+  const granted: string[] = [];
+  for (const ledger of ledgers) {
+    let outcome: ReservationOutcome;
+    try {
+      const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
+      const response = await stub.fetch("https://cost/reserve", {
+        method: "POST",
+        body: JSON.stringify({ reservation_id: reservationId, usd, cap: ledgerCap(env, ledger) }),
+      });
+      const body = await response.json<{ ok?: boolean }>();
+      outcome = body?.ok === true ? "granted" : "refused";
+    } catch (err) {
+      console.error(JSON.stringify({
+        event: "extract.cost_cap.reserve_unavailable",
+        ledger,
+        run_id: runId,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      outcome = "unavailable";
+    }
+    if (outcome !== "granted") {
+      for (const held of granted) await releaseOne(env, held, runId, reservationId);
+      if (outcome === "refused") {
+        console.warn(JSON.stringify({
+          event: "extract.cost_cap.reserve_refused", ledger, run_id: runId, requested_usd: usd,
+        }));
+      }
+      return outcome;
+    }
+    granted.push(ledger);
+  }
+  return "granted";
+}
+
+/**
+ * Convert both holds into recorded spend at the real price.
+ *
+ * A failure here is loud and still never triggers a retry of the paid call —
+ * the money is gone, so re-running the batch would spend more. What it DOES do
+ * is leave the reservation in place, so the unreconciled amount keeps counting
+ * against the cap and the next batch is refused until an operator looks. The
+ * previous implementation logged the failure and let the run continue against a
+ * ledger that had no idea the money had been spent.
+ */
+async function settleCostUsd(
+  env: Env,
+  ledgers: readonly [string, string],
+  runId: string,
+  reservationId: string,
   usd: number,
 ): Promise<void> {
-  if (!env.COST_CAP_DO || usd <= 0) return;
+  if (!env.COST_CAP_DO) return;
   for (const ledger of ledgers) {
     try {
       const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
-      const response = await stub.fetch("https://cost/charge", {
+      const response = await stub.fetch("https://cost/settle", {
         method: "POST",
-        body: JSON.stringify({ usd }),
+        body: JSON.stringify({ reservation_id: reservationId, usd }),
       });
-      if (!response.ok) throw new Error(`charge rejected with ${response.status}`);
+      if (!response.ok) throw new Error(`settle rejected with ${response.status}`);
     } catch (err) {
       console.error(JSON.stringify({
-        event: "extract.cost_cap.charge_failed",
+        event: "extract.cost_cap.settle_failed",
         ledger,
         run_id: runId,
+        reservation_id: reservationId,
         usd,
         error: err instanceof Error ? err.message : String(err),
       }));
-      await sendPipelineAlert(env, "cost ledger charge failed", { run_id: runId, ledger, usd });
+      await sendPipelineAlert(env, "cost ledger settle failed — reservation left held", {
+        run_id: runId, ledger, usd, reservation_id: reservationId,
+      });
     }
+  }
+}
+
+async function releaseCostReservation(
+  env: Env,
+  ledgers: readonly [string, string],
+  runId: string,
+  reservationId: string,
+): Promise<void> {
+  for (const ledger of ledgers) await releaseOne(env, ledger, runId, reservationId);
+}
+
+async function releaseOne(env: Env, ledger: string, runId: string, reservationId: string): Promise<void> {
+  if (!env.COST_CAP_DO) return;
+  try {
+    const stub = env.COST_CAP_DO.get(env.COST_CAP_DO.idFromName(ledger));
+    await stub.fetch("https://cost/release", {
+      method: "POST",
+      body: JSON.stringify({ reservation_id: reservationId }),
+    });
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "extract.cost_cap.release_failed",
+      ledger,
+      run_id: runId,
+      reservation_id: reservationId,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+}
+
+async function abortRunForCostCap(
+  env: Env,
+  runId: string,
+  messages: readonly Message<ExtractJob>[],
+  remainingOrRequested: number,
+): Promise<void> {
+  await updatePipelineRun(env, runId, {
+    status: "aborted",
+    abortReason: "cost_cap_hit",
+  }).catch(() => undefined);
+  for (const message of messages) message.ack();
+  console.warn(JSON.stringify({ event: "extract.aborted.cost_cap_hit", run_id: runId }));
+  await sendPipelineAlert(env, "cost cap hit", { run_id: runId, remaining_usd: remainingOrRequested });
+}
+
+/** Hex SHA-256, used to key a batch by its exact case set. */
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Read back a previously purchased extraction result. A miss — including a
+ * corrupt or unreadable object — returns null and the batch is bought again;
+ * that is the safe direction, since the alternative is staging garbage.
+ */
+async function readCachedBatchResponse(
+  env: Env,
+  batchKey: string,
+  runId: string,
+): Promise<InternalExtractResponse | null> {
+  try {
+    const object = await env.CASE_RESULTS.get(batchKey);
+    if (!object) return null;
+    const body = await object.json<InternalExtractResponse>();
+    if (!body || !Array.isArray(body.extracted)) return null;
+    console.log(JSON.stringify({
+      event: "extract.batch.replayed_from_cache",
+      run_id: runId,
+      batch_key: batchKey,
+      extracted: body.extracted.length,
+    }));
+    return {
+      extracted: body.extracted.map((item) => normalizeExtracted(item)),
+      llm_calls: positiveNumber(body.llm_calls, 0),
+      cost_usd: positiveNumber(body.cost_usd, 0),
+    };
+  } catch (err) {
+    console.warn(JSON.stringify({
+      event: "extract.batch.cache_read_failed",
+      run_id: runId,
+      batch_key: batchKey,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    return null;
+  }
+}
+
+/** Returns false if the result could not be made durable; the caller must then
+ *  treat the spend as unreconciled rather than pretend the batch is safe. */
+async function persistBatchResponse(
+  env: Env,
+  batchKey: string,
+  response: InternalExtractResponse,
+  runId: string,
+): Promise<boolean> {
+  try {
+    await env.CASE_RESULTS.put(batchKey, JSON.stringify(response), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return true;
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: "extract.batch.persist_failed",
+      run_id: runId,
+      batch_key: batchKey,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+    return false;
   }
 }
 
