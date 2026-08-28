@@ -1,7 +1,7 @@
 # IMMI-Case Makefile — common development commands
 # Usage: make <target>
 
-.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-rls-guards clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
+.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-tenant-guards tokens-check tokens-fix hooks clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,8 @@ help:
 	@echo "  make test-pipeline  austlii-scraper (pipeline Worker) Vitest suite"
 	@echo "  make test-preflight Deploy secret-preflight parser tests"
 	@echo "  make test-e2e     Python Playwright E2E (needs make install-e2e + a server)"
+	@echo "  make tokens-check Verify frontend/src/tokens/ is in sync with tokens.json (read-only)"
+	@echo "  make tokens-fix   Regenerate frontend/src/tokens/ from tokens.json"
 	@echo "  make test-integration  Supabase-era checks, opt-in (needs env vars)"
 	@echo "  make coverage     Python unit tests with HTML coverage report"
 	@echo "  make coverage-fe  Frontend Vitest with coverage thresholds"
@@ -57,10 +59,12 @@ help:
 	@echo "  make lint-py      Ruff lint Python source only"
 	@echo "  make lint-fe      ESLint the frontend only"
 	@echo "  make typecheck    TypeScript type check (tsc -b --noEmit, all projects)"
+	@echo "  make audit-tenant-guards  Assert authenticating Workers reach assertMembership() (module-level)"
 	@echo "  make typecheck-pipeline  tsc gate for workers/austlii-scraper"
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
 	@echo "  make install      Install all Python + Node deps (creates .venv)"
+	@echo "  make hooks        Install the pre-commit gate (ruff + eslint)"
 	@echo "  make install-e2e  Playwright + chromium, for make test-e2e"
 	@echo "  make migrate      Where migrations live (the legacy Supabase push is manual)"
 	@echo ""
@@ -85,16 +89,48 @@ build:
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
-test: test-py test-fe test-workers test-pipeline
+test: audit-tenant-guards test-py test-fe test-workers test-pipeline
 
 test-py:
 	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration -q
 
-test-fe:
+test-fe: tokens-check
 	cd "$(REPO_ROOT)/frontend" && npx vitest run
 
 test-workers:
 	cd "$(REPO_ROOT)/workers" && npx vitest run
+
+# Design-token freshness. `npm run dev|build|build:cloudflare` all regenerate
+# tokens first, so production and the dev server are never stale — but
+# `npx vitest run` does not, so a tokens.json edit committed without
+# regenerating leaves the frontend suite asserting against stale token values.
+#
+# NON-DESTRUCTIVE BY CONSTRUCTION. build-tokens.ts writes to fixed paths, so
+# this target snapshots the two generated files, regenerates, compares, and
+# then RESTORES the snapshot unconditionally. A check that rewrites the
+# working tree on failure is not a check — and because `test-fe` depends on
+# this, `make test` would otherwise be able to modify tracked files.
+# Regenerating for real is `make tokens-fix`, which is explicit about it.
+tokens-check:
+	@cd "$(REPO_ROOT)/frontend" || exit 1; \
+	SNAP=$$(mktemp -d) || exit 1; \
+	trap 'cp -p "$$SNAP/tokens.css" src/tokens/tokens.css 2>/dev/null; \
+	      cp -p "$$SNAP/tokens.ts"  src/tokens/tokens.ts  2>/dev/null; \
+	      rm -rf "$$SNAP"' EXIT INT TERM; \
+	cp -p src/tokens/tokens.css src/tokens/tokens.ts "$$SNAP/" || exit 1; \
+	BEFORE=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
+	npm run --silent tokens -- --strict || exit 1; \
+	AFTER=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
+	if [ "$$BEFORE" != "$$AFTER" ]; then \
+	  echo "ERROR: frontend/src/tokens/{tokens.css,tokens.ts} are stale relative to tokens.json."; \
+	  echo "       The working tree was left UNCHANGED. Run 'make tokens-fix', review the diff, and commit."; \
+	  exit 1; \
+	else echo "OK: generated design tokens match tokens.json"; fi
+
+# The write half, deliberately separate and never a prerequisite of anything.
+tokens-fix:
+	cd "$(REPO_ROOT)/frontend" && npm run tokens -- --strict
+	@echo "Regenerated frontend/src/tokens/. Review 'git diff -- frontend/src/tokens/' and commit."
 
 # workers/austlii-scraper is a separate npm package with its own manifest,
 # lockfile, node_modules, vitest config and tsc gate. Until this target existed
@@ -149,15 +185,51 @@ check-vitest-collection:
 	if [ "$$FAIL" = "0" ]; then echo "OK: $$(wc -l < "$$TMP/disk" | tr -d ' ') vitest test files on disk, each collected exactly once"; fi; \
 	exit $$FAIL
 
-# AC4 safety guard: reject any set_config call without transaction-local flag (true).
-# A literal `false` or missing third argument leaks JWT claims across pooled connections.
-audit-rls-guards:
-	@echo "Checking set_config calls for transaction-local flag..."
-	@BAD=$$(grep -rn "set_config(" "$(REPO_ROOT)/workers" --include="*.js" | grep -v "set_config('request.jwt.claims'.*true)" || true); \
-	if [ -n "$$BAD" ]; then \
-	  echo "ERROR: set_config without transaction-local=true (cross-tenant leak risk):"; \
-	  echo "$$BAD"; exit 1; \
-	else echo "OK: all set_config calls verified with transaction-local=true"; fi
+# Tenant-isolation guard. This stack has no Postgres and no RLS, so
+# CloudflareIdentityStore.assertMembership() is the only thing between an
+# authenticated caller and another tenant's rows. Any Worker module that
+# authenticates a caller must therefore also reach it — either directly, or
+# via assertPlatformOperator(), which calls assertMembership() as its own
+# first step (workers/storage/identity.js) before layering a platform-admin
+# grant on top. Routes over shared, non-tenant-scoped data (bulk export,
+# platform admin reads, pipeline control, catalog writes — the `cases` table
+# has no tenant column) correctly require the STRONGER platform-operator
+# check rather than plain membership; accepting either call here is not a
+# loosening of the guard, since the platform check is a strict superset.
+#
+# KNOWN LIMIT — READ BEFORE TRUSTING THIS: the check is MODULE-granular. It
+# proves the file mentions assertMembership( or assertPlatformOperator(
+# somewhere, not that the handler you just added calls either. A new
+# unguarded route in an already-compliant file passes this guard. It is a
+# floor that catches a whole new authenticating module written without any
+# membership check; it is NOT a proof of per-route isolation. The
+# route-level complement is the route manifest in
+# plans/038-test-the-production-sql-layer.md. Do not cite this target as
+# evidence that a specific route is tenant-isolated.
+#
+# The exemptions are listed explicitly so that adding a fifth is a reviewable
+# diff:
+#   request_auth.js          defines requireAuth; it is not a route handler
+#   auth/cloudflare_handlers.js  login/me/logout/refresh/switch-tenant operate
+#                                on the caller's own identity, before a tenant
+#                                context exists
+#   auth/handlers.js, llm-council/handlers.js  retired pre-cutover modules with
+#                                no live importer (safe to delete from this list
+#                                once the files themselves are gone)
+AUTH_GUARD_EXEMPT := workers/auth/request_auth.js workers/auth/cloudflare_handlers.js workers/auth/handlers.js workers/llm-council/handlers.js
+
+audit-tenant-guards:
+	@echo "Checking every authenticating Worker module reaches assertMembership()..."
+	@cd "$(REPO_ROOT)" || exit 1; \
+	MISSING=""; \
+	for f in $$(grep -rl "requireAuth(" workers --include="*.js" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=__tests__ | sort); do \
+	  case " $(AUTH_GUARD_EXEMPT) " in *" $$f "*) continue ;; esac; \
+	  grep -q -E "assertMembership\(|assertPlatformOperator\(" "$$f" || MISSING="$$MISSING $$f"; \
+	done; \
+	if [ -n "$$MISSING" ]; then \
+	  echo "ERROR: module(s) authenticate without reaching assertMembership() (cross-tenant leak risk):$$MISSING"; \
+	  exit 1; \
+	else echo "OK: every authenticating Worker module reaches assertMembership() (module granularity only)"; fi
 
 # tests/e2e/react/react_helpers.py imports playwright.sync_api at module scope,
 # so without the plugin this target dies with 20 collection errors and no hint
@@ -260,6 +332,14 @@ install:
 	# and the CI-gated `npm run typecheck` there are unrunnable on a clean clone.
 	# npm ci (not npm install) so a lockfile drift is an error, never a silent rewrite.
 	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm ci --ignore-scripts
+
+# Opt-in on purpose: `make install` must stay deterministic and offline-safe,
+# and a git hook that appears without the contributor asking for it is a
+# surprise, not a service.
+hooks:
+	"$(PYTHON)" -m pip install pre-commit
+	"$(PYTHON)" -m pre_commit install
+	@echo "Installed .git/hooks/pre-commit (ruff + eslint). Remove with: $(PYTHON) -m pre_commit uninstall"
 
 install-e2e:
 	"$(VENV_PYTHON)" -m pip install -c constraints.txt -r requirements-e2e.txt

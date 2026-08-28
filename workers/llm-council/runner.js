@@ -102,6 +102,70 @@ function classifyError(err) {
   return "unknown";
 }
 
+const UPSTREAM_DETAIL_MAX_CHARS = 400;
+
+/**
+ * Extract only allow-listed diagnostic fields from an upstream error body.
+ *
+ * The body comes from a third-party provider and is NOT a safe thing to log
+ * wholesale: on some providers it echoes part of the request, which for this
+ * product means user question text and retrieved case content. Log the fields
+ * an operator actually triages on — type, code, param, and a truncated message
+ * — and drop everything else. A body that is a bare string (an HTML error page,
+ * a proxy banner) is truncated hard rather than parsed.
+ *
+ * Retention: these lines go to Cloudflare Workers Trace Events / Logpush and
+ * inherit whatever retention the operator configured there. Because the
+ * allow-list can still carry a provider-authored `message`, treat
+ * `council.upstream_error` as operational data, not as something to forward
+ * into a third-party analytics sink.
+ */
+function redactUpstreamDetail(detail) {
+  if (detail == null) return {};
+  if (typeof detail === "string") {
+    return { detail_text: detail.slice(0, UPSTREAM_DETAIL_MAX_CHARS) };
+  }
+  const err = (typeof detail === "object" && detail.error) || detail;
+  const pick = {};
+  for (const key of ["type", "code", "param"]) {
+    const value = err?.[key];
+    if (typeof value === "string" || typeof value === "number") pick[key] = value;
+  }
+  if (typeof err?.message === "string") {
+    pick.message = err.message.slice(0, UPSTREAM_DETAIL_MAX_CHARS);
+  }
+  return Object.keys(pick).length ? { detail_fields: pick } : { detail_shape: "unrecognised" };
+}
+
+/**
+ * Build a client-safe Error for a non-OK upstream gateway response.
+ *
+ * The Cloudflare AI Gateway / provider body can name models, routing and quota
+ * state, so it never becomes part of `err.message`. `err.message` is exactly
+ * `HTTP <status>` — which is what classifyError() matches on ("http 4" /
+ * "http 5"), and what ends up in the user-visible opinions[].error string and
+ * in the SSE <provider>.error event. An allow-listed, truncated projection of
+ * the body is logged instead, so an operator can still triage a 429 or a model
+ * rename without the raw body reaching either the client or the log.
+ *
+ * `err.upstreamDetail` carries the same redacted projection — deliberately not
+ * the raw body, so that a future handler that decides to surface the Error
+ * cannot re-open the leak this function exists to close.
+ */
+function upstreamGatewayError(status, detail, context = {}) {
+  let redacted;
+  try {
+    redacted = redactUpstreamDetail(detail);
+  } catch (_) {
+    redacted = { detail_shape: "unserializable" };
+  }
+  logCouncilEvent({ event: "council.upstream_error", status, ...context, ...redacted });
+  const err = new Error(`HTTP ${status}`);
+  err.upstreamStatus = status;
+  err.upstreamDetail = redacted;
+  return err;
+}
+
 // ---------------------------------------------------------------------------
 // System prompts — canonical text lives in
 // immi_case_downloader/data/council_prompts.json (see ./prompts.js).
@@ -273,7 +337,7 @@ export async function gatewayChatCompletion({
     if (!res.ok) {
       let detail;
       try { detail = await res.json(); } catch (_) { detail = await res.text().catch(() => ""); }
-      throw new Error(`HTTP ${res.status}: ${JSON.stringify(detail).slice(0, 800)}`);
+      throw upstreamGatewayError(res.status, detail, { model });
     }
 
     return await res.json();
@@ -1332,7 +1396,7 @@ export async function* streamGatewayChatCompletion({
     if (!res.ok) {
       let detail;
       try { detail = await res.json(); } catch (_) { detail = await res.text().catch(() => ""); }
-      throw new Error(`HTTP ${res.status}: ${JSON.stringify(detail).slice(0, 800)}`);
+      throw upstreamGatewayError(res.status, detail, { model });
     }
     if (!res.body) throw new Error("No response body");
 
@@ -1510,7 +1574,7 @@ export async function* streamAnthropicNative({
     if (!res.ok) {
       let detail;
       try { detail = await res.json(); } catch (_) { detail = await res.text().catch(() => ""); }
-      throw new Error(`HTTP ${res.status}: ${JSON.stringify(detail).slice(0, 800)}`);
+      throw upstreamGatewayError(res.status, detail, { model });
     }
     if (!res.body) throw new Error("No response body");
 
@@ -1654,7 +1718,7 @@ export async function* streamGeminiNative({
     if (!res.ok) {
       let detail;
       try { detail = await res.json(); } catch (_) { detail = await res.text().catch(() => ""); }
-      throw new Error(`HTTP ${res.status}: ${JSON.stringify(detail).slice(0, 800)}`);
+      throw upstreamGatewayError(res.status, detail, { model });
     }
     if (!res.body) throw new Error("No response body");
 

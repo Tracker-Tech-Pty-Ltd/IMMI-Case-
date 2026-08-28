@@ -1,0 +1,29 @@
+# Local pre-commit gate for IMMI-Case.
+#
+# Both hooks use `language: system`, so pre-commit runs the tools this repo
+# already installs (.venv/bin/ruff, and eslint from frontend/node_modules)
+# rather than building isolated environments of its own. That keeps hook
+# behaviour identical to `make lint` and `npm run lint` — a hook that
+# disagrees with the gate it mirrors is worse than no hook.
+#
+# Install with: make hooks
+minimum_pre_commit_version: "3.5.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check (python)
+        language: system
+        entry: .venv/bin/ruff check --force-exclude
+        types_or: [python, pyi]
+
+      - id: eslint
+        name: eslint (frontend)
+        language: system
+        # pass_filenames is false because the flat ESLint config lives in
+        # frontend/, so the hook must change directory — at which point the
+        # repo-root-relative paths pre-commit would pass no longer resolve.
+        pass_filenames: false
+        files: ^frontend/(src|scripts)/.*\.(ts|tsx)$
+        entry: sh -c 'cd frontend && npx --no-install eslint .'

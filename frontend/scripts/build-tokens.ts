@@ -11,6 +11,11 @@ import { fileURLToPath } from "url";
 const __dirname_resolved = dirname(fileURLToPath(import.meta.url));
 const tokensPath = resolve(__dirname_resolved, "../src/tokens/tokens.json");
 
+// `--strict` (used by `make tokens-check`) turns the advisory validation
+// warnings below into a non-zero exit, so a malformed token cannot reach a
+// build unnoticed. Without the flag the behaviour is unchanged.
+const STRICT = process.argv.includes("--strict");
+
 // ─── Load & parse tokens ──────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tokens: Record<string, any> = JSON.parse(
@@ -110,9 +115,9 @@ function validateDarkLightSymmetry(
   for (const key of Object.keys(light)) {
     if (key === "dark") continue;
     if (!(key in dark)) {
-      console.warn(
-        `⚠ WARN: ${prefix}.dark.${key.replace(prefix + ".", "")} is missing (exists in light mode)`,
-      );
+      const message = `${prefix}.dark.${key.replace(prefix + ".", "")} is missing (exists in light mode)`;
+      console.warn(`⚠ WARN: ${message}`);
+      validationWarnings.push(`  WARN ${message}`);
     } else if (
       typeof light[key] === "object" &&
       typeof dark[key] === "object"
@@ -412,4 +417,11 @@ if (validationWarnings.length > 0) {
   console.log(
     `  (${validationWarnings.length} validation warning(s) — see above)`,
   );
+}
+
+if (STRICT && validationWarnings.length > 0) {
+  console.error(
+    `✗ --strict: ${validationWarnings.length} token validation warning(s); refusing to report success.`,
+  );
+  process.exitCode = 1;
 }

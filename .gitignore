@@ -75,8 +75,13 @@ supabase/.temp/
 # Scripts secrets
 scripts/.env
 
-# Misc artifacts
-dashboard.png
+# Local scratch screenshot at the repo root. Anchored deliberately: an
+# unanchored `dashboard.png` matches at ANY depth, and was silently hiding
+# audit/ui/dashboard.png from `git status` entirely.
+/dashboard.png
+
+# Stray files left by a mistyped shell redirect (`pip install foo >=1.0.0`).
+# The files still exist at the repo root; these entries keep them out of git.
 =1.0.0
 =2.0.0
 
