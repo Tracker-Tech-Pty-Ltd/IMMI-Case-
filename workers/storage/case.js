@@ -143,6 +143,33 @@ function compatCaseFilters(filters = {}) {
   return { clauses, params };
 }
 
+/**
+ * Resolve the row count for a compat listing/count request.
+ *
+ * `allowAggregate` opts into the queue-maintained `catalog_summary.total_cases`
+ * row for the unfiltered case, which avoids counting the ~149K-row `cases`
+ * table. It is OFF by default and must stay off for any caller whose response
+ * declares `count_mode: "exact"` (/api/v1/cases and /api/v1/cases/count both
+ * do): the aggregate lags case ingests until the next rebuildAggregates().
+ * Only guidedPrecedents opts in, because it has read that row since before this
+ * change.
+ *
+ * Even when opted in, falls back to COUNT(*) whenever a filter is present, and
+ * when the aggregate has never been built, so a freshly seeded database reports
+ * an accurate total instead of zero.
+ */
+async function compatTotal(database, clauses, params, where, { allowAggregate = false } = {}) {
+  if (allowAggregate && clauses.length === 0) {
+    const summary = await database
+      .prepare("SELECT value_int FROM catalog_summary WHERE summary_key = 'total_cases'")
+      .first();
+    const cached = Number(summary?.value_int);
+    if (Number.isFinite(cached) && cached > 0) return cached;
+  }
+  const counted = await bindAll(database, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
+  return Number(counted?.total || 0);
+}
+
 function normaliseRelationLabels(value, field) {
   const raw = Array.isArray(value) ? value : [value];
   const labels = raw
@@ -230,16 +257,18 @@ export class CloudflareCaseStore {
     const checkedPageSize = compatPageNumber(pageSize, 100, 1, 200);
     const { clauses, params } = compatCaseFilters(filters);
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const count = await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
-    const total = Number(count?.total || 0);
     const statement = bindAll(this.db, `
       SELECT ${LEGACY_CASE_PROJECTION}
       FROM cases c ${where}
       ORDER BY ${column} ${direction.toUpperCase()}, c.case_id ASC
       LIMIT ? OFFSET ?
     `, [...params, checkedPageSize, (checkedPage - 1) * checkedPageSize]);
+    const [pageResult, total] = await Promise.all([
+      statement.all(),
+      compatTotal(this.db, clauses, params, where),
+    ]);
     return {
-      cases: rows(await statement.all()),
+      cases: rows(pageResult),
       total,
       page: checkedPage,
       page_size: checkedPageSize,
@@ -263,8 +292,7 @@ export class CloudflareCaseStore {
   async countCompat(filters = {}) {
     const { clauses, params } = compatCaseFilters(filters);
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const result = await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
-    return Number(result?.total || 0);
+    return compatTotal(this.db, clauses, params, where);
   }
 
   /** Read queue-maintained/transform-maintained catalog aggregates only. */
