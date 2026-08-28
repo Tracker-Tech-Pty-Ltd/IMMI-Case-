@@ -45,15 +45,19 @@ class TestPageSmoke:
         assert "Cases" in get_heading(react_page)
 
     def test_download_has_heading(self, react_page):
+        # /download now redirects to the merged /data-tools page
+        # (frontend/src/App.tsx: <Navigate to="/data-tools" replace />).
         react_navigate(react_page, "/download")
         wait_for_loading_gone(react_page)
-        assert "Download" in get_heading(react_page)
+        assert "Data Tools" in get_heading(react_page)
 
     def test_pipeline_has_heading(self, react_page):
+        # /pipeline now redirects to the merged /data-tools page
+        # (frontend/src/App.tsx: <Navigate to="/data-tools" replace />).
         react_navigate(react_page, "/pipeline")
         wait_for_loading_gone(react_page)
         heading = get_heading(react_page)
-        assert "Pipeline" in heading
+        assert "Data Tools" in heading
 
     def test_data_dictionary_has_heading(self, react_page):
         react_navigate(react_page, "/data-dictionary")
@@ -66,9 +70,11 @@ class TestPageSmoke:
         assert "Design Tokens" in get_heading(react_page)
 
     def test_job_status_has_heading(self, react_page):
+        # /jobs now redirects to the merged /data-tools page
+        # (frontend/src/App.tsx: <Navigate to="/data-tools" replace />).
         react_navigate(react_page, "/jobs")
         wait_for_loading_gone(react_page)
-        assert "Job Status" in get_heading(react_page)
+        assert "Data Tools" in get_heading(react_page)
 
 
 # ---------------------------------------------------------------------------
