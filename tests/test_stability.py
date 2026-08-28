@@ -248,6 +248,7 @@ class TestMassAssignment:
             },
             str(populated_dir),
         )
+        assert result is True
         # Should succeed but sensitive fields should not change
         cases = load_all_cases(str(populated_dir))
         updated = next(c for c in cases if c.case_id == case_id)
@@ -293,7 +294,13 @@ class TestAtomicWrites:
     def test_json_write_atomic(self, populated_dir, sample_cases):
         """If JSON write fails, original file should remain."""
         json_path = os.path.join(str(populated_dir), "immigration_cases.json")
-        tmp_path = json_path + ".tmp"
+        # No `tmp_path` / "no leftover .tmp" assertion here on purpose: the mock
+        # below makes open() raise *before* the .tmp file is created, so such an
+        # assertion would pass whether or not save_cases_json cleans up — and it
+        # does not clean up. Covering that needs a post-create failure (patch
+        # os.replace) plus a fix in immi_case_downloader/storage.py; see
+        # plans/003 "Maintenance notes". test_csv_write_atomic's line 291 has
+        # the same weakness for the same reason.
 
         save_cases_json(sample_cases, str(populated_dir))
         with open(json_path) as f:
