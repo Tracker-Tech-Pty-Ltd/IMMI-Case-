@@ -45,6 +45,54 @@ class TestNormalizeJudgeName:
         """Handle None input"""
         assert normalize_judge_name(None) == ""
 
+    def test_strips_bracketed_qualifiers(self):
+        """Bracketed qualifiers must not become the surname"""
+        assert normalize_judge_name("Michael Cooke (NSW)") == "cooke"
+        assert normalize_judge_name("Brown [2019]") == "brown"
+        assert normalize_judge_name("Kirk (Member)") == "kirk"
+        assert normalize_judge_name("Smith (Deputy President)") == "smith"
+
+    def test_bracket_only_input(self):
+        """A label that is nothing but brackets normalises to empty"""
+        assert normalize_judge_name("(NSW)") == ""
+        assert normalize_judge_name("[2019]") == ""
+
+    def test_mismatched_delimiters_are_not_treated_as_brackets(self):
+        """Only balanced pairs are stripped.
+
+        A character-class pattern like `[(\\[][^)\\]]*[)\\]]` matches "(foo]"
+        and "[foo)" too, because a character class cannot pair delimiters. The
+        alternation form does not. Mismatched and unclosed fragments come from
+        catchword prose, not from names — they are rows for the extraction fix
+        (ADR 0051 follow-up 1) to remove, and this module must leave them
+        recognisably intact rather than silently eating half of one.
+        """
+        assert normalize_judge_name("Cooke (foo]") == "foo"
+        assert normalize_judge_name("Cooke [foo)") == "foo"
+
+    def test_unclosed_bracket_is_left_alone(self):
+        """Verified against live data: this exact shape exists in the corpus."""
+        assert normalize_judge_name(
+            "to order the Minister to answer interrogatories (see"
+        ) == "see"
+
+    def test_distinct_people_sharing_a_surname_collide(self):
+        """Documented limitation: surname folding merges different people.
+
+        This is why the module must not drive a merge without an alias file.
+        See docs/adr/0051-judge-identity.md.
+        """
+        assert normalize_judge_name("Alison Murphy") == normalize_judge_name("Jade Murphy")
+
+    def test_garbage_labels_are_not_rejected(self):
+        """Documented limitation: the normaliser is not a garbage filter."""
+        assert normalize_judge_name("DATE") == "date"
+        assert normalize_judge_name("THE TRIBUNAL") == "tribunal"
+
+    def test_full_name_and_surname_only_agree(self):
+        """The one genuine split observed live in the top 200 judges"""
+        assert normalize_judge_name("Louise Nicholls") == normalize_judge_name("Nicholls")
+
 
 class TestFindDuplicateJudges:
     """Test fuzzy matching for duplicate detection"""
