@@ -16,6 +16,7 @@
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Scale, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { SessionListItem } from "@/components/llm-council/SessionListItem";
 import {
@@ -59,7 +60,25 @@ export function LlmCouncilSessionsPage() {
   const sessions = data?.sessions ?? [];
 
   function handleDelete(sessionId: string) {
-    deleteSession.mutate(sessionId);
+    // SessionListItem already ran its own ConfirmModal before calling us.
+    // Without this onError a refused delete is completely silent: the row
+    // stays on screen and the user just clicks again.
+    deleteSession.mutate(sessionId, {
+      onError: (err) => {
+        // The raw message is whatever the Worker put in the JSON `error` field
+        // — it can be a bare D1 string like "D1_ERROR: no such table". The
+        // primary user of this app is a self-representing applicant under
+        // stress, not an operator: show translated, actionable copy and send
+        // the raw detail to the console for diagnosis. `no-console` allows
+        // `console.error` (frontend/eslint.config.js).
+        console.error("[llm-council] session delete failed", err);
+        toast.error(
+          t("llm_council.session_delete_failed", {
+            defaultValue: "Could not delete this session. Please try again.",
+          }),
+        );
+      },
+    });
   }
 
   return (

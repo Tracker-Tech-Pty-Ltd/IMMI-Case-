@@ -10,6 +10,11 @@ import type { AuthState } from "@/lib/auth";
 import { clearAuthCookies, parseJwtPayload } from "@/lib/auth";
 import { setApiAccessToken } from "@/lib/api";
 
+/** Backoff for transient refresh failures (network down, sleep/wake, Worker
+ *  cold start). After the last one is exhausted we sign the user out for real
+ *  rather than leaving a UI that renders as signed-in against 401ing APIs. */
+const REFRESH_RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
+
 interface AuthContextValue extends AuthState {
   login: (telegramData: Record<string, string>) => Promise<void>;
   logout: () => Promise<void>;
@@ -33,6 +38,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshRef = useRef<(() => Promise<boolean>) | null>(null);
 
+  const refreshRetryCountRef = useRef(0);
+
   const scheduleRefresh = useCallback((token: string) => {
     const payload = parseJwtPayload(token);
     if (!payload || typeof payload.exp !== "number") return;
@@ -42,6 +49,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshTimerRef.current = setTimeout(() => { refreshRef.current?.(); }, refreshIn);
   }, []);
 
+  const clearSession = useCallback(() => {
+    refreshRetryCountRef.current = 0;
+    setState((s) => ({
+      ...s,
+      user: null,
+      tenant: null,
+      tenants: [],
+      accessToken: null,
+      isAuthenticated: false,
+    }));
+    clearAuthCookies();
+    setApiAccessToken(null);
+  }, []);
+
+  /** Transient = worth retrying. A 401/403 means the refresh cookie is gone. */
+  const isTransientRefreshStatus = (status: number) =>
+    status === 429 || status >= 500;
+
+  const scheduleRefreshRetry = useCallback((): boolean => {
+    const attempt = refreshRetryCountRef.current;
+    if (attempt >= REFRESH_RETRY_DELAYS_MS.length) return false;
+    refreshRetryCountRef.current = attempt + 1;
+    // Reuse refreshTimerRef so the existing unmount cleanup still clears it.
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      refreshRef.current?.();
+    }, REFRESH_RETRY_DELAYS_MS[attempt]);
+    return true;
+  }, []);
+
   const refresh = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch("/api/v1/auth/refresh", {
@@ -49,19 +86,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include", // sends httpOnly refresh cookie
       });
       if (!res.ok) {
-        setState((s) => ({
-          ...s,
-          user: null,
-          tenant: null,
-          tenants: [],
-          accessToken: null,
-          isAuthenticated: false,
-        }));
-        clearAuthCookies();
-        setApiAccessToken(null);
+        // A cold-starting or rate-limited Worker must not end the session.
+        if (isTransientRefreshStatus(res.status) && scheduleRefreshRetry()) {
+          return false;
+        }
+        clearSession();
         return false;
       }
       const data = await res.json();
+      refreshRetryCountRef.current = 0;
       setState((s) => ({
         ...s,
         accessToken: data.access_token,
@@ -71,9 +104,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       scheduleRefresh(data.access_token);
       return true;
     } catch {
+      // No HTTP status at all (offline, DNS, TLS). Same policy as a 5xx.
+      if (scheduleRefreshRetry()) return false;
+      clearSession();
       return false;
     }
-  }, [scheduleRefresh]);
+  }, [clearSession, scheduleRefreshRetry, scheduleRefresh]);
   // Keep refreshRef current so scheduleRefresh always calls the latest refresh.
   React.useLayoutEffect(() => { refreshRef.current = refresh; });
 
@@ -101,9 +137,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } else if (r.status === 401) {
-          // Access cookie expired — try silent refresh before giving up
+          // Access cookie expired — try silent refresh before giving up.
           const refreshed = await refresh();
           if (refreshed) {
+            // The refresh response carries only access_token; re-read /auth/me
+            // so user/tenant/tenants are populated. Without this the app runs
+            // as `isAuthenticated: true` with a null user.
+            const me = await fetch("/api/v1/auth/me", {
+              credentials: "include",
+            }).catch(() => null);
+            if (me?.ok) {
+              const meData = await me.json().catch(() => null);
+              if (meData?.user) {
+                setState((s) => ({
+                  ...s,
+                  user: meData.user,
+                  tenant: meData.tenant,
+                  tenants: meData.tenants || [],
+                  isLoading: false,
+                }));
+                return;
+              }
+            }
             setState((s) => ({ ...s, isLoading: false }));
             return;
           }

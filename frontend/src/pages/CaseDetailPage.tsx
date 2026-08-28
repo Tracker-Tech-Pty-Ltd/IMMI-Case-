@@ -24,6 +24,8 @@ import { CaseTextViewer } from "@/components/cases/CaseTextViewer";
 import { BookmarkButton } from "@/components/shared/BookmarkButton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { PageLoader } from "@/components/shared/PageLoader";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
+import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -36,7 +38,7 @@ export function CaseDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data, isLoading } = useCase(id ?? "");
+  const { data, isLoading, isError, error, refetch } = useCase(id ?? "");
   const { data: related } = useRelatedCases(id ?? "");
   const { data: similarData, isLoading: similarLoading } = useSimilarCases(
     id ?? "",
@@ -76,18 +78,94 @@ export function CaseDetailPage() {
     }
   }, [id, deleteMutation, navigate, t]);
 
-  const copyCitation = useCallback(() => {
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+    };
+  }, []);
+
+  const copyCitation = useCallback(async () => {
     if (!data?.case.citation) return;
-    navigator.clipboard.writeText(data.case.citation);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [data]);
+    if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+    try {
+      await navigator.clipboard.writeText(data.case.citation);
+      setCopied(true);
+    } catch {
+      // navigator.clipboard is undefined outside a secure context, and
+      // writeText() rejects on denied permission / unfocused document.
+      toast.error(
+        t("errors.something_went_wrong", {
+          defaultValue: "Could not copy. Select the citation and copy it by hand.",
+        }),
+      );
+    }
+    copyResetTimerRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [data, t]);
 
   if (!id) {
     return <Navigate to="/cases" replace />;
   }
 
-  if (isLoading || !data) {
+  if (isLoading) {
+    return <PageLoader />;
+  }
+
+  const notFound =
+    (error instanceof ApiError && error.status === 404) || (!isError && !data);
+
+  if (isError && !notFound) {
+    return (
+      <div className="space-y-4" data-testid="case-detail-error">
+        <Breadcrumb
+          items={[
+            { label: t("cases.title"), href: "/cases" },
+            { label: t("cases.case_details") },
+          ]}
+        />
+        <div role="alert">
+          <ApiErrorState
+            title={t("errors.failed_to_load", { name: t("cases.case_details") })}
+            message={
+              error instanceof Error
+                ? error.message
+                : t("errors.unable_to_load_message")
+            }
+            onRetry={() => {
+              void refetch();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className="space-y-4" data-testid="case-detail-not-found">
+        <Breadcrumb
+          items={[
+            { label: t("cases.title"), href: "/cases" },
+            { label: t("cases.case_details") },
+          ]}
+        />
+        <div role="alert">
+          <ApiErrorState
+            title={t("errors.failed_to_load", { name: t("cases.case_details") })}
+            message={t("errors.payload_error", {
+              name: t("cases.case_details"),
+            })}
+            onRetry={() => {
+              void refetch();
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
     return <PageLoader />;
   }
 
@@ -161,7 +239,9 @@ export function CaseDetailPage() {
             <>
               <button
                 type="button"
-                onClick={copyCitation}
+                onClick={() => {
+                  void copyCitation();
+                }}
                 className="rounded-md border border-border px-2.5 py-1.5 text-muted-text hover:bg-surface hover:text-foreground"
                 title={t("case_detail.copy_citation")}
               >

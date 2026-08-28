@@ -21,6 +21,7 @@ import type { JobStatus } from "@/types/case";
 import { useStats } from "@/hooks/use-stats";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { ApiErrorState } from "@/components/shared/ApiErrorState";
 
 interface PipelineStatus {
   running?: boolean;
@@ -80,7 +81,13 @@ export function DataToolsPage() {
   const [logExpanded, setLogExpanded] = useState(true);
   const [errorsExpanded, setErrorsExpanded] = useState(false);
 
-  const { data: pipelineStatus } = useQuery<PipelineStatus>({
+  const {
+    data: pipelineStatus,
+    isLoadingError: pipelineLoadFailed,
+    isRefetchError: pipelineRefetchFailed,
+    error: pipelineError,
+    refetch: refetchPipeline,
+  } = useQuery<PipelineStatus>({
     queryKey: ["pipeline-status"],
     queryFn: fetchPipelineStatus,
     refetchInterval: (query) => {
@@ -89,7 +96,12 @@ export function DataToolsPage() {
     },
   });
 
-  const { data: jobStatus } = useQuery<JobStatus>({
+  const {
+    data: jobStatus,
+    isLoadingError: jobLoadFailed,
+    isRefetchError: jobRefetchFailed,
+    refetch: refetchJob,
+  } = useQuery<JobStatus>({
     queryKey: ["job-status"],
     queryFn: fetchJobStatus,
     refetchInterval: (query) => (query.state.data?.running ? 2000 : 15000),
@@ -218,7 +230,35 @@ export function DataToolsPage() {
           {t("data_tools.pipeline_section_title")}
         </h2>
 
-        {running ? (
+        {pipelineRefetchFailed && pipelineStatus ? (
+          <div
+            role="status"
+            data-testid="pipeline-status-stale"
+            className="mb-3 rounded-md border border-amber-300/40 bg-amber-50/30 px-3 py-2 text-xs text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-300"
+          >
+            {t("errors.stale_data_warning", {
+              defaultValue:
+                "Live updates paused — this may be out of date. Retrying automatically.",
+            })}
+          </div>
+        ) : null}
+        {pipelineLoadFailed ? (
+          <div role="alert" data-testid="pipeline-status-error">
+            <ApiErrorState
+              title={t("errors.failed_to_load", {
+                name: t("data_tools.pipeline_section_title"),
+              })}
+              message={
+                pipelineError instanceof Error
+                  ? pipelineError.message
+                  : t("errors.unable_to_load_message")
+              }
+              onRetry={() => {
+                void refetchPipeline();
+              }}
+            />
+          </div>
+        ) : running ? (
           <div className="rounded-lg border border-accent/30 bg-card p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -369,7 +409,31 @@ export function DataToolsPage() {
           {t("data_tools.recent_job_title")}
         </h2>
 
-        <div className="rounded-lg border border-border bg-card p-5">
+        {jobRefetchFailed ? (
+          <div
+            role="status"
+            data-testid="job-status-stale"
+            className="mb-3 rounded-md border border-amber-300/40 bg-amber-50/30 px-3 py-2 text-xs text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-300"
+          >
+            {t("errors.stale_data_warning", {
+              defaultValue:
+                "Live updates paused — this may be out of date. Retrying automatically.",
+            })}
+          </div>
+        ) : null}
+        {jobLoadFailed ? (
+          <div role="alert" data-testid="job-status-error">
+            <ApiErrorState
+              title={t("errors.failed_to_load", {
+                name: t("data_tools.recent_job_title"),
+              })}
+              onRetry={() => {
+                void refetchJob();
+              }}
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-5">
           <div className="flex items-start gap-4">
             <div
               className={`rounded-full p-2.5 ${
@@ -478,7 +542,8 @@ export function DataToolsPage() {
               </ul>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* §4 Pipeline logs */}

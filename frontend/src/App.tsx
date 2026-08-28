@@ -1,47 +1,11 @@
-import { lazy, Suspense, Component, type ReactNode } from "react";
+import { lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
-import { AlertTriangle } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { PageLoader } from "@/components/shared/PageLoader";
-import { StatePanel } from "@/components/shared/StatePanel";
 import { resolveRouterBasename } from "@/lib/router";
 import { AuthProvider } from "@/contexts/AuthContext";
-
-class ErrorBoundary extends Component<
-  { children: ReactNode },
-  { error: Error | null }
-> {
-  state = { error: null };
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-  render() {
-    if (this.state.error) {
-      const err = this.state.error as Error;
-      return (
-        <div className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
-          <StatePanel
-            tone="error"
-            align="start"
-            icon={<AlertTriangle className="h-5 w-5" />}
-            title="Application error"
-            description="A rendering error interrupted the current view. The diagnostic details are shown below for debugging."
-            className="max-w-3xl"
-          >
-            <pre className="overflow-x-auto rounded-xl border border-danger/15 bg-background px-4 py-3 font-mono text-xs leading-6 text-danger">
-              {err.message}
-              {"\n\n"}
-              {err.stack}
-            </pre>
-          </StatePanel>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+import { ErrorBoundary, RouteBoundary } from "@/components/shared/RouteErrorBoundary";
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })),
@@ -183,162 +147,162 @@ export default function App() {
               <Route
                 path="login"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LoginPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route element={<AppLayout />}>
               <Route
                 index
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <DashboardPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="cases"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CasesPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="cases/add"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CaseAddPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="cases/compare"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CaseComparePage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="cases/:id"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CaseDetailPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="cases/:id/edit"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CaseEditPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="collections"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CollectionsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="saved-searches"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <SavedSearchesPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="collections/:collectionId"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CollectionDetailPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="legislations"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LegislationsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="legislations/:legislationId"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LegislationDetailPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="taxonomy"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <SearchTaxonomyPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="search-taxonomy"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <SearchTaxonomyPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="guided-search"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <GuidedSearchPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="search/semantic"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <SemanticSearchPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="llm-council"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LlmCouncilPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="llm-council/sessions"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LlmCouncilSessionsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="llm-council/sessions/:sessionId"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <LlmCouncilPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="data-tools"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <DataToolsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
@@ -356,65 +320,65 @@ export default function App() {
               <Route
                 path="admin/pipeline-runs"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <AdminPipelineRunsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="analytics"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <AnalyticsPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="court-lineage"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <CourtLineagePage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="judge-profiles"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <JudgeProfilesPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="judge-profiles/compare"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <JudgeComparePage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="judge-profiles/:name"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <JudgeDetailPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="data-dictionary"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <DataDictionaryPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               <Route
                 path="design-tokens"
                 element={
-                  <Suspense fallback={<PageLoader />}>
+                  <RouteBoundary>
                     <DesignTokensPage />
-                  </Suspense>
+                  </RouteBoundary>
                 }
               />
               </Route>
