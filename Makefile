@@ -62,7 +62,7 @@ help:
 	@echo ""
 	@echo "  make install      Install all Python + Node deps (creates .venv)"
 	@echo "  make install-e2e  Playwright + chromium, for make test-e2e"
-	@echo "  make migrate      Push pending Supabase migrations"
+	@echo "  make migrate      Where migrations live (the legacy Supabase push is manual)"
 	@echo ""
 	@echo "Options: PORT=8080 BACKEND=auto|sqlite|csv|supabase"
 
@@ -265,8 +265,27 @@ install-e2e:
 	"$(VENV_PYTHON)" -m pip install -r requirements-e2e.txt
 	"$(VENV_PYTHON)" -m playwright install chromium
 
+# `supabase db push` targets the RETIRED Supabase Postgres project, and it acts
+# on whatever project the local Supabase CLI happens to be linked to — which is
+# machine-local state this repository cannot see or verify. Production schema
+# lives in Cloudflare D1 (migrations/d1/{catalog,account,ops}/*.sql). The
+# Supabase migrations are kept as one-time ETL tooling (docs/ARCHITECTURE.md).
+# There is deliberately NO make target that performs the legacy push: see
+# docs/ARCHITECTURE.md and the runbook printed below.
 migrate:
-	supabase db push
+	@echo "REFUSING: 'supabase db push' targets the RETIRED Supabase Postgres project,"
+	@echo "and it acts on whichever project your local Supabase CLI is linked to."
+	@echo ""
+	@echo "Production schema lives in Cloudflare D1:"
+	@echo "  migrations/d1/catalog/*.sql  migrations/d1/account/*.sql  migrations/d1/ops/*.sql"
+	@echo "Apply those with wrangler against the operator-supplied D1 database ids."
+	@echo ""
+	@echo "If you genuinely need the legacy Supabase ETL push, do it by hand:"
+	@echo "  1. supabase projects list          # confirm which project you mean"
+	@echo "  2. supabase link --project-ref <REF>   # state the target explicitly"
+	@echo "  3. supabase db diff --linked       # READ the diff before applying"
+	@echo "  4. supabase db push --linked       # only if step 3 is what you intended"
+	@exit 1
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 

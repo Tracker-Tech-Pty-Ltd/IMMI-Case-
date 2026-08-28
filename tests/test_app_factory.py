@@ -2,7 +2,6 @@
 
 Targets:
 - backend="supabase" branch (lines 79-81)
-- _capture_hyperdrive_url() before_request hook (line 105)
 - SPA static asset serving in app.testing mode (lines 141-153)
 """
 
@@ -10,6 +9,8 @@ from __future__ import annotations
 
 import os
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,45 +96,49 @@ class TestBackendSelection:
         assert app.config["BACKEND"] == "csv"
 
 
-# ── _capture_hyperdrive_url before_request hook ──────────────────────────────
+class TestSupabaseBackendSelection:
+    """backend='supabase' always builds SupabaseRepository after the direct-
+    psycopg2 Hyperdrive backend's removal — including when only the
+    Hyperdrive URL is set."""
 
+    def test_hyperdrive_url_alone_no_longer_selects_a_second_backend(self, tmp_path):
+        """Only HYPERDRIVE_DATABASE_URL set → SupabaseRepository is attempted,
+        and it fails loudly for missing credentials rather than silently
+        swapping in a different repository class.
 
-class TestCaptureHyperdriveUrl:
-    """The X-Hyperdrive-Url header is captured into Flask g."""
+        SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are pinned to "" rather than
+        popped: SupabaseRepository.__init__() calls load_dotenv(), which walks
+        up the directory tree and would otherwise refill a *popped* (i.e.
+        absent) key from this repo's real local-dev .env — an empty-but-present
+        key is left alone by dotenv's default override=False.
+        """
+        from immi_case_downloader.web import create_app
 
-    def test_header_stored_in_g(self):
-        """When X-Hyperdrive-Url is present, g.hyperdrive_url is set."""
-        app = _make_app()
+        env = {
+            "HYPERDRIVE_DATABASE_URL": "postgresql://edge/db",
+            "SUPABASE_URL": "",
+            "SUPABASE_SERVICE_ROLE_KEY": "",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with pytest.raises(ValueError, match="SUPABASE_URL"):
+                create_app(backend="supabase", output_dir=str(tmp_path))
 
-        stored = {}
+    def test_supabase_and_hyperdrive_both_set_still_selects_supabase(self, tmp_path):
+        """Both env shapes present → BACKEND is 'supabase', never 'hyperdrive'."""
+        from immi_case_downloader.web import create_app
 
-        @app.route("/test-hd")
-        def _hd_probe():
-            from flask import g
-            stored["url"] = getattr(g, "hyperdrive_url", None)
-            return "ok"
-
-        client = app.test_client()
-        client.get("/test-hd", headers={"X-Hyperdrive-Url": "postgresql://edge/db"})
-
-        assert stored.get("url") == "postgresql://edge/db"
-
-    def test_no_header_leaves_g_unset(self):
-        """Without the header, g.hyperdrive_url is NOT set."""
-        app = _make_app()
-
-        stored = {}
-
-        @app.route("/test-no-hd")
-        def _no_hd_probe():
-            from flask import g
-            stored["has_attr"] = hasattr(g, "hyperdrive_url")
-            return "ok"
-
-        client = app.test_client()
-        client.get("/test-no-hd")
-
-        assert stored.get("has_attr") is False
+        env = {
+            "HYPERDRIVE_DATABASE_URL": "postgresql://edge/db",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "test-service-role-key",
+        }
+        with patch.dict(os.environ, env, clear=False), patch(
+            "immi_case_downloader.supabase_repository.create_client",
+            return_value=MagicMock(),
+        ):
+            app = create_app(backend="supabase", output_dir=str(tmp_path))
+        assert app.config["BACKEND"] == "supabase"
+        assert type(app.config["REPO"]).__name__ == "SupabaseRepository"
 
 
 # ── SPA static asset serving in test mode ────────────────────────────────────
