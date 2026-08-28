@@ -18,6 +18,7 @@ make build        # Build React frontend → immi_case_downloader/static/react/
 make test         # All tests: Python unit + frontend Vitest + Worker Vitest
 make test-py      # Python unit tests only (excludes E2E)
 make test-fe      # Frontend Vitest tests only
+make test-workers # Worker Vitest tests only (workers/__tests__)
 make test-e2e     # Playwright E2E (requires running server)
 make coverage     # Python unit tests with HTML coverage report
 make lint         # Ruff lint Python source
@@ -29,7 +30,7 @@ python3 -m pytest tests/test_models.py -x
 python3 -m pytest tests/e2e/react/ -x --timeout=60
 
 # Run a single Vitest test file
-cd frontend && npx vitest run src/__tests__/components/judges/
+cd frontend && npx vitest run __tests__/judge-pages.test.tsx
 
 # CLI
 python run.py search --databases AATA FCA --start-year 2020
