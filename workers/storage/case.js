@@ -103,6 +103,9 @@ const COMPAT_SORT_COLUMNS = Object.freeze({
  */
 const RELATED_CANDIDATES_PER_DIMENSION = 200;
 
+/** Chunk candidates read per lexical search before reducing to best-rank-per-case. */
+const FTS_CANDIDATE_CHUNKS = 500;
+
 function compatPageNumber(value, fallback, min, max) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -1002,26 +1005,22 @@ export class CloudflareCaseStore {
     const matchString = match ?? toFtsMatch(query);
     const { clauses, params } = safeCaseFilters(filters);
     const size = clampLimit(limit, { fallback: 50, max: 100 });
-    // bm25() is valid only in the direct FTS query context. Paginate over chunk
-    // candidates (a single long case can monopolise the first page) until enough
-    // distinct cases are found, then aggregate their best-chunk rank per case.
+    // bm25() is valid only in the direct FTS query context, and a single long
+    // case can monopolise the top chunk ranks, so read one wide page of chunk
+    // candidates and reduce to the best chunk rank per case in JS. This is the
+    // same 500-row candidate ceiling the previous five sequential LIMIT/OFFSET
+    // pages had, in one round trip instead of up to five.
+    const hits = rows(await this.db.prepare(`
+      SELECT case_id, bm25(case_text_fts) AS rank
+      FROM case_text_fts
+      WHERE case_text_fts MATCH ?
+      ORDER BY rank ASC
+      LIMIT ?
+    `).bind(matchString, FTS_CANDIDATE_CHUNKS).all());
     const ranks = new Map();
-    const CHUNK_PAGE = 100;
-    const MAX_PAGES = 5;
-    for (let offset = 0; offset < CHUNK_PAGE * MAX_PAGES; offset += CHUNK_PAGE) {
-      const hits = rows(await this.db.prepare(`
-        SELECT case_id, bm25(case_text_fts) AS rank
-        FROM case_text_fts
-        WHERE case_text_fts MATCH ?
-        ORDER BY rank ASC
-        LIMIT ? OFFSET ?
-      `).bind(matchString, CHUNK_PAGE, offset).all());
-      if (hits.length === 0) break;
-      for (const hit of hits) {
-        const rank = Number(hit.rank);
-        if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
-      }
-      if (ranks.size >= size) break;
+    for (const hit of hits) {
+      const rank = Number(hit.rank);
+      if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
     }
     const caseIds = [...ranks.keys()];
     if (caseIds.length === 0) return [];
