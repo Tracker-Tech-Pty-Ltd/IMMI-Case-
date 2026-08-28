@@ -179,9 +179,19 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
         # the "not found" correctly instead of serving index.html.
         if path.startswith("api/"):
             abort(404)
-        # Static assets (JS, CSS, images) — serve the actual file
-        if path and os.path.exists(os.path.join(react_dir, path)):
-            asset_path = os.path.join(react_dir, path)
+        # Static assets (JS, CSS, images) — serve the actual file.
+        # Containment guard: resolve symlinks and reject anything that escapes
+        # the build directory BEFORE opening it. The app.testing branch below
+        # opens the path directly instead of going through send_from_directory,
+        # which is where the framework's own traversal check lives. Mirrors the
+        # resolve()+relative_to guard in routes/api.py:2548-2554.
+        react_root = os.path.realpath(react_dir)
+        asset_path = os.path.realpath(os.path.join(react_dir, path)) if path else ""
+        if path and not (
+            asset_path == react_root or asset_path.startswith(react_root + os.sep)
+        ):
+            abort(404)
+        if path and os.path.exists(asset_path):
             if not app.testing:
                 return send_from_directory(react_dir, path)
 

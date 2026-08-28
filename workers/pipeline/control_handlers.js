@@ -11,6 +11,7 @@ import { verifyCsrf } from "../auth/csrf.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError } from "../storage/contracts.js";
 import { LEGISLATIONS_META } from "../case-api/static.js";
+import { readBoundedBodyText } from "../storage/body_limit.js";
 
 const COURTS = new Set(["AATA", "ARTA", "FCA", "FCCA", "HCA", "FMCA", "FedCFamC2G"]);
 const CONTROL_PATHS = new Set([
@@ -31,11 +32,13 @@ function clientError(error) {
   return error instanceof StorageBoundaryError && error.status >= 400 && error.status < 500;
 }
 
+const MAX_BODY_BYTES = 32 * 1024;
+
 async function readJson(request) {
-  const length = Number(request.headers.get("content-length") || "0");
-  if (Number.isFinite(length) && length > 32 * 1024) return null;
+  const text = await readBoundedBodyText(request, MAX_BODY_BYTES);
+  if (text === null) return null;
   try {
-    const value = await request.json();
+    const value = JSON.parse(text);
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch {
     return null;

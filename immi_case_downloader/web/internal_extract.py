@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from hmac import compare_digest
 from typing import Any
 
 from flask import Blueprint, jsonify, request
@@ -12,6 +13,9 @@ from .security import csrf
 internal_extract_bp = Blueprint("internal_extract", __name__)
 
 
+MAX_BATCH_ITEMS = 20
+
+
 @internal_extract_bp.post("/internal/extract")
 def internal_extract():
     if request.headers.get("X-Internal-Route") != "worker":
@@ -19,10 +23,20 @@ def internal_extract():
     if request.headers.get("X-Internal-Route-Subtype") != "cron-extract":
         return jsonify({"error": "Forbidden", "code": "not_cron_extract"}), 403
 
+    # Parity with extract_container.py:30-32 — the shipped container copy of
+    # this route. Fails CLOSED when the secret is unset: without this, any
+    # client that can reach the port drives LLM extraction against the
+    # operator's CF AI Gateway credits. The real caller already sends the
+    # header (workers/austlii-scraper/src/extract.ts:142).
+    shared_secret = os.environ.get("EXTRACTION_SHARED_SECRET", "")
+    presented = request.headers.get("X-Extraction-Token", "")
+    if not shared_secret or not compare_digest(presented, shared_secret):
+        return jsonify({"error": "Forbidden", "code": "invalid_extraction_token"}), 403
+
     payload = request.get_json(silent=True) or {}
     run_id = _text(payload.get("run_id"))
     batch = payload.get("batch")
-    if not run_id or not isinstance(batch, list):
+    if not run_id or not isinstance(batch, list) or len(batch) > MAX_BATCH_ITEMS:
         return jsonify({"error": "Invalid payload", "code": "bad_payload"}), 400
 
     from immi_case_downloader.extraction import ExtractionTimeoutError, extract_llm, extract_regex
