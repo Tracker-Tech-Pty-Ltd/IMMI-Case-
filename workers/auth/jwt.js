@@ -180,9 +180,13 @@ export async function verifyJwt(token, env) {
     return { valid: false, payload: null, reason: "invalid" };
   }
 
-  // Check expiry
+  // Check expiry. A missing or non-numeric exp is rejected, not treated as
+  // "never expires": the 5-minute access-token TTL is the entire revocation
+  // story for reads, so an exp-less token would be a permanent credential.
+  // makeAccessToken and makeRefreshToken always set exp, so no first-party
+  // token is affected.
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp === "number" && payload.exp < now) {
+  if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp < now) {
     return { valid: false, payload: null, reason: "expired" };
   }
 

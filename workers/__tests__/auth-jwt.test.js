@@ -151,10 +151,23 @@ describe("verifyJwt — expiry", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("accepts a token with no exp field (no expiry enforced)", async () => {
+  it("rejects a token with no exp field — exp is mandatory", async () => {
+    // A missing exp used to mean "never expires", which would turn any token
+    // minted off a leaked signing key into a permanent credential. Both
+    // first-party minters (makeAccessToken / makeRefreshToken) always set exp.
     const token = await signJwt({ sub: "no-exp-user" }, mockEnv);
     const result = await verifyJwt(token, mockEnv);
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("expired");
+    expect(result.payload).toBeNull();
+  });
+
+  it("rejects a token whose exp is a string rather than a number", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJwt({ sub: "string-exp-user", exp: String(now + 3600) }, mockEnv);
+    const result = await verifyJwt(token, mockEnv);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("expired");
   });
 });
 
