@@ -59,7 +59,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 | [007](007-harden-the-public-export-surface.md) | Authenticate, throttle and sanitise the bulk export endpoints | P1 | L | MED | 004 | DONE — merged to main |
 | [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | DONE — merged to main |
 | [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | DONE — merged to main |
-| [010](010-fix-analytics-win-rate.md) | Stop the monthly-trends win rate diverging from every other analytics endpoint | P1 | S | LOW | 009 | TODO |
+| [010](010-fix-analytics-win-rate.md) | Stop the monthly-trends win rate diverging from every other analytics endpoint | P1 | S | LOW | 009 | DONE — merged to main |
 | [011](011-fix-scraper-cost-caps-and-retries.md) | Stop double-billing extraction and dropping cases on transient failures | P1 | L | MED | — | DONE — merged to main |
 
 ### Tier 2 — Worker performance
@@ -102,7 +102,7 @@ The decided 'Legal Codex' direction and WCAG conformance.
 | [022](022-fix-contrast-tokens.md) | Bring the colour tokens up to WCAG AA in both themes | P2 | L | MED | — | DONE — merged to main |
 | [023](023-fix-accessibility-semantics.md) | Labels, focus management, table semantics and heading hierarchy | P2 | M | MED | 001 | DONE — merged to main |
 | [024](024-add-accessibility-gates.md) | Make lint and tests able to catch contrast and a11y regressions | P2 | M | LOW | — | TODO |
-| [025](025-remove-internal-tooling-from-prod.md) | Unadvertise DesignTokensPage and single-source the colour maths | P2 | M | LOW | 001 | TODO |
+| [025](025-remove-internal-tooling-from-prod.md) | Unadvertise DesignTokensPage and single-source the colour maths | P2 | M | LOW | 001 | DONE — merged to main |
 
 ### Tier 6 — Python correctness (local-dev path)
 
@@ -134,7 +134,7 @@ Four manifests, no lockfile on the Python side, 8 production advisories.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [035](035-fix-frontend-dependency-advisories.md) | Clear the 8 production advisories and the manifest hygiene issues | P1 | S | MED | — | DONE — merged to main |
-| [036](036-bound-the-python-dependencies.md) | Pin, lock and declare what the code actually imports | P2 | M | MED | 032 | TODO |
+| [036](036-bound-the-python-dependencies.md) | Pin, lock and declare what the code actually imports | P2 | M | MED | 032 | DONE — merged to main |
 | [037](037-align-the-worker-toolchains.md) | One wrangler, one vitest, one declared Node version | P2 | S | LOW | — | DONE — merged to main |
 
 ### Tier 9 — Tests
@@ -174,10 +174,10 @@ Grounded options for the maintainer. Each produces a decision + ADR, not a finis
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [047](047-decide-the-ingestion-architecture.md) | Spike — pick one of the two AustLII ingestion pipelines and retire the other | P1 | M | LOW | — | DONE — merged to main |
-| [048](048-wire-council-to-the-case-reader.md) | Spike — connect the LLM Council to the case the user is reading | P2 | S | LOW | — | TODO |
+| [048](048-wire-council-to-the-case-reader.md) | Spike — connect the LLM Council to the case the user is reading | P2 | S | LOW | — | DONE — merged to main |
 | [049](049-ship-the-legislation-corpus.md) | Make the legislation browser safe to publish into, then publish the 1,796 scraped sections | P2 | S | LOW | 001 | DONE — merged to main |
 | [050](050-move-user-data-server-side.md) | Decide how bookmarks, collections and saved searches become server-side data | P3 | M | LOW | — | DONE — merged to main |
-| [051](051-make-judge-identity-first-class.md) | Spike — decide how judge identity gets fixed before wiring the normaliser into production | P3 | M | LOW | 003 | TODO |
+| [051](051-make-judge-identity-first-class.md) | Spike — decide how judge identity gets fixed before wiring the normaliser into production | P3 | M | LOW | 003 | DONE — merged to main |
 | [052](052-decide-the-android-client.md) | Spike — decide whether the 135-file Kotlin client is archived or adopted, and mark it either way | P3 | S | LOW | — | DONE — merged to main |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (with a one-line reason) | `REJECTED` (with rationale).
