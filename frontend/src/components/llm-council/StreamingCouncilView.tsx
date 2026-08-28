@@ -217,12 +217,22 @@ export function useCouncilStream(): UseCouncilStreamResult {
       // of no event surfaces the failure cleanly. Reset on each event.
       const WATCHDOG_MS = 90_000;
       let lastActivityAt = Date.now();
+      // Only the watchdog gets an error state on abort. Track that it was
+      // specifically the watchdog (not a superseding start() or unmount)
+      // that fired, so the catch block below can tell the three AbortError
+      // producers apart.
+      let timedOut = false;
+      // Whether the stream ever opened (2xx + a readable body). A failure
+      // before this point never reaches LlmCouncilPage's hasStreamed gate,
+      // so start() must rethrow it — see the catch block below.
+      let streamOpened = false;
       const watchdog = setInterval(() => {
         if (myGen !== genRef.current) {
           clearInterval(watchdog);
           return;
         }
         if (Date.now() - lastActivityAt > WATCHDOG_MS) {
+          timedOut = true;
           clearInterval(watchdog);
           controller.abort();
         }
@@ -241,6 +251,7 @@ export function useCouncilStream(): UseCouncilStreamResult {
           const errText = await res.text().catch(() => res.statusText);
           throw new Error(`HTTP ${res.status}: ${errText.slice(0, 300)}`);
         }
+        streamOpened = true;
 
         for await (const ev of parseSseStream(res.body)) {
           lastActivityAt = Date.now();
@@ -352,12 +363,33 @@ export function useCouncilStream(): UseCouncilStreamResult {
         return curr;
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") {
+          // Only the watchdog gets an error state. A superseding start() and an
+          // unmount both abort too, and both must stay silent — the first
+          // because update() is a no-op for a superseded generation, the second
+          // because the unmount effect bumps genRef before aborting.
+          if (timedOut) {
+            update({
+              ...curr,
+              council: {
+                status: "error",
+                error:
+                  "The council stream stopped responding — no data for 90 seconds. Try sending the question again.",
+              },
+            });
+          }
           return curr;
         }
         update({
           ...curr,
           council: { status: "error", error: String((err as Error).message ?? err) },
         });
+        // Nothing ever streamed, so LlmCouncilPage's `hasStreamed` gate keeps
+        // StreamingCouncilView unmounted and the state above is unreachable.
+        // Rethrow so the page's existing try/catch (LlmCouncilPage.tsx:842)
+        // populates submitError and renders <ApiErrorState>. Only the
+        // pre-stream case rethrows: a mid-stream drop is already visible in the
+        // error strip and must not also raise a second, duplicate surface.
+        if (!streamOpened) throw err;
         return curr;
       } finally {
         clearInterval(watchdog);
@@ -611,11 +643,18 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
     state.anthropic.status !== "pending" &&
     state.anthropic.status !== "streaming";
 
+  const councilFailed = state.council.status === "error";
+  const councilBusy =
+    !councilFailed &&
+    (state.council.status === "running" || !allExpertsFinal);
+
   return (
     <div className="space-y-3" data-testid="streaming-council-view">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-card px-4 py-2 shadow-sm">
         <div className="flex items-center gap-2">
-          {state.council.status === "running" || !allExpertsFinal ? (
+          {councilFailed ? (
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+          ) : councilBusy ? (
             <div className="animate-spin">
               <Loader2 className="h-3.5 w-3.5 text-accent" />
             </div>
@@ -623,14 +662,25 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           )}
           <span className="text-sm font-semibold text-foreground">
-            {state.council.status === "running" || !allExpertsFinal
-              ? "Council deliberating"
-              : "Panel finished — synthesising"}
+            {councilFailed
+              ? "Council run failed"
+              : councilBusy
+                ? "Council deliberating"
+                : "Panel finished — synthesising"}
           </span>
         </div>
         <span className="rounded bg-surface px-2 py-0.5 font-mono text-xs tabular-nums text-foreground">
           {mm}:{ss}
         </span>
+        {councilFailed ? (
+          <p
+            role="alert"
+            data-testid="council-stream-error"
+            className="w-full break-words rounded-md border border-amber-300/40 bg-amber-50/30 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-300"
+          >
+            {state.council.error || "unknown error"}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
