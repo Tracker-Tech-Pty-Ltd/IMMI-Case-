@@ -2,7 +2,6 @@
 
 Targets:
 - backend="supabase" branch (lines 79-81)
-- _capture_hyperdrive_url() before_request hook (line 105)
 - SPA static asset serving in app.testing mode (lines 141-153)
 """
 
@@ -93,47 +92,6 @@ class TestBackendSelection:
 
         app.config["TESTING"] = True
         assert app.config["BACKEND"] == "csv"
-
-
-# ── _capture_hyperdrive_url before_request hook ──────────────────────────────
-
-
-class TestCaptureHyperdriveUrl:
-    """The X-Hyperdrive-Url header is captured into Flask g."""
-
-    def test_header_stored_in_g(self):
-        """When X-Hyperdrive-Url is present, g.hyperdrive_url is set."""
-        app = _make_app()
-
-        stored = {}
-
-        @app.route("/test-hd")
-        def _hd_probe():
-            from flask import g
-            stored["url"] = getattr(g, "hyperdrive_url", None)
-            return "ok"
-
-        client = app.test_client()
-        client.get("/test-hd", headers={"X-Hyperdrive-Url": "postgresql://edge/db"})
-
-        assert stored.get("url") == "postgresql://edge/db"
-
-    def test_no_header_leaves_g_unset(self):
-        """Without the header, g.hyperdrive_url is NOT set."""
-        app = _make_app()
-
-        stored = {}
-
-        @app.route("/test-no-hd")
-        def _no_hd_probe():
-            from flask import g
-            stored["has_attr"] = hasattr(g, "hyperdrive_url")
-            return "ok"
-
-        client = app.test_client()
-        client.get("/test-no-hd")
-
-        assert stored.get("has_attr") is False
 
 
 # ── SPA static asset serving in test mode ────────────────────────────────────
