@@ -1,4 +1,17 @@
-"""Judge name normalization and deduplication utilities."""
+"""Judge name normalization and deduplication utilities.
+
+NOT WIRED INTO PRODUCTION, AND NOT SAFE TO WIRE IN AS-IS.
+
+`normalize_judge_name` reduces a label to a bare surname, so it merges
+distinct people who share one: "Alison Murphy" and "Jade Murphy" both
+become "murphy". Measured against the live leaderboard on 2026-08-28, 6 of
+the 16 surname collisions it creates in the top 200 judges are different
+people. Do not use it to merge judge records without a human-reviewed
+alias file gating every merge.
+
+See docs/adr/0051-judge-identity.md for the decision and the ordering of
+the work that has to happen first.
+"""
 
 import re
 from typing import Dict, List, Optional
@@ -10,6 +23,18 @@ _TITLE_PATTERN = re.compile(
     r"Senior\s+Member|Deputy\s+President|Member|President)\b\.?\s*",
     re.IGNORECASE,
 )
+
+# Bracketed qualifiers such as "(NSW)", "[2019]" or "(Deputy President)"
+# would otherwise survive title-stripping and be taken as the surname.
+#
+# The two alternatives are deliberate: a character-class form like
+# `[(\[][^)\]]*[)\]]` also matches MISMATCHED pairs — "(foo]" and "[foo)" —
+# because a character class has no notion of pairing. Unbalanced fragments
+# such as "to order the Minister to answer interrogatories (see" exist in live
+# data; they are garbage rows for the extraction fix to remove, not names to
+# normalise, so this pattern must leave them alone rather than silently eat
+# half of one.
+_BRACKET_PATTERN = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 
 
 def normalize_judge_name(name: Optional[str]) -> str:
@@ -41,8 +66,12 @@ def normalize_judge_name(name: Optional[str]) -> str:
     if not name or not isinstance(name, str):
         return ""
 
+    # Drop bracketed qualifiers first: "Michael Cooke (NSW)" -> "Michael Cooke".
+    # Without this the bracket contents become the surname (-> "nsw").
+    cleaned = _BRACKET_PATTERN.sub(" ", name)
+
     # Remove titles
-    cleaned = _TITLE_PATTERN.sub("", name).strip()
+    cleaned = _TITLE_PATTERN.sub("", cleaned).strip()
 
     # Handle empty result
     if not cleaned:
