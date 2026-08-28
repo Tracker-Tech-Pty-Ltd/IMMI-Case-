@@ -23,7 +23,13 @@
  */
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useParams, Navigate, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  Navigate,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -780,7 +786,10 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
   const { t } = useTranslation();
   const { isAuthenticated, isLoading } = useAuth();
   const [message, setMessage] = useState("");
-  const [caseId, setCaseId] = useState("");
+  const [searchParams] = useSearchParams();
+  // Seed from ?case_id= so a case-reader "Ask the Council about this case"
+  // link (see CaseDetailPage.tsx) lands with the anchor already filled in.
+  const [caseId, setCaseId] = useState(() => searchParams.get("case_id") || "");
   const [submitError, setSubmitError] = useState("");
   const stream = useCouncilStream();
   const celebratedDoneRef = useRef(false);
@@ -838,7 +847,7 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
     try {
       await stream.start({
         message: msg,
-        case_context: caseId.trim() ? `Case ID hint: ${caseId.trim()}` : undefined,
+        case_id: caseId.trim() || undefined,
       });
     } catch (err) {
       setSubmitError(
