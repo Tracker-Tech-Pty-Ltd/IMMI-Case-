@@ -13,10 +13,13 @@
   --color-background-sidebar: #faf9f7;
   --color-background-surface: #f0efec;
   --color-background-surface-hover: #e6e4e0;
+  --color-chart-1: #1a5276;
   --color-chart-2: #8b5cf6;
   --color-chart-3: #0d9b6c;
   --color-chart-4: #3b82f6;
   --color-chart-5: #bd7a08;
+  --color-chart-6: #c2410c;
+  --color-chart-7: #0f766e;
   --color-border: #6e7177;
   --color-border-light: #eae8e3;
   --color-text: #1b2838;
@@ -35,6 +38,15 @@
   --color-court-rrta: #1e8449;
   --color-court-mrta: #922b5f;
   --color-court-fmca: #b84c00;
+  --color-outcome-affirmed: #a93226;
+  --color-outcome-dismissed: #922b5f;
+  --color-outcome-refused: #b64040;
+  --color-outcome-withdrawn: #697787;
+  --color-outcome-remitted: #1e8449;
+  --color-outcome-set-aside: #1a5276;
+  --color-outcome-allowed: #117864;
+  --color-outcome-granted: #1e874a;
+  --color-outcome-other: #6b7280;
   --color-overlay: #111820;
   --color-on-solid: #ffffff;
 
@@ -126,10 +138,13 @@
   --color-background-sidebar: #141c28;
   --color-background-surface: #1c2535;
   --color-background-surface-hover: #243144;
+  --color-chart-1: #2679ae;
   --color-chart-2: #a78bfa;
   --color-chart-3: #34d399;
   --color-chart-4: #60a5fa;
   --color-chart-5: #fbbf24;
+  --color-chart-6: #fb923c;
+  --color-chart-7: #2dd4bf;
   --color-border: #687087;
   --color-border-light: #2d3748;
   --color-text: #e2dfda;
@@ -148,4 +163,13 @@
   --color-court-rrta: #1e8449;
   --color-court-mrta: #c63c82;
   --color-court-fmca: #c25000;
+  --color-outcome-affirmed: #d7594c;
+  --color-outcome-dismissed: #cd5692;
+  --color-outcome-refused: #c86363;
+  --color-outcome-withdrawn: #7d8a9a;
+  --color-outcome-remitted: #219351;
+  --color-outcome-set-aside: #2b87c3;
+  --color-outcome-allowed: #159179;
+  --color-outcome-granted: #28b463;
+  --color-outcome-other: #7a8190;
 }

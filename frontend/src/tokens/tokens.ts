@@ -20,10 +20,13 @@ export const tokens = {
       "surface-hover": "#e6e4e0"
     },
     "chart": {
+      "1": "#1a5276",
       "2": "#8b5cf6",
       "3": "#0d9b6c",
       "4": "#3b82f6",
-      "5": "#bd7a08"
+      "5": "#bd7a08",
+      "6": "#c2410c",
+      "7": "#0f766e"
     },
     "border": {
       "DEFAULT": "#6e7177",
@@ -50,6 +53,17 @@ export const tokens = {
       "RRTA": "#1e8449",
       "MRTA": "#922b5f",
       "FMCA": "#b84c00"
+    },
+    "outcome": {
+      "affirmed": "#a93226",
+      "dismissed": "#922b5f",
+      "refused": "#b64040",
+      "withdrawn": "#697787",
+      "remitted": "#1e8449",
+      "set-aside": "#1a5276",
+      "allowed": "#117864",
+      "granted": "#1e874a",
+      "other": "#6b7280"
     },
     "overlay": {
       "DEFAULT": "#111820"
@@ -82,10 +96,13 @@ export const tokens = {
         "surface-hover": "#243144"
       },
       "chart": {
+        "1": "#2679ae",
         "2": "#a78bfa",
         "3": "#34d399",
         "4": "#60a5fa",
-        "5": "#fbbf24"
+        "5": "#fbbf24",
+        "6": "#fb923c",
+        "7": "#2dd4bf"
       },
       "border": {
         "DEFAULT": "#687087",
@@ -112,6 +129,17 @@ export const tokens = {
         "RRTA": "#1e8449",
         "MRTA": "#c63c82",
         "FMCA": "#c25000"
+      },
+      "outcome": {
+        "affirmed": "#d7594c",
+        "dismissed": "#cd5692",
+        "refused": "#c86363",
+        "withdrawn": "#7d8a9a",
+        "remitted": "#219351",
+        "set-aside": "#2b87c3",
+        "allowed": "#159179",
+        "granted": "#28b463",
+        "other": "#7a8190"
       }
     }
   },
