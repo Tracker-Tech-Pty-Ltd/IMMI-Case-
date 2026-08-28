@@ -18,6 +18,7 @@ make build        # Build React frontend → immi_case_downloader/static/react/
 make test         # All tests: Python unit + frontend Vitest + Worker Vitest
 make test-py      # Python unit tests only (excludes E2E)
 make test-fe      # Frontend Vitest tests only
+make test-workers # Worker Vitest tests only (workers/__tests__)
 make test-e2e     # Playwright E2E (requires running server)
 make coverage     # Python unit tests with HTML coverage report
 make lint         # Ruff lint Python source
@@ -29,7 +30,7 @@ python3 -m pytest tests/test_models.py -x
 python3 -m pytest tests/e2e/react/ -x --timeout=60
 
 # Run a single Vitest test file
-cd frontend && npx vitest run src/__tests__/components/judges/
+cd frontend && npx vitest run __tests__/judge-pages.test.tsx
 
 # CLI
 python run.py search --databases AATA FCA --start-year 2020
@@ -78,7 +79,8 @@ postprocess.py        → Post-download field extraction (regex + LLM sub-agents
 download_fulltext.py  → Bulk full-text downloader (resumable, saves every 200)
 
 immi_case_downloader/
-  models.py           → ImmigrationCase dataclass (22 fields, SHA-256 ID generation)
+  models.py           → ImmigrationCase dataclass (31 fields, SHA-256 ID generation);
+                        always build instances via ImmigrationCase.from_dict()
   config.py           → Constants: AustLII URLs, court database definitions, keywords
   storage.py          → CSV/JSON persistence (pandas), CRUD helpers
   repository.py       → CaseRepository Protocol (runtime_checkable)
@@ -97,38 +99,40 @@ immi_case_downloader/
                         the generated file goes stale.
   cli.py              → argparse CLI with search/download/list-databases subcommands
   web/
-    __init__.py       → Flask factory with API blueprint + SPA catch-all at /app/
+    __init__.py       → Flask factory: registers 7 API blueprints + internal_extract_bp,
+                        plus a React-build catch-all at / (every non-/api/ path)
     helpers.py        → get_repo(), safe_int(), safe_float(), EDITABLE_FIELDS
     cache.py          → AnalyticsCache: TTL-based in-memory cache for analytics RPCs
     jobs.py           → 4 background job runners with repo param
     security.py       → CSRF config + rate_limit decorator
-    routes/
-      api.py          → /api/v1/* JSON endpoints (~30 endpoints) for React SPA
-      legislations.py → /api/v1/legislations/* endpoints (3 routes: list, detail, search)
-      dashboard.py    → Legacy Jinja2 dashboard
-      cases.py        → Legacy Jinja2 case CRUD
-      search.py       → Legacy Jinja2 search
-      export.py       → CSV/JSON export
-      pipeline_routes.py → Pipeline actions
-      update_db.py    → Legacy update DB
+    routes/           → 7 blueprints; no Jinja2 routes remain
+      api.py          → /api/v1: csrf-token, stats, stats/trends, analytics/*
+      api_cases.py    → /api/v1: cases, cases/count, cases/<case_id> (CRUD)
+      api_export.py   → /api/v1: export/csv, export/json
+      api_pipeline.py → /api/v1: job-status, download/start, pipeline-status,
+                        pipeline-action, llm-council/*
+      api_taxonomy.py → /api/v1: court-lineage, visa-registry, taxonomy/*
+      bookmarks.py    → /api/v1/collections/* (collections + bookmarks)
+      legislations.py → /api/v1/legislations/* (list, search, detail, update)
+      api_constants.py → shared config constants only, no Blueprint; exists so
+                        route modules import from here instead of each other
   sources/
     base.py           → BaseScraper: requests.Session with retry, rate limiting
     austlii.py        → AustLIIScraper: browse year listings + keyword search fallback
     federal_court.py  → FederalCourtScraper: search2.fedcourt.gov.au (DNS broken)
 
-frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v4)
+frontend/             → React SPA (Vite 7 + React 19 + TypeScript 5.9 + Tailwind v4)
   src/
-    pages/            → 26 pages including:
+    pages/            → 26 pages (authoritative list: ls frontend/src/pages/):
                         DashboardPage, CasesPage, CaseDetailPage, CaseEditPage,
                         CaseAddPage, CaseComparePage, AnalyticsPage,
                         JudgeProfilesPage, JudgeDetailPage, JudgeComparePage,
                         LegislationsPage, LegislationDetailPage,
-                        CourtLineagePage, DownloadPage, PipelinePage,
-                        CollectionsPage, CollectionDetailPage,
+                        CourtLineagePage, CollectionsPage, CollectionDetailPage,
                         GuidedSearchPage, SemanticSearchPage, SavedSearchesPage,
                         LlmCouncilPage, LlmCouncilSessionsPage, DataDictionaryPage,
-                        SearchTaxonomyPage,
-                        DesignTokensPage, JobStatusPage
+                        SearchTaxonomyPage, DataToolsPage,
+                        AdminPipelineRunsPage, LoginPage, DesignTokensPage
     components/       → Shared (Breadcrumb, CourtBadge, ConfirmModal, etc.) + layout
     hooks/            → TanStack Query hooks (use-cases, use-stats, use-theme,
                         use-keyboard, use-legislations, etc.)
@@ -161,7 +165,11 @@ workers/
 
 ### Key Design Patterns
 
-- **Dual UI**: React SPA at `/app/` + legacy Jinja2 at `/`. API at `/api/v1/*`.
+- **Single UI**: the React SPA is the only UI. In production the Worker serves it
+  from Workers Static Assets; in local dev Flask serves the React build from a
+  catch-all at `/`. The legacy Jinja2 dashboard is gone — there is no
+  `immi_case_downloader/templates/` directory and no Jinja2 blueprint. API at
+  `/api/v1/*`.
 - **CaseRepository Protocol**: Abstracts storage backend. CSV (default), SQLite (FTS5+WAL), Supabase (PostgreSQL).
 - **Scraper hierarchy**: `BaseScraper` handles HTTP session, rate limiting (1s delay), retry. `AustLIIScraper` and `FederalCourtScraper` inherit.
 - **Two-phase data collection**: Stage 1 (search) populates basic metadata. Stage 2 (download) extracts detailed fields via regex.
@@ -183,7 +191,7 @@ workers/
 - `workers/auth/jwt.js` — HS256 sign/verify with kid rotation (unchanged)
 - `workers/auth/telegram.js` — HMAC-SHA256 Telegram hash verification (unchanged)
 - `workers/auth/nonce_do.js` — AuthNonce Durable Object (replay protection, Oceania-pinned; unchanged)
-- `workers/auth/cloudflare_handlers.js` — Auth route handlers, D1-backed (replaces the deleted Supabase-era `workers/auth/handlers.js` path)
+- `workers/auth/cloudflare_handlers.js` — the D1-backed auth route handlers; the only auth handler module `workers/cloudflare-native.js` imports
 - `workers/storage/cloudflare.js` — `CloudflareIdentityStore`: `assertMembership()`, `upsertTelegramUser()` — the tenant-isolation boundary, backed by `IMMI_ACCOUNT_DB`
 - `immi_case_downloader/web/auth.py` — Flask JWT middleware; **local-dev only**, not in the production request path
 - `migrations/d1/account/0001_account.sql` — D1 schema: users, tenants, memberships, immi_refresh_sessions (replaces the deleted `supabase/migrations/20260503_001_tenancy.sql` in production)
@@ -277,9 +285,7 @@ Request → Cloudflare Worker (cloudflare-native.js)
 - **Port 5000** — conflicts with macOS AirPlay; use `--port 8080`
 - **AustLII 410 blocking** — rejects default `python-requests` User-Agent with HTTP 410; `BaseScraper` uses browser-like UA
 - **AustLII rate limiting** — bulk scraping triggers IP block; typically resolves in hours
-- **Worker postgres client** — always create per-request via `getSql(env)`, never module-level singleton (I/O context binding)
-- **Tag filtering** — `buildCasesWhere()` returns `null` for `tag` param; Worker falls back to Flask (pipe-delimited array logic)
-- **🛑 Production data cleanup rule** — Before ANY bulk UPDATE/DELETE on `public.immigration_cases` (especially regex/pattern-shape based cleanup of mixed-content fields like `judges`): (1) `ALTER TABLE … ADD COLUMN <col>_backup text; UPDATE … SET <col>_backup = <col>` first — gives sub-second rollback; (2) dry-run on `LIMIT 100` and **eyeball** matches against ground-truth (local `case_texts/*.txt`) — pattern-shape garbage rules have ~10–15% false-positive rate on legitimate names like `Michael Cooke (NSW)` / `general member cosgrave`; (3) Supabase Free tier daily backups are **Dashboard-only restore** (`supabase backups restore` CLI returns 400 "PITR not enabled"). See `docs/JUDGE_DATA_QUALITY.md` post-mortem for the 2026-05-02 incident.
+- **🛑 Production data cleanup rule (D1)** — the production corpus lives in D1 `IMMI_CATALOG_DB` (~150K cases) plus R2 `IMMI_CONTENT`. **Distinguish two paths.** The Worker API is fail-closed behind `IMMI_CASE_MUTATIONS_ENABLED` (checked-in default `"false"`; enforced at `workers/case-api/cloudflare_mutations.js:310`) — but that flag gates **only** the Worker. An operator running `wrangler d1 execute --remote --command "UPDATE …"` bypasses it entirely, and that is how bulk cleanups actually get run. Before ANY bulk UPDATE/DELETE by either path: (1) **take and verify a snapshot** — `wrangler d1 export <BINDING> --remote --output=…`, then prove the dump restores by importing it into a scratch local D1 and comparing row counts; a dump you have not restored is not a backup; (2) **rehearse on a clone**, not on production — import that dump into a scratch database and run the statement there first; (3) **dry-run on `LIMIT 100`** and **eyeball** matches against ground truth (local `case_texts/*.txt`) — pattern-shape "garbage" rules had a ~10–15% false-positive rate on legitimate names like `Michael Cooke (NSW)` / `general member cosgrave`; (4) **give yourself an in-database undo**: D1 is SQLite, so `ALTER TABLE … ADD COLUMN <col>_backup TEXT; UPDATE … SET <col>_backup = <col>;` works, as does a shadow table (`CREATE TABLE <t>_backup AS SELECT * FROM <t>`) when several columns change — pick per table and check the row-size and statement limits before doing it on the largest ones; (5) **know your rollback and its cost before you start**: confirm the restore command for your Wrangler version (`npx wrangler d1 --help`, `npx wrangler d1 time-travel --help`) and write down the RTO and the maximum acceptable data loss — a whole-database point-in-time restore also discards every case the weekly VPS crawler ingested since that point. Full procedure: `docs/ops/d1-migrations.md`. `docs/JUDGE_DATA_QUALITY.md` is the 2026-05-02 post-mortem; it describes the **Supabase-era** incident and its Postgres-specific remedies no longer apply, but the false-positive analysis still does.
 
 ## React Frontend Gotchas
 
@@ -388,7 +394,32 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 
 - `downloaded_cases/` is gitignored — all scraped data is local only
 - **149,016 case records** (2000-2026): 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
-- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,857 tests — 1,107 Python unit (71 files) + 260 Playwright E2E (25 files, all of `tests/e2e/` — `tests/e2e/react/` (236 tests/21 files) + `tests/e2e/playwright/` + root-level `test_smoke.py`/`test_export.py`/`test_credentialed_auth_smoke.py`) + 490 frontend unit (55 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
+- **Test suite** — five independently runnable suites. **Counts are deliberately
+  not written here**; they drift with every test added. Run the command, or
+  regenerate a source count with the recipe next to it.
+  - `make test-py` — Python unit tests (`tests/`, excluding `tests/e2e/` and
+    `tests/integration/`).
+    Source count: `grep -rn "def test_" tests/ --include="*.py" | grep -v "/e2e/" | wc -l`
+  - `make test-fe` — frontend Vitest (`frontend/__tests__/`, a flat directory
+    plus one `auth/` subdirectory).
+    File count: `find frontend/__tests__ -name '*.test.*' | wc -l`
+  - `make test-workers` — main Cloudflare Worker Vitest (`workers/__tests__/`).
+    Covers the whole production request path (auth, mutations, Council, the
+    `cloudflare-native.js` bundle) and is a CI gate: `.github/workflows/ci.yml`
+    runs `npm run test:workers`.
+    File count: `find workers/__tests__ -name '*.test.*' | wc -l`
+  - `make test-pipeline` — the austlii-scraper (pipeline Worker) Vitest suite
+    (`workers/austlii-scraper/src/**/*.test.ts`).
+  - `make test-e2e` — Playwright E2E (`tests/e2e/`). The pytest fixture
+    **launches its own seeded Flask server** in a daemon thread
+    (`tests/e2e/conftest.py`); setting `E2E_BASE_URL` is what switches it
+    to an external server. Needs the extra deps
+    in `requirements-e2e.txt` — `make install-e2e` first.
+  `make test` runs `audit-tenant-guards` (a module-level assertMembership() gate)
+  plus the four suites above (`test-py test-fe test-workers test-pipeline`).
+  `@pytest.mark.parametrize` expansion makes the pytest *collected* count higher
+  than any `grep "def test_"` source count, so the two never agree — prefer the
+  command's own output.
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Default host is `127.0.0.1`; use `--host 0.0.0.0` to expose externally
 
