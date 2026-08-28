@@ -1,7 +1,7 @@
 # IMMI-Case Makefile — common development commands
 # Usage: make <target>
 
-.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-tenant-guards tokens-check tokens-fix hooks clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
+.PHONY: help dev build test test-py test-fe test-workers test-e2e test-e2e-production lint lint-py lint-fe typecheck coverage-fe audit-tenant-guards tokens-check tokens-fix hooks clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,8 @@ help:
 	@echo "  make test-workers Main Cloudflare Worker Vitest suite"
 	@echo "  make test-pipeline  austlii-scraper (pipeline Worker) Vitest suite"
 	@echo "  make test-preflight Deploy secret-preflight parser tests"
-	@echo "  make test-e2e     Python Playwright E2E (needs make install-e2e + a server)"
+	@echo "  make test-e2e     Local Playwright E2E (needs make install-e2e); never bills an LLM"
+	@echo "  make test-e2e-production  SPENDS MONEY against a live deploy; opt-in only"
 	@echo "  make tokens-check Verify frontend/src/tokens/ is in sync with tokens.json (read-only)"
 	@echo "  make tokens-fix   Regenerate frontend/src/tokens/ from tokens.json"
 	@echo "  make test-integration  Supabase-era checks, opt-in (needs env vars)"
@@ -255,7 +256,44 @@ test-e2e:
 	  echo "ERROR: pytest-playwright is installed but chromium will not launch."; \
 	  echo "Run '$(PYTHON) -m playwright install chromium' (or 'make install-e2e')."; \
 	  exit 1; }
-	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60
+	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60 --ignore=tests/e2e/playwright
+
+# COSTS REAL MONEY. Runs tests/e2e/playwright against a live deployment.
+#
+# test_council_thread_visual.py drives full LLM Council turns through the UI:
+# every _create_turn_1() is 3 expert model calls plus a moderator call billed to
+# the project's Cloudflare AI Gateway credit, and it writes session rows into the
+# production D1/R2 whose cleanup is best-effort (the teardown swallows its own
+# DELETE failures, so a crashed run leaves rows behind).
+#
+# Two independent things must be typed before it runs, and neither has a
+# default:
+#   E2E_ALLOW_PRODUCTION=i-understand-this-spends-money   names the consequence
+#   E2E_BASE_URL=https://...                              names the target
+#
+# E2E_BASE_URL is required here even though the test module has its own default
+# (tests/e2e/playwright/test_council_thread_visual.py:38 falls back to
+# https://immi.trackit.today). Depending on that default is exactly the failure
+# this target exists to prevent: choosing production must be an act, not an
+# omission.
+test-e2e-production:
+	@if [ "$(E2E_ALLOW_PRODUCTION)" != "i-understand-this-spends-money" ]; then \
+	  echo "REFUSING: this target makes real, billed LLM calls and writes rows to a live"; \
+	  echo "database. Re-run it as:"; \
+	  echo ""; \
+	  echo "  make test-e2e-production \\"; \
+	  echo "    E2E_ALLOW_PRODUCTION=i-understand-this-spends-money \\"; \
+	  echo "    E2E_BASE_URL=https://immi.trackit.today"; \
+	  echo ""; \
+	  echo "For the everyday local suite, run 'make test-e2e' instead."; \
+	  exit 1; \
+	fi
+	@if [ -z "$(E2E_BASE_URL)" ]; then \
+	  echo "REFUSING: E2E_BASE_URL is unset. State the deployment you mean explicitly —"; \
+	  echo "this target must never inherit the module-level production default."; \
+	  exit 1; \
+	fi
+	E2E_BASE_URL="$(E2E_BASE_URL)" "$(PYTHON)" -m pytest tests/e2e/playwright -v --timeout=300
 
 coverage:
 	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration --cov=immi_case_downloader --cov-report=html -q
