@@ -90,23 +90,29 @@ def atomic_write_rows(
 
 
 def load_project_env() -> None:
-    """Load the project ``.env`` from the repo root, wherever we are run from.
+    """Load *this checkout's* ``.env``, wherever the script is run from.
 
-    Walks up at most 8 directories from this file's own location (the repo
-    root when running from a checkout) *and* from the current working
-    directory, skipping any directory whose name starts with ``.auto-claude``,
-    and loads the first ``.env`` found.
+    Walks up at most 8 directories from this file's own location — the repo
+    root when running from a checkout — skipping any directory whose name
+    starts with ``.auto-claude``, and loads the first ``.env`` found.
+
+    Deliberately does not search the caller's working directory, and does not
+    override variables already exported. Running one checkout's script by
+    absolute path from inside another checkout used to load *that* directory's
+    ``.env`` and overwrite the credentials already in the environment — so the
+    job would silently bill a different API account, or point at a different
+    Cloudflare Gateway, than the operator's shell said it would. An explicitly
+    exported variable is an explicit instruction and outranks a file.
     """
     from dotenv import load_dotenv
 
-    for start in (Path.cwd(), Path(__file__).parent.parent.parent):
-        p = start
-        for _ in range(8):
-            if p.name.startswith(".auto-claude"):
-                p = p.parent
-                continue
-            candidate = p / ".env"
-            if candidate.exists():
-                load_dotenv(candidate, override=True)
-                return
+    p = Path(__file__).parent.parent.parent
+    for _ in range(8):
+        if p.name.startswith(".auto-claude"):
             p = p.parent
+            continue
+        candidate = p / ".env"
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+            return
+        p = p.parent

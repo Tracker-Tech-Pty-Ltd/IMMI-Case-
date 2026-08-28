@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import os
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -238,17 +239,45 @@ def test_both_entry_points_use_one_lock_file(tmp_path):
     assert os.path.exists(lock_path_for(csv_path))
 
 
-def test_load_project_env_discovers_env_from_cwd(tmp_path, monkeypatch):
-    env_file = tmp_path / ".env"
-    env_file.write_text("BATCH_RUNNER_TEST_VAR=from-cwd\n", encoding="utf-8")
+def test_load_project_env_ignores_the_callers_cwd(tmp_path, monkeypatch):
+    """A .env in the working directory must not be loaded.
+
+    This used to search Path.cwd() first, so running one checkout's script by
+    absolute path from inside another checkout loaded *that* directory's .env
+    — silently billing a different API account than the operator's shell said.
+    The .env that matters is this checkout's, found from the module path.
+    """
+    (tmp_path / ".env").write_text(
+        "BATCH_RUNNER_TEST_VAR=from-a-foreign-checkout\n", encoding="utf-8"
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("BATCH_RUNNER_TEST_VAR", raising=False)
 
     load_project_env()
 
-    import os
+    assert os.environ.get("BATCH_RUNNER_TEST_VAR") is None
 
-    assert os.environ.get("BATCH_RUNNER_TEST_VAR") == "from-cwd"
+
+def test_load_project_env_does_not_override_an_exported_variable(monkeypatch):
+    """An exported variable is an explicit instruction; a file is a default."""
+    repo_env = Path(__file__).resolve().parent.parent / ".env"
+    if not repo_env.exists():
+        pytest.skip("no repo .env to load")
+    key = next(
+        (
+            line.split("=", 1)[0].strip()
+            for line in repo_env.read_text(encoding="utf-8").splitlines()
+            if "=" in line and not line.strip().startswith("#")
+        ),
+        None,
+    )
+    if key is None:
+        pytest.skip("repo .env has no assignments")
+
+    monkeypatch.setenv(key, "set-by-the-operator")
+    load_project_env()
+
+    assert os.environ[key] == "set-by-the-operator"
 
 
 def test_load_project_env_skips_auto_claude_directories(tmp_path, monkeypatch):
@@ -261,7 +290,5 @@ def test_load_project_env_skips_auto_claude_directories(tmp_path, monkeypatch):
     monkeypatch.delenv("BATCH_RUNNER_TEST_VAR", raising=False)
 
     load_project_env()
-
-    import os
 
     assert os.environ.get("BATCH_RUNNER_TEST_VAR") is None
