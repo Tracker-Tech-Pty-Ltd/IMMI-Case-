@@ -48,6 +48,21 @@
   because 002 depends on it. **Run 002 first.**
 - **Category**: tests
 - **Planned at**: commit `42826a3`, 2026-08-27
+- **Executed**: 2026-08-28, branch `fix-frontend-test-harness-039`,
+  commits `9b76a9d`..`f219053` (Steps 1–8, all done criteria verified). Branched
+  from current `main` (`bc0af27`), 20+ commits past the plan's `42826a3` base;
+  plan 002 (and, transitively, 001) had already landed, so the declared
+  dependency was satisfied. Two pieces of the plan's evidence had drifted by
+  execution time and were adapted rather than followed literally — see the
+  executor's report for the diagnostic detail: (1) `use-theme-preset.ts`'s
+  shipped default preset changed from `"claude"` to `"parchment"` the same day,
+  and the `readStoredPreset()` migration branch the plan quoted was deleted, so
+  Step 5's two fallback assertions target `"parchment"`; (2) Step 7's
+  boundary-precision timer test flaked under the plan's one authorized
+  adjustment (`shouldAdvanceTime: true`) — confirmed via instrumentation to be
+  real-time drift leaking into the fake clock, not an AuthContext.tsx defect —
+  so `waitFor` was replaced with a deterministic microtask-flush helper
+  instead, verified drift-free across 12+ repeated runs.
 
 Why the 002 dependency is hard, not advisory: plan 002 Step 1 widens the Vitest
 `include` glob in `frontend/vitest.config.ts` so that

@@ -1,7 +1,18 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-describe('i18n hardcoded string checks', () => {
+/**
+ * i18n contract checks.
+ *
+ * These are deliberately SOURCE-LEVEL assertions, not behavioural coverage:
+ * two greps that a component routes a label through i18n rather than
+ * hardcoding English, plus two real data assertions over the locale JSON.
+ * Do not add `useCallback` dependency-array string matches here — those pin
+ * exact formatting, go red on a Prettier line-wrap, and stay green when the
+ * dependency is present but unused. `react-hooks/exhaustive-deps` in
+ * frontend/eslint.config.js is the right gate for that.
+ */
+describe('i18n source-level contract checks', () => {
   it('TimelineChart should not have hardcoded <span>Total</span>', () => {
     const content = readFileSync(
       join(__dirname, '../src/components/lineage/TimelineChart.tsx'),
@@ -17,33 +28,6 @@ describe('i18n hardcoded string checks', () => {
       'utf8'
     );
     expect(content).toContain('analytics.total');
-  });
-
-  it('CasesPage handleBatch should include t in useCallback deps', () => {
-    const content = readFileSync(
-      join(__dirname, '../src/pages/CasesPage.tsx'),
-      'utf8'
-    );
-    // Direct string match for the exact deps array
-    expect(content).toContain('[selected, batchMutation, t]');
-  });
-
-  it('CasesPage exportCsv should include t in useCallback deps', () => {
-    const content = readFileSync(
-      join(__dirname, '../src/pages/CasesPage.tsx'),
-      'utf8'
-    );
-    // Direct string match for the exact deps array
-    expect(content).toContain('[data, t]');
-  });
-
-  it('CasesPage handleExecuteSavedSearch should include t in useCallback deps', () => {
-    const content = readFileSync(
-      join(__dirname, '../src/pages/CasesPage.tsx'),
-      'utf8'
-    );
-    // Direct string match for the exact deps array
-    expect(content).toContain('[setSearchParams, t]');
   });
 
   it('analytics.total key should exist in en.json', () => {
