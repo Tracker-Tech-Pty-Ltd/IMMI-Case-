@@ -490,6 +490,11 @@ class SupabaseRepository:
             col = sort_by if sort_by in ALLOWED_SORT_COLUMNS else "year"
         desc = sort_dir == "desc"
         query = query.order(col, desc=desc)
+        if col != "case_id":
+            # Unique tiebreaker: without it Postgres may order tied rows
+            # differently between LIMIT/OFFSET statements, duplicating some
+            # cases across pages and hiding others.
+            query = query.order("case_id", desc=desc)
 
         # Paginate
         offset = (max(1, page) - 1) * page_size
@@ -546,6 +551,11 @@ class SupabaseRepository:
             col = sort_by if sort_by in ALLOWED_SORT_COLUMNS else "year"
         desc = sort_dir == "desc"
         query = query.order(col, desc=desc)
+        if col != "case_id":
+            # Unique tiebreaker: without it Postgres may order tied rows
+            # differently between LIMIT/OFFSET statements, duplicating some
+            # cases across pages and hiding others.
+            query = query.order("case_id", desc=desc)
 
         offset = (max(1, page) - 1) * page_size
         query = query.range(offset, offset + page_size - 1)

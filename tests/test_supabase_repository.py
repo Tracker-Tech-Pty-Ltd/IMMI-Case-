@@ -374,7 +374,10 @@ class TestFilterCases:
         table.execute.return_value = _mock_response(data=[], count=0)
 
         repo.filter_cases(sort_by="DROP TABLE", sort_dir="asc")
-        table.order.assert_called_with("year", desc=False)
+        table.order.assert_has_calls([
+            call("year", desc=False),
+            call("case_id", desc=False),
+        ])
 
     def test_pagination_offset(self, repo, mock_client):
         table = MagicMock()
@@ -396,7 +399,10 @@ class TestFilterCases:
         table.execute.return_value = _mock_response(data=[], count=0)
 
         repo.filter_cases(sort_by="date", sort_dir="desc")
-        table.order.assert_called_with("year", desc=True)
+        table.order.assert_has_calls([
+            call("year", desc=True),
+            call("case_id", desc=True),
+        ])
 
     def test_list_cases_fast_skips_count_header(self, repo, mock_client):
         table = MagicMock()
