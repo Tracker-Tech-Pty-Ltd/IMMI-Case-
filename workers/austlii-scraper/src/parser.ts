@@ -242,7 +242,12 @@ function stripHtmlTags(html: string): string {
 
 /**
  * Extract metadata from the full page text using regex patterns.
- * Ported from austlii.py:_extract_metadata()
+ *
+ * This is a port of the Python `MetadataExtractor` in
+ * immi_case_downloader/sources/metadata_extractor.py, and must produce
+ * identical output for identical input. The shared golden corpus in
+ * tests/fixtures/extractor_parity/ pins both implementations; see
+ * ./__tests__/extractor-parity.test.ts and tests/test_extractor_parity.py.
  */
 export function extractMetadata(text: string): Omit<ParsedCase, "full_text"> {
   const result = {
@@ -257,7 +262,12 @@ export function extractMetadata(text: string): Omit<ParsedCase, "full_text"> {
 
   // --- Judges/Members ---
   const judgePatterns = [
-    /(?:JUDGE|MEMBER|JUSTICE|TRIBUNAL MEMBER)[:\s]+([^\n]+)/i,
+    // Mirrors metadata_extractor.py `_JUDGE_PATTERNS`: anchored to a line
+    // start (Python re.MULTILINE), includes BEFORE, and deliberately has no
+    // bare MEMBER alternative — an unanchored /MEMBER/ matched prose such as
+    // "The presiding MEMBER: Jane Doe made the decision." and an unanchored
+    // /JUSTICE/ turned "BEFORE: Justice A Nguyen" into "A Nguyen".
+    /^(?:BEFORE|JUDGE|JUSTICE|TRIBUNAL MEMBER)[:\s]+([^\n]+)/im,
     /(?:Before|Coram)[:\s]+([^\n]+)/i,
   ];
   for (const pattern of judgePatterns) {

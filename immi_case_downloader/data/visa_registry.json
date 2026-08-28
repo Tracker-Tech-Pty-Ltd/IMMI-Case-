@@ -1,0 +1,416 @@
+{
+  "_provenance": "subclass 408 family = Visitor, per https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/temporary-activity-408 (retrieved 2026-08-28): official meta description \"This visa allows you to come to Australia to do specific types of work on a short-term, temporary basis\"; the page body contains no mention of employer sponsorship, points testing, or a skilled occupation list (the hallmarks of this registry's Skilled family), and the visa's official name, \"Temporary Activity\", textually matches the Visitor family description \"Tourist, visitor, and temporary activity visas\".",
+  "families": {
+    "Protection": "Refugee and humanitarian protection visas",
+    "Skilled": "Skilled migration and employer-sponsored visas",
+    "Student": "Student and education visas",
+    "Partner": "Partner, spouse, and de facto visas",
+    "Parent": "Parent and family reunion visas",
+    "Visitor": "Tourist, visitor, and temporary activity visas",
+    "Business": "Business innovation and investment visas",
+    "Bridging": "Bridging visas (temporary stay while substantive visa processed)",
+    "Other": "Other visa categories"
+  },
+  "entries": [
+    {
+      "subclass": "010",
+      "name": "Bridging A",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "020",
+      "name": "Bridging B",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "030",
+      "name": "Bridging C",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "040",
+      "name": "Bridging D",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "050",
+      "name": "Bridging (General)",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "051",
+      "name": "Bridging (Protection Visa Applicant)",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "060",
+      "name": "Bridging E",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "070",
+      "name": "Bridging (Removal Pending)",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "080",
+      "name": "Bridging (Crew)",
+      "family": "Bridging"
+    },
+    {
+      "subclass": "100",
+      "name": "Partner (Migrant)",
+      "family": "Partner"
+    },
+    {
+      "subclass": "101",
+      "name": "Child",
+      "family": "Other"
+    },
+    {
+      "subclass": "102",
+      "name": "Adoption",
+      "family": "Other"
+    },
+    {
+      "subclass": "103",
+      "name": "Parent",
+      "family": "Parent"
+    },
+    {
+      "subclass": "114",
+      "name": "Aged Dependent Relative",
+      "family": "Other"
+    },
+    {
+      "subclass": "115",
+      "name": "Remaining Relative",
+      "family": "Other"
+    },
+    {
+      "subclass": "116",
+      "name": "Carer",
+      "family": "Other"
+    },
+    {
+      "subclass": "117",
+      "name": "Orphan Relative",
+      "family": "Other"
+    },
+    {
+      "subclass": "132",
+      "name": "Business Talent (Permanent)",
+      "family": "Business"
+    },
+    {
+      "subclass": "143",
+      "name": "Contributory Parent",
+      "family": "Parent"
+    },
+    {
+      "subclass": "155",
+      "name": "Resident Return",
+      "family": "Other"
+    },
+    {
+      "subclass": "157",
+      "name": "Resident Return (5 years)",
+      "family": "Other"
+    },
+    {
+      "subclass": "173",
+      "name": "Contributory Parent (Temporary)",
+      "family": "Parent"
+    },
+    {
+      "subclass": "186",
+      "name": "Employer Nomination Scheme",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "187",
+      "name": "Regional Sponsored Migration Scheme",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "188",
+      "name": "Business Innovation and Investment (Provisional)",
+      "family": "Business"
+    },
+    {
+      "subclass": "189",
+      "name": "Skilled Independent",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "190",
+      "name": "Skilled Nominated",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "191",
+      "name": "Permanent Residence (Skilled Regional)",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "200",
+      "name": "Refugee (Permanent)",
+      "family": "Protection"
+    },
+    {
+      "subclass": "201",
+      "name": "In-Country Special Humanitarian (Permanent)",
+      "family": "Protection"
+    },
+    {
+      "subclass": "202",
+      "name": "Global Special Humanitarian (Permanent)",
+      "family": "Protection"
+    },
+    {
+      "subclass": "203",
+      "name": "Emergency Rescue",
+      "family": "Protection"
+    },
+    {
+      "subclass": "204",
+      "name": "Woman at Risk",
+      "family": "Protection"
+    },
+    {
+      "subclass": "300",
+      "name": "Prospective Marriage",
+      "family": "Partner"
+    },
+    {
+      "subclass": "309",
+      "name": "Partner (Provisional)",
+      "family": "Partner"
+    },
+    {
+      "subclass": "400",
+      "name": "Temporary Work (Short Stay Activity)",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "407",
+      "name": "Training",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "408",
+      "name": "Temporary Activity",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "417",
+      "name": "Working Holiday",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "444",
+      "name": "Special Category (New Zealand citizen)",
+      "family": "Other"
+    },
+    {
+      "subclass": "445",
+      "name": "Dependent Child",
+      "family": "Other"
+    },
+    {
+      "subclass": "449",
+      "name": "Humanitarian Stay (Temporary)",
+      "family": "Protection"
+    },
+    {
+      "subclass": "457",
+      "name": "Temporary Work (Skilled)",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "461",
+      "name": "New Zealand Citizen Family Relationship (Temporary)",
+      "family": "Partner"
+    },
+    {
+      "subclass": "462",
+      "name": "Work and Holiday",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "476",
+      "name": "Skilled - Recognised Graduate",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "482",
+      "name": "Temporary Skill Shortage",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "485",
+      "name": "Temporary Graduate",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "489",
+      "name": "Skilled Regional (Provisional)",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "491",
+      "name": "Skilled Work Regional (Provisional)",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "494",
+      "name": "Skilled Employer Sponsored Regional (Provisional)",
+      "family": "Skilled"
+    },
+    {
+      "subclass": "500",
+      "name": "Student",
+      "family": "Student"
+    },
+    {
+      "subclass": "570",
+      "name": "Independent ELICOS Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "571",
+      "name": "Schools Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "572",
+      "name": "Vocational Education and Training Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "573",
+      "name": "Higher Education Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "574",
+      "name": "Postgraduate Research Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "575",
+      "name": "Non-award Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "576",
+      "name": "AusAID or Defence Sector",
+      "family": "Student"
+    },
+    {
+      "subclass": "590",
+      "name": "Student Guardian",
+      "family": "Student"
+    },
+    {
+      "subclass": "600",
+      "name": "Visitor",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "601",
+      "name": "Electronic Travel Authority",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "651",
+      "name": "eVisitor",
+      "family": "Visitor"
+    },
+    {
+      "subclass": "785",
+      "name": "Temporary Protection",
+      "family": "Protection"
+    },
+    {
+      "subclass": "786",
+      "name": "Temporary (Humanitarian Concern)",
+      "family": "Protection"
+    },
+    {
+      "subclass": "790",
+      "name": "Safe Haven Enterprise",
+      "family": "Protection"
+    },
+    {
+      "subclass": "801",
+      "name": "Partner (Permanent)",
+      "family": "Partner"
+    },
+    {
+      "subclass": "802",
+      "name": "Child",
+      "family": "Other"
+    },
+    {
+      "subclass": "804",
+      "name": "Aged Parent",
+      "family": "Parent"
+    },
+    {
+      "subclass": "820",
+      "name": "Partner (Temporary)",
+      "family": "Partner"
+    },
+    {
+      "subclass": "836",
+      "name": "Carer",
+      "family": "Other"
+    },
+    {
+      "subclass": "856",
+      "name": "Employer Nomination Scheme (ENS)",
+      "family": "Other"
+    },
+    {
+      "subclass": "858",
+      "name": "Distinguished Talent",
+      "family": "Other"
+    },
+    {
+      "subclass": "864",
+      "name": "Contributory Aged Parent",
+      "family": "Parent"
+    },
+    {
+      "subclass": "866",
+      "name": "Protection",
+      "family": "Protection"
+    },
+    {
+      "subclass": "884",
+      "name": "Contributory Aged Parent (Temporary)",
+      "family": "Parent"
+    },
+    {
+      "subclass": "888",
+      "name": "Business Innovation and Investment (Permanent)",
+      "family": "Business"
+    },
+    {
+      "subclass": "891",
+      "name": "Investor",
+      "family": "Business"
+    },
+    {
+      "subclass": "892",
+      "name": "State/Territory Sponsored Business Owner",
+      "family": "Business"
+    },
+    {
+      "subclass": "893",
+      "name": "State/Territory Sponsored Senior Executive",
+      "family": "Business"
+    }
+  ]
+}

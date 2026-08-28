@@ -88,8 +88,13 @@ immi_case_downloader/
   pipeline.py         → SmartPipeline: 3-phase auto-fallback (crawl → clean → download)
   cases_pagination.py → Seek pagination planner for /api/v1/cases (date/year sorts);
                         maintains an in-memory anchor cache (TTL 300s, max 128 entries)
-  visa_registry.py    → VISA_REGISTRY: canonical subclass→name→family lookup; used by
-                        Worker proxy and Flask analytics for visa family grouping
+  visa_registry.py    → VISA_REGISTRY: subclass→name→family lookup for the Flask
+                        analytics. The data lives in data/visa_registry.json — the
+                        single source of truth; the Worker's copy at
+                        workers/case-api/visa_registry.generated.js is generated
+                        from it by scripts/generate_visa_registry.py. Edit the JSON,
+                        then regenerate; tests/test_visa_registry_parity.py fails if
+                        the generated file goes stale.
   cli.py              → argparse CLI with search/download/list-databases subcommands
   web/
     __init__.py       → Flask factory with API blueprint + SPA catch-all at /app/

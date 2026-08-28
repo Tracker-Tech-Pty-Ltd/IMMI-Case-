@@ -2,6 +2,10 @@
 
 Consolidates the shared regex patterns that were previously duplicated across
 AustLIIScraper._extract_metadata and FederalCourtScraper._extract_metadata.
+
+The Cloudflare scraper Worker re-implements these patterns in
+workers/austlii-scraper/src/parser.ts. The two must agree; the shared golden
+corpus in tests/fixtures/extractor_parity/ is what keeps them honest.
 """
 
 import re
