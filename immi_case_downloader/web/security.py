@@ -149,19 +149,53 @@ def rate_limit(
     return decorator
 
 
+# The single canonical browser policy for the IMMI SPA. The production
+# Cloudflare Worker applies the byte-identical directive list from
+# `SPA_SECURITY_HEADERS` in `workers/cloudflare-native.js`; Flask is local-dev
+# only, and it mirrors the policy so a developer verifying headers locally sees
+# what production actually sends. `tests/test_security_headers_parity.py` fails
+# if the two drift apart.
+SPA_CSP_DIRECTIVES = (
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+    # Inline script execution is deliberately not permitted: the Vite build emits
+    # one external module script and no inline <script>. Inline *styles* are the
+    # one exception, because React and Recharts set style attributes throughout.
+    "script-src 'self' https://static.cloudflareinsights.com https://telegram.org",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https://telegram.org https://t.me",
+    "connect-src 'self' https://cloudflareinsights.com",
+    "frame-src 'self' https://oauth.telegram.org https://telegram.org",
+    "worker-src 'self' blob:",
+)
+
+SPA_CONTENT_SECURITY_POLICY = "; ".join(SPA_CSP_DIRECTIVES)
+
+PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=()"
+
+# Staged rollout — must stay byte-identical to STRICT_TRANSPORT_SECURITY in
+# workers/cloudflare-native.js, and must be raised in the same commit on both
+# sides. Stage 1 is deliberately 5 minutes: a cached HSTS entry cannot be
+# recalled, so a mistake at this TTL costs 5 minutes rather than a year.
+# See Step 5 for the ramp and for why `includeSubDomains` needs operator
+# sign-off before it is added.
+STRICT_TRANSPORT_SECURITY = "max-age=300"
+
+
 def add_security_headers(response):
     """Add security headers to every response."""
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://static.cloudflareinsights.com https://telegram.org; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
-        "img-src 'self' data: https://telegram.org https://t.me; "
-        "connect-src 'self' https://cloudflareinsights.com; "
-        "frame-src 'self' https://oauth.telegram.org https://telegram.org; "
-        "worker-src 'self' blob:"
-    )
+    response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+    response.headers["Content-Security-Policy"] = SPA_CONTENT_SECURITY_POLICY
+    # HSTS is meaningless — and actively harmful — on a plain-HTTP localhost dev
+    # server: it would pin the browser's `localhost` entry to HTTPS. Only emit it
+    # where the runtime is TLS-terminated, reusing the existing predicate.
+    if secure_cookie_required():
+        response.headers["Strict-Transport-Security"] = STRICT_TRANSPORT_SECURITY
     return response
