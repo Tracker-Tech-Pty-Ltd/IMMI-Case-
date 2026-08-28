@@ -13,12 +13,50 @@ export type PresetName =
   | "terracotta"
   | "lavender";
 
+/**
+ * Every CSS custom property a theme preset is responsible for.
+ *
+ * A preset that omits one does not fall back to something neutral — it inherits
+ * the Legal Codex value from the generated src/tokens/tokens.css, because
+ * applyTheme() writes back only the keys the preset declares. That is why this
+ * list is a compile-time contract rather than a comment.
+ */
+export const THEME_VAR_NAMES = [
+  "--color-primary",
+  "--color-primary-light",
+  "--color-primary-lighter",
+  "--color-accent",
+  "--color-accent-light",
+  "--color-accent-muted",
+  "--color-background",
+  "--color-background-card",
+  "--color-background-sidebar",
+  "--color-background-surface",
+  "--color-background-surface-hover",
+  "--color-border",
+  "--color-border-light",
+  "--color-text",
+  "--color-text-secondary",
+  "--color-text-muted",
+  "--color-overlay",
+] as const;
+
+export type ThemeVarName = (typeof THEME_VAR_NAMES)[number];
+
+/**
+ * The Record<ThemeVarName, string> half makes an omitted token a type error.
+ * The Record<string, string> half keeps arbitrary-string indexing legal for
+ * consumers such as getBaseColor() in src/pages/DesignTokensPage.tsx.
+ */
+type ThemePresetVars = Readonly<Record<ThemeVarName, string>> &
+  Readonly<Record<string, string>>;
+
 interface ThemePreset {
   readonly label: string;
   readonly colors: readonly [string, string, string, string];
   readonly darkColors: readonly [string, string, string, string];
-  readonly vars: Readonly<Record<string, string>>;
-  readonly darkVars: Readonly<Record<string, string>>;
+  readonly vars: ThemePresetVars;
+  readonly darkVars: ThemePresetVars;
 }
 
 export const PRESETS: Record<PresetName, ThemePreset> = {
