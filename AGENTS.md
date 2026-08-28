@@ -118,7 +118,7 @@ immi_case_downloader/
 
 frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v4)
   src/
-    pages/            → 27 pages including:
+    pages/            → 26 pages including:
                         DashboardPage, CasesPage, CaseDetailPage, CaseEditPage,
                         CaseAddPage, CaseComparePage, AnalyticsPage,
                         JudgeProfilesPage, JudgeDetailPage, JudgeComparePage,
@@ -127,7 +127,7 @@ frontend/             → React SPA (Vite 6 + React 18 + TypeScript + Tailwind v
                         CollectionsPage, CollectionDetailPage,
                         GuidedSearchPage, SemanticSearchPage, SavedSearchesPage,
                         LlmCouncilPage, LlmCouncilSessionsPage, DataDictionaryPage,
-                        TaxonomyPage, SearchTaxonomyPage,
+                        SearchTaxonomyPage,
                         DesignTokensPage, JobStatusPage
     components/       → Shared (Breadcrumb, CourtBadge, ConfirmModal, etc.) + layout
     hooks/            → TanStack Query hooks (use-cases, use-stats, use-theme,
