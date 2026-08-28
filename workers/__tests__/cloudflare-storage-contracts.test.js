@@ -124,6 +124,14 @@ describe("Cloudflare store factory", () => {
     expect(metadataStatement.params).toContain(2025);
   });
 
+  it("clamps a bulk export to the 5 000-row server cap", async () => {
+    const value = env();
+    const stores = createCloudflareStores(value);
+    await stores.caseStore.exportCases({ filters: {}, limit: 50000 });
+    const statement = value.IMMI_CATALOG_DB.calls.find((item) => item.sql.includes("ORDER BY c.year DESC"));
+    expect(statement.params.at(-1)).toBe(5000);
+  });
+
   it("requires live tenant membership before a Council list", async () => {
     const value = env();
     const stores = createCloudflareStores(value);
