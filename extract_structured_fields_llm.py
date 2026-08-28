@@ -22,7 +22,6 @@ import csv
 import json
 import os
 import re
-import shutil
 import sys
 import time
 import threading
@@ -31,24 +30,14 @@ from datetime import datetime
 from pathlib import Path
 
 import anthropic
-from dotenv import load_dotenv
 
-# Load .env — search from script dir upward for the project .env
-def _find_and_load_env():
-    p = Path(__file__).parent
-    for _ in range(8):  # search up to 8 levels up
-        # Skip .auto-claude dirs (Claude Code infrastructure, not project)
-        if p.name == ".auto-claude" or p.name.startswith(".auto-claude"):
-            p = p.parent
-            continue
-        candidate = p / ".env"
-        if candidate.exists():
-            # override=True so .env key takes precedence over env
-            load_dotenv(candidate, override=True)
-            return
-        p = p.parent
+from immi_case_downloader.extraction.batch_runner import (
+    atomic_write_rows,
+    catalog_lock,
+    load_project_env,
+)
 
-_find_and_load_env()
+load_project_env()
 
 # ── Config ───────────────────────────────────────────────────────────────
 
@@ -120,18 +109,13 @@ def load_csv() -> list[dict]:
 
 
 def save_csv(rows: list[dict]):
-    if not rows:
-        return
-    fieldnames = list(rows[0].keys())
-    backup_path = CSV_PATH.with_suffix(".csv.bak_llm_structured")
-    if not backup_path.exists():
-        shutil.copy2(CSV_PATH, backup_path)
-    tmp_path = CSV_PATH.with_suffix(".csv.tmp")
-    with open(tmp_path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    os.replace(str(tmp_path), str(CSV_PATH))
+    atomic_write_rows(
+        CSV_PATH,
+        rows,
+        job_name="structured_fields_llm",
+        backup_suffix=".csv.bak_llm_structured",
+        backup_once=True,
+    )
 
 
 def read_case_text(full_text_path: str) -> str:
@@ -320,130 +304,131 @@ def process_batch(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="LLM extraction of structured fields")
-    parser.add_argument("--dry-run", action="store_true", help="Preview without saving")
-    parser.add_argument("--sample", type=int, default=0, help="Process N random cases")
-    parser.add_argument("--court", type=str, default="", help="Filter by court code")
-    parser.add_argument("--workers", type=int, default=MAX_WORKERS, help="Parallel API workers")
-    parser.add_argument(
-        "--fields",
-        nargs="+",
-        default=["country_of_origin", "is_represented", "representative",
-                 "visa_outcome_reason", "legal_test_applied"],
-        help="Which fields to extract",
-    )
-    args = parser.parse_args()
+    with catalog_lock(Path(CSV_PATH), "structured_fields_llm"):
+        parser = argparse.ArgumentParser(description="LLM extraction of structured fields")
+        parser.add_argument("--dry-run", action="store_true", help="Preview without saving")
+        parser.add_argument("--sample", type=int, default=0, help="Process N random cases")
+        parser.add_argument("--court", type=str, default="", help="Filter by court code")
+        parser.add_argument("--workers", type=int, default=MAX_WORKERS, help="Parallel API workers")
+        parser.add_argument(
+            "--fields",
+            nargs="+",
+            default=["country_of_origin", "is_represented", "representative",
+                     "visa_outcome_reason", "legal_test_applied"],
+            help="Which fields to extract",
+        )
+        args = parser.parse_args()
 
-    # Validate fields
-    valid_fields = {"country_of_origin", "is_represented", "representative",
-                    "visa_outcome_reason", "legal_test_applied"}
-    target_fields = [f for f in args.fields if f in valid_fields]
-    if not target_fields:
-        print(f"No valid fields specified. Valid options: {sorted(valid_fields)}")
-        sys.exit(1)
+        # Validate fields
+        valid_fields = {"country_of_origin", "is_represented", "representative",
+                        "visa_outcome_reason", "legal_test_applied"}
+        target_fields = [f for f in args.fields if f in valid_fields]
+        if not target_fields:
+            print(f"No valid fields specified. Valid options: {sorted(valid_fields)}")
+            sys.exit(1)
 
-    log(f"Starting LLM extraction for fields: {target_fields}")
-    log(f"Model: {MODEL}, batch_size={BATCH_SIZE}, workers={args.workers}")
+        log(f"Starting LLM extraction for fields: {target_fields}")
+        log(f"Model: {MODEL}, batch_size={BATCH_SIZE}, workers={args.workers}")
 
-    # Load CSV
-    rows = load_csv()
-    log(f"Loaded {len(rows)} cases")
+        # Load CSV
+        rows = load_csv()
+        log(f"Loaded {len(rows)} cases")
 
-    # Ensure new columns exist
-    for row in rows:
+        # Ensure new columns exist
+        for row in rows:
+            for f in target_fields:
+                if f not in row:
+                    row[f] = ""
+
+        # Find pending cases
+        pending = get_pending_cases(rows, target_fields, args.court)
+        log(f"Found {len(pending)} cases needing LLM extraction")
+
+        if args.sample > 0:
+            import random
+            random.seed(42)
+            pending = random.sample(pending, min(args.sample, len(pending)))
+            log(f"Sampled {len(pending)} cases")
+
+        if not pending:
+            log("No cases to process. Done!")
+            return
+
+        # Create results dir
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Initialize Anthropic client
+        client = anthropic.Anthropic()
+
+        # Split into batches
+        batches = [pending[i:i + BATCH_SIZE] for i in range(0, len(pending), BATCH_SIZE)]
+        log(f"Created {len(batches)} batches of up to {BATCH_SIZE} cases each")
+
+        # Processing state
+        processed_count = 0
+        extraction_counts = {f: 0 for f in target_fields}
+        lock = threading.Lock()
+
+        def worker_task(batch_idx: int, batch: list[int]) -> list[dict]:
+            time.sleep(API_RATE_DELAY * (batch_idx % args.workers))
+            return process_batch(client, rows, batch, target_fields)
+
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(worker_task, i, batch): (i, batch)
+                for i, batch in enumerate(batches)
+            }
+
+            for future in as_completed(futures):
+                batch_num, batch = futures[future]
+                try:
+                    results = future.result()
+                except Exception as e:
+                    log(f"Batch {batch_num} error: {e}")
+                    results = []
+
+                with lock:
+                    for item in results:
+                        row_idx = item["row_idx"]
+                        for field, value in item["fields"].items():
+                            if value and not rows[row_idx].get(field):
+                                rows[row_idx][field] = value
+                                extraction_counts[field] += 1
+
+                    processed_count += len(batch)
+
+                    # Checkpoint save
+                    if not args.dry_run and processed_count % CHECKPOINT_EVERY < BATCH_SIZE:
+                        log(f"Checkpoint: {processed_count}/{len(pending)} cases processed")
+                        save_csv(rows)
+
+                    if processed_count % 100 == 0 or processed_count == len(pending):
+                        log(f"Progress: {processed_count}/{len(pending)} cases")
+                        for f, cnt in extraction_counts.items():
+                            print(f"  {f}: +{cnt} new values")
+
+        # Final summary
+        print(f"\n{'='*60}")
+        print("LLM Extraction Complete")
+        print(f"{'='*60}")
+        print(f"Cases processed: {len(pending)}")
+        for f, cnt in extraction_counts.items():
+            pct = cnt / max(len(pending), 1) * 100
+            print(f"  {f}: +{cnt} new values ({pct:.1f}%)")
+
+        # Fill rate after
+        print(f"\nFill rates (all {len(rows)} cases):")
         for f in target_fields:
-            if f not in row:
-                row[f] = ""
+            filled = sum(1 for r in rows if r.get(f, "").strip())
+            pct = filled / len(rows) * 100
+            print(f"  {f:30s}: {filled:>7,} / {len(rows):,} = {pct:5.1f}%")
 
-    # Find pending cases
-    pending = get_pending_cases(rows, target_fields, args.court)
-    log(f"Found {len(pending)} cases needing LLM extraction")
-
-    if args.sample > 0:
-        import random
-        random.seed(42)
-        pending = random.sample(pending, min(args.sample, len(pending)))
-        log(f"Sampled {len(pending)} cases")
-
-    if not pending:
-        log("No cases to process. Done!")
-        return
-
-    # Create results dir
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Initialize Anthropic client
-    client = anthropic.Anthropic()
-
-    # Split into batches
-    batches = [pending[i:i + BATCH_SIZE] for i in range(0, len(pending), BATCH_SIZE)]
-    log(f"Created {len(batches)} batches of up to {BATCH_SIZE} cases each")
-
-    # Processing state
-    processed_count = 0
-    extraction_counts = {f: 0 for f in target_fields}
-    lock = threading.Lock()
-
-    def worker_task(batch_idx: int, batch: list[int]) -> list[dict]:
-        time.sleep(API_RATE_DELAY * (batch_idx % args.workers))
-        return process_batch(client, rows, batch, target_fields)
-
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {
-            executor.submit(worker_task, i, batch): (i, batch)
-            for i, batch in enumerate(batches)
-        }
-
-        for future in as_completed(futures):
-            batch_num, batch = futures[future]
-            try:
-                results = future.result()
-            except Exception as e:
-                log(f"Batch {batch_num} error: {e}")
-                results = []
-
-            with lock:
-                for item in results:
-                    row_idx = item["row_idx"]
-                    for field, value in item["fields"].items():
-                        if value and not rows[row_idx].get(field):
-                            rows[row_idx][field] = value
-                            extraction_counts[field] += 1
-
-                processed_count += len(batch)
-
-                # Checkpoint save
-                if not args.dry_run and processed_count % CHECKPOINT_EVERY < BATCH_SIZE:
-                    log(f"Checkpoint: {processed_count}/{len(pending)} cases processed")
-                    save_csv(rows)
-
-                if processed_count % 100 == 0 or processed_count == len(pending):
-                    log(f"Progress: {processed_count}/{len(pending)} cases")
-                    for f, cnt in extraction_counts.items():
-                        print(f"  {f}: +{cnt} new values")
-
-    # Final summary
-    print(f"\n{'='*60}")
-    print("LLM Extraction Complete")
-    print(f"{'='*60}")
-    print(f"Cases processed: {len(pending)}")
-    for f, cnt in extraction_counts.items():
-        pct = cnt / max(len(pending), 1) * 100
-        print(f"  {f}: +{cnt} new values ({pct:.1f}%)")
-
-    # Fill rate after
-    print(f"\nFill rates (all {len(rows)} cases):")
-    for f in target_fields:
-        filled = sum(1 for r in rows if r.get(f, "").strip())
-        pct = filled / len(rows) * 100
-        print(f"  {f:30s}: {filled:>7,} / {len(rows):,} = {pct:5.1f}%")
-
-    if args.dry_run:
-        log("Dry run — no changes saved.")
-    else:
-        log("Saving final CSV...")
-        save_csv(rows)
-        log("Done!")
+        if args.dry_run:
+            log("Dry run — no changes saved.")
+        else:
+            log("Saving final CSV...")
+            save_csv(rows)
+            log("Done!")
 
 
 if __name__ == "__main__":

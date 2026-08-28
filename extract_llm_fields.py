@@ -7,13 +7,18 @@ Checkpoints every 500 cases to prevent data loss.
 
 import csv
 import json
-import os
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
 
 import anthropic
+
+from immi_case_downloader.extraction.batch_runner import (
+    atomic_write_rows,
+    catalog_lock,
+)
 
 # ── Config ──────────────────────────────────────────────────────────────
 CSV_PATH = "downloaded_cases/immigration_cases.csv"
@@ -47,16 +52,7 @@ def load_csv():
 
 
 def save_csv(rows):
-    if not rows:
-        return
-    fieldnames = list(rows[0].keys())
-    # Write to temp file first, then rename (atomic save)
-    tmp_path = CSV_PATH + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    os.replace(tmp_path, CSV_PATH)
+    atomic_write_rows(Path(CSV_PATH), rows, job_name="llm_fields")
 
 
 def get_pending_cases(rows):
@@ -150,125 +146,126 @@ def process_batch(client, rows, indices):
 # ── Main ────────────────────────────────────────────────────────────────
 
 def main():
-    start_time = time.time()
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Loading CSV...")
-    rows = load_csv()
-    print(f"  Loaded {len(rows)} records")
+    with catalog_lock(Path(CSV_PATH), "llm_fields"):
+        start_time = time.time()
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Loading CSV...")
+        rows = load_csv()
+        print(f"  Loaded {len(rows)} records")
 
-    # Ensure columns exist
-    for row in rows:
-        row.setdefault("case_nature", "")
-        row.setdefault("legal_concepts", "")
+        # Ensure columns exist
+        for row in rows:
+            row.setdefault("case_nature", "")
+            row.setdefault("legal_concepts", "")
 
-    pending = get_pending_cases(rows)
-    print(f"  Pending extraction: {len(pending)} cases")
+        pending = get_pending_cases(rows)
+        print(f"  Pending extraction: {len(pending)} cases")
 
-    if not pending:
-        print("Nothing to process!")
-        return
+        if not pending:
+            print("Nothing to process!")
+            return
 
-    # Split into batches
-    batches = [pending[i:i + BATCH_SIZE] for i in range(0, len(pending), BATCH_SIZE)]
-    total_batches = len(batches)
-    print(f"  Batches: {total_batches} (batch size={BATCH_SIZE}, workers={MAX_WORKERS})")
+        # Split into batches
+        batches = [pending[i:i + BATCH_SIZE] for i in range(0, len(pending), BATCH_SIZE)]
+        total_batches = len(batches)
+        print(f"  Batches: {total_batches} (batch size={BATCH_SIZE}, workers={MAX_WORKERS})")
 
-    # Estimate cost
-    est_input = total_batches * 4000 / 1_000_000
-    est_output = total_batches * 800 / 1_000_000
-    est_cost = est_input * 3 + est_output * 15
-    print(f"  Estimated cost: ~${est_cost:.1f} (Sonnet 4.5)")
-    print()
+        # Estimate cost
+        est_input = total_batches * 4000 / 1_000_000
+        est_output = total_batches * 800 / 1_000_000
+        est_cost = est_input * 3 + est_output * 15
+        print(f"  Estimated cost: ~${est_cost:.1f} (Sonnet 4.5)")
+        print()
 
-    client = anthropic.Anthropic()
+        client = anthropic.Anthropic()
 
-    processed = 0
-    extracted = 0
-    errors = 0
-    lock = threading.Lock()
-    last_checkpoint = 0
+        processed = 0
+        extracted = 0
+        errors = 0
+        lock = threading.Lock()
+        last_checkpoint = 0
 
-    def handle_batch(batch_idx, indices):
-        nonlocal processed, extracted, errors, last_checkpoint
-        results = process_batch(client, rows, indices)
+        def handle_batch(batch_idx, indices):
+            nonlocal processed, extracted, errors, last_checkpoint
+            results = process_batch(client, rows, indices)
 
-        with lock:
-            for item in results:
-                idx = item.get("idx")
-                if idx is None:
-                    continue
-                idx = int(idx)
-                if 0 <= idx < len(rows):
-                    cn = item.get("case_nature", "").strip()
-                    lc = item.get("legal_concepts", "").strip()
-                    if cn:
-                        rows[idx]["case_nature"] = cn
-                    if lc:
-                        rows[idx]["legal_concepts"] = lc
-                    if cn or lc:
-                        extracted += 1
+            with lock:
+                for item in results:
+                    idx = item.get("idx")
+                    if idx is None:
+                        continue
+                    idx = int(idx)
+                    if 0 <= idx < len(rows):
+                        cn = item.get("case_nature", "").strip()
+                        lc = item.get("legal_concepts", "").strip()
+                        if cn:
+                            rows[idx]["case_nature"] = cn
+                        if lc:
+                            rows[idx]["legal_concepts"] = lc
+                        if cn or lc:
+                            extracted += 1
 
-            processed += len(indices)
+                processed += len(indices)
 
-            # Checkpoint
-            if processed - last_checkpoint >= CHECKPOINT_EVERY:
-                save_csv(rows)
-                last_checkpoint = processed
-                elapsed = time.time() - start_time
-                rate = processed / elapsed if elapsed > 0 else 0
-                remaining = (len(pending) - processed) / rate if rate > 0 else 0
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] "
-                    f"Progress: {processed}/{len(pending)} "
-                    f"(extracted: {extracted}, errors: {errors}) | "
-                    f"{rate:.1f} cases/s | ETA: {remaining/60:.0f}m | "
-                    f"[Checkpoint saved]"
-                )
+                # Checkpoint
+                if processed - last_checkpoint >= CHECKPOINT_EVERY:
+                    save_csv(rows)
+                    last_checkpoint = processed
+                    elapsed = time.time() - start_time
+                    rate = processed / elapsed if elapsed > 0 else 0
+                    remaining = (len(pending) - processed) / rate if rate > 0 else 0
+                    print(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] "
+                        f"Progress: {processed}/{len(pending)} "
+                        f"(extracted: {extracted}, errors: {errors}) | "
+                        f"{rate:.1f} cases/s | ETA: {remaining/60:.0f}m | "
+                        f"[Checkpoint saved]"
+                    )
 
-    # Process batches with thread pool
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting extraction...")
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {}
-        for batch_idx, indices in enumerate(batches):
-            future = executor.submit(handle_batch, batch_idx, indices)
-            futures[future] = batch_idx
+        # Process batches with thread pool
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting extraction...")
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {}
+            for batch_idx, indices in enumerate(batches):
+                future = executor.submit(handle_batch, batch_idx, indices)
+                futures[future] = batch_idx
 
-        for future in as_completed(futures):
-            batch_idx = futures[future]
-            try:
-                future.result()
-            except Exception as e:
-                print(f"  Batch {batch_idx} exception: {e}")
-                errors += 1
+            for future in as_completed(futures):
+                batch_idx = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"  Batch {batch_idx} exception: {e}")
+                    errors += 1
 
-            # Progress (every 50 batches)
-            done_count = sum(1 for f in futures if f.done())
-            if done_count % 50 == 0 or done_count == total_batches:
-                elapsed = time.time() - start_time
-                rate = processed / elapsed if elapsed > 0 else 0
-                remaining = (len(pending) - processed) / rate if rate > 0 else 0
-                print(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] "
-                    f"Batches: {done_count}/{total_batches} | "
-                    f"Cases: {processed}/{len(pending)} | "
-                    f"Extracted: {extracted} | "
-                    f"{rate:.1f}/s | ETA: {remaining/60:.0f}m"
-                )
+                # Progress (every 50 batches)
+                done_count = sum(1 for f in futures if f.done())
+                if done_count % 50 == 0 or done_count == total_batches:
+                    elapsed = time.time() - start_time
+                    rate = processed / elapsed if elapsed > 0 else 0
+                    remaining = (len(pending) - processed) / rate if rate > 0 else 0
+                    print(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] "
+                        f"Batches: {done_count}/{total_batches} | "
+                        f"Cases: {processed}/{len(pending)} | "
+                        f"Extracted: {extracted} | "
+                        f"{rate:.1f}/s | ETA: {remaining/60:.0f}m"
+                    )
 
-    # Final save
-    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Final save...")
-    save_csv(rows)
+        # Final save
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Final save...")
+        save_csv(rows)
 
-    elapsed = time.time() - start_time
-    print(f"\nDONE in {elapsed/60:.1f} minutes")
-    print(f"  Processed: {processed}")
-    print(f"  Extracted: {extracted}")
-    print(f"  Errors: {errors}")
+        elapsed = time.time() - start_time
+        print(f"\nDONE in {elapsed/60:.1f} minutes")
+        print(f"  Processed: {processed}")
+        print(f"  Extracted: {extracted}")
+        print(f"  Errors: {errors}")
 
-    # Stats
-    filled_cn = sum(1 for r in rows if r.get("case_nature", "").strip())
-    filled_lc = sum(1 for r in rows if r.get("legal_concepts", "").strip())
-    print(f"  case_nature coverage: {filled_cn}/{len(rows)} ({filled_cn*100/len(rows):.1f}%)")
-    print(f"  legal_concepts coverage: {filled_lc}/{len(rows)} ({filled_lc*100/len(rows):.1f}%)")
+        # Stats
+        filled_cn = sum(1 for r in rows if r.get("case_nature", "").strip())
+        filled_lc = sum(1 for r in rows if r.get("legal_concepts", "").strip())
+        print(f"  case_nature coverage: {filled_cn}/{len(rows)} ({filled_cn*100/len(rows):.1f}%)")
+        print(f"  legal_concepts coverage: {filled_lc}/{len(rows)} ({filled_lc*100/len(rows):.1f}%)")
 
 
 if __name__ == "__main__":

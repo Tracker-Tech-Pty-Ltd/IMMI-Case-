@@ -1,6 +1,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from immi_case_downloader.web import create_app
 
 TOKEN = "test-extraction-secret"
@@ -100,6 +102,70 @@ def test_internal_extract_rejects_missing_token():
 def test_internal_extract_rejects_oversize_batch():
     client = _app().test_client()
     payload = {"run_id": "run-1", "batch": [{} for _ in range(21)]}
+
+    with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
+        response = client.post(
+            "/internal/extract",
+            json=payload,
+            headers=HEADERS,
+        )
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "bad_payload"
+
+
+@pytest.mark.parametrize("body", [[1, 2], "hello", 7, None])
+def test_internal_extract_rejects_non_object_payloads(body):
+    """A JSON array/string/number/null body must be a clean 400, never a 5xx.
+
+    Before parse_payload existed, `payload = request.get_json(silent=True) or
+    {}` followed by `payload.get(...)` raised AttributeError on any of these.
+    """
+    client = _app().test_client()
+
+    with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
+        response = client.post(
+            "/internal/extract",
+            json=body,
+            headers=HEADERS,
+        )
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "bad_payload"
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        ["not-a-dict"],
+        [{"base": "not-a-mapping"}],
+    ],
+)
+def test_internal_extract_rejects_bad_item_shapes(batch):
+    client = _app().test_client()
+    payload = {"run_id": "run-1", "batch": batch}
+
+    with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
+        response = client.post(
+            "/internal/extract",
+            json=payload,
+            headers=HEADERS,
+        )
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "bad_payload"
+
+
+def test_internal_extract_rejects_mixed_valid_and_invalid_items():
+    """One malformed item rejects the whole request rather than partial processing."""
+    client = _app().test_client()
+    payload = {
+        "run_id": "run-1",
+        "batch": [
+            {"case_id": "abcdef123456", "base": {"title": "A v B", "full_text": "text"}},
+            [],
+        ],
+    }
 
     with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
         response = client.post(
