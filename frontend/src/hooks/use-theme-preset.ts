@@ -578,22 +578,21 @@ function applyTheme(
 
 /* ── Stored state readers ─────────────────────────────────────── */
 
+/**
+ * The shipped design direction ("Legal Codex"): warm off-white #f5f4f1, deep
+ * navy #1b2838, amber #d4a017. Its values are the same ones tokens.json feeds
+ * into :root, so changing this constant is the only edit needed to change the
+ * app's default palette.
+ */
+const DEFAULT_PRESET: PresetName = "parchment";
+
 function readStoredPreset(): PresetName {
-  if (typeof window === "undefined") return "claude";
+  if (typeof window === "undefined") return DEFAULT_PRESET;
   try {
     const stored = localStorage.getItem(PRESET_KEY);
-    // Migrate old default "parchment" → "claude"
-    if (stored === "parchment") {
-      try {
-        localStorage.setItem(PRESET_KEY, "claude");
-      } catch {
-        /* ignore */
-      }
-      return "claude";
-    }
-    return stored && stored in PRESETS ? (stored as PresetName) : "claude";
+    return stored && stored in PRESETS ? (stored as PresetName) : DEFAULT_PRESET;
   } catch {
-    return "claude";
+    return DEFAULT_PRESET;
   }
 }
 
@@ -690,7 +689,7 @@ export function useThemePreset() {
   }, []);
 
   const resetPreset = useCallback(() => {
-    setState({ preset: "claude", isDark: false, customVars: {} });
+    setState({ preset: DEFAULT_PRESET, isDark: false, customVars: {} });
   }, []);
 
   const setCustomVar = useCallback((name: string, value: string) => {
