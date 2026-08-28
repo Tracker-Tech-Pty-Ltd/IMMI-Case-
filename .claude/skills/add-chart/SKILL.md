@@ -72,7 +72,7 @@ const COLORS = ["#1a5276", "#117864", "#6c3483", "#b9770e", "#a93226"];
 ## Reference Files
 
 - `CourtChart.tsx` — bar/pie with toggle, click navigation
-- `TrendChart.tsx` — stacked area with custom tooltip filtering zeros
+- `OutcomeTrendChart.tsx` (analytics/) — multi-series area chart with token-driven gradient fills
 - `NatureChart.tsx` — horizontal bar with truncated labels
 - `OutcomeByCourtChart.tsx` — grouped bar with percentage labels
 

@@ -100,7 +100,6 @@
 - [ ] `StatCard.tsx` - 統計卡片標題、描述
 - [ ] `CourtChart.tsx` - 圖表標題
 - [ ] `NatureChart.tsx` - 圖表標題
-- [ ] `TrendChart.tsx` - 圖表標題
 - [ ] `SubclassChart.tsx` - 圖表標題
 
 #### Cases Components（2 個）
