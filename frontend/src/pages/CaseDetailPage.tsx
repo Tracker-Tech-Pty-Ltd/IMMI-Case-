@@ -8,6 +8,7 @@ import {
   Check,
   BookmarkPlus,
   Plus,
+  Scale,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useCase, useRelatedCases, useDeleteCase } from "@/hooks/use-cases";
@@ -175,14 +176,27 @@ export function CaseDetailPage() {
   return (
     <div className="space-y-4">
       {/* Breadcrumb + actions */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Breadcrumb
           items={[
             { label: t("cases.title"), href: "/cases" },
             { label: c.citation || c.title || t("cases.case_details") },
           ]}
         />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Link
+            to={`/llm-council?case_id=${encodeURIComponent(c.case_id)}`}
+            title={t("case_detail.ask_council_hint", {
+              defaultValue:
+                "The Council sees this case's citation, court, catchwords and summary — not the full judgment text.",
+            })}
+            className="flex items-center gap-1 rounded-md border border-accent/40 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5"
+          >
+            <Scale className="h-3.5 w-3.5" />
+            {t("case_detail.ask_council", {
+              defaultValue: "Ask the Council about this case",
+            })}
+          </Link>
           {c.url && (
             <a
               href={c.url}
