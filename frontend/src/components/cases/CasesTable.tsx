@@ -103,9 +103,10 @@ export function CasesTable({
       )}
       <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
         <table data-testid="cases-table" className="w-full min-w-[1100px] text-sm">
+          <caption className="sr-only">{t("cases.title")}</caption>
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="w-10 px-2 py-2.5 text-left">
+              <th scope="col" className="w-10 px-2 py-2.5 text-left">
                 <input
                   data-testid="cases-select-all"
                   type="checkbox"
@@ -117,29 +118,29 @@ export function CasesTable({
                   })}
                 />
               </th>
-              <th className="px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.case_title")}
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.citation")}
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.court")}
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 <span className="block leading-tight">{t("cases.date")}</span>
                 <span className="block text-[9px] font-normal text-muted-text leading-tight">
                   {t("cases.date", { defaultValue: "decision" })} /{" "}
                   {t("cases.hearing_date")}
                 </span>
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.country_of_origin")}
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.outcome")}
               </th>
-              <th className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
+              <th scope="col" className="whitespace-nowrap px-2 py-2.5 text-left font-medium text-muted-text">
                 {t("cases.nature")}
               </th>
             </tr>

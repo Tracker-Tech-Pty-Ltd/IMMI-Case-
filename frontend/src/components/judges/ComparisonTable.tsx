@@ -63,18 +63,23 @@ export function ComparisonTable({
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <table className="w-full text-sm">
+        <caption className="sr-only">
+          {t("judges.comparison_table_caption", {
+            defaultValue: "Judge comparison metrics",
+          })}
+        </caption>
         <thead>
           <tr className="border-b border-border bg-surface">
-            <th className="px-4 py-3 text-left font-semibold text-foreground">
+            <th scope="col" className="px-4 py-3 text-left font-semibold text-foreground">
               {t("common.metric")}
             </th>
-            <th className="px-4 py-3 text-left font-semibold text-foreground">
+            <th scope="col" className="px-4 py-3 text-left font-semibold text-foreground">
               {judge1Name}
             </th>
-            <th className="px-4 py-3 text-left font-semibold text-foreground">
+            <th scope="col" className="px-4 py-3 text-left font-semibold text-foreground">
               {judge2Name}
             </th>
-            <th className="px-4 py-3 text-left font-semibold text-foreground">
+            <th scope="col" className="px-4 py-3 text-left font-semibold text-foreground">
               {t("common.difference")}
             </th>
           </tr>
@@ -96,9 +101,12 @@ export function ComparisonTable({
                   idx % 2 === 0 ? "bg-background" : "bg-surface/30",
                 )}
               >
-                <td className="px-4 py-3 font-medium text-foreground">
+                <th
+                  scope="row"
+                  className="px-4 py-3 text-left font-medium text-foreground"
+                >
                   {row.metric}
-                </td>
+                </th>
                 <td className="px-4 py-3 text-muted-text">
                   {formatValue(row.judge1Value)}
                 </td>
