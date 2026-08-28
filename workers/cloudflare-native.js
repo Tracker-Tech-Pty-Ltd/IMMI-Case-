@@ -101,31 +101,73 @@ async function processCaseExtracted(message, env) {
   return true;
 }
 
+function queueLogFields(message, batch) {
+  const body = message?.body;
+  return {
+    queue: typeof batch?.queue === "string" ? batch.queue : null,
+    kind: typeof body?.kind === "string" ? body.kind : null,
+    event_id: typeof body?.event_id === "string" ? body.event_id : null,
+  };
+}
+
+function retryQueueMessage(message, error) {
+  if (typeof message?.retry === "function") {
+    message.retry({ delaySeconds: 30 });
+    return;
+  }
+  throw error || new Error("Queue message cannot be retried");
+}
+
+async function processMutationMessage(message, env, stores) {
+  if (await processCaseExtracted(message, env)) return true;
+  if (await processCaseReindex(message, stores)) return true;
+  if (await processCaseSourceDelete(message, stores)) return true;
+  if (await processAggregateRebuild(message)) return true;
+  return false;
+}
+
 async function handleCaseMutationQueue(batch, env) {
   const messages = batch?.messages || [];
   const stores = createCloudflareStores(env);
-  try {
-    let changed = false;
-    for (const message of messages) {
-      if (await processCaseExtracted(message, env)) {
-        changed = true;
-      } else if (await processCaseReindex(message, stores)) {
-        changed = true;
-      } else if (await processCaseSourceDelete(message, stores)) {
-        changed = true;
-      } else if (await processAggregateRebuild(message)) {
-        changed = true;
+  const handled = [];
+  for (const message of messages) {
+    try {
+      if (await processMutationMessage(message, env, stores)) {
+        handled.push(message);
+        continue;
       }
-    }
-    if (changed) await stores.caseStore.rebuildAggregates();
-    for (const message of messages) if (typeof message?.ack === "function") message.ack();
-  } catch (error) {
-    console.error(JSON.stringify({ event: "cloudflare.case_reindex_error", error: error?.message }));
-    for (const message of messages) {
-      if (typeof message?.retry === "function") message.retry({ delaySeconds: 30 });
-      else throw error;
+      // An unrecognised kind is never silently dropped: retrying lets the
+      // consumer's max_retries carry it into immi-case-mutation-dlq, and the
+      // log line names the kind that no processor claimed.
+      console.error(JSON.stringify({
+        event: "cloudflare.queue.unhandled_message",
+        ...queueLogFields(message, batch),
+      }));
+      retryQueueMessage(message);
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "cloudflare.case_reindex_error",
+        ...queueLogFields(message, batch),
+        error: error?.message,
+      }));
+      retryQueueMessage(message, error);
     }
   }
+  if (handled.length === 0) return;
+  try {
+    await stores.caseStore.rebuildAggregates();
+  } catch (error) {
+    // Analytics is only safe to publish once the rebuild committed. Leave the
+    // contributing messages un-acked so the queue retries the rebuild.
+    console.error(JSON.stringify({
+      event: "cloudflare.aggregate_rebuild_error",
+      queue: typeof batch?.queue === "string" ? batch.queue : null,
+      error: error?.message,
+    }));
+    for (const message of handled) retryQueueMessage(message, error);
+    return;
+  }
+  for (const message of handled) if (typeof message?.ack === "function") message.ack();
 }
 
 async function handleDeadLetterQueue(batch, env) {
