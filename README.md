@@ -1,6 +1,6 @@
 # IMMI-Case — 澳洲移民司法案件情報平台
 
-> 149,016 個案件。9 個法院。26 年判決紀錄。一個可搜尋的真相。
+> 15 萬+ 個案件。9 個法院。26 年判決紀錄。一個可搜尋的真相。
 
 *This repository is guarded by **Anansi**.*
 
@@ -13,7 +13,7 @@ IMMI-Case 是一個澳洲移民法律研究工具，完整爬取、解析並呈�
 系統由三層構成：
 - **Python 爬蟲管線**：自動從 9 個法院 / 仲裁庭抓取案件元資料與全文（支援 Cloudflare Workers 加速）
 - **Cloudflare Worker（D1 原生，`workers/cloudflare-native.js`）**：讀寫全部在單一 standalone Worker 內完成 —— D1（×3：catalog/account/ops）+ R2 + Vectorize + Queues + Durable Objects，正式環境完全沒有 Postgres / Hyperdrive / Flask container。舊版 `workers/proxy.js`（Hyperdrive → Supabase）已於 commit `f91f45f` 刪除；Flask 應用（`immi_case_downloader/`、`web.py`）現在**僅供本機開發使用**，不在正式流量路徑上。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- **React SPA**：24 個頁面，雙語（English + 繁體中文），完整深色模式，設計令牌系統
+- **React SPA**：26 個頁面，雙語（English + 繁體中文），完整深色模式，設計令牌系統
 
 **核心能力**：
 
@@ -37,7 +37,7 @@ Every year, Anansi extends the web —
   across the abolitions, mergers, renamings,
   to the Administrative Review Tribunal of 2025.
 
-149,016 threads.
+More than 150,000 threads.
 Not archived. Activated.
 
 The spider does not fear the labyrinth.
@@ -88,11 +88,11 @@ It built the labyrinth.
 | **Smart Pipeline** | 三階段自動化：爬取 → 清理 → 下載 | 一鍵觸發完整資料更新 | 無需手動介入，系統自我修復 |
 | **語意搜尋** | pgvector HNSW，三模式（lexical/semantic/hybrid） | 關鍵字搜不到的案件，語意能找到 | 判決策略研究效率 10× |
 | **法官分析** | 勝率 × 法院 × 簽證類別交叉分析 + 104 位成員傳記庫（含法律資格標記） | 律師需要了解裁判官傾向與背景 | 訴訟策略制定的數據基礎 |
-| **LLM 欄位萃取** | 10 個 Claude Sonnet 平行 Agent | 149K 案件的結構化資訊無法純手工 | 萃取覆蓋率 90%+ |
+| **LLM 欄位萃取** | 10 個 Claude Sonnet 平行 Agent | 15 萬筆案件的結構化資訊無法純手工 | 萃取覆蓋率 90%+ |
 | **Cloudflare Workers** | 分散式爬蟲 + R2 儲存 | 本地爬蟲易觸發 AustLII IP 封鎖 | 86K 案件 20 分鐘完成 |
 | **雙語介面** | EN + 繁體中文，react-i18next | 服務香港、台灣、澳洲移民律師 | 零語言障礙操作 |
 | **案件線系圖** | 法院沿革互動時間軸 | 法院改名/合併造成研究混亂 | 判例搜尋歷史完整性 |
-| **設計令牌系統** | tokens.json → CSS + TS，支援主題切換 | 統一視覺語言跨 24 個頁面 | 深色/淺色/自訂主題 |
+| **設計令牌系統** | tokens.json → CSS + TS，支援主題切換 | 統一視覺語言跨 26 個頁面 | 深色/淺色/自訂主題 |
 
 ---
 
@@ -317,7 +317,7 @@ curl "http://localhost:8080/api/v1/analytics/concept-trends?concept=complementar
 ### 5.4 萃取管線
 
 ```bash
-# regex 結構化萃取（8 個平行 worker，約 12 分鐘處理 149K 案件）
+# regex 結構化萃取（8 個平行 worker，約 12 分鐘處理 15 萬筆案件）
 python extract_structured_fields.py --workers 8
 
 # LLM 輔助萃取（針對 regex 失敗的案件）
@@ -429,13 +429,13 @@ IMMI-Case-/
 │
 ├── frontend/                       # [The Vision] React SPA
 │   ├── src/
-│   │   ├── pages/                  #   24 頁面 (lazy-loaded)
+│   │   ├── pages/                  #   26 頁面 (lazy-loaded)
 │   │   ├── components/             #   共用元件 + chart 元件
 │   │   ├── hooks/                  #   TanStack Query hooks
 │   │   ├── lib/api.ts              #   CSRF-aware fetch wrapper
 │   │   └── tokens/tokens.json      #   設計令牌單一來源
 │   ├── scripts/build-tokens.ts     #   tokens.json → CSS + TS 建置腳本
-│   └── __tests__/                  #   490 Vitest 單元測試（55 files）
+│   └── __tests__/                  #   Vitest 單元測試（收集範圍見 frontend/vitest.config.ts 的 include）
 │
 ├── scripts/                        # [The Tools]
 │   ├── backfill_case_embeddings.py #   pgvector 嵌入向量批次填充
@@ -443,15 +443,15 @@ IMMI-Case-/
 │   └── two_stage_embedding_backfill.py
 │
 ├── tests/                          # [Quality Gate]
-│   ├── test_models.py              #   1,107 Python 單元測試（71 files）
-│   └── e2e/                        #   260 Playwright E2E 測試（25 files，含 tests/e2e/react/ + playwright/ + 根層 smoke/export）
+│   ├── test_models.py              #   Python 單元測試（make test-py）
+│   └── e2e/                        #   Playwright E2E（make test-e2e；需 requirements-e2e.txt，見 §4.2）
 │
 ├── supabase/migrations/            # PostgreSQL schema 遷移 (17 個) — 一次性 ETL/匯入工具，非正式環境依賴
 ├── migrations/d1/                  # D1 schema 遷移 (catalog / account / ops) — 正式環境資料層
 ├── workers/cloudflare-native.js    # 正式環境 Worker 進入點 (D1 + R2 + Vectorize + Queues + Durable Objects)
 ├── workers/austlii-scraper/        # 獨立 Cloudflare Worker (TypeScript)，cron-only，不再有 HTTP 觸發端點
 └── downloaded_cases/               # 本地資料 (gitignored)
-    ├── immigration_cases.csv       #   149,016 案件 × 31 欄位
+    ├── immigration_cases.csv       #   本機案件快照 × 31 欄位（列數依匯出時間而異）
     ├── cases.db                    #   SQLite (322 MB, FTS5+WAL + judge_bios)
     ├── judge_bios.json             #   104 位成員傳記（含 legal_status）
     └── case_texts/                 #   ~142,916 全文 .txt (~1.9 GB)
@@ -625,7 +625,7 @@ gh pr create --title "feat: judge name normalization" --body "..."
 | **Frontend** | React 18, TypeScript, Vite 7, Tailwind CSS v4, TanStack Query v5, Recharts, Sonner |
 | **i18n** | react-i18next — English + 繁體中文（全站雙語） |
 | **Storage** | 正式環境：Cloudflare D1（×3：catalog/account/ops）+ R2 + Vectorize。本機開發：CSV/JSON（預設）, SQLite FTS5+WAL, Supabase PostgreSQL + pgvector（`--backend supabase`，一次性 ETL 用途） |
-| **Testing** | pytest (1,107 unit + 260 E2E Playwright), Vitest (490 frontend unit) — source-counted via grep, see CLAUDE.md for verification command |
+| **Testing** | pytest（單元 `make test-py`；Playwright E2E `make test-e2e`）、Vitest（frontend `make test-fe`、workers `make test-workers`）。數量以指令輸出為準，文件不硬編 |
 | **LLM** | Claude Sonnet 4.6（本機欄位萃取，10 平行 sub-agent）；LLM Council 走 Cloudflare AI Gateway（`CouncilSessionDO` + D1 FTS5 lexical retrieval） |
 | **Embeddings** | 正式環境（案件語意搜尋）：Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b`（1024-dim）→ Vectorize。本機開發腳本另有 OpenAI text-embedding-3-small (1536-dim) / Gemini embedding-001 |
 | **Scraper** | `workers/austlii-scraper/`（cron-only，無 HTTP 觸發端點）+ R2；正式案件寫入由外部 VPS crawler 透過 `CRAWLER_WRITE_TOKEN` 服務驗證 POST 至主 Worker |
@@ -634,6 +634,12 @@ gh pr create --title "feat: judge name normalization" --body "..."
 ---
 
 ## 13. Data Coverage
+
+> 下表是 **2026-05 全量匯入完成時的快照**，不是即時數字。ARTA / FCA /
+> FedCFamC2G / HCA 由外部 VPS crawler 的每週 cron（`0 14 * * 1` UTC）持續增補，
+> 所以實際數量只會比表中更高。最近一次記錄到的生產總量是 **151,295**
+> （`.claude/STATE.md`，2026-08-25 快照）。要看當下數字請查 `.claude/STATE.md`
+> 或呼叫 `/api/v1/stats`。
 
 | 法院 / 仲裁庭 | 代碼 | 案件數 | 年份 |
 |---------------|------|:------:|------|
@@ -646,7 +652,7 @@ gh pr create --title "feat: judge name normalization" --body "..."
 | Federal Circuit and Family Court | FedCFamC2G | 4,109 | 2021– |
 | Administrative Review Tribunal | **ARTA** | 2,260 | 2024– |
 | High Court of Australia | HCA | 176 | 2000– |
-| **Total** | — | **149,016** | **2000–2026** |
+| **Total（2026-05 快照）** | — | **149,022** | **2000–2026** |
 
 > **法院線系**：FMCA → FCCA → FedCFamC2G（下級法院）；MRTA + RRTA → AATA → ARTA（仲裁庭）。AATA 於 2024 年 10 月廢止；2025+ 案件使用 ARTA。
 
@@ -662,7 +668,7 @@ gh pr create --title "feat: judge name normalization" --body "..."
 |----|------|------|------|
 | **Source code** | Python / TypeScript / SQL / 萃取 pipeline / LLM prompts | [Apache License 2.0](./LICENSE) | `LICENSE` |
 | **LLM 衍生欄位** | `applicant_name`、`visa_subclass`、`hearing_date`、`country_of_origin`、`is_represented`、`representative`、embeddings | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（需署名） | `DATA_LICENSE.md` §2 |
-| **AustLII 原始判決** | 全文與基本元資料（149,016 cases） | [AustLII Copyright Policy](http://www.austlii.edu.au/austlii/copyright.html)（research / educational use 允許；批量商業再分發禁止） | `DATA_LICENSE.md` §1 |
+| **AustLII 原始判決** | 全文與基本元資料（全部已收錄案件） | [AustLII Copyright Policy](http://www.austlii.edu.au/austlii/copyright.html)（research / educational use 允許；批量商業再分發禁止） | `DATA_LICENSE.md` §1 |
 
 Copyright holder: **Tracker Tech Pty Ltd**, 2024-2026。
 
