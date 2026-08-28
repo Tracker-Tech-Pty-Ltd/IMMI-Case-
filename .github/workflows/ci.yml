@@ -178,6 +178,45 @@ jobs:
         run: npm test
         working-directory: workers/austlii-scraper
 
+  vitest-collection:
+    # The three Vitest suites above each run `vitest run`, which reports success
+    # for whatever its include glob happened to match. A narrowed glob therefore
+    # produces a GREEN suite with a smaller test count and no error anywhere —
+    # exactly how frontend/src/lib/__tests__/saved-searches.test.ts (28 tests)
+    # stayed uncollected for as long as it did.
+    #
+    # `make check-vitest-collection` compares the SET of test files on disk with
+    # the SET each config actually collects, so a dropped file is named rather
+    # than inferred from a count. It needs all three node_modules trees at once,
+    # which is why it is its own job: test-frontend installs only frontend/, and
+    # test-worker installs only the root and workers/austlii-scraper.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            workers/austlii-scraper/package-lock.json
+
+      - name: Install root (Worker suite) dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install native pipeline dependencies
+        run: npm ci --ignore-scripts
+        working-directory: workers/austlii-scraper
+
+      - name: Assert every Vitest file on disk is collected exactly once
+        run: make check-vitest-collection
+
   e2e-smoke:
     # Blocking PR gate. Runs the two E2E files proven green in plan 040 Step 3.
     # The Flask app is local-dev only (production is workers/cloudflare-native.js),

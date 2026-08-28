@@ -84,3 +84,45 @@ describe("make test-e2e cannot bill a live LLM by default", () => {
     expect(makefile).toMatch(/^\.PHONY:.*\btest-e2e-production\b/m);
   });
 });
+
+describe("the vitest collection guard runs in CI, not only locally", () => {
+  const ci = readRepoFile(".github/workflows/ci.yml");
+  const makefile = readRepoFile("Makefile");
+
+  // A narrowed include glob makes `vitest run` report success over a smaller
+  // file set: the suite is green, the count drops, and nothing errors. Verified
+  // on 2026-08-28 by narrowing workers/vitest.config.js to
+  // `__tests__/cloudflare-*.test.js` — the Worker suite reported "16 files, 143
+  // tests passed" while 32 files and 416 tests went uncollected, and CI as it
+  // then stood would have merged it. Only check-vitest-collection notices.
+  it("invokes make check-vitest-collection somewhere in the workflow", () => {
+    expect(ci).toMatch(/make check-vitest-collection/);
+  });
+
+  it("installs all three node_modules trees the guard needs", () => {
+    // The guard shells out to `vitest list` in frontend/, workers/ (root deps)
+    // and workers/austlii-scraper/. A job missing any one of them makes that
+    // config contribute nothing, and the guard then reports its files as
+    // MISSING — a false failure — or, worse, is quietly skipped.
+    const jobs = ci.split(/\n  (?=[a-z0-9-]+:\n)/);
+    const guardJob = jobs.find((job) => /make check-vitest-collection/.test(job));
+    expect(guardJob).toBeDefined();
+    expect(guardJob).toMatch(/working-directory: frontend/);
+    expect(guardJob).toMatch(/working-directory: workers\/austlii-scraper/);
+    // the root install has no working-directory
+    expect(guardJob).toMatch(/run: npm ci\n/);
+  });
+
+  it("keeps the guard a blocking gate rather than a scheduled-only job", () => {
+    const jobs = ci.split(/\n  (?=[a-z0-9-]+:\n)/);
+    const guardJob = jobs.find((job) => /make check-vitest-collection/.test(job));
+    // `if: github.event_name == 'schedule' ...` is how e2e-nightly opts out of
+    // PRs. The collection guard must not acquire one.
+    expect(guardJob).not.toMatch(/if:\s*github\.event_name/);
+    expect(guardJob).not.toMatch(/continue-on-error:\s*true/);
+  });
+
+  it("still defines the target it calls", () => {
+    expect(makeRecipe(makefile, "check-vitest-collection")).not.toBeNull();
+  });
+});
