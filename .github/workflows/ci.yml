@@ -295,7 +295,13 @@ jobs:
       - name: Install Python + E2E dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
+          # -c constraints.txt, like the unit job: without it the same commit
+          # resolves a different Flask/pytest closure on different days and CI
+          # fails for reasons no code change caused. NOTE: constraints.txt does
+          # not yet pin the E2E closure itself (requirements-e2e.txt carries only
+          # `pytest-playwright>=0.9.0`), so that package still floats — the
+          # snapshot needs regenerating to cover it.
+          .venv/bin/pip install --quiet -c constraints.txt -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
 
       - name: Install Playwright chromium
         run: .venv/bin/python -m playwright install --with-deps chromium
@@ -380,7 +386,13 @@ jobs:
       - name: Install Python + E2E dependencies
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
+          # -c constraints.txt, like the unit job: without it the same commit
+          # resolves a different Flask/pytest closure on different days and CI
+          # fails for reasons no code change caused. NOTE: constraints.txt does
+          # not yet pin the E2E closure itself (requirements-e2e.txt carries only
+          # `pytest-playwright>=0.9.0`), so that package still floats — the
+          # snapshot needs regenerating to cover it.
+          .venv/bin/pip install --quiet -c constraints.txt -r requirements-app.txt -r requirements-test.txt -r requirements-e2e.txt
 
       - name: Install Playwright chromium
         run: .venv/bin/python -m playwright install --with-deps chromium
