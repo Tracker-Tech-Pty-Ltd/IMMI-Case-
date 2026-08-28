@@ -4,8 +4,8 @@
 FROM python:3.12-slim
 WORKDIR /app
 
-COPY requirements-extractor.txt .
-RUN pip install --no-cache-dir -r requirements-extractor.txt
+COPY requirements-extractor.txt constraints-extractor.txt ./
+RUN pip install --no-cache-dir -c constraints-extractor.txt -r requirements-extractor.txt
 
 COPY extract_container.py ./
 COPY immi_case_downloader/__init__.py ./immi_case_downloader/__init__.py
