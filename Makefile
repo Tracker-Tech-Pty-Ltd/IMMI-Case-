@@ -49,6 +49,8 @@ help:
 	@echo "  make test-pipeline  austlii-scraper (pipeline Worker) Vitest suite"
 	@echo "  make test-preflight Deploy secret-preflight parser tests"
 	@echo "  make test-e2e     Python Playwright E2E (needs make install-e2e + a server)"
+	@echo "  make tokens-check Verify frontend/src/tokens/ is in sync with tokens.json (read-only)"
+	@echo "  make tokens-fix   Regenerate frontend/src/tokens/ from tokens.json"
 	@echo "  make test-integration  Supabase-era checks, opt-in (needs env vars)"
 	@echo "  make coverage     Python unit tests with HTML coverage report"
 	@echo "  make coverage-fe  Frontend Vitest with coverage thresholds"
@@ -91,11 +93,43 @@ test: audit-tenant-guards test-py test-fe test-workers test-pipeline
 test-py:
 	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration -q
 
-test-fe:
+test-fe: tokens-check
 	cd "$(REPO_ROOT)/frontend" && npx vitest run
 
 test-workers:
 	cd "$(REPO_ROOT)/workers" && npx vitest run
+
+# Design-token freshness. `npm run dev|build|build:cloudflare` all regenerate
+# tokens first, so production and the dev server are never stale — but
+# `npx vitest run` does not, so a tokens.json edit committed without
+# regenerating leaves the frontend suite asserting against stale token values.
+#
+# NON-DESTRUCTIVE BY CONSTRUCTION. build-tokens.ts writes to fixed paths, so
+# this target snapshots the two generated files, regenerates, compares, and
+# then RESTORES the snapshot unconditionally. A check that rewrites the
+# working tree on failure is not a check — and because `test-fe` depends on
+# this, `make test` would otherwise be able to modify tracked files.
+# Regenerating for real is `make tokens-fix`, which is explicit about it.
+tokens-check:
+	@cd "$(REPO_ROOT)/frontend" || exit 1; \
+	SNAP=$$(mktemp -d) || exit 1; \
+	trap 'cp -p "$$SNAP/tokens.css" src/tokens/tokens.css 2>/dev/null; \
+	      cp -p "$$SNAP/tokens.ts"  src/tokens/tokens.ts  2>/dev/null; \
+	      rm -rf "$$SNAP"' EXIT INT TERM; \
+	cp -p src/tokens/tokens.css src/tokens/tokens.ts "$$SNAP/" || exit 1; \
+	BEFORE=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
+	npm run --silent tokens -- --strict || exit 1; \
+	AFTER=$$(cat src/tokens/tokens.css src/tokens/tokens.ts | shasum -a 256 | cut -d' ' -f1); \
+	if [ "$$BEFORE" != "$$AFTER" ]; then \
+	  echo "ERROR: frontend/src/tokens/{tokens.css,tokens.ts} are stale relative to tokens.json."; \
+	  echo "       The working tree was left UNCHANGED. Run 'make tokens-fix', review the diff, and commit."; \
+	  exit 1; \
+	else echo "OK: generated design tokens match tokens.json"; fi
+
+# The write half, deliberately separate and never a prerequisite of anything.
+tokens-fix:
+	cd "$(REPO_ROOT)/frontend" && npm run tokens -- --strict
+	@echo "Regenerated frontend/src/tokens/. Review 'git diff -- frontend/src/tokens/' and commit."
 
 # workers/austlii-scraper is a separate npm package with its own manifest,
 # lockfile, node_modules, vitest config and tsc gate. Until this target existed
