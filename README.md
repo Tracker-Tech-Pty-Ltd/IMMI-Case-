@@ -147,25 +147,111 @@ cp .env.example .env
 # 編輯 .env 填入必要的值
 ```
 
-**環境變數表**：
+**環境變數表**（**單一真相來源是 `.env.example`** —— 有出入時以該檔為準，
+本表只補充「這個 key 是做什麼的」；分組沿用 `.env.example` 自己的 8 個章節註解）：
+
+**1. 本機 Flask 開發**（`web.py`、`immi_case_downloader/web/`；正式環境是 Cloudflare Worker，不讀這些）
 
 | Key | Required | Default | Description |
 |-----|:--------:|---------|-------------|
-| `BACKEND_PORT` | ✗ | `8080` | Flask 服務埠號（注意：5000 與 macOS AirPlay 衝突） |
 | `SECRET_KEY` | 生產必填 | 開發模式自動生成 | Flask session / CSRF 簽章金鑰 |
 | `APP_ENV` | ✗ | `development` | 設為 `production` 或 `staging` 會啟用嚴格安全模式 |
-| `TRUST_PROXY_HEADERS` | ✗ | `false` | 只有部署在可信任反向代理後方時才設為 `true`，允許安全地讀取 `X-Forwarded-For` |
+| `TRUST_PROXY_HEADERS` | ✗ | `false` | 只有部署在可信任反向代理後方時才設為 `true`，否則 `X-Forwarded-For` 可被偽造繞過限流 |
+| `BACKEND_PORT` | ✗ | `8080` | Flask 服務埠號；`web.py` 讀取（5000 與 macOS AirPlay 衝突） |
+| `JWT_SECRET_CURRENT` | 認證啟用時必填 | — | 本機 JWT 驗證用（`immi_case_downloader/web/auth.py`）。同名值也是 Worker secret，見第 7 節 |
+| `JWT_SECRET_PREVIOUS` | ✗ | — | 輪替期間仍需驗證的舊金鑰 |
+
+> 沒有 `BACKEND_HOST`（Flask 版）：`web.py` 不讀這個變數，綁定位址只能用 CLI flag
+> `python web.py --host 0.0.0.0`。下方第 8 節的 `BACKEND_HOST` 是給 Vite proxy 用的。
+
+**2. CLI + 爬蟲預設值**（`immi_case_downloader/config.py`，全部選填）
+
+| Key | Required | Default | Description |
+|-----|:--------:|---------|-------------|
+| `IMMI_OUTPUT_DIR` | ✗ | `downloaded_cases` | 下載輸出目錄 |
+| `IMMI_START_YEAR` | ✗ | 動態：目前年份 − 10 | 搜尋起始年 |
+| `IMMI_END_YEAR` | ✗ | 動態：目前年份 | 搜尋結束年 |
+| `IMMI_TIMEOUT` | ✗ | `30` | HTTP 逾時秒數 |
+| `IMMI_DELAY` | ✗ | `1.0` | 請求間隔秒數（速率限制） |
+| `IMMI_MAX_RETRIES` | ✗ | `3` | 失敗重試次數 |
+
+**3. Supabase 本機開發後端**（僅 `python web.py --backend supabase`；正式環境用 D1）
+
+| Key | Required | Default | Description |
+|-----|:--------:|---------|-------------|
 | `SUPABASE_URL` | 條件 | — | Supabase 專案 URL（使用 `--backend supabase` 時必填） |
 | `SUPABASE_SERVICE_ROLE_KEY` | 條件 | — | Supabase Service Role Key（伺服器端操作用） |
-| `BACKEND_HOST` | ✗ | `127.0.0.1` | Flask 綁定 IP（對外服務改為 `0.0.0.0`） |
-| `CF_AIG_TOKEN` | 條件 | — | **LLM Council 主路徑**：Cloudflare AI Gateway 統一計費 token（`cfut_*`）。OpenAI / Anthropic / Google AI Studio 都從此扣額，無需個別 provider key |
-| `LLM_COUNCIL_CF_GATEWAY_URL` | ✗ | `…/immi-council/compat/…` | CF AI Gateway compat endpoint URL，預設指向專案的 `immi-council` gateway |
-| `LLM_COUNCIL_OPENAI_MODEL` 等 | ✗ | 見 `.env.example` | 模型路由需 provider 前綴：`openai/<m>`、`anthropic/<m>`、`google-ai-studio/<m>` |
-| `LLM_COUNCIL_MAX_OUTPUT_TOKENS` | ✗ | `4096` | 專家模型 token 上限（4096 為 probe-validated；2400 在 `gemini-2.5-pro` 會回傳 completion=0） |
+| `SUPABASE_ANON_KEY` | ✗ | — | 僅 `scripts/migrate_anon_data.py` 與 `scripts/generate_missing_embeddings.py` 使用 |
+| `HYPERDRIVE_DATABASE_URL` | ✗ | — | 選用的直連 Postgres DSN，`supabase_repository.py` 與 `web/__init__.py` 使用 |
+
+**4. LLM Council（走 Cloudflare AI Gateway，統一計費）**
+
+| Key | Required | Default | Description |
+|-----|:--------:|---------|-------------|
+| `CF_AIG_TOKEN` | 條件 | — | **LLM Council 主路徑**：CF AI Gateway 統一計費 token（`cfut_*`），auth header 為 `cf-aig-authorization`。OpenAI / Anthropic / Google AI Studio 都從此扣額 |
+| `LLM_COUNCIL_CF_GATEWAY_URL` | ✗ | 專案自己的 gateway | 留空即用專案的 `immi-council` gateway；設定自己的 URL 可改記自己帳號的額度 |
+| `LLM_COUNCIL_OPENAI_MODEL` | ✗ | 見 `.env.example` | 需 provider 前綴：`openai/<model>` |
+| `LLM_COUNCIL_GEMINI_PRO_MODEL` | ✗ | 見 `.env.example` | 需 provider 前綴：`google-ai-studio/<model>` |
+| `LLM_COUNCIL_ANTHROPIC_MODEL` | ✗ | 見 `.env.example` | 需 provider 前綴：`anthropic/<model>` |
+| `LLM_COUNCIL_GEMINI_FLASH_MODEL` | ✗ | 見 `.env.example` | 仲裁（moderator）模型，同樣需 `google-ai-studio/` 前綴 |
+| `LLM_COUNCIL_GPT5_REASONING_EFFORT` | ✗ | `low` | gpt-5 系列專家模型的 reasoning effort |
+| `LLM_COUNCIL_MAX_OUTPUT_TOKENS` | ✗ | `4096` | 專家模型 token 上限（probe-validated：`gemini-2.5-pro` 在 2400 會回傳 completion=0） |
 | `LLM_COUNCIL_MODERATOR_MAX_TOKENS` | ✗ | `8192` | 仲裁模型 token 上限（14-field JSON 輸出） |
-| `ANTHROPIC_API_KEY` | 條件 | — | **僅獨立腳本** `extract_structured_fields_llm.py` 直連 Anthropic 用；LLM Council **不需要**（走 CF Gateway） |
-| `OPENAI_API_KEY` | 條件 | — | **僅獨立腳本** `backfill_case_embeddings.py` 嵌入向量用；LLM Council **不需要**（走 CF Gateway） |
-| ~~`SUPABASE_ANON_KEY`~~ | — | — | 已移除：當前 `.env.example` 不再使用 anon key（前端讀取走 Worker / service role） |
+| `LLM_COUNCIL_TIMEOUT_SECONDS` | ✗ | `120` | 單次模型呼叫逾時秒數 |
+| `LLM_COUNCIL_SYSTEM_PROMPT_OPENAI` | ✗ | 見 `.env.example` | 覆寫 OpenAI 專家的 system prompt |
+| `LLM_COUNCIL_SYSTEM_PROMPT_GEMINI_PRO` | ✗ | 見 `.env.example` | 覆寫 Gemini Pro 專家的 system prompt |
+| `LLM_COUNCIL_SYSTEM_PROMPT_ANTHROPIC` | ✗ | 見 `.env.example` | 覆寫 Anthropic 專家的 system prompt |
+| `LLM_COUNCIL_SYSTEM_PROMPT_MODERATOR` | ✗ | 見 `.env.example` | 覆寫仲裁模型的 system prompt |
+
+**5. 萃取服務**（`extract_container.py`、`/internal/extract`；container 與本機 Flask blueprint 未設共享密鑰就 fail closed）
+
+| Key | Required | Default | Description |
+|-----|:--------:|---------|-------------|
+| `EXTRACTION_SHARED_SECRET` | 條件（未設則拒絕請求） | — | 爬蟲 Worker 呼叫時帶的 `X-Extraction-Token` 共享密鑰 |
+| `LLM_EXTRACT_CF_GATEWAY_URL` | ✗ | — | 萃取服務用的 CF AI Gateway URL |
+| `LLM_GEMMA_MODEL` | ✗ | 見 `.env.example` | 萃取用的 Workers AI 模型 |
+| `LLM_MAX_OUTPUT_TOKENS` | ✗ | `512` | 萃取呼叫的 token 上限 |
+| `PIPELINE_RUN_COST_CAP_USD` | ✗ | `5.0` | 單次 pipeline run 的成本上限 |
+| `PIPELINE_LLM_CALL_TIMEOUT_MS` | ✗ | `28000` | 單次 LLM 呼叫逾時（毫秒） |
+| `PORT` | ✗ | `8080` | `extract_container.py` 的 Flask 監聽埠；Cloudflare Containers 會自動設定 |
+
+**6. 獨立維護腳本**（不被 web app 讀取，只有跑對應腳本才要自己加；LLM Council **都不需要**這些）
+
+| Key | 誰要用 |
+|-----|--------|
+| `ANTHROPIC_API_KEY` | `scripts/backfill_case_embeddings.py`、`extract_structured_fields_llm.py` 等直連 Anthropic 的腳本 |
+| `OPENAI_API_KEY` | 嵌入向量腳本（`backfill_case_embeddings.py`、`two_stage_embedding_backfill.py`）與 `semantic_search_eval.py` |
+| `GEMINI_API_KEY` | 同上嵌入腳本，加上 `scripts/fetch_judge_bios.py` |
+| `GOOGLE_API_KEY` | `GEMINI_API_KEY` 的別名（`fill_country_gemini.py`、`fill_outcomes_gemini.py` 等） |
+| `SEMANTIC_SEARCH_PROVIDER` | `/api/v1/cases` 語意搜尋的預設 embedding provider |
+| `CF_ACCOUNT_ID` / `CF_API_TOKEN` / `WORKER_AUTH_TOKEN` | `scripts/cloudflare_config.py`；`WORKER_AUTH_TOKEN` 是腳本端 header 值（`enqueue_urls.py`、`sync_results.py`），**不是**第 7 節同名的 Worker secret |
+| `R2_BUCKET_NAME` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | `scripts/cloudflare_config.py` |
+| `DATABASE_URL` / `SUPABASE_DB_URL` / `HYPERDRIVE_SERVICE_URL` | `scripts/bootstrap_pipeline_baselines.py`；僅限已退役的舊 stack |
+| `IMMI_SOURCE_DATABASE_URL` / `IMMI_SOURCE_TEXT_ROOT` | `scripts/export_immi_ndjson.py` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `sync_judge_bios_supabase.py` 的 `SUPABASE_URL` 別名 |
+
+**7. Cloudflare Worker secrets / vars — 不是 dotenv 項目，設定方式是 `wrangler secret put <NAME>`，不要放進本檔或 `.env`**
+
+| Key | Description |
+|-----|-------------|
+| `CSRF_SECRET` | 雙提交 CSRF token 的 HMAC 金鑰；未設定時 `GET /api/v1/csrf-token` 回 503 |
+| `JWT_SECRET_CURRENT` / `JWT_SECRET_PREVIOUS` | HS256 簽章素材；本機 Flask middleware 也讀同名值（見第 1 節） |
+| `JWT_KID_CURRENT` / `JWT_KID_PREVIOUS` | 金鑰輪替用的 key id，僅 Worker 使用 |
+| `TELEGRAM_BOT_TOKEN` | Telegram Login HMAC 驗證密鑰 |
+| `CF_AIG_TOKEN` | Worker 端 LLM Council runner 用的 AI Gateway token |
+| `EXTRACTION_SHARED_SECRET` | 爬蟲 Worker 要求的共享密鑰（同第 5 節） |
+| `CRAWLER_WRITE_TOKEN` | ⚠️ **危險**：設定後會開啟一條同時跳過 CSRF 驗證與 tenant-membership 檢查的寫入路徑，只給外部 VPS crawler 用；視同正式環境寫入憑證，一旦懷疑外洩立刻輪替 |
+
+`wrangler.toml` 的 `[vars]`（非 secret）：`AUTH_ENABLED`、`IMMI_STORAGE_MODE`、
+`IMMI_CASE_MUTATIONS_ENABLED`、`CUTOVER_WRITE_FREEZE`——mutation 與 pipeline 旗標
+**刻意** 預設 `"false"`（fail-closed），不要「修好」它們。
+
+**8. Vite 前端 bundle** — 設在 `frontend/.env`，不是這個檔案（`import.meta.env.*` 只讀 `frontend/` 的 envDir）
+
+| Key | Required | Default | Description |
+|-----|:--------:|---------|-------------|
+| `VITE_TELEGRAM_BOT_NAME` | ✗ | `immi_case_bot`（fallback） | Telegram Login Widget 綁定的 bot 帳號（不含 `@`）。未設定時 `frontend/src/pages/LoginPage.tsx` 會 fallback 到硬編值，登入按鈕會綁到錯的 bot 而不會報錯 |
+| `BACKEND_HOST` | ✗ | `127.0.0.1` | `frontend/vite.config.ts` 讀根目錄 `.env` 算 dev proxy target；不是 `VITE_*` 前綴變數，所以放在根目錄 `.env` 確實有效 |
 
 安全基線：
 - 當 `APP_ENV`、`IMMI_ENV` 或 `FLASK_ENV` 為 `production` / `staging` 時，`SECRET_KEY` 必須明確提供；開發 / 測試模式才允許自動生成臨時值。
