@@ -1,8 +1,62 @@
 # IMMI-Case Worktree Closeout State
 
-Updated: 2026-08-27 Australia/Melbourne
+Updated: 2026-08-28 Australia/Melbourne
 
-## 2026-08-27 `/improve deep` 全倉審計 + 52 份實作計畫 — IN PROGRESS
+## 2026-08-28 52 份計畫實作 — 46/52 已合併 main
+
+基準 `42826a3` → 現在。全部數字為本機實測，非引用。
+
+### 閘門現況（全綠）
+| 閘門 | 基準 | 現在 |
+|---|---|---|
+| Worker 測試 | 345 / 25 檔 | **511 / 41 檔** |
+| 前端測試 | 490 / 55 檔 | **706 / 82 檔** |
+| Python 測試 | 1210 passed | **1381 passed**（3 個環境性 pyexpat） |
+| 前端型別閘門 | `tsc --noEmit` 載入 **0** 檔 | `tsc -b --noEmit` 170 檔，CI 有非空操作斷言 |
+| CI 前端 build | 不存在 | 每次 PR |
+| bundle closure | 乾淨安裝下 `ERR_MODULE_NOT_FOUND` | 通過（351,244 bytes） |
+| ruff 範圍 | 排除 `tests/`（藏 43 違規） | 含 `tests/`，全過 |
+| 覆蓋率門檻 | 宣告 80%，Vitest 4 不認得該欄位 | 28/30/24/29，實地負向測試過 |
+| 生產依賴漏洞 | 8（7 high） | **0** |
+
+### 剩餘 6 個計畫
+`013 024 046`（Wave 8 執行中）· `012 014`（等 013，Worker 資料路徑硬性串行）· `042`（等 046 讓出 Makefile）
+
+### ⚠️ 唯一的生產阻塞（需要 operator 操作）
+LLM Council 在生產環境每個 POST 都回 429。程式碼已修好在 main（計畫 004），
+但 **`IMMI_NATIVE_MAIN_WRANGLER_TOML_B64` 這個 GitHub secret 必須先加入
+`[[ratelimits]]` 區塊**，否則部署會被計畫 004 新增的閘門擋下（刻意設計）。
+
+```toml
+[[ratelimits]]
+name = "RL_COUNCIL_TURN"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+```
+
+驗證：`.venv/bin/python scripts/check_cloudflare_native_target.py --main-config <改好的.toml> --pipeline-config <pipeline.toml>`
+→ 不得有任何錯誤行提到 `RL_COUNCIL_TURN`。
+部署後：第一個 `POST /api/v1/llm-council/sessions` 帶有效 JWT 必須回 **200**（非 429、非 503）。
+若仍 429 = 私有 config 沒更新成功，**不要**改回 fail-open（那會拆掉付費額度的唯一防線）。
+
+### 次要待決（本機 only，CI 不受影響）
+`npm run lint` 有 1 個 error，來自 `remember` plugin 的 `frontend/.remember/tmp/last-ndc.ts`
+（`.ts` = timestamp 不是 TypeScript）。修法是在 `frontend/eslint.config.js` 加 ignore，
+但 config-protection hook 擋下了——需 operator 決定是否放行。
+
+### 過程中發現並修復的額外缺陷（不在原 52 計畫內）
+1. `_rpc_executor` 是模組層級全域，被所有 Flask app 實例共用 → `/api/v1/stats` 間歇性回空。改為 per-app。
+2. **計畫自己的 drift check 從來不會失敗**：`git diff -- $SCOPE` 未加引號，多行 pathspec 塌成一個無效值 → 對每條路徑都靜默回空。19 份計畫已修為 bash 陣列。
+3. `esbuild` 未在任何 manifest 宣告，靠 vitest 2 間接帶入；037 升到 vitest 4 後消失 → CI 的 bundle 閘門在乾淨安裝下必掛。已宣告並釘版。
+4. `$(wildcard $(VENV_PYTHON))` 在含空白路徑下切成兩個詞，venv fallback 從未生效。改用 `test -x`。
+5. `council-prompt-parity.test.js` 洩漏全域 fetch spy；vitest 4 改變了 spy 重用語意 → 跨測試污染。
+
+### 教訓（已寫入 memory）
+- `git stash` 掃整個工作樹，多 agent 共用 checkout 時會吃掉別人的未提交編輯
+- 共用 checkout 裡 `git switch` 會讓所有人的後續提交落到該分支
+- **合併 lockfile 變更後必須 `npm ci`**：陳舊 `node_modules` 讓驗證在與 CI 不同的世界裡進行
+
+## 2026-08-27 `/improve deep` 全倉審計 + 52 份實作計畫 — 審計與計畫階段
 
 基準 commit `42826a3`。全程未改動任何原始碼（僅新增 `plans/`）。
 
