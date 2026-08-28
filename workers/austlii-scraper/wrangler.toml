@@ -104,6 +104,17 @@ remote = true
 [ai]
 binding = "AI"
 
+# These crons are inert while PIPELINE_ENABLED / NATIVE_PIPELINE_ENABLED are
+# "false": scheduled() checks nativePipelineReady() first and returns after
+# logging cron.skipped.disabled. That is the observable fact and it is true
+# today regardless of any decision.
+#
+# docs/adr/0047-austlii-ingestion-architecture.md PROPOSES that this pipeline
+# stays quarantined break-glass while the external VPS crawler owns production
+# ingestion (see scripts/crawler/README.md). As of this comment that ADR is
+# **Proposed, not Accepted** — it is a recommendation awaiting operator
+# sign-off, not settled policy. Read it before flipping either flag; if it has
+# since been Accepted, superseding it is the way to change this.
 [triggers]
 crons = ["0 2 * * 1", "0 3 * * 1", "0 4 * * 1", "0 5 * * 1"]
 
