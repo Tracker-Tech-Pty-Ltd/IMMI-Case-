@@ -55,21 +55,16 @@ def cmd_search(args):
         all_cases.extend(cases)
         print(f"Found {len(cases)} cases on AustLII")
 
-    # Search Federal Court
-    if "fedcourt" in args.sources or "all" in args.sources:
-        fedcourt = FederalCourtScraper(delay=args.delay)
-
-        print("Searching Federal Court of Australia...")
-        cases = fedcourt.search_cases(
-            start_year=args.start_year,
-            end_year=args.end_year,
-            max_results=args.max_results,
+    # Federal Court direct search is unavailable: search2.fedcourt.gov.au does
+    # not resolve (see CLAUDE.md, "Federal Court DNS"). FCA judgments are
+    # collected through AustLII instead. An explicit --sources fedcourt is a
+    # hard error rather than a silent empty success, so automation notices.
+    if "fedcourt" in args.sources:
+        raise SystemExit(
+            "Source 'fedcourt' is unavailable: search2.fedcourt.gov.au does not "
+            "resolve. Federal Court judgments are available via AustLII — use "
+            "--sources austlii --databases FCA."
         )
-        # Deduplicate against existing
-        existing_urls = {c.url for c in all_cases}
-        new_cases = [c for c in cases if c.url not in existing_urls]
-        all_cases.extend(new_cases)
-        print(f"Found {len(new_cases)} additional cases on Federal Court")
 
     if not all_cases:
         print("No cases found. Try adjusting search parameters.")
@@ -193,7 +188,8 @@ def cmd_list_databases(args):
     print("Other Sources:")
     print("=" * 60)
     print("  fedcourt       Federal Court of Australia Judgment Search")
-    print("                 search2.fedcourt.gov.au")
+    print("                 search2.fedcourt.gov.au — UNAVAILABLE (host does not")
+    print("                 resolve); use AustLII database FCA instead")
 
 
 def main():
@@ -247,9 +243,10 @@ Examples:
     search_parser.add_argument(
         "--sources",
         nargs="+",
-        default=["all"],
+        default=["austlii"],
         choices=["all", "austlii", "fedcourt"],
-        help="Sources to search (default: all)",
+        help="Sources to search (default: austlii). 'all' means AustLII only — "
+             "'fedcourt' is unavailable (search2.fedcourt.gov.au does not resolve).",
     )
     search_parser.add_argument(
         "--databases",

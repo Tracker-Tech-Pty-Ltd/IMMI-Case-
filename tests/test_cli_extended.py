@@ -120,24 +120,58 @@ class TestCmdSearchExtended:
 
     @patch("immi_case_downloader.cli.FederalCourtScraper")
     @patch("immi_case_downloader.cli.AustLIIScraper")
-    def test_search_all_sources(self, mock_austlii_cls, mock_fc_cls, tmp_path):
-        """cmd_search with sources=['all'] searches both AustLII and Federal Court."""
+    def test_search_all_sources_skips_the_dead_federal_court(
+        self, mock_austlii_cls, mock_fc_cls, tmp_path
+    ):
+        """sources=['all'] searches AustLII only; fedcourt is never constructed."""
         ensure_output_dirs(str(tmp_path))
         save_cases_csv([], str(tmp_path))
 
         mock_austlii_cls.return_value.search_cases.return_value = [
             ImmigrationCase(citation="A", url="https://a.com/1", court_code="AATA", source="AustLII")
         ]
-        mock_fc_cls.return_value.search_cases.return_value = [
-            ImmigrationCase(citation="B", url="https://b.com/1", court_code="FCA", source="Federal Court")
-        ]
 
         args = self._make_args(tmp_path, sources=["all"], databases=["AATA"])
         cmd_search(args)
 
+        mock_fc_cls.assert_not_called()
+
         from immi_case_downloader.storage import load_all_cases
         cases = load_all_cases(str(tmp_path))
-        assert len(cases) == 2
+        assert len(cases) == 1
+
+    @patch("immi_case_downloader.cli.FederalCourtScraper")
+    @patch("immi_case_downloader.cli.AustLIIScraper")
+    def test_search_explicit_fedcourt_exits_non_zero(
+        self, mock_austlii_cls, mock_fc_cls, tmp_path
+    ):
+        """--sources fedcourt fails loudly instead of succeeding with 0 cases."""
+        ensure_output_dirs(str(tmp_path))
+        save_cases_csv([], str(tmp_path))
+
+        args = self._make_args(tmp_path, sources=["fedcourt"], databases=["AATA"])
+        with pytest.raises(SystemExit) as excinfo:
+            cmd_search(args)
+
+        mock_fc_cls.assert_not_called()
+        assert "unavailable" in str(excinfo.value)
+        # A bare `raise SystemExit("msg")` exits 1, not 0 — that is the point.
+        assert excinfo.value.code != 0
+
+    def test_search_default_sources_is_austlii(self):
+        """The declared default no longer promises a source that cannot be served."""
+        import sys
+
+        captured_args = {}
+
+        def _capture(args):
+            captured_args["sources"] = args.sources
+
+        with patch("immi_case_downloader.cli.cmd_search", side_effect=_capture):
+            with patch.object(sys, "argv", ["run.py", "search", "--databases", "AATA"]):
+                main()
+
+        assert captured_args["sources"] == ["austlii"]
 
 
 class TestCmdDownloadExtended:
