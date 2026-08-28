@@ -176,7 +176,7 @@ Grounded options for the maintainer. Each produces a decision + ADR, not a finis
 | [047](047-decide-the-ingestion-architecture.md) | Spike — pick one of the two AustLII ingestion pipelines and retire the other | P1 | M | LOW | — | DONE — merged to main |
 | [048](048-wire-council-to-the-case-reader.md) | Spike — connect the LLM Council to the case the user is reading | P2 | S | LOW | — | TODO |
 | [049](049-ship-the-legislation-corpus.md) | Make the legislation browser safe to publish into, then publish the 1,796 scraped sections | P2 | S | LOW | 001 | DONE — merged to main |
-| [050](050-move-user-data-server-side.md) | Decide how bookmarks, collections and saved searches become server-side data | P3 | M | LOW | — | TODO |
+| [050](050-move-user-data-server-side.md) | Decide how bookmarks, collections and saved searches become server-side data | P3 | M | LOW | — | DONE — merged to main |
 | [051](051-make-judge-identity-first-class.md) | Spike — decide how judge identity gets fixed before wiring the normaliser into production | P3 | M | LOW | 003 | TODO |
 | [052](052-decide-the-android-client.md) | Spike — decide whether the 135-file Kotlin client is archived or adopted, and mark it either way | P3 | S | LOW | — | DONE — merged to main |
 

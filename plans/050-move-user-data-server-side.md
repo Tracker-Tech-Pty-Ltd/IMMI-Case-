@@ -1184,7 +1184,15 @@ Machine-checkable. ALL must hold:
 - [ ] `grep -q "PROPOSED, NOT APPLIED" docs/adr/0050-user-data-server-side.md` exits 0
 - [ ] `grep -q "docs/adr/0050-user-data-server-side.md" frontend/src/hooks/use-bookmarks.ts` exits 0
 - [ ] `grep -q "docs/adr/0050-user-data-server-side.md" frontend/src/lib/saved-searches.ts` exits 0
-- [ ] `ls migrations/d1/account/` lists exactly `0001_account.sql` and nothing else
+- [ ] `ls migrations/d1/account/` lists exactly `0001_account.sql` and `0002_platform_admin.sql`
+      and nothing else. **Corrected 2026-08-28**: this plan's original text asserted
+      `0001_account.sql` alone; `0002_platform_admin.sql` (plan 006's `users.platform_admin`
+      grant column, SEC-01) landed on `main` before this plan executed. It is unrelated to
+      user data — it does not touch `cases`, `collections`, `collection_items` or
+      `saved_searches` — so it does not compete with this ADR's proposed schema and the
+      Decision 1 "no second *unused* schema" argument stands. The check is updated to the
+      real baseline, not dropped, so it still fails if a genuinely competing third migration
+      shows up. See "Findings reconsidered" below for the full evidence.
 - [ ] `git diff --numstat -- frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts`
       shows `0` in the deletions column for both files
 - [ ] `cd frontend && npx tsc -b --noEmit` exits 0
@@ -1209,6 +1217,21 @@ Stop and report back (do not improvise) if:
 - `migrations/d1/account/` already contains a `0002_*.sql`. The "no second
   unused schema" argument in Decision 1 no longer holds and the decision needs
   rethinking, not patching.
+
+  **This condition fired and was resolved 2026-08-28** — recording the
+  resolution here so a future re-run of this plan does not re-trigger it
+  blind. `0002_platform_admin.sql` landed on `main` (plan 006, SEC-01): a
+  `users.platform_admin` grant column and index, unrelated to bookmarks,
+  collections or saved searches — it does not touch `cases`, `collections`,
+  `collection_items` or `saved_searches`. It is **used**
+  (`workers/case-api/cloudflare_mutations.js` gates shared-catalog writes on
+  it via `assertPlatformOperator`), so it is not a second *unused* schema —
+  the specific thing Decision 1 argues against. The argument stands; only the
+  premise "there is exactly one migration in `migrations/d1/account/`" was
+  false and is corrected in the Done criteria and "Findings reconsidered"
+  below. Do not treat this note as blanket permission to wave off a future
+  `0003_*.sql` or later — re-verify each time this fires, the way this
+  resolution did, rather than assuming the same answer applies.
 - `wrangler.toml` no longer reads `IMMI_CASE_MUTATIONS_ENABLED = "false"`. If
   writes were enabled, `cases.user_notes` may hold real cross-tenant data and
   Decision 4 needs a data-migration section this plan does not contain.
@@ -1318,3 +1341,36 @@ For the human or agent who owns this next:
   the roadmap's T13 heading at
   `docs/plans/2026-03-15-system-integration-roadmap.md:472`. No corrections were
   needed to any file:line in the finding itself.
+- **"`migrations/d1/account/` contains exactly one migration, `0001_account.sql`"**
+  — true when this plan was drafted at `42826a3`, **false by the time it
+  executed**. Plan 006 (`harden-auth-and-authorization-006`, closing SEC-01)
+  landed `migrations/d1/account/0002_platform_admin.sql` on `main` in the
+  interim: `ALTER TABLE users ADD COLUMN platform_admin INTEGER NOT NULL
+  DEFAULT 0;` plus an index, gating global pipeline controls, the platform
+  admin read, and (per a further change in the same security pass)
+  shared-catalog case writes — `workers/case-api/cloudflare_mutations.js`'s
+  `requireWriter` now calls `stores.identityStore.assertPlatformOperator(...)`
+  (defined at `workers/storage/identity.js:98-119`) instead of
+  `assertMembership`, specifically because "the `cases` table has no tenant
+  column... tenant membership is not sufficient authorization."
+
+  This fired the STOP condition literally as written ("`migrations/d1/account/`
+  already contains a `0002_*.sql`") when the executor ran the drift check.
+  **The correction, not just the fact**: `0002_platform_admin.sql` is used, not
+  unused, and touches `users`, not `cases`/`collections`/`collection_items`/
+  `saved_searches` — so it is not a second *unused bookmarks-schema*, which is
+  the specific thing Decision 1 argues against. Decision 1's conclusion
+  (propose the schema delta, do not apply it, do not add a second unused
+  schema) stands unchanged. What changed is bookkeeping: the eventual
+  implementation migration is `0003_*.sql`, not `0002_*.sql`, and the Done
+  criterion checking `migrations/d1/account/`'s contents is updated above to
+  the real baseline rather than dropped, so it still catches a genuinely
+  competing third migration. The ADR's Decision 1 and its "Verification notes"
+  section both carry this correction, sourced independently from the same
+  evidence rather than copied from this note.
+
+  The general lesson for whoever runs a sibling plan next: a STOP condition
+  firing is not itself proof the plan's premise must be rewritten from
+  scratch — read what actually landed before concluding the argument is
+  broken. It was right to stop and ask rather than assume either "it's surely
+  fine" or "the whole decision is now void"; both would have been guesses.
