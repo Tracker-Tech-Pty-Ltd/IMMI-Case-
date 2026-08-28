@@ -55,6 +55,7 @@ export function useCaseCount(
     queryKey: ["cases-count", filters, countMode],
     queryFn: () => fetchCaseCount(filters, countMode),
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
     ...options,
   });
 }

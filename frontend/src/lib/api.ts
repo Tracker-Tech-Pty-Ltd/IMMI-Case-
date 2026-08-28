@@ -27,6 +27,10 @@ import type {
 import type { LineageData } from "@/lib/lineage-data";
 
 let csrfToken: string | null = null;
+/** In-flight mint, so concurrent mutations share one token and one Set-Cookie. */
+let csrfTokenInFlight: Promise<string> | null = null;
+/** Bumped on every successful mint; lets a caller prove its token is the stale one. */
+let csrfTokenGeneration = 0;
 let accessToken: string | null = null;
 
 /** Inject the JWT access token so apiFetch adds Authorization headers automatically. */
@@ -45,12 +49,42 @@ const DASHBOARD_CACHE_TTL_MS = 5 * 60_000;
 const DASHBOARD_STATS_CACHE_KEY = "immi:dashboard:stats:v2";
 const DASHBOARD_TRENDS_CACHE_KEY = "immi:dashboard:trends:v2";
 
-async function fetchCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
+async function mintCsrfToken(): Promise<string> {
   const res = await fetch("/api/v1/csrf-token", { credentials: "include" });
-  const data = await res.json();
-  csrfToken = data.csrf_token;
-  return csrfToken!;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(
+      body.error || `CSRF token request failed: ${res.status}`,
+      res.status,
+      body.code,
+    );
+  }
+  const body = await res.json().catch(() => ({}));
+  const token: unknown = body?.csrf_token;
+  if (typeof token !== "string" || token.length === 0) {
+    throw new ApiError(
+      "CSRF token missing from /api/v1/csrf-token response",
+      res.status,
+      "csrf_token_missing",
+    );
+  }
+  csrfToken = token;
+  csrfTokenGeneration += 1;
+  return token;
+}
+
+async function fetchCsrfToken(): Promise<{ token: string; generation: number }> {
+  if (csrfToken) return { token: csrfToken, generation: csrfTokenGeneration };
+  // Single-flight: the Worker's mint also rewrites the __Host-csrf cookie, so
+  // two concurrent mints leave one caller holding a header that no longer
+  // matches the cookie and gets a 403 it cannot distinguish from a real one.
+  if (!csrfTokenInFlight) {
+    csrfTokenInFlight = mintCsrfToken().finally(() => {
+      csrfTokenInFlight = null;
+    });
+  }
+  const token = await csrfTokenInFlight;
+  return { token, generation: csrfTokenGeneration };
 }
 
 export interface ApiRequestOptions extends RequestInit {
@@ -92,7 +126,7 @@ export function isCaseMutationsDisabledError(error: unknown): boolean {
   return error instanceof ApiError && error.code === CASE_MUTATIONS_DISABLED_CODE;
 }
 
-export async function apiFetch<T>(
+async function apiFetchOnce<T>(
   url: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
@@ -106,8 +140,11 @@ export async function apiFetch<T>(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
+  let csrfGeneration = -1;
   if (requestOptions.method && requestOptions.method !== "GET") {
-    headers["X-CSRFToken"] = await fetchCsrfToken();
+    const minted = await fetchCsrfToken();
+    headers["X-CSRFToken"] = minted.token;
+    csrfGeneration = minted.generation;
   }
 
   const controller = new AbortController();
@@ -153,14 +190,65 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(
+    const error_ = new ApiError(
       error.error || `API error: ${res.status}`,
       res.status,
       error.code,
     );
+    (error_ as ApiError & { csrfGeneration?: number }).csrfGeneration =
+      csrfGeneration;
+    throw error_;
   }
 
   return res.json();
+}
+
+/**
+ * True only for the 403s the Worker returns when the double-submit CSRF token
+ * is stale — `csrf_expired` (payload TTL passed) or `csrf` (header and the
+ * `__Host-csrf` cookie disagree, which is what an expired cookie produces).
+ * See `workers/auth/csrf.js` `verifyCsrf`. Every other 403 the Worker emits
+ * (`admin_required`, `operator_role_required`, `forbidden`, ...) is a real
+ * authorization failure and must never be replayed.
+ */
+function isStaleCsrfError(error: unknown, method?: string): boolean {
+  if (!method || method === "GET") return false;
+  return (
+    error instanceof ApiError &&
+    error.status === 403 &&
+    (error.code === "csrf" || error.code === "csrf_expired")
+  );
+}
+
+export async function apiFetch<T>(
+  url: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  try {
+    return await apiFetchOnce<T>(url, options);
+  } catch (error) {
+    if (!isStaleCsrfError(error, options.method)) throw error;
+    // Both the token and the `__Host-csrf` cookie expire after CSRF_TTL_MS
+    // (1h). Drop the tab-lifetime cache, mint a fresh pair and replay the
+    // request exactly once — never more, so a genuinely rejected request
+    // cannot loop. Every mutation body in this module is a JSON string, so
+    // replaying is safe.
+    //
+    // Generation compare: only the caller whose token was current at send time
+    // may invalidate the cache. If another concurrent mutation already re-minted
+    // (generation moved on), our 403 is collateral from that race — replay with
+    // the token that is now cached rather than minting a third one and racing
+    // again.
+    const failedGeneration = (error as ApiError & { csrfGeneration?: number })
+      .csrfGeneration;
+    if (
+      failedGeneration === undefined ||
+      failedGeneration === csrfTokenGeneration
+    ) {
+      clearCsrfToken();
+    }
+    return await apiFetchOnce<T>(url, options);
+  }
 }
 
 // ─── Shared filter query string builder ───────────────────────
@@ -190,19 +278,52 @@ function markDashboardStatsDegraded(stats: DashboardStats): DashboardStats {
   };
 }
 
+interface NormalizedAnalyticsFilters {
+  court: string;
+  yearFrom: number;
+  yearTo: number;
+  caseNatures: string[];
+  visaSubclasses: string[];
+  outcomeTypes: string[];
+}
+
+/**
+ * Canonical identity of an analytics filter set: every field that
+ * `buildFilterParams` / `appendAdvancedFilters` can put on the wire, with
+ * array order normalised so `["a","b"]` and `["b","a"]` are one cache entry.
+ *
+ * Both the localStorage dashboard cache key and the TanStack Query key are
+ * derived from this, so the two layers can never disagree about what
+ * identifies a result. If you add a field to `AnalyticsFilterParams` and send
+ * it in `appendAdvancedFilters`, add it here too.
+ */
+function normalizeAnalyticsFilters(
+  filters?: AnalyticsFilterParams,
+): NormalizedAnalyticsFilters {
+  return {
+    court: filters?.court ?? "",
+    yearFrom: filters?.yearFrom ?? 0,
+    yearTo: filters?.yearTo ?? 0,
+    caseNatures: (filters?.caseNatures ?? []).toSorted(),
+    visaSubclasses: (filters?.visaSubclasses ?? []).toSorted(),
+    outcomeTypes: (filters?.outcomeTypes ?? []).toSorted(),
+  };
+}
+
+/**
+ * Stable TanStack Query key fragment for an analytics filter set.
+ * Use this for every hook whose queryFn passes `filters` to a `fetch*`
+ * helper that calls `buildFilterParams` / `appendAnalyticsFilters`.
+ */
+export function analyticsFilterKey(filters?: AnalyticsFilterParams): string {
+  return JSON.stringify(normalizeAnalyticsFilters(filters));
+}
+
 function buildDashboardCacheKey(
   baseKey: string,
   filters?: AnalyticsFilterParams,
 ): string {
-  const keyObject = {
-    court: filters?.court ?? "",
-    yearFrom: filters?.yearFrom ?? 0,
-    yearTo: filters?.yearTo ?? 0,
-    caseNatures: (filters?.caseNatures ?? []).slice().sort(),
-    visaSubclasses: (filters?.visaSubclasses ?? []).slice().sort(),
-    outcomeTypes: (filters?.outcomeTypes ?? []).slice().sort(),
-  };
-  return `${baseKey}:${JSON.stringify(keyObject)}`;
+  return `${baseKey}:${JSON.stringify(normalizeAnalyticsFilters(filters))}`;
 }
 
 function readCache<T>(key: string): T | null {
@@ -1317,7 +1438,7 @@ export interface CollectionExportPayload {
 export async function exportCollection(
   payload: CollectionExportPayload,
 ): Promise<string> {
-  const token = await fetchCsrfToken();
+  const { token } = await fetchCsrfToken();
   const res = await fetch("/api/v1/collections/export", {
     method: "POST",
     headers: {
@@ -1399,4 +1520,5 @@ export async function fetchSemanticSearch(
 // ─── Invalidate CSRF (call on auth errors) ─────────────────────
 export function clearCsrfToken(): void {
   csrfToken = null;
+  csrfTokenInFlight = null;
 }
