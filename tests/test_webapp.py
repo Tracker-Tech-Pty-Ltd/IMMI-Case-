@@ -457,6 +457,67 @@ class TestApiRoutes:
         assert resp.get_json() == {"trends": []}
 
 
+# ── Per-app RPC executor ───────────────────────────────────────────────────
+
+
+class TestPerAppRpcExecutor:
+    """Each Flask app instance must own its RPC executor.
+
+    Regression coverage for the bug where `_rpc_executor` was a
+    module-global `ThreadPoolExecutor(max_workers=4)` shared by every
+    `create_app()` instance in the process. `_call_with_timeout()` cancels
+    the future on timeout, but `future.cancel()` is a documented no-op once
+    a task has actually started — so abandoned work kept occupying a worker
+    forever. With a shared pool, saturating *one* app's executor starved
+    every *other* app sharing the process, which is exactly what made
+    `test_stats_endpoint_populates_visa_charts_on_sqlite` flake in the full
+    suite: an unrelated app's leftover work ate all 4 workers before that
+    test's own `/api/v1/stats` request ever got a turn.
+    """
+
+    def test_saturated_app_executor_does_not_starve_a_second_app(self, tmp_path):
+        import threading
+
+        from immi_case_downloader.web.routes import api as api_module
+        from immi_case_downloader.webapp import create_app
+
+        app_a = create_app(str(tmp_path / "app_a"), backend="csv")
+        app_b = create_app(str(tmp_path / "app_b"), backend="csv")
+        executor_a = app_a.extensions["immi_rpc_executor"]
+        executor_b = app_b.extensions["immi_rpc_executor"]
+
+        # Each app must own a distinct executor — the whole point of the fix.
+        assert executor_a is not executor_b
+
+        release = threading.Event()
+        started = threading.Semaphore(0)
+
+        def _blocking_task():
+            started.release()
+            release.wait(timeout=10)
+            return "blocked-done"
+
+        # Saturate every worker slot in app A's pool with work that outlives
+        # the test — simulating the "timed out but still running" task the
+        # real bug leaves behind (future.cancel() cannot stop it).
+        saturating_futures = [executor_a.submit(_blocking_task) for _ in range(4)]
+        try:
+            for _ in range(4):
+                assert started.acquire(timeout=5), "app A's pool never saturated"
+
+            # App B's own RPC call must still complete promptly — it must not
+            # queue behind app A's saturated, unrelated pool.
+            with app_b.app_context():
+                result = api_module._call_with_timeout(lambda: "ok", timeout_seconds=2.0)
+            assert result == "ok"
+        finally:
+            release.set()
+            for future in saturating_futures:
+                future.result(timeout=5)
+            executor_a.shutdown(wait=True)
+            executor_b.shutdown(wait=True)
+
+
 # ── Security headers ───────────────────────────────────────────────────────
 
 
