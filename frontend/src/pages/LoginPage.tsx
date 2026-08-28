@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { TelegramLoginButton } from "@/components/auth/TelegramLoginButton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,7 +10,6 @@ export function LoginPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [loginError, setLoginError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
@@ -18,10 +17,10 @@ export function LoginPage() {
     }
   }, [isAuthenticated, isLoading, navigate]);
 
-  const handleSuccess = useCallback(() => navigate("/", { replace: true }), [navigate]);
-  const handleError = useCallback((err: Error) => setLoginError(err.message), []);
   const authError = searchParams.get("auth_error");
-  const visibleError = loginError || (authError ? "Telegram sign-in failed. Please try again." : null);
+  const visibleError = authError
+    ? "Telegram sign-in failed. Please try again."
+    : null;
 
   if (isLoading) return <PageLoader />;
 
@@ -41,11 +40,7 @@ export function LoginPage() {
           </div>
         )}
         <div className="flex justify-center">
-          <TelegramLoginButton
-            botName={BOT_NAME}
-            onSuccess={handleSuccess}
-            onError={handleError}
-          />
+          <TelegramLoginButton botName={BOT_NAME} />
         </div>
         <p className="mt-6 text-xs text-muted-text text-center">
           All 149,016 cases are publicly accessible without login. Login is only
