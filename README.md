@@ -17,7 +17,7 @@ IMMI-Case 是一個澳洲移民法律研究工具，完整爬取、解析並呈�
 
 **核心能力**：
 
-- 語意搜尋：pgvector HNSW + OpenAI/Gemini 嵌入，支援 lexical / semantic / hybrid 三模式
+- 語意搜尋（正式環境）：Cloudflare Vectorize（`CASE_VECTORS`）+ Workers AI `@cf/qwen/qwen3-embedding-0.6b`（1024-dim），支援 lexical / semantic / hybrid 三模式；pgvector + OpenAI/Gemini 只存在於本機開發腳本
 - 自動欄位萃取：regex pipeline + 10 個平行 Claude Sonnet sub-agent，90%+ 覆蓋率
 - 法官分析：勝率計算器、任職時間軸、跨法院對比（15,465 筆法官紀錄）+ 104 位成員傳記庫（`/api/v1/analytics/judge-bio`，含法律資格狀態 `legal_status`）
 - 案件線系圖：FMCA → FCCA → FedCFamC2G，MRTA+RRTA → AATA → ARTA 完整脈絡
@@ -86,7 +86,7 @@ It built the labyrinth.
 | 功能模組 | 做什麼 | 為什麼存在 | 使用者價值 |
 |----------|--------|------------|------------|
 | **Smart Pipeline** | 三階段自動化：爬取 → 清理 → 下載 | 一鍵觸發完整資料更新 | 無需手動介入，系統自我修復 |
-| **語意搜尋** | pgvector HNSW，三模式（lexical/semantic/hybrid） | 關鍵字搜不到的案件，語意能找到 | 判決策略研究效率 10× |
+| **語意搜尋** | 正式環境 Vectorize + Workers AI 嵌入，三模式（lexical/semantic/hybrid） | 關鍵字搜不到的案件，語意能找到 | 判決策略研究效率 10× |
 | **法官分析** | 勝率 × 法院 × 簽證類別交叉分析 + 104 位成員傳記庫（含法律資格標記） | 律師需要了解裁判官傾向與背景 | 訴訟策略制定的數據基礎 |
 | **LLM 欄位萃取** | 10 個 Claude Sonnet 平行 Agent | 15 萬筆案件的結構化資訊無法純手工 | 萃取覆蓋率 90%+ |
 | **Cloudflare Workers** | 分散式爬蟲 + R2 儲存 | 本地爬蟲易觸發 AustLII IP 封鎖 | 86K 案件 20 分鐘完成 |
@@ -286,11 +286,15 @@ python run.py list-databases
 
 ### 5.2 API — 搜尋端點
 
+> 以下 `localhost:8080` 範例是**本機 Flask 開發**路徑（`python web.py --backend supabase`，
+> pgvector + OpenAI/Gemini 嵌入）。正式環境 `https://immi.trackit.today` 由 Worker 直查
+> D1 FTS5 + Vectorize（Workers AI 嵌入），不接受 `provider` 參數。
+
 ```bash
 # 詞彙搜尋（預設）
 curl "http://localhost:8080/api/v1/search?q=judicial+review&court=AATA"
 
-# 語意搜尋（需要 pgvector + embeddings）
+# 語意搜尋（本機：需要 pgvector + embeddings）
 curl "http://localhost:8080/api/v1/search?q=well-founded+fear&mode=semantic&provider=openai"
 
 # Hybrid RRF 融合搜尋
@@ -410,7 +414,7 @@ IMMI-Case-/
 │   ├── config.py                   #   法院代碼、AustLII URL、IMMIGRATION_ONLY_DBS
 │   ├── pipeline.py                 #   SmartPipeline: crawl → clean → download
 │   ├── repository.py               #   CaseRepository Protocol (runtime_checkable)
-│   ├── supabase_repository.py      #   Supabase backend (pgvector, FTS, 15 methods)
+│   ├── supabase_repository.py      #   本機開發 Supabase backend (pgvector, FTS, 15 methods)
 │   ├── sqlite_repository.py        #   SQLite FTS5+WAL
 │   ├── csv_repository.py           #   CSV fallback (wraps storage.py)
 │   ├── storage.py                  #   pandas-based CRUD
@@ -438,7 +442,7 @@ IMMI-Case-/
 │   └── __tests__/                  #   Vitest 單元測試（收集範圍見 frontend/vitest.config.ts 的 include）
 │
 ├── scripts/                        # [The Tools]
-│   ├── backfill_case_embeddings.py #   pgvector 嵌入向量批次填充
+│   ├── backfill_case_embeddings.py #   本機開發：pgvector 嵌入向量批次填充
 │   ├── run_semantic_eval.py        #   Recall@K / nDCG@K 評估套件
 │   └── two_stage_embedding_backfill.py
 │
@@ -482,6 +486,7 @@ IMMI-Case-/
 - Note：**永遠不要直接 `ImmigrationCase(**raw_dict)`** — NaN 會讓欄位比對失效
 
 **`SupabaseRepository.semantic_search()` / `immi_case_downloader/supabase_repository.py`**
+- Scope：**本機開發專用**（`--backend supabase`）。正式環境的語意搜尋在 Worker 內，走 Vectorize + Workers AI
 - Purpose：pgvector HNSW 語意搜尋，支援 lexical / semantic / hybrid (RRF) 三模式
 - Inputs：`query: str`, `mode: str`, `provider: str`, `limit: int`
 - Outputs：`list[ImmigrationCase]`，含 `similarity_score`
