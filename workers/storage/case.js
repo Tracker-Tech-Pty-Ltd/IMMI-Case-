@@ -634,36 +634,74 @@ export class CloudflareCaseStore {
     const now = utcNow();
     assignments.push("semantic_ready = 0", "vector_mutation_id = NULL", "updated_at = ?");
     params.push(now, id);
-    const result = await this.db.prepare(`
+    const caseUpdate = this.db.prepare(`
       UPDATE cases SET ${assignments.join(", ")} WHERE case_id = ?
-    `).bind(...params).run();
-    if (changeCount(result) === 0) {
-      throw new StorageBoundaryError("Case not found", { code: "case_not_found", status: 404 });
-    }
+    `).bind(...params);
+
+    // Relations are expanded inside SQLite from one JSON parameter each, so the
+    // whole edit is always 1–7 statements and always fits in one D1
+    // transaction — no matter how many labels the caller sent. The previous
+    // per-label statement loop reached 403 statements at the 100-label cap in
+    // normaliseRelationLabels().
     const relationStatements = [];
     if (Object.prototype.hasOwnProperty.call(updates, "judges")) {
       const labels = normaliseRelationLabels(updates.judges, "judge");
+      const entries = await Promise.all(labels.map(async (label) => ({
+        id: (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32),
+        label,
+      })));
       relationStatements.push(this.db.prepare("DELETE FROM case_judges WHERE case_id = ?").bind(id));
-      for (const label of labels) {
-        const judgeId = (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32);
+      if (entries.length > 0) {
+        const payload = JSON.stringify(entries);
         relationStatements.push(
-          this.db.prepare("INSERT OR IGNORE INTO judges (judge_id, canonical_name, created_at, updated_at) VALUES (?, ?, ?, ?)").bind(judgeId, label, now, now),
-          this.db.prepare("INSERT OR IGNORE INTO case_judges (case_id, judge_id) VALUES (?, ?)").bind(id, judgeId),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO judges (judge_id, canonical_name, created_at, updated_at)
+            SELECT json_extract(value, '$.id'), json_extract(value, '$.label'), ?, ?
+            FROM json_each(?)
+          `).bind(now, now, payload),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO case_judges (case_id, judge_id)
+            SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+          `).bind(id, payload),
         );
       }
     }
     if (Object.prototype.hasOwnProperty.call(updates, "legal_concepts")) {
       const labels = normaliseRelationLabels(updates.legal_concepts, "legal concept");
+      const entries = await Promise.all(labels.map(async (label) => ({
+        id: (await sha256Hex(`concept:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32),
+        label,
+      })));
       relationStatements.push(this.db.prepare("DELETE FROM case_concepts WHERE case_id = ?").bind(id));
-      for (const label of labels) {
-        const conceptId = (await sha256Hex(`concept:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32);
+      if (entries.length > 0) {
+        const payload = JSON.stringify(entries);
         relationStatements.push(
-          this.db.prepare("INSERT OR IGNORE INTO concepts (concept_id, label) VALUES (?, ?)").bind(conceptId, label),
-          this.db.prepare("INSERT OR IGNORE INTO case_concepts (case_id, concept_id) VALUES (?, ?)").bind(id, conceptId),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO concepts (concept_id, label)
+            SELECT json_extract(value, '$.id'), json_extract(value, '$.label') FROM json_each(?)
+          `).bind(payload),
+          this.db.prepare(`
+            INSERT OR IGNORE INTO case_concepts (case_id, concept_id)
+            SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+          `).bind(id, payload),
         );
       }
     }
-    if (relationStatements.length) await this.db.batch(relationStatements);
+
+    const statements = [caseUpdate, ...relationStatements];
+    // At most 7 statements — assert it rather than branching on it, so a future
+    // edit that reintroduces a per-label loop fails loudly here instead of
+    // silently splitting the write across two transactions again.
+    if (statements.length > D1_BATCH_STATEMENT_LIMIT) {
+      throw new StorageBoundaryError("Case update exceeds one D1 transaction", {
+        code: "case_update_too_large",
+        status: 500,
+      });
+    }
+    const result = (await this.db.batch(statements))[0];
+    if (changeCount(result) === 0) {
+      throw new StorageBoundaryError("Case not found", { code: "case_not_found", status: 404 });
+    }
     return this.getCase(id);
   }
 
@@ -1064,17 +1102,26 @@ export class CloudflareCaseStore {
     await this.db.batch(judgeStatements);
     await this.db.batch(conceptStatements);
     // A repeatable import must remove stale tail chunks before adding the new
-    // canonical text. The FTS delete trigger keeps case_text_fts in lockstep.
-    await this.db.prepare(`DELETE FROM case_text_chunks WHERE case_id = ?`).bind(caseId).run();
-    for (let offset = 0; offset < chunks.length; offset += 20) {
-      const batch = chunks.slice(offset, offset + 20).map((chunk, index) => bindAll(this.db, `
+    // canonical text. The delete and ALL replacement inserts ride one D1
+    // transaction, so a case that has full text is never observable with zero
+    // chunks and never with only a prefix of the new text. The FTS delete
+    // trigger keeps case_text_fts in lockstep.
+    const chunkStatements = [this.db.prepare(`DELETE FROM case_text_chunks WHERE case_id = ?`).bind(caseId)];
+    chunks.forEach((chunk, index) => {
+      chunkStatements.push(bindAll(this.db, `
         INSERT INTO case_text_chunks (case_id, chunk_index, content, content_sha256, created_at)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(case_id, chunk_index) DO UPDATE SET
           content=excluded.content, content_sha256=excluded.content_sha256, created_at=excluded.created_at
-      `, [caseId, offset + index, chunk.content, chunk.sha256, now]));
-      await this.db.batch(batch);
+      `, [caseId, index, chunk.content, chunk.sha256, now]));
+    });
+    if (chunkStatements.length > D1_CHUNK_TRANSACTION_STATEMENT_LIMIT) {
+      throw new StorageBoundaryError("Canonical text produces too many chunks for one transaction", {
+        code: "fts_chunk_count_too_large",
+        status: 400,
+      });
     }
+    await this.db.batch(chunkStatements);
   }
 
   async markSemanticReady(caseId, mutationId) {
