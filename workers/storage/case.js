@@ -85,6 +85,7 @@ const MAX_EXPORT_ROWS = 5000;
 
 const COMPAT_SORT_COLUMNS = Object.freeze({
   date: "c.year",
+  year: "c.year",
   title: "c.title",
   court: "c.court_code",
   outcome: "c.outcome",
@@ -94,6 +95,16 @@ const COMPAT_SORT_COLUMNS = Object.freeze({
   case_id: "c.case_id",
   citation: "c.citation",
 });
+
+/**
+ * Candidates read per related-case dimension. Three indexed range scans of 200
+ * narrow rows replace one full scan of ~149K fully-projected rows; the endpoint
+ * returns at most 20 links, so the recall window is generous.
+ */
+const RELATED_CANDIDATES_PER_DIMENSION = 200;
+
+/** Chunk candidates read per lexical search before reducing to best-rank-per-case. */
+const FTS_CANDIDATE_CHUNKS = 500;
 
 function compatPageNumber(value, fallback, min, max) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -141,6 +152,33 @@ function compatCaseFilters(filters = {}) {
     params.push(`%${keyword}%`, `%${keyword}%`);
   }
   return { clauses, params };
+}
+
+/**
+ * Resolve the row count for a compat listing/count request.
+ *
+ * `allowAggregate` opts into the queue-maintained `catalog_summary.total_cases`
+ * row for the unfiltered case, which avoids counting the ~149K-row `cases`
+ * table. It is OFF by default and must stay off for any caller whose response
+ * declares `count_mode: "exact"` (/api/v1/cases and /api/v1/cases/count both
+ * do): the aggregate lags case ingests until the next rebuildAggregates().
+ * Only guidedPrecedents opts in, because it has read that row since before this
+ * change.
+ *
+ * Even when opted in, falls back to COUNT(*) whenever a filter is present, and
+ * when the aggregate has never been built, so a freshly seeded database reports
+ * an accurate total instead of zero.
+ */
+async function compatTotal(database, clauses, params, where, { allowAggregate = false } = {}) {
+  if (allowAggregate && clauses.length === 0) {
+    const summary = await database
+      .prepare("SELECT value_int FROM catalog_summary WHERE summary_key = 'total_cases'")
+      .first();
+    const cached = Number(summary?.value_int);
+    if (Number.isFinite(cached) && cached > 0) return cached;
+  }
+  const counted = await bindAll(database, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
+  return Number(counted?.total || 0);
 }
 
 function normaliseRelationLabels(value, field) {
@@ -230,16 +268,18 @@ export class CloudflareCaseStore {
     const checkedPageSize = compatPageNumber(pageSize, 100, 1, 200);
     const { clauses, params } = compatCaseFilters(filters);
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const count = await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
-    const total = Number(count?.total || 0);
     const statement = bindAll(this.db, `
       SELECT ${LEGACY_CASE_PROJECTION}
       FROM cases c ${where}
       ORDER BY ${column} ${direction.toUpperCase()}, c.case_id ASC
       LIMIT ? OFFSET ?
     `, [...params, checkedPageSize, (checkedPage - 1) * checkedPageSize]);
+    const [pageResult, total] = await Promise.all([
+      statement.all(),
+      compatTotal(this.db, clauses, params, where),
+    ]);
     return {
-      cases: rows(await statement.all()),
+      cases: rows(pageResult),
       total,
       page: checkedPage,
       page_size: checkedPageSize,
@@ -263,8 +303,7 @@ export class CloudflareCaseStore {
   async countCompat(filters = {}) {
     const { clauses, params } = compatCaseFilters(filters);
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const result = await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first();
-    return Number(result?.total || 0);
+    return compatTotal(this.db, clauses, params, where);
   }
 
   /** Read queue-maintained/transform-maintained catalog aggregates only. */
@@ -586,17 +625,21 @@ export class CloudflareCaseStore {
       params.push(...concepts);
     }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const total = clauses.length
-      ? Number((await bindAll(this.db, `SELECT COUNT(*) AS total FROM cases c ${where}`, params).first())?.total || 0)
-      : Number((await this.db.prepare("SELECT value_int FROM catalog_summary WHERE summary_key = 'total_cases'").first())?.value_int || 0);
     const size = clampLimit(limit, { fallback: 50, max: 200 });
-    const results = rows(await bindAll(this.db, `
-      SELECT ${LEGACY_CASE_PROJECTION}
-      FROM cases c ${where}
-      ORDER BY c.year DESC, c.case_id ASC
-      LIMIT ?
-    `, [...params, size]).all());
-    return { total, results };
+    const [total, found] = await Promise.all([
+      // The only opt-in to the queue-maintained aggregate: this method has read
+      // catalog_summary since before this plan, and /api/v1/guided-search makes
+      // no `count_mode: "exact"` claim. Do NOT copy this flag to listPage or
+      // countCompat — see Step 3.
+      compatTotal(this.db, clauses, params, where, { allowAggregate: true }),
+      bindAll(this.db, `
+        SELECT ${LEGACY_CASE_PROJECTION}
+        FROM cases c ${where}
+        ORDER BY c.year DESC, c.case_id ASC
+        LIMIT ?
+      `, [...params, size]).all(),
+    ]);
+    return { total, results: rows(found) };
   }
 
   async guidedJudge(name) {
@@ -909,53 +952,75 @@ export class CloudflareCaseStore {
       SELECT case_nature, visa_type, court_code FROM cases WHERE case_id = ?
     `).bind(id).first();
     if (!anchor) return null;
-    const statements = bindAll(this.db, `
-      SELECT ${LEGACY_CASE_PROJECTION},
-        (CASE WHEN ? <> '' AND c.case_nature = ? THEN 4 ELSE 0 END) +
-        (CASE WHEN ? <> '' AND c.visa_type = ? THEN 2 ELSE 0 END) +
-        (CASE WHEN ? <> '' AND c.court_code = ? THEN 1 ELSE 0 END) AS related_score
-      FROM cases c
-      WHERE c.case_id <> ?
-        AND ((? <> '' AND c.case_nature = ?) OR (? <> '' AND c.visa_type = ?) OR (? <> '' AND c.court_code = ?))
-      ORDER BY related_score DESC, c.year DESC, c.case_id ASC
+    // One OR across three different columns cannot use an index, so the previous
+    // single query scanned the whole corpus and evaluated the full projection --
+    // including its two correlated subqueries -- for every candidate before the
+    // sorter applied LIMIT. Score each dimension with its own indexed range scan
+    // instead (cases_nature_year_idx / cases_visa_type_idx / cases_court_year_idx),
+    // merge in JS, and hydrate only the winners.
+    const dimensions = [
+      ["case_nature", anchor.case_nature, 4],
+      ["visa_type", anchor.visa_type, 2],
+      ["court_code", anchor.court_code, 1],
+    ].filter(([, value]) => typeof value === "string" && value !== "");
+    if (dimensions.length === 0) return [];
+    const candidatePages = await Promise.all(dimensions.map(([column, value]) => bindAll(this.db, `
+      SELECT case_id FROM cases
+      WHERE ${column} = ? AND case_id <> ?
+      ORDER BY year DESC, case_id ASC
       LIMIT ?
-    `, [
-      anchor.case_nature, anchor.case_nature,
-      anchor.visa_type, anchor.visa_type,
-      anchor.court_code, anchor.court_code,
-      id,
-      anchor.case_nature, anchor.case_nature,
-      anchor.visa_type, anchor.visa_type,
-      anchor.court_code, anchor.court_code,
-      size,
-    ]);
-    return rows(await statements.all());
+    `, [value, id, RELATED_CANDIDATES_PER_DIMENSION]).all()));
+    // Union the candidate ids FIRST, then read each candidate's actual
+    // dimension values and score from those.
+    //
+    // Do NOT derive the score from which pages a candidate appeared in. A case
+    // that shares all three dimensions with the anchor but ranks 201st in, say,
+    // the court page would be missing from that page and would silently score 2
+    // instead of 3 -- so it would sort below a genuinely weaker match. The page
+    // is a recall device; it is not evidence about the row's columns.
+    const candidateIds = [...new Set(candidatePages.flatMap((page) => rows(page).map((row) => row.case_id)))];
+    if (candidateIds.length === 0) return [];
+    const facts = rows(await bindAll(this.db, `
+      SELECT c.case_id, c.case_nature, c.visa_type, c.court_code, c.year
+      FROM cases c JOIN json_each(?) wanted ON wanted.value = c.case_id
+    `, [JSON.stringify(candidateIds)]).all());
+    const ordered = facts
+      .map((row) => ({
+        case_id: row.case_id,
+        year: Number.isFinite(Number(row.year)) ? Number(row.year) : -1,
+        score: dimensions.reduce(
+          (total, [column, value, weight]) => total + (row[column] === value ? weight : 0),
+          0,
+        ),
+      }))
+      .sort((left, right) =>
+        right.score - left.score || right.year - left.year || left.case_id.localeCompare(right.case_id))
+      .slice(0, size);
+    const scoreById = new Map(ordered.map((entry) => [entry.case_id, entry.score]));
+    const hydrated = await this.findByIds(ordered.map((entry) => entry.case_id));
+    return hydrated.map((row) => ({ ...row, related_score: scoreById.get(row.case_id) || 0 }));
   }
 
   async searchLexical({ query, match, filters = {}, limit } = {}) {
     const matchString = match ?? toFtsMatch(query);
     const { clauses, params } = safeCaseFilters(filters);
     const size = clampLimit(limit, { fallback: 50, max: 100 });
-    // bm25() is valid only in the direct FTS query context. Paginate over chunk
-    // candidates (a single long case can monopolise the first page) until enough
-    // distinct cases are found, then aggregate their best-chunk rank per case.
+    // bm25() is valid only in the direct FTS query context, and a single long
+    // case can monopolise the top chunk ranks, so read one wide page of chunk
+    // candidates and reduce to the best chunk rank per case in JS. This is the
+    // same 500-row candidate ceiling the previous five sequential LIMIT/OFFSET
+    // pages had, in one round trip instead of up to five.
+    const hits = rows(await this.db.prepare(`
+      SELECT case_id, bm25(case_text_fts) AS rank
+      FROM case_text_fts
+      WHERE case_text_fts MATCH ?
+      ORDER BY rank ASC
+      LIMIT ?
+    `).bind(matchString, FTS_CANDIDATE_CHUNKS).all());
     const ranks = new Map();
-    const CHUNK_PAGE = 100;
-    const MAX_PAGES = 5;
-    for (let offset = 0; offset < CHUNK_PAGE * MAX_PAGES; offset += CHUNK_PAGE) {
-      const hits = rows(await this.db.prepare(`
-        SELECT case_id, bm25(case_text_fts) AS rank
-        FROM case_text_fts
-        WHERE case_text_fts MATCH ?
-        ORDER BY rank ASC
-        LIMIT ? OFFSET ?
-      `).bind(matchString, CHUNK_PAGE, offset).all());
-      if (hits.length === 0) break;
-      for (const hit of hits) {
-        const rank = Number(hit.rank);
-        if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
-      }
-      if (ranks.size >= size) break;
+    for (const hit of hits) {
+      const rank = Number(hit.rank);
+      if (!ranks.has(hit.case_id) || rank < ranks.get(hit.case_id)) ranks.set(hit.case_id, rank);
     }
     const caseIds = [...ranks.keys()];
     if (caseIds.length === 0) return [];
