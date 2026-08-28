@@ -25,6 +25,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+from immi_case_downloader.extraction.batch_runner import catalog_lock
 from immi_case_downloader.extraction.patterns import (
     RE_AATA_APPLICANT,
     RE_AATA_REPRESENTATIVE,
@@ -35,6 +36,14 @@ from immi_case_downloader.extraction.patterns import (
     extract_representation,
     extract_visa_outcome_reason,
     extract_visa_subclass_number,
+)
+# Re-exported for tests/test_extraction_structured_fields.py, which imports
+# these private helpers directly (characterization tests predating this
+# move). Not used by this module itself.
+from immi_case_downloader.extraction.patterns import (  # noqa: F401
+    _clean_country_value,
+    _demonym_to_country,
+    _normalise_country,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────
@@ -302,152 +311,153 @@ def _write_failure_manifest(case_ids: list[str]) -> Path | None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract structured fields from case texts")
-    parser.add_argument("--dry-run", action="store_true", help="Preview without saving")
-    parser.add_argument("--sample", type=int, default=0, help="Process N random cases")
-    parser.add_argument("--court", type=str, default="", help="Filter by court code")
-    parser.add_argument("--workers", type=int, default=8, help="Number of parallel workers")
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Re-extract even if field already has a value (useful for fixing garbage values)",
-    )
-    args = parser.parse_args()
+    with catalog_lock(Path(CSV_PATH), "structured_fields"):
+        parser = argparse.ArgumentParser(description="Extract structured fields from case texts")
+        parser.add_argument("--dry-run", action="store_true", help="Preview without saving")
+        parser.add_argument("--sample", type=int, default=0, help="Process N random cases")
+        parser.add_argument("--court", type=str, default="", help="Filter by court code")
+        parser.add_argument("--workers", type=int, default=8, help="Number of parallel workers")
+        parser.add_argument(
+            "--overwrite",
+            action="store_true",
+            help="Re-extract even if field already has a value (useful for fixing garbage values)",
+        )
+        args = parser.parse_args()
 
-    all_rows = load_csv()
-    print(f"Loaded {len(all_rows)} cases from CSV")
-    _assert_no_overflow_cells(all_rows)
+        all_rows = load_csv()
+        print(f"Loaded {len(all_rows)} cases from CSV")
+        _assert_no_overflow_cells(all_rows)
 
-    # Determine which rows to process vs. save
-    rows = all_rows
+        # Determine which rows to process vs. save
+        rows = all_rows
 
-    # Filter
-    if args.court:
-        rows = [r for r in rows if (r.get("court_code") or "") == args.court]
-        print(f"Filtered to {len(rows)} {args.court} cases")
+        # Filter
+        if args.court:
+            rows = [r for r in rows if (r.get("court_code") or "") == args.court]
+            print(f"Filtered to {len(rows)} {args.court} cases")
 
-    # Sample (only affects which rows to process, not what gets saved)
-    if args.sample > 0:
-        import random
-        rows = random.sample(rows, min(args.sample, len(rows)))
-        print(f"Sampled {len(rows)} cases")
+        # Sample (only affects which rows to process, not what gets saved)
+        if args.sample > 0:
+            import random
+            rows = random.sample(rows, min(args.sample, len(rows)))
+            print(f"Sampled {len(rows)} cases")
 
-    # Ensure new columns exist in ALL rows
-    new_fields = [
-        "applicant_name", "respondent", "country_of_origin",
-        "visa_subclass_number", "hearing_date", "is_represented", "representative",
-        "visa_outcome_reason", "legal_test_applied",
-    ]
-    for row in all_rows:
+        # Ensure new columns exist in ALL rows
+        new_fields = [
+            "applicant_name", "respondent", "country_of_origin",
+            "visa_subclass_number", "hearing_date", "is_represented", "representative",
+            "visa_outcome_reason", "legal_test_applied",
+        ]
+        for row in all_rows:
+            for field in new_fields:
+                if field not in row:
+                    row[field] = ""
+        # Also ensure in the working subset
+        for row in rows:
+            for field in new_fields:
+                if field not in row:
+                    row[field] = ""
+
+        # Process cases
+        stats = Counter()
+        total = len(rows)
+
+        print(f"Processing {total} cases with {args.workers} workers...")
+        if args.overwrite:
+            print("  (--overwrite: will re-extract all fields, including already-filled)")
+
+        if not args.dry_run:
+            backup_csv()
+
+        failed_case_ids: list[str] = []
+
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            for completed, (row, extracted) in enumerate(
+                zip(rows, executor.map(process_case, rows, chunksize=500))
+            ):
+                error = extracted.pop(EXTRACTION_ERROR_KEY, "")
+                if error:
+                    failed_case_ids.append(row.get("case_id") or "?")
+                    stats["extraction_failures"] += 1
+
+                for field, value in extracted.items():
+                    if value:
+                        if args.overwrite or not row.get(field):
+                            row[field] = value
+                            stats[f"{field}_extracted"] += 1
+                        else:
+                            stats["skipped_existing"] += 1
+
+                if (completed + 1) % CHECKPOINT_EVERY == 0:
+                    print(f"  Processed {completed + 1}/{total}...")
+                    if not args.dry_run:
+                        # `rows` holds the same dict objects as `all_rows` (the
+                        # filter and random.sample both keep references, they do
+                        # not copy), so writing all_rows persists everything the
+                        # loop has mutated so far.
+                        save_csv(all_rows)
+                        _write_failure_manifest(failed_case_ids)
+                        print(f"  Checkpoint written at {completed + 1}/{total}")
+
+        # Summary
+        print(f"\n{'='*60}")
+        print("Extraction Summary")
+        print(f"{'='*60}")
+        print(f"Total processed: {total}")
+        print(f"Skipped (existing): {stats.get('skipped_existing', 0)}")
+        print(f"Extraction failures: {stats.get('extraction_failures', 0)}")
+        print()
         for field in new_fields:
-            if field not in row:
-                row[field] = ""
-    # Also ensure in the working subset
-    for row in rows:
+            key = f"{field}_extracted"
+            count = stats.get(key, 0)
+            pct = (count / total * 100) if total > 0 else 0
+            print(f"  {field:25s}: {count:>6,} ({pct:5.1f}%)")
+
+        # Fill rate summary (after extraction)
+        print(f"\n{'='*60}")
+        print("Fill Rates (processed rows after extraction)")
+        print(f"{'='*60}")
         for field in new_fields:
-            if field not in row:
-                row[field] = ""
+            filled = sum(1 for r in rows if (r.get(field) or "").strip())
+            pct = (filled / total * 100) if total > 0 else 0
+            print(f"  {field:25s}: {filled:>7,} / {total:,} = {pct:5.1f}%")
 
-    # Process cases
-    stats = Counter()
-    total = len(rows)
-
-    print(f"Processing {total} cases with {args.workers} workers...")
-    if args.overwrite:
-        print("  (--overwrite: will re-extract all fields, including already-filled)")
-
-    if not args.dry_run:
-        backup_csv()
-
-    failed_case_ids: list[str] = []
-
-    with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        for completed, (row, extracted) in enumerate(
-            zip(rows, executor.map(process_case, rows, chunksize=500))
-        ):
-            error = extracted.pop(EXTRACTION_ERROR_KEY, "")
-            if error:
-                failed_case_ids.append(row.get("case_id") or "?")
-                stats["extraction_failures"] += 1
-
-            for field, value in extracted.items():
-                if value:
-                    if args.overwrite or not row.get(field):
-                        row[field] = value
-                        stats[f"{field}_extracted"] += 1
-                    else:
-                        stats["skipped_existing"] += 1
-
-            if (completed + 1) % CHECKPOINT_EVERY == 0:
-                print(f"  Processed {completed + 1}/{total}...")
-                if not args.dry_run:
-                    # `rows` holds the same dict objects as `all_rows` (the
-                    # filter and random.sample both keep references, they do
-                    # not copy), so writing all_rows persists everything the
-                    # loop has mutated so far.
-                    save_csv(all_rows)
-                    _write_failure_manifest(failed_case_ids)
-                    print(f"  Checkpoint written at {completed + 1}/{total}")
-
-    # Summary
-    print(f"\n{'='*60}")
-    print("Extraction Summary")
-    print(f"{'='*60}")
-    print(f"Total processed: {total}")
-    print(f"Skipped (existing): {stats.get('skipped_existing', 0)}")
-    print(f"Extraction failures: {stats.get('extraction_failures', 0)}")
-    print()
-    for field in new_fields:
-        key = f"{field}_extracted"
-        count = stats.get(key, 0)
-        pct = (count / total * 100) if total > 0 else 0
-        print(f"  {field:25s}: {count:>6,} ({pct:5.1f}%)")
-
-    # Fill rate summary (after extraction)
-    print(f"\n{'='*60}")
-    print("Fill Rates (processed rows after extraction)")
-    print(f"{'='*60}")
-    for field in new_fields:
-        filled = sum(1 for r in rows if (r.get(field) or "").strip())
-        pct = (filled / total * 100) if total > 0 else 0
-        print(f"  {field:25s}: {filled:>7,} / {total:,} = {pct:5.1f}%")
-
-    if args.dry_run:
-        print("\nDry run — no changes saved.")
-        # Show some samples
-        print("\nSample extractions:")
-        samples = [r for r in rows if r.get("applicant_name")][:5]
-        for s in samples:
-            print(
-                f"  {s.get('citation') or '?':30s} | "
-                f"{s.get('applicant_name') or '':20s} | "
-                f"{s.get('country_of_origin') or '':20s} | "
-                f"SC{s.get('visa_subclass_number') or '':>3s} | "
-                f"{s.get('is_represented') or ''}"
-            )
-    else:
-        # Reload full CSV to merge (in case we filtered/sampled)
-        if args.court or args.sample:
-            all_rows = load_csv()
-            # Ensure new columns in all rows
-            for row in all_rows:
-                for f in new_fields:
-                    if f not in row:
-                        row[f] = ""
-            # Build lookup by case_id
-            extracted_map = {r["case_id"]: r for r in rows if r.get("case_id")}
-            for row in all_rows:
-                cid = row.get("case_id") or ""
-                if cid in extracted_map:
-                    src = extracted_map[cid]
-                    for f in new_fields:
-                        if src.get(f) and (args.overwrite or not row.get(f)):
-                            row[f] = src[f]
-            save_csv(all_rows)
-            _write_failure_manifest(failed_case_ids)
+        if args.dry_run:
+            print("\nDry run — no changes saved.")
+            # Show some samples
+            print("\nSample extractions:")
+            samples = [r for r in rows if r.get("applicant_name")][:5]
+            for s in samples:
+                print(
+                    f"  {s.get('citation') or '?':30s} | "
+                    f"{s.get('applicant_name') or '':20s} | "
+                    f"{s.get('country_of_origin') or '':20s} | "
+                    f"SC{s.get('visa_subclass_number') or '':>3s} | "
+                    f"{s.get('is_represented') or ''}"
+                )
         else:
-            save_csv(rows)
-            _write_failure_manifest(failed_case_ids)
+            # Reload full CSV to merge (in case we filtered/sampled)
+            if args.court or args.sample:
+                all_rows = load_csv()
+                # Ensure new columns in all rows
+                for row in all_rows:
+                    for f in new_fields:
+                        if f not in row:
+                            row[f] = ""
+                # Build lookup by case_id
+                extracted_map = {r["case_id"]: r for r in rows if r.get("case_id")}
+                for row in all_rows:
+                    cid = row.get("case_id") or ""
+                    if cid in extracted_map:
+                        src = extracted_map[cid]
+                        for f in new_fields:
+                            if src.get(f) and (args.overwrite or not row.get(f)):
+                                row[f] = src[f]
+                save_csv(all_rows)
+                _write_failure_manifest(failed_case_ids)
+            else:
+                save_csv(rows)
+                _write_failure_manifest(failed_case_ids)
 
 
 if __name__ == "__main__":

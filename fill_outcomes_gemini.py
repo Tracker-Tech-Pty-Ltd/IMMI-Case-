@@ -32,20 +32,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from dotenv import load_dotenv
+from immi_case_downloader.extraction.batch_runner import load_project_env
 
 # ── Load .env ──────────────────────────────────────────────────────────────
 
-def _find_and_load_env():
-    p = Path(__file__).parent
-    for _ in range(8):
-        candidate = p / ".env"
-        if candidate.exists():
-            load_dotenv(candidate, override=True)
-            return
-        p = p.parent
-
-_find_and_load_env()
+load_project_env()
 
 # ── Config ─────────────────────────────────────────────────────────────────
 
