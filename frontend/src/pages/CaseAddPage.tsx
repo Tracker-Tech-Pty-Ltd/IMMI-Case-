@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Plus, ChevronDown } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useId } from "react";
 import { useCreateCase } from "@/hooks/use-cases";
 import { isCaseMutationsDisabledError } from "@/lib/api";
 import { Breadcrumb } from "@/components/shared/Breadcrumb";
@@ -226,10 +226,14 @@ export function CaseAddPage() {
                 placeholder={t("cases.tags_placeholder")}
               />
               <div className="mt-4">
-                <label className="mb-1 block text-xs font-medium text-muted-text">
+                <label
+                  htmlFor="case-add-user-notes"
+                  className="mb-1 block text-xs font-medium text-muted-text"
+                >
                   {t("case_detail.notes")}
                 </label>
                 <textarea
+                  id="case-add-user-notes"
                   value={form.user_notes ?? ""}
                   onChange={(e) => updateField("user_notes", e.target.value)}
                   rows={6}
@@ -293,13 +297,14 @@ function Field({
   span2?: boolean;
   maxLength?: number;
 }) {
+  const id = useId();
   const len = value?.length ?? 0;
   const nearLimit = maxLength !== undefined && len >= Math.floor(maxLength * 0.85);
 
   return (
     <div className={span2 ? "sm:col-span-2" : ""}>
       <div className="mb-1 flex items-baseline justify-between">
-        <label className="text-xs font-medium text-muted-text">{label}</label>
+        <label htmlFor={id} className="text-xs font-medium text-muted-text">{label}</label>
         {nearLimit && maxLength && (
           <span className="text-xs text-muted-text">
             {len}/{maxLength}
@@ -307,6 +312,7 @@ function Field({
         )}
       </div>
       <input
+        id={id}
         type="text"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
@@ -330,12 +336,14 @@ function SelectField({
   onChange: (v: string) => void;
 }) {
   const { t } = useTranslation();
+  const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted-text">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-text">
         {label}
       </label>
       <select
+        id={id}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
