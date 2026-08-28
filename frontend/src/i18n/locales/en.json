@@ -280,7 +280,8 @@
     "all_visa_types": "All Visa Types",
     "all_sources": "All Sources",
     "all_tags": "All Tags",
-    "date": "Date"
+    "date": "Date",
+    "remove_filter": "Remove filter"
   },
   "pagination": {
     "showing": "Showing {{start}}-{{end}} of {{total}}",
@@ -419,7 +420,9 @@
     "current_role": "Current Role",
     "notable_cases": "Notable Cases",
     "cases_unit": "cases",
-    "dual_metric_chart": "Dual metric comparison chart"
+    "dual_metric_chart": "Dual metric comparison chart",
+    "comparison_table_caption": "Judge comparison metrics",
+    "concept_effectiveness_caption": "Legal concept effectiveness by judge"
   },
   "saved_searches": {
     "title": "Saved Searches",
@@ -610,7 +613,9 @@
     "top_judges_aria": "Bar chart of most active judges by case count",
     "trend_legend_note": "Affirmed Rate = tribunal upholds decision | Applicant Win Rate = Set Aside + Remitted",
     "vs_avg": "vs avg",
-    "wins": "Wins"
+    "wins": "Wins",
+    "concept_combo_caption": "Legal concept combinations",
+    "risk_gauge_aria": "Score {{score}} out of 100: {{label}}"
   },
   "lineage": {
     "title": "Court Lineage Timeline",
@@ -659,7 +664,8 @@
     "court_table_status_active": "Active",
     "court_table_status_dissolved": "Dissolved",
     "loading_hint": "Court lineage aggregates can take a few seconds on large datasets.",
-    "now": "now"
+    "now": "now",
+    "court_volume_caption": "Case volume by court"
   },
   "chart": {
     "loading": "Loading...",
@@ -946,7 +952,8 @@
       "collapse_tooltip": "Collapse",
       "table_of_contents": "Contents",
       "case_not_available": "Case full text not available",
-      "no_text_error": "Unable to load case full text"
+      "no_text_error": "Unable to load case full text",
+      "match_cap_note": "(first {{shown}} of {{total}})"
     },
     "badges": {
       "outcome": "Outcome",

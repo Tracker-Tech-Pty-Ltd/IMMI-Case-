@@ -280,7 +280,8 @@
     "all_visa_types": "所有簽證類型",
     "all_sources": "所有來源",
     "all_tags": "所有標籤",
-    "date": "日期"
+    "date": "日期",
+    "remove_filter": "移除篩選"
   },
   "pagination": {
     "showing": "顯示第 {{start}}–{{end}} 筆，共 {{total}} 筆",
@@ -419,7 +420,9 @@
     "current_role": "現職",
     "notable_cases": "代表案件",
     "cases_unit": "件案例",
-    "dual_metric_chart": "雙指標比較圖"
+    "dual_metric_chart": "雙指標比較圖",
+    "comparison_table_caption": "法官比較指標",
+    "concept_effectiveness_caption": "各法官之法律概念成效"
   },
   "saved_searches": {
     "title": "已儲存搜尋",
@@ -610,7 +613,9 @@
     "top_judges_aria": "依案件數排序之最活躍法官長條圖",
     "trend_legend_note": "維持原判率＝法庭維持原決定｜申請人勝訴率＝撤銷＋發回重審",
     "vs_avg": "對比平均",
-    "wins": "勝訴"
+    "wins": "勝訴",
+    "concept_combo_caption": "法律概念組合",
+    "risk_gauge_aria": "分數 {{score}}（滿分 100）：{{label}}"
   },
   "lineage": {
     "title": "法院沿革時間軸",
@@ -659,7 +664,8 @@
     "court_table_status_active": "運作中",
     "court_table_status_dissolved": "已裁撤",
     "loading_hint": "法院沿革彙整在大型資料集上可能需要數秒，請稍候。",
-    "now": "現在"
+    "now": "現在",
+    "court_volume_caption": "各法院案件量"
   },
   "chart": {
     "loading": "載入中⋯",
@@ -946,7 +952,8 @@
       "collapse_tooltip": "收合",
       "table_of_contents": "目錄",
       "case_not_available": "案件全文不可用",
-      "no_text_error": "無法載入案件全文"
+      "no_text_error": "無法載入案件全文",
+      "match_cap_note": "（前 {{shown}} 筆，共 {{total}} 筆）"
     },
     "badges": {
       "outcome": "裁決結果",
