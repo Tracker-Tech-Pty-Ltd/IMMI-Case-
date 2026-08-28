@@ -9,6 +9,7 @@ import { Breadcrumb } from "@/components/shared/Breadcrumb";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageLoader } from "@/components/shared/PageLoader";
+import { PageHeader } from "@/components/shared/PageHeader";
 import { cn } from "@/lib/utils";
 import { GitCompare, ExternalLink } from "lucide-react";
 import type { ImmigrationCase } from "@/types/case";
@@ -120,23 +121,25 @@ export function CaseComparePage() {
         ]}
       />
 
-      <h1 className="font-heading text-2xl font-semibold text-foreground">
-        {t("cases.comparison", { defaultValue: "Case Comparison" })}
-        <span className="ml-2 text-base font-normal text-muted-text">
-          ({cases.length})
-        </span>
-      </h1>
+      <PageHeader
+        title={t("cases.comparison", { defaultValue: "Case Comparison" })}
+        meta={<span>({cases.length})</span>}
+      />
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="min-w-max text-sm">
+          <caption className="sr-only">
+            {t("cases.comparison", { defaultValue: "Case Comparison" })}
+          </caption>
           <thead>
             <tr className="border-b border-border bg-surface">
-              <th className="sticky left-0 z-10 bg-surface p-3 text-left font-medium text-muted-text">
+              <th scope="col" className="sticky left-0 z-10 bg-surface p-3 text-left font-medium text-muted-text">
                 {t("pages.data_dictionary.field_name")}
               </th>
               {cases.map((c) => (
                 <th
                   key={c.case_id}
+                  scope="col"
                   className="min-w-[200px] max-w-[250px] p-3 text-left"
                 >
                   <div className="flex items-center gap-2">
@@ -170,14 +173,17 @@ export function CaseComparePage() {
                     isDiffering && "bg-warning/5",
                   )}
                 >
-                  <td className="sticky left-0 z-10 bg-card p-3 font-medium text-muted-text whitespace-nowrap">
+                  <th
+                    scope="row"
+                    className="sticky left-0 z-10 bg-card p-3 text-left font-medium text-muted-text whitespace-nowrap"
+                  >
                     {label}
                     {isDiffering && (
                       <span className="ml-1 text-[10px] text-warning">
                         {t("pages.case_comparison.differs")}
                       </span>
                     )}
-                  </td>
+                  </th>
                   {cases.map((c) => (
                     <td
                       key={c.case_id}
