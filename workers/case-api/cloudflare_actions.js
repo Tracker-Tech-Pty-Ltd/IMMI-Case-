@@ -12,6 +12,7 @@ import { requireAuth } from "../auth/request_auth.js";
 import { verifyCsrf } from "../auth/csrf.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError } from "../storage/contracts.js";
+import { readBoundedBodyText } from "../storage/body_limit.js";
 
 const CASE_ID_RE = /^[0-9a-f]{12}$/;
 
@@ -27,11 +28,13 @@ function clientError(error) {
   return error instanceof StorageBoundaryError && error.status >= 400 && error.status < 500;
 }
 
+const MAX_BODY_BYTES = 32 * 1024;
+
 async function readJson(request) {
-  const length = Number(request.headers.get("content-length") || "0");
-  if (Number.isFinite(length) && length > 32 * 1024) return null;
+  const text = await readBoundedBodyText(request, MAX_BODY_BYTES);
+  if (text === null) return null;
   try {
-    const value = await request.json();
+    const value = JSON.parse(text);
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch {
     return null;

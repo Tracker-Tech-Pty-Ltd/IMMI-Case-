@@ -13,6 +13,7 @@ import { verifyCsrf } from "../auth/csrf.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError, sha256Hex } from "../storage/contracts.js";
 import { splitFtsChunks } from "../storage/pipeline_coordinator.js";
+import { readBoundedBodyText } from "../storage/body_limit.js";
 
 const CASE_ID_RE = /^[0-9a-f]{12}$/;
 
@@ -28,13 +29,17 @@ function clientError(error) {
   return error instanceof StorageBoundaryError && error.status >= 400 && error.status < 500;
 }
 
+const MAX_BODY_BYTES = 1024 * 1024;
+
 async function readJson(request) {
-  const length = Number(request.headers.get("content-length") || "0");
   // 1 MiB ceiling: case full text can exceed 128 KiB (e.g. AATA 2 ≈ 170 KiB),
   // so the original 128 KiB cap silently rejected legitimate large cases.
-  if (Number.isFinite(length) && length > 1024 * 1024) return null;
+  // Enforced by counting streamed bytes, not by trusting a client-declared
+  // length header, which a chunked client omits entirely.
+  const text = await readBoundedBodyText(request, MAX_BODY_BYTES);
+  if (text === null) return null;
   try {
-    const value = await request.json();
+    const value = JSON.parse(text);
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch {
     return null;
