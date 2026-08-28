@@ -96,6 +96,13 @@ const COMPAT_SORT_COLUMNS = Object.freeze({
   citation: "c.citation",
 });
 
+/**
+ * Candidates read per related-case dimension. Three indexed range scans of 200
+ * narrow rows replace one full scan of ~149K fully-projected rows; the endpoint
+ * returns at most 20 links, so the recall window is generous.
+ */
+const RELATED_CANDIDATES_PER_DIMENSION = 200;
+
 function compatPageNumber(value, fallback, min, max) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -942,27 +949,53 @@ export class CloudflareCaseStore {
       SELECT case_nature, visa_type, court_code FROM cases WHERE case_id = ?
     `).bind(id).first();
     if (!anchor) return null;
-    const statements = bindAll(this.db, `
-      SELECT ${LEGACY_CASE_PROJECTION},
-        (CASE WHEN ? <> '' AND c.case_nature = ? THEN 4 ELSE 0 END) +
-        (CASE WHEN ? <> '' AND c.visa_type = ? THEN 2 ELSE 0 END) +
-        (CASE WHEN ? <> '' AND c.court_code = ? THEN 1 ELSE 0 END) AS related_score
-      FROM cases c
-      WHERE c.case_id <> ?
-        AND ((? <> '' AND c.case_nature = ?) OR (? <> '' AND c.visa_type = ?) OR (? <> '' AND c.court_code = ?))
-      ORDER BY related_score DESC, c.year DESC, c.case_id ASC
+    // One OR across three different columns cannot use an index, so the previous
+    // single query scanned the whole corpus and evaluated the full projection --
+    // including its two correlated subqueries -- for every candidate before the
+    // sorter applied LIMIT. Score each dimension with its own indexed range scan
+    // instead (cases_nature_year_idx / cases_visa_type_idx / cases_court_year_idx),
+    // merge in JS, and hydrate only the winners.
+    const dimensions = [
+      ["case_nature", anchor.case_nature, 4],
+      ["visa_type", anchor.visa_type, 2],
+      ["court_code", anchor.court_code, 1],
+    ].filter(([, value]) => typeof value === "string" && value !== "");
+    if (dimensions.length === 0) return [];
+    const candidatePages = await Promise.all(dimensions.map(([column, value]) => bindAll(this.db, `
+      SELECT case_id FROM cases
+      WHERE ${column} = ? AND case_id <> ?
+      ORDER BY year DESC, case_id ASC
       LIMIT ?
-    `, [
-      anchor.case_nature, anchor.case_nature,
-      anchor.visa_type, anchor.visa_type,
-      anchor.court_code, anchor.court_code,
-      id,
-      anchor.case_nature, anchor.case_nature,
-      anchor.visa_type, anchor.visa_type,
-      anchor.court_code, anchor.court_code,
-      size,
-    ]);
-    return rows(await statements.all());
+    `, [value, id, RELATED_CANDIDATES_PER_DIMENSION]).all()));
+    // Union the candidate ids FIRST, then read each candidate's actual
+    // dimension values and score from those.
+    //
+    // Do NOT derive the score from which pages a candidate appeared in. A case
+    // that shares all three dimensions with the anchor but ranks 201st in, say,
+    // the court page would be missing from that page and would silently score 2
+    // instead of 3 -- so it would sort below a genuinely weaker match. The page
+    // is a recall device; it is not evidence about the row's columns.
+    const candidateIds = [...new Set(candidatePages.flatMap((page) => rows(page).map((row) => row.case_id)))];
+    if (candidateIds.length === 0) return [];
+    const facts = rows(await bindAll(this.db, `
+      SELECT c.case_id, c.case_nature, c.visa_type, c.court_code, c.year
+      FROM cases c JOIN json_each(?) wanted ON wanted.value = c.case_id
+    `, [JSON.stringify(candidateIds)]).all());
+    const ordered = facts
+      .map((row) => ({
+        case_id: row.case_id,
+        year: Number.isFinite(Number(row.year)) ? Number(row.year) : -1,
+        score: dimensions.reduce(
+          (total, [column, value, weight]) => total + (row[column] === value ? weight : 0),
+          0,
+        ),
+      }))
+      .sort((left, right) =>
+        right.score - left.score || right.year - left.year || left.case_id.localeCompare(right.case_id))
+      .slice(0, size);
+    const scoreById = new Map(ordered.map((entry) => [entry.case_id, entry.score]));
+    const hydrated = await this.findByIds(ordered.map((entry) => entry.case_id));
+    return hydrated.map((row) => ({ ...row, related_score: scoreById.get(row.case_id) || 0 }));
   }
 
   async searchLexical({ query, match, filters = {}, limit } = {}) {
