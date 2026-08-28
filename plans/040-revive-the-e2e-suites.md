@@ -13,15 +13,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="tests/e2e \
->   frontend/e2e \
->   frontend/playwright.config.ts \
->   frontend/package.json \
->   .github/workflows/ci.yml \
->   requirements-test.txt \
->   workers/austlii-scraper/src/__tests__ \
->   workers/austlii-scraper/src/parser.ts \
->   workers/austlii-scraper/src/index.ts"
+> IN_SCOPE=(tests/e2e frontend/e2e frontend/playwright.config.ts frontend/package.json .github/workflows/ci.yml requirements-test.txt workers/austlii-scraper/src/__tests__ workers/austlii-scraper/src/parser.ts workers/austlii-scraper/src/index.ts)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
 > git diff --stat -- $IN_SCOPE                 # unstaged

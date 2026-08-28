@@ -11,15 +11,11 @@
 > working tree, so all four commands below must run:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> SCOPE=".env.example
->   scripts/preflight_secrets.sh scripts/test_preflight_secrets.sh
->   immi_case_downloader/web/internal_extract.py immi_case_downloader/web/__init__.py
->   workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js
->   workers/pipeline/control_handlers.js tests/test_internal_extract.py"
+> SCOPE=(.env.example scripts/preflight_secrets.sh scripts/test_preflight_secrets.sh immi_case_downloader/web/internal_extract.py immi_case_downloader/web/__init__.py workers/case-api/cloudflare_mutations.js workers/case-api/cloudflare_actions.js workers/pipeline/control_handlers.js tests/test_internal_extract.py)
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
-> git diff --stat -- $SCOPE                   # unstaged
-> git diff --cached --stat -- $SCOPE          # staged
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"     # committed since the plan was written
+> git diff --stat -- "${SCOPE[@]}"                   # unstaged
+> git diff --cached --stat -- "${SCOPE[@]}"          # staged
 > ```
 > Expected: the last three print nothing, and `git status --short --branch` lists
 > no in-scope path. If any in-scope file appears in **any** of them, that is a

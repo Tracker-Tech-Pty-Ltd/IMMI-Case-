@@ -25,9 +25,9 @@
 > frontend/src/components/auth/TelegramLoginButton.tsx
 > frontend/src/components/llm-council/StreamingCouncilView.tsx'
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE          # committed drift
-> git diff --stat -- $SCOPE                        # unstaged drift
-> git diff --cached --stat -- $SCOPE               # staged drift
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"          # committed drift
+> git diff --stat -- "${SCOPE[@]}"                        # unstaged drift
+> git diff --cached --stat -- "${SCOPE[@]}"               # staged drift
 > ```
 >
 > Expected: the last three print nothing, and `git status --short --branch`

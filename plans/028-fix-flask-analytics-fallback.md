@@ -10,11 +10,7 @@
 > **Drift check (run first)**:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="immi_case_downloader/web/routes/api.py \
->   immi_case_downloader/web/cache.py \
->   immi_case_downloader/sqlite_repository.py \
->   immi_case_downloader/storage.py \
->   tests/test_sqlite_repository.py tests/test_cache.py"
+> IN_SCOPE=(immi_case_downloader/web/routes/api.py immi_case_downloader/web/cache.py immi_case_downloader/sqlite_repository.py immi_case_downloader/storage.py tests/test_sqlite_repository.py tests/test_cache.py)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed drift
 > git diff --stat -- $IN_SCOPE                 # unstaged drift

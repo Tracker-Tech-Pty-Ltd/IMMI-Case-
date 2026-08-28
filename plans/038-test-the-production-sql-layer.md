@@ -12,11 +12,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="workers/__tests__ workers/vitest.config.js \
->   workers/storage/cloudflare.js workers/cloudflare-native.js \
->   workers/llm-council/cloudflare_handlers.js \
->   workers/case-api workers/admin workers/auth \
->   migrations/d1 config/cloudflare-native-route-manifest.json"
+> IN_SCOPE=(workers/__tests__ workers/vitest.config.js workers/storage/cloudflare.js workers/cloudflare-native.js workers/llm-council/cloudflare_handlers.js workers/case-api workers/admin workers/auth migrations/d1 config/cloudflare-native-route-manifest.json)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE          # committed since planning
 > git diff --stat -- $IN_SCOPE                         # unstaged

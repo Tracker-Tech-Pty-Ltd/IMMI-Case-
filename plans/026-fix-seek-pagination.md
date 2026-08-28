@@ -11,13 +11,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="immi_case_downloader/cases_pagination.py \
->   immi_case_downloader/sqlite_repository.py \
->   immi_case_downloader/supabase_repository.py \
->   immi_case_downloader/web/routes/api_cases.py \
->   immi_case_downloader/web/routes/api.py \
->   tests/test_cases_pagination.py \
->   tests/test_supabase_repository.py"
+> IN_SCOPE=(immi_case_downloader/cases_pagination.py immi_case_downloader/sqlite_repository.py immi_case_downloader/supabase_repository.py immi_case_downloader/web/routes/api_cases.py immi_case_downloader/web/routes/api.py tests/test_cases_pagination.py tests/test_supabase_repository.py)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed drift
 > git diff --stat -- $IN_SCOPE                 # unstaged drift

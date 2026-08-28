@@ -16,12 +16,11 @@
 > staged or untracked work, so all four commands must run:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> SCOPE="docs/adr/0050-user-data-server-side.md migrations/d1/account/
->   frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts"
+> SCOPE=(docs/adr/0050-user-data-server-side.md migrations/d1/account/ frontend/src/hooks/use-bookmarks.ts frontend/src/lib/saved-searches.ts)
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
-> git diff --stat -- $SCOPE                   # unstaged
-> git diff --cached --stat -- $SCOPE          # staged
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"     # committed since the plan was written
+> git diff --stat -- "${SCOPE[@]}"                   # unstaged
+> git diff --cached --stat -- "${SCOPE[@]}"          # staged
 > ```
 > Expected: the last three print nothing and no in-scope path appears in
 > `git status`. `docs/adr/` merely existing (because

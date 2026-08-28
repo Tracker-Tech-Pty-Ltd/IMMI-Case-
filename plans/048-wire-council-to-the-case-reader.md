@@ -11,15 +11,11 @@
 > uncommitted, staged or untracked work, so all four commands must run:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> SCOPE="docs/adr workers/llm-council frontend/src/pages/CaseDetailPage.tsx
->   frontend/src/pages/LlmCouncilPage.tsx
->   frontend/src/components/llm-council/StreamingCouncilView.tsx
->   frontend/__tests__/case-detail-page.test.tsx
->   workers/__tests__/cloudflare-council-handlers.test.js workers/storage/cloudflare.js"
+> SCOPE=(docs/adr workers/llm-council frontend/src/pages/CaseDetailPage.tsx frontend/src/pages/LlmCouncilPage.tsx frontend/src/components/llm-council/StreamingCouncilView.tsx frontend/__tests__/case-detail-page.test.tsx workers/__tests__/cloudflare-council-handlers.test.js workers/storage/cloudflare.js)
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
-> git diff --stat -- $SCOPE                   # unstaged
-> git diff --cached --stat -- $SCOPE          # staged
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"     # committed since the plan was written
+> git diff --stat -- "${SCOPE[@]}"                   # unstaged
+> git diff --cached --stat -- "${SCOPE[@]}"          # staged
 > ```
 > Expected: the last three print nothing and no in-scope path appears in
 > `git status` — with two allowed exceptions. (1) `docs/adr/` may already exist

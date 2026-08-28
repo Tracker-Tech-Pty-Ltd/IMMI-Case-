@@ -11,13 +11,11 @@
 > staged or untracked work, so all four commands must run:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> SCOPE="workers/cloudflare-native.js workers/llm-council/runner.js Makefile
->   frontend/scripts/build-tokens.ts .gitignore ruff.toml .editorconfig
->   .pre-commit-config.yaml"
+> SCOPE=(workers/cloudflare-native.js workers/llm-council/runner.js Makefile frontend/scripts/build-tokens.ts .gitignore ruff.toml .editorconfig .pre-commit-config.yaml)
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
-> git diff --stat -- $SCOPE                   # unstaged
-> git diff --cached --stat -- $SCOPE          # staged
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"     # committed since the plan was written
+> git diff --stat -- "${SCOPE[@]}"                   # unstaged
+> git diff --cached --stat -- "${SCOPE[@]}"          # staged
 > ```
 > Expected: the last three print nothing and no in-scope path appears in
 > `git status`. If any in-scope file appears in **any** of them, treat it as a

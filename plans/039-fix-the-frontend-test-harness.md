@@ -12,14 +12,7 @@
 > false all-clear:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="frontend/__tests__/legislations-setup.ts \
->   frontend/__tests__/i18n-hardcoded.test.ts \
->   frontend/__tests__/route-guards.test.tsx \
->   frontend/__tests__/no-as-any.test.tsx \
->   frontend/__tests__/hooks \
->   frontend/src/contexts/AuthContext.tsx \
->   frontend/src/hooks/use-theme-preset.ts frontend/src/hooks/use-keyboard.ts \
->   frontend/vitest.config.ts"
+> IN_SCOPE=(frontend/__tests__/legislations-setup.ts frontend/__tests__/i18n-hardcoded.test.ts frontend/__tests__/route-guards.test.tsx frontend/__tests__/no-as-any.test.tsx frontend/__tests__/hooks frontend/src/contexts/AuthContext.tsx frontend/src/hooks/use-theme-preset.ts frontend/src/hooks/use-keyboard.ts frontend/vitest.config.ts)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
 > git diff --stat -- $IN_SCOPE                 # unstaged

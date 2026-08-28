@@ -13,13 +13,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="pytest.ini \
->   extract_structured_fields.py \
->   immi_case_downloader/extraction/regex.py \
->   tests/test_extraction_regex.py \
->   tests/test_extraction_container_boundary.py \
->   extract_llm_structured.py extract_structured_fields_llm.py \
->   extract_llm_fields.py extract_with_llm.py download_fulltext.py"
+> IN_SCOPE=(pytest.ini extract_structured_fields.py immi_case_downloader/extraction/regex.py tests/test_extraction_regex.py tests/test_extraction_container_boundary.py extract_llm_structured.py extract_structured_fields_llm.py extract_llm_fields.py extract_with_llm.py download_fulltext.py)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
 > git diff --stat -- $IN_SCOPE                 # unstaged

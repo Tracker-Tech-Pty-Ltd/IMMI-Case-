@@ -27,9 +27,9 @@
 > frontend/src/hooks/use-bookmarks.ts
 > frontend/src/lib/api.ts'
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE          # committed drift
-> git diff --stat -- $SCOPE                        # unstaged drift
-> git diff --cached --stat -- $SCOPE               # staged drift
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"          # committed drift
+> git diff --stat -- "${SCOPE[@]}"                        # unstaged drift
+> git diff --cached --stat -- "${SCOPE[@]}"               # staged drift
 > git status --porcelain=v1 -uall > /tmp/immi-016-baseline-status.txt
 > ```
 >

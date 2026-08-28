@@ -10,11 +10,7 @@
 > **Drift check (run first)**:
 > ```
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="immi_case_downloader/sources/austlii.py \
->   immi_case_downloader/models.py \
->   immi_case_downloader/web/auth.py \
->   immi_case_downloader/extraction/llm.py \
->   extract_structured_fields.py validate_extraction.py tests/test_austlii.py"
+> IN_SCOPE=(immi_case_downloader/sources/austlii.py immi_case_downloader/models.py immi_case_downloader/web/auth.py immi_case_downloader/extraction/llm.py extract_structured_fields.py validate_extraction.py tests/test_austlii.py)
 > READ_ONLY="immi_case_downloader/sources/metadata_extractor.py \
 >   immi_case_downloader/pipeline.py"
 > git status --short --branch

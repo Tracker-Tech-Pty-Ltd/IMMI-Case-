@@ -13,11 +13,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE=(
->   Makefile pytest.ini requirements-test.txt requirements-e2e.txt
->   frontend/vitest.config.ts workers/vitest.config.js
->   .github/workflows/ci.yml
-> )
+> IN_SCOPE=(Makefile pytest.ini requirements-test.txt requirements-e2e.txt frontend/vitest.config.ts workers/vitest.config.js .github/workflows/ci.yml)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- "${IN_SCOPE[@]}"   # committed since planning
 > git diff --stat -- "${IN_SCOPE[@]}"                  # unstaged

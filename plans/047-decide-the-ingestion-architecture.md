@@ -11,11 +11,11 @@
 > staged or untracked work, so all four commands must run:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> SCOPE="docs/adr scripts/crawler workers/austlii-scraper"
+> SCOPE=(docs/adr scripts/crawler workers/austlii-scraper)
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE     # committed since the plan was written
-> git diff --stat -- $SCOPE                   # unstaged
-> git diff --cached --stat -- $SCOPE          # staged
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"     # committed since the plan was written
+> git diff --stat -- "${SCOPE[@]}"                   # unstaged
+> git diff --cached --stat -- "${SCOPE[@]}"          # staged
 > ```
 > Expected: the last three print nothing and no in-scope path appears in
 > `git status` — with one allowed exception, `docs/adr/` itself, which

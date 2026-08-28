@@ -16,7 +16,7 @@
 > all-clear on a dirty tree:
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE="docs IMPROVEMENT_PLAN.md tests/integration/README.md tests/e2e/README.md"
+> IN_SCOPE=(docs IMPROVEMENT_PLAN.md tests/integration/README.md tests/e2e/README.md)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- $IN_SCOPE   # committed since planning
 > git diff --stat -- $IN_SCOPE                 # unstaged

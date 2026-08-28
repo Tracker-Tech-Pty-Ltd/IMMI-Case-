@@ -13,14 +13,7 @@
 >
 > ```bash
 > cd "/Users/d/Developer/Active Projects/IMMI-Case-"
-> IN_SCOPE=(
->   .github/workflows/ci.yml
->   Makefile
->   frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json
->   frontend/vitest.config.ts frontend/eslint.config.js
->   frontend/package.json frontend/package-lock.json
->   frontend/__tests__ frontend/scripts frontend/src/tokens
-> )
+> IN_SCOPE=(.github/workflows/ci.yml Makefile frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json frontend/vitest.config.ts frontend/eslint.config.js frontend/package.json frontend/package-lock.json frontend/__tests__ frontend/scripts frontend/src/tokens)
 > git status --short --branch
 > git diff --stat 42826a3..HEAD -- "${IN_SCOPE[@]}"   # committed since planning
 > git diff --stat -- "${IN_SCOPE[@]}"                  # unstaged

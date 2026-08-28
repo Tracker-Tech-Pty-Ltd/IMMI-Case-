@@ -22,9 +22,9 @@
 > frontend/src/components/analytics/OutcomeFunnelChart.tsx
 > frontend/__tests__/i18n-hardcoded.test.ts'
 > git status --short --branch
-> git diff --stat 42826a3..HEAD -- $SCOPE          # committed drift
-> git diff --stat -- $SCOPE                        # unstaged drift
-> git diff --cached --stat -- $SCOPE               # staged drift
+> git diff --stat 42826a3..HEAD -- "${SCOPE[@]}"          # committed drift
+> git diff --stat -- "${SCOPE[@]}"                        # unstaged drift
+> git diff --cached --stat -- "${SCOPE[@]}"               # staged drift
 > git status --porcelain=v1 -uall > /tmp/immi-018-baseline-status.txt
 > ```
 >
