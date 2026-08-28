@@ -394,7 +394,32 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 
 - `downloaded_cases/` is gitignored — all scraped data is local only
 - **149,016 case records** (2000-2026): 9 courts/tribunals: MRTA 52,970 | AATA 39,203 | FCA 14,987 | RRTA 13,765 | FCCA 11,157 | FMCA 10,395 | FedCFamC2G 4,109 | ARTA 2,260 | HCA 176
-- **Test suite** (source-counted via `grep "def test_"` / `it\|test\(`, not pytest collect — re-verify with `pytest --collect-only -q | tail -1`): ~1,857 tests — 1,107 Python unit (71 files) + 260 Playwright E2E (25 files, all of `tests/e2e/` — `tests/e2e/react/` (236 tests/21 files) + `tests/e2e/playwright/` + root-level `test_smoke.py`/`test_export.py`/`test_credentialed_auth_smoke.py`) + 490 frontend unit (55 files, Vitest). `@pytest.mark.parametrize` expansion makes pytest collect count higher.
+- **Test suite** — five independently runnable suites. **Counts are deliberately
+  not written here**; they drift with every test added. Run the command, or
+  regenerate a source count with the recipe next to it.
+  - `make test-py` — Python unit tests (`tests/`, excluding `tests/e2e/` and
+    `tests/integration/`).
+    Source count: `grep -rn "def test_" tests/ --include="*.py" | grep -v "/e2e/" | wc -l`
+  - `make test-fe` — frontend Vitest (`frontend/__tests__/`, a flat directory
+    plus one `auth/` subdirectory).
+    File count: `find frontend/__tests__ -name '*.test.*' | wc -l`
+  - `make test-workers` — main Cloudflare Worker Vitest (`workers/__tests__/`).
+    Covers the whole production request path (auth, mutations, Council, the
+    `cloudflare-native.js` bundle) and is a CI gate: `.github/workflows/ci.yml`
+    runs `npm run test:workers`.
+    File count: `find workers/__tests__ -name '*.test.*' | wc -l`
+  - `make test-pipeline` — the austlii-scraper (pipeline Worker) Vitest suite
+    (`workers/austlii-scraper/src/**/*.test.ts`).
+  - `make test-e2e` — Playwright E2E (`tests/e2e/`). The pytest fixture
+    **launches its own seeded Flask server** in a daemon thread
+    (`tests/e2e/conftest.py`); setting `E2E_BASE_URL` is what switches it
+    to an external server. Needs the extra deps
+    in `requirements-e2e.txt` — `make install-e2e` first.
+  `make test` runs `audit-tenant-guards` (a module-level assertMembership() gate)
+  plus the four suites above (`test-py test-fe test-workers test-pipeline`).
+  `@pytest.mark.parametrize` expansion makes the pytest *collected* count higher
+  than any `grep "def test_"` source count, so the two never agree — prefer the
+  command's own output.
 - CSRF protection via flask-wtf; `/api/v1/csrf-token` endpoint for React SPA
 - Default host is `127.0.0.1`; use `--host 0.0.0.0` to expose externally
 
