@@ -7,6 +7,7 @@ vi.mock("../storage/cloudflare.js", () => ({
 }));
 
 import { dispatchCloudflareCaseRead } from "../case-api/cloudflare.js";
+import { StorageBoundaryError } from "../storage/contracts.js";
 
 const CASE_ID = "0123456789ab";
 const OTHER_CASE_ID = "abcdef012345";
@@ -337,6 +338,7 @@ describe("Cloudflare case read router", () => {
     expect(result.status).toBe(200);
     const body = await result.json();
     expect(body).toMatchObject({ success: true, data: { id: "migration-act-1958", sections: [] } });
+    expect(result.headers.get("Cache-Control")).toBe("public, max-age=60");
   });
 
   it("prefers a checksum-verified native legislation payload when imported", async () => {
@@ -350,6 +352,44 @@ describe("Cloudflare case read router", () => {
     expect(result.status).toBe(200);
     expect(await result.json()).toMatchObject({ success: true, data: { id: "migration-act-1958", sections: [{ id: "s1" }] } });
     expect(current.objectStore.getLegislation).toHaveBeenCalledWith("migration-act-1958");
+    expect(result.headers.get("Cache-Control")).toBe("public, max-age=3600");
+  });
+
+  it("degrades to the metadata catalogue when a legislation import fails verification", async () => {
+    const current = mockCreateStores();
+    current.objectStore.getLegislation.mockRejectedValueOnce(
+      new StorageBoundaryError("Legislation checksum metadata is missing", {
+        code: "r2_verification_failed",
+        status: 503,
+      }),
+    );
+    const result = await dispatchCloudflareCaseRead(
+      url("/api/v1/legislations/migration-act-1958"),
+      "/api/v1/legislations/migration-act-1958",
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ success: true, data: { id: "migration-act-1958", sections: [] } });
+    expect(result.headers.get("Cache-Control")).toBe("public, max-age=60");
+  });
+
+  it("reports the sections it actually returns, not the payload's declared count", async () => {
+    const current = mockCreateStores();
+    current.objectStore.getLegislation.mockResolvedValueOnce({
+      id: "migration-act-1958",
+      title: "Migration Act 1958",
+      sections_count: 940,                       // the payload lies
+      sections: [{ id: "s1", number: "1", title: "Short title", part: "", division: "", text: "x" }],
+    });
+    const result = await dispatchCloudflareCaseRead(
+      url("/api/v1/legislations/migration-act-1958"),
+      "/api/v1/legislations/migration-act-1958",
+      { IMMI_STORAGE_MODE: "cloudflare" },
+    );
+    expect(result.status).toBe(200);
+    const body = await result.json();
+    expect(body.data.sections).toHaveLength(1);
+    expect(body.data.sections_count).toBe(1);
   });
 
   it("serves a native idle legislation update status without starting a job", async () => {

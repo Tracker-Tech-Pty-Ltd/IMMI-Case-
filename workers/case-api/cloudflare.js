@@ -397,10 +397,45 @@ async function handleLegislationDetail(path, stores) {
   if (id === "search" || id === "update") return null;
   const legislation = LEGISLATIONS_META.find((item) => item.id.toLowerCase() === id);
   if (!legislation) return jsonErr(`Legislation '${id}' not found`, 404);
-  const scraped = await stores.objectStore.getLegislation(id);
+  let scraped = null;
+  try {
+    scraped = await stores.objectStore.getLegislation(id);
+  } catch (error) {
+    // A missing/incorrect checksum or unparseable payload must not take the
+    // whole law browser down. Degrade to the metadata-only catalogue — the
+    // page links out to AustLII — and log so a bad import is still visible.
+    if (!(error instanceof StorageBoundaryError)) throw error;
+    console.error(JSON.stringify({
+      event: "legislation.import_unverifiable",
+      law_id: id,
+      code: error.code,
+    }));
+  }
   // The static catalogue remains a safe metadata fallback until the first
-  // native legislation Queue import completes; sections are never fabricated.
-  return jsonOk({ success: true, data: scraped || { ...legislation, sections: [] } }, "public, max-age=3600");
+  // native legislation import completes; sections are never fabricated. The
+  // fallback is cached briefly so a fresh import is not masked for an hour.
+  if (!scraped) {
+    return jsonOk({ success: true, data: { ...legislation, sections: [] } }, "public, max-age=60");
+  }
+  // Shape + self-consistency check on the imported payload. The checksum in
+  // getLegislation() proves the bytes are the ones we uploaded; it says
+  // nothing about whether the JSON inside them is coherent. A payload that
+  // declares sections_count: 940 while carrying 2 sections would otherwise be
+  // served as authoritative. Serve the real sections and report the real
+  // count, and log the disagreement so a truncated import is discoverable.
+  const sections = Array.isArray(scraped.sections) ? scraped.sections : [];
+  if (scraped.sections_count !== sections.length) {
+    console.error(JSON.stringify({
+      event: "legislation.section_count_mismatch",
+      law_id: id,
+      declared: scraped.sections_count ?? null,
+      actual: sections.length,
+    }));
+  }
+  return jsonOk(
+    { success: true, data: { ...scraped, sections, sections_count: sections.length } },
+    "public, max-age=3600",
+  );
 }
 
 async function handleTaxonomyLegalConcepts(stores) {

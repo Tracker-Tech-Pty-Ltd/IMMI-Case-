@@ -62,8 +62,14 @@ function MetaChip({ icon, label, value, mono, accent }: MetaChipProps) {
   );
 }
 
-/** Empty state when sections haven't been scraped yet */
-function NotScrapedState({ onUpdate }: { onUpdate: () => void }) {
+/** Empty state when the full section text has not been published yet. */
+function NotScrapedState({
+  austliiUrl,
+  onBack,
+}: {
+  austliiUrl: string;
+  onBack: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <EmptyState
@@ -73,16 +79,27 @@ function NotScrapedState({ onUpdate }: { onUpdate: () => void }) {
       })}
       description={t("legislations.not_scraped_description", {
         defaultValue:
-          'Click "Update Laws" on the legislations list to download section text from AustLII.',
+          "Full section text for this legislation has not yet been imported from AustLII. Section navigation may be limited until the next scheduled update completes.",
       })}
       action={
-        <button
-          type="button"
-          onClick={onUpdate}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
-        >
-          {t("legislations.back_button")}
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <a
+            href={austliiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 rounded-md border border-accent/30 bg-background px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            AustLII
+          </a>
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+          >
+            {t("legislations.back_button")}
+          </button>
+        </div>
       }
     />
   );
@@ -218,7 +235,7 @@ export function LegislationDetailPage() {
             <MetaChip
               icon={<BookOpen className="h-3.5 w-3.5" />}
               label={t("legislations.sections", { defaultValue: "Sections" })}
-              value={legislation.sections_count || undefined}
+              value={sections.length > 0 ? sections.length : undefined}
               accent
             />
             <MetaChip
@@ -248,7 +265,10 @@ export function LegislationDetailPage() {
 
       {/* Sections viewer */}
       {sections.length === 0 ? (
-        <NotScrapedState onUpdate={() => navigate("/legislations")} />
+        <NotScrapedState
+          austliiUrl={austliiUrl}
+          onBack={() => navigate("/legislations")}
+        />
       ) : (
         <LegislationTextViewer sections={sections} />
       )}
