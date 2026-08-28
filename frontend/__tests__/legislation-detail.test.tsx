@@ -235,9 +235,10 @@ describe("LegislationDetailPage", () => {
 
     renderWithProviders(<LegislationDetailPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("500")).toBeInTheDocument();
-    });
+    // The chip reports the sections actually present (2 in the fixture), not
+    // the payload's declared sections_count (500). See plan 049 Step 4a.
+    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("500")).not.toBeInTheDocument();
   });
 
   // Test 8: Display updated date
