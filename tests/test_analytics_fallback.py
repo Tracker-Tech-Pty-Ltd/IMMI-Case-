@@ -311,3 +311,56 @@ class TestCaseCachesScopedPerRepository:
         with app_b.app_context():
             cases_b = _get_all_cases()
         assert len(cases_b) == 1
+
+
+# ── /stats timeout must not cache a synthetic empty corpus ───────────────
+
+
+class TestStatsTimeoutFallback:
+    """A timed-out get_statistics used to log "returning lightweight fallback"
+    and then not take it: it built an all-zero payload and cached it for the
+    full stats TTL. One transient RPC or thread-pool timeout on a cold cache
+    therefore made the dashboard report zero cases for five minutes — and the
+    dashboard renders "Welcome to IMMI-Case" at zero, so it looked like a
+    fresh install rather than an outage.
+    """
+
+    def test_timeout_reports_the_real_total_not_zero(self, sqlite_app):
+        from immi_case_downloader.web.routes import api as api_mod
+
+        def always_times_out(*args, **kwargs):
+            raise FuturesTimeoutError()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(api_mod, "_call_with_timeout", always_times_out)
+            resp = sqlite_app.test_client().get("/api/v1/stats")
+
+        assert resp.status_code == 200
+        assert resp.get_json()["total_cases"] == 3
+
+    def test_timeout_with_no_countable_total_does_not_poison_the_cache(
+        self, sqlite_app
+    ):
+        """When the cheap count fails too, the zero is a guess — don't cache it."""
+        from immi_case_downloader.web.routes import api as api_mod
+
+        def always_times_out(*args, **kwargs):
+            raise FuturesTimeoutError()
+
+        def always_raises(*args, **kwargs):
+            raise RuntimeError("backend down")
+
+        client = sqlite_app.test_client()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(api_mod, "_call_with_timeout", always_times_out)
+            with sqlite_app.app_context():
+                repo = api_mod.get_repo()
+            mp.setattr(repo, "count_cases", always_raises)
+            degraded = client.get("/api/v1/stats")
+
+        assert degraded.get_json()["total_cases"] == 0
+
+        # The outage is over; the very next request must re-query rather than
+        # serve the cached zero for the rest of the TTL.
+        recovered = client.get("/api/v1/stats")
+        assert recovered.get_json()["total_cases"] == 3

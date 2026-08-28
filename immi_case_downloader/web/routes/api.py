@@ -1037,9 +1037,14 @@ def _lightweight_stats_fallback(repo):
     """Return a lightweight stats payload that avoids expensive RPCs."""
     global _stats_cache_payload, _stats_cache_ts
     total_cases = 0
+    # A zero we *measured* is a fact worth caching; a zero left over because
+    # the cheap count failed too is a guess, and caching it tells the
+    # dashboard the corpus is empty for the next five minutes.
+    total_is_measured = False
     if hasattr(repo, "count_cases"):
         try:
             total_cases = int(repo.count_cases(count_mode="planned"))
+            total_is_measured = True
         except Exception:
             logger.warning("Fallback count_cases also failed", exc_info=True)
 
@@ -1075,9 +1080,10 @@ def _lightweight_stats_fallback(repo):
         logger.warning("Fallback recent cases query failed", exc_info=True)
 
     payload = _empty_stats_payload(total_cases=total_cases, recent_cases=recent)
-    with _stats_cache_lock:
-        _stats_cache_payload = payload
-        _stats_cache_ts = time.time()
+    if total_is_measured:
+        with _stats_cache_lock:
+            _stats_cache_payload = payload
+            _stats_cache_ts = time.time()
     return _stats_response(payload)
 
 
@@ -1158,11 +1164,13 @@ def stats():
             cached = _stats_cache_payload
         if cached is not None:
             return _stats_response(cached)
-        payload = _empty_stats_payload()
-        with _stats_cache_lock:
-            _stats_cache_payload = payload
-            _stats_cache_ts = time.time()
-        return _stats_response(payload)
+        # Actually take the lightweight fallback the log line promises. This
+        # branch used to build an all-zero payload and cache it for
+        # _STATS_CACHE_TTL_SECONDS, so one transient RPC or thread-pool
+        # timeout on a cold cache made the dashboard report an empty corpus
+        # for the next five minutes — and the dashboard's empty state is
+        # "Welcome to IMMI-Case", i.e. it looks like a fresh install.
+        return _lightweight_stats_fallback(repo)
     except Exception:
         logger.warning("get_statistics failed; returning lightweight fallback", exc_info=True)
         return _lightweight_stats_fallback(repo)
