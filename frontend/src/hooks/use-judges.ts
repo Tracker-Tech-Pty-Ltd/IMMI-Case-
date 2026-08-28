@@ -44,7 +44,6 @@ export function useJudgeProfile(
     enabled: !!name,
     retry: 0,
     staleTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
   });
 }
 
@@ -69,6 +68,5 @@ export function useJudgeBio(name: string) {
     enabled: !!name,
     retry: 0,
     staleTime: 10 * 60_000,
-    placeholderData: keepPreviousData,
   });
 }
