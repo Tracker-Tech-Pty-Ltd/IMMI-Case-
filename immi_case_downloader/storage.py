@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import OUTPUT_DIR, CASES_CSV, CASES_JSON, TEXT_CASES_DIR
+from .csv_write_lock import csv_write_lock
 from .models import ImmigrationCase
 
 logger = logging.getLogger(__name__)
@@ -274,28 +275,30 @@ def update_case(case_id: str, updates: dict, base_dir: str = OUTPUT_DIR) -> bool
 
     Only fields in ALLOWED_UPDATE_FIELDS can be modified (CWE-915 prevention).
     """
-    cases = load_all_cases(base_dir)
-    for case in cases:
-        if case.case_id == case_id:
-            for key, value in updates.items():
-                if key in ALLOWED_UPDATE_FIELDS and hasattr(case, key):
-                    setattr(case, key, value)
-            save_cases_csv(cases, base_dir)
-            save_cases_json(cases, base_dir)
-            return True
-    return False
+    with csv_write_lock(os.path.join(base_dir, CASES_CSV), job_name="update_case"):
+        cases = load_all_cases(base_dir, use_cache=False)
+        for case in cases:
+            if case.case_id == case_id:
+                for key, value in updates.items():
+                    if key in ALLOWED_UPDATE_FIELDS and hasattr(case, key):
+                        setattr(case, key, value)
+                save_cases_csv(cases, base_dir)
+                save_cases_json(cases, base_dir)
+                return True
+        return False
 
 
 def delete_case(case_id: str, base_dir: str = OUTPUT_DIR) -> bool:
     """Delete a case by its case_id."""
-    cases = load_all_cases(base_dir)
-    original_len = len(cases)
-    cases = [c for c in cases if c.case_id != case_id]
-    if len(cases) < original_len:
-        save_cases_csv(cases, base_dir)
-        save_cases_json(cases, base_dir)
-        return True
-    return False
+    with csv_write_lock(os.path.join(base_dir, CASES_CSV), job_name="delete_case"):
+        cases = load_all_cases(base_dir, use_cache=False)
+        original_len = len(cases)
+        cases = [c for c in cases if c.case_id != case_id]
+        if len(cases) < original_len:
+            save_cases_csv(cases, base_dir)
+            save_cases_json(cases, base_dir)
+            return True
+        return False
 
 
 def add_case_manual(case_data: dict, base_dir: str = OUTPUT_DIR) -> ImmigrationCase:
@@ -304,11 +307,12 @@ def add_case_manual(case_data: dict, base_dir: str = OUTPUT_DIR) -> ImmigrationC
     case.source = case.source or "Manual Entry"
     case.ensure_id()
 
-    cases = load_all_cases(base_dir)
-    cases.append(case)
     ensure_output_dirs(base_dir)
-    save_cases_csv(cases, base_dir)
-    save_cases_json(cases, base_dir)
+    with csv_write_lock(os.path.join(base_dir, CASES_CSV), job_name="add_case_manual"):
+        cases = load_all_cases(base_dir, use_cache=False)
+        cases.append(case)
+        save_cases_csv(cases, base_dir)
+        save_cases_json(cases, base_dir)
     return case
 
 

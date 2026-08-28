@@ -26,10 +26,13 @@ from immi_case_downloader.pipeline import PipelineConfig, SmartPipeline, start_p
 from immi_case_downloader.sqlite_repository import SqliteRepository
 from immi_case_downloader.storage import (
     CASE_FIELDS,
+    add_case_manual,
+    delete_case,
     ensure_output_dirs,
     invalidate_cases_cache,
     load_all_cases,
     save_cases_csv,
+    update_case,
 )
 
 # The pre-migration schema: the table DDL as it existed before Step 7, with
@@ -801,6 +804,83 @@ class TestCsvRoundTripVisaColumns:
 
         raw = csv_path.read_text()
         assert "866.0" not in raw
+
+
+# ── Every master-CSV writer takes the one lock ───────────────────────────
+
+
+class TestWebCrudWritersTakeTheLock:
+    """update/delete/add are read-modify-write over the whole catalog too.
+
+    They ran outside the lock and off a cached snapshot, so a web edit
+    overlapping any batch job silently reverted whichever finished first.
+    Each test holds the lock from another thread and asserts the writer
+    blocks on it; a writer that ignores the lock returns instead of timing
+    out.
+    """
+
+    @staticmethod
+    def _assert_blocks_on_lock(tmp_path, call):
+        target = str(Path(tmp_path) / "immigration_cases.csv")
+        holder_ready = threading.Event()
+        release_holder = threading.Event()
+
+        def hold_lock():
+            with csv_write_lock(target):
+                holder_ready.set()
+                release_holder.wait(timeout=5)
+
+        holder = threading.Thread(target=hold_lock)
+        holder.start()
+        try:
+            assert holder_ready.wait(timeout=5)
+
+            def impatient(path, timeout=0.2, **kwargs):
+                # The real lock, only less patient — so an unlocked writer
+                # returns normally and a locked one raises.
+                return csv_write_lock(path, timeout=0.2, **kwargs)
+
+            with patch(
+                "immi_case_downloader.storage.csv_write_lock", impatient
+            ), pytest.raises(TimeoutError):
+                call()
+        finally:
+            release_holder.set()
+            holder.join(timeout=5)
+
+    def test_update_case_takes_the_lock(self, tmp_path):
+        ensure_output_dirs(str(tmp_path))
+        case = _case(citation="[2024] AATA 50", url="https://example.com/50")
+        save_cases_csv([case], str(tmp_path))
+        invalidate_cases_cache()
+
+        self._assert_blocks_on_lock(
+            tmp_path,
+            lambda: update_case(case.case_id, {"user_notes": "x"}, str(tmp_path)),
+        )
+
+    def test_delete_case_takes_the_lock(self, tmp_path):
+        ensure_output_dirs(str(tmp_path))
+        case = _case(citation="[2024] AATA 51", url="https://example.com/51")
+        save_cases_csv([case], str(tmp_path))
+        invalidate_cases_cache()
+
+        self._assert_blocks_on_lock(
+            tmp_path, lambda: delete_case(case.case_id, str(tmp_path))
+        )
+
+    def test_add_case_manual_takes_the_lock(self, tmp_path):
+        ensure_output_dirs(str(tmp_path))
+        save_cases_csv([], str(tmp_path))
+        invalidate_cases_cache()
+
+        self._assert_blocks_on_lock(
+            tmp_path,
+            lambda: add_case_manual(
+                {"citation": "[2024] AATA 52", "url": "https://example.com/52"},
+                str(tmp_path),
+            ),
+        )
 
 
 # ── Cross-process advisory write lock ────────────────────────────────────
