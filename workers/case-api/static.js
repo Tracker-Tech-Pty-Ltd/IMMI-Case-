@@ -2,67 +2,16 @@
  *
  * This module intentionally has no database or legacy proxy imports.  Values
  * mirror the public shapes previously served by the Worker/Flask boundary.
+ *
+ * The visa registry is NOT authored here: it is generated into
+ * ./visa_registry.generated.js from immi_case_downloader/data/visa_registry.json
+ * by scripts/generate_visa_registry.py, so the Worker and the Flask analytics
+ * cannot drift. Edit the JSON, then regenerate.
  */
 
-export const VISA_FAMILIES = Object.freeze({
-  Protection: "Refugee and humanitarian protection visas",
-  Skilled: "Skilled migration and employer-sponsored visas",
-  Student: "Student and education visas",
-  Partner: "Partner, spouse, and de facto visas",
-  Parent: "Parent and family reunion visas",
-  Visitor: "Tourist, visitor, and temporary activity visas",
-  Business: "Business innovation and investment visas",
-  Bridging: "Bridging visas (temporary stay while substantive visa processed)",
-  Other: "Other visa categories",
-});
+import { VISA_ENTRIES, VISA_FAMILIES } from "./visa_registry.generated.js";
 
-const VISA_ENTRIES = [
-  ["866", "Protection", "Protection"], ["785", "Temporary Protection", "Protection"],
-  ["790", "Safe Haven Enterprise", "Protection"], ["200", "Refugee (Permanent)", "Protection"],
-  ["201", "In-Country Special Humanitarian (Permanent)", "Protection"],
-  ["202", "Global Special Humanitarian (Permanent)", "Protection"],
-  ["203", "Emergency Rescue", "Protection"], ["204", "Woman at Risk", "Protection"],
-  ["786", "Temporary (Humanitarian Concern)", "Protection"], ["449", "Humanitarian Stay (Temporary)", "Protection"],
-  ["189", "Skilled Independent", "Skilled"], ["190", "Skilled Nominated", "Skilled"],
-  ["191", "Permanent Residence (Skilled Regional)", "Skilled"],
-  ["186", "Employer Nomination Scheme", "Skilled"], ["187", "Regional Sponsored Migration Scheme", "Skilled"],
-  ["457", "Temporary Work (Skilled)", "Skilled"], ["482", "Temporary Skill Shortage", "Skilled"],
-  ["494", "Skilled Employer Sponsored Regional (Provisional)", "Skilled"],
-  ["491", "Skilled Work Regional (Provisional)", "Skilled"],
-  ["476", "Skilled - Recognised Graduate", "Skilled"], ["485", "Temporary Graduate", "Skilled"],
-  ["489", "Skilled Regional (Provisional)", "Skilled"], ["407", "Training", "Skilled"],
-  ["408", "Temporary Activity", "Skilled"], ["500", "Student", "Student"],
-  ["590", "Student Guardian", "Student"], ["570", "Independent ELICOS Sector", "Student"],
-  ["571", "Schools Sector", "Student"], ["572", "Vocational Education and Training Sector", "Student"],
-  ["573", "Higher Education Sector", "Student"], ["574", "Postgraduate Research Sector", "Student"],
-  ["575", "Non-award Sector", "Student"], ["576", "AusAID or Defence Sector", "Student"],
-  ["309", "Partner (Provisional)", "Partner"], ["820", "Partner (Temporary)", "Partner"],
-  ["801", "Partner (Permanent)", "Partner"], ["100", "Partner (Migrant)", "Partner"],
-  ["300", "Prospective Marriage", "Partner"],
-  ["461", "New Zealand Citizen Family Relationship (Temporary)", "Partner"],
-  ["103", "Parent", "Parent"], ["143", "Contributory Parent", "Parent"],
-  ["173", "Contributory Parent (Temporary)", "Parent"], ["804", "Aged Parent", "Parent"],
-  ["884", "Contributory Aged Parent (Temporary)", "Parent"], ["864", "Contributory Aged Parent", "Parent"],
-  ["600", "Visitor", "Visitor"], ["601", "Electronic Travel Authority", "Visitor"],
-  ["651", "eVisitor", "Visitor"], ["400", "Temporary Work (Short Stay Activity)", "Visitor"],
-  ["417", "Working Holiday", "Visitor"], ["462", "Work and Holiday", "Visitor"],
-  ["188", "Business Innovation and Investment (Provisional)", "Business"],
-  ["888", "Business Innovation and Investment (Permanent)", "Business"],
-  ["132", "Business Talent (Permanent)", "Business"], ["891", "Investor", "Business"],
-  ["892", "State/Territory Sponsored Business Owner", "Business"],
-  ["893", "State/Territory Sponsored Senior Executive", "Business"],
-  ["010", "Bridging A", "Bridging"], ["020", "Bridging B", "Bridging"],
-  ["030", "Bridging C", "Bridging"], ["040", "Bridging D", "Bridging"],
-  ["050", "Bridging (General)", "Bridging"], ["051", "Bridging (Protection Visa Applicant)", "Bridging"],
-  ["060", "Bridging E", "Bridging"], ["070", "Bridging (Removal Pending)", "Bridging"],
-  ["080", "Bridging (Crew)", "Bridging"], ["101", "Child", "Other"],
-  ["102", "Adoption", "Other"], ["802", "Child", "Other"], ["445", "Dependent Child", "Other"],
-  ["155", "Resident Return", "Other"], ["157", "Resident Return (5 years)", "Other"],
-  ["444", "Special Category (New Zealand citizen)", "Other"], ["116", "Carer", "Other"],
-  ["117", "Orphan Relative", "Other"], ["114", "Aged Dependent Relative", "Other"],
-  ["115", "Remaining Relative", "Other"], ["836", "Carer", "Other"],
-  ["856", "Employer Nomination Scheme (ENS)", "Other"], ["858", "Distinguished Talent", "Other"],
-];
+export { VISA_FAMILIES };
 
 export const VISA_REGISTRY_API = Object.freeze({
   entries: VISA_ENTRIES.map(([subclass, name, family]) => ({ subclass, name, family })),
