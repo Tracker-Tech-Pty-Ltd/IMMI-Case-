@@ -16,12 +16,25 @@ concurrency:
 jobs:
   test-python:
     runs-on: ubuntu-latest
+    # The 3.14 leg is advisory until it has had one green run; promote it to a
+    # blocking leg (delete this line) once it is proven on ubuntu-latest.
+    continue-on-error: ${{ matrix.python-version == '3.14' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 matches the extraction container image (Dockerfile line 4,
+        # `FROM python:3.12-slim`); 3.14 matches the local .venv developers run.
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-app.txt
+            requirements-test.txt
 
       - name: Install Python dependencies
         run: |
@@ -128,6 +141,9 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            workers/austlii-scraper/package-lock.json
 
       - name: Install Worker dependencies
         run: npm ci
