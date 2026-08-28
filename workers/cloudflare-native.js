@@ -399,7 +399,7 @@ async function route(request, env, ctx) {
   const council = await dispatchCloudflareCouncil(request, env, path, request.method, ctx);
   if (council !== null) return council;
   if (request.method === "GET") {
-    const response = await dispatchCloudflareCaseRead(request, url, path, env);
+    const response = await dispatchCloudflareCaseRead(request, url, path, env, ctx);
     if (response !== null) return response;
   }
   if (path.startsWith("/api/")) {

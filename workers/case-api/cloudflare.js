@@ -85,6 +85,77 @@ function jsonErr(error, status = 400, code = undefined) {
   return Response.json(code ? { error, code } : { error }, { status });
 }
 
+// --- Edge cache (Cloudflare Cache API) ---------------------------------------
+// Safe to SHARE across viewers because caching is gated purely on the RESPONSE:
+// only a 200 that already declares `Cache-Control: public, ...` is stored, so
+// every `no-cache` / `no-store` handler keeps its current behaviour. The cache
+// KEY is derived from `url` + `env` only (see edgeCacheKey) and never from
+// `request`, so a caller passing a Request for an unrelated reason (see next
+// paragraph) cannot influence what gets cached or served from cache.
+//
+// dispatchCloudflareCaseRead also receives `request` — added by a sibling
+// change (commit 49ca446) so /api/v1/export/csv and /api/v1/export/json can
+// call requireAuth(request, env, verifyJwt) for platform-operator gating. That
+// is the ONLY place `request` is read in this file (grep '\brequest\b' to
+// confirm), and both export branches unconditionally set
+// "Cache-Control": "no-store" on every response they return, including the
+// requireAuth() 401 response, so EDGE_CACHEABLE_CONTROL_RE never matches an
+// export response and it is never stored here. Every other handler behind this
+// router still takes (url, stores) or narrower and cannot see request at all,
+// so no CACHEABLE response can vary per user — that is what keeps a SHARED
+// edge cache safe. If a future handler starts reading `request` to vary a
+// `public,`-cached response per user, this invariant breaks; see "If
+// per-tenant reads are ever added" in the plan's maintenance notes.
+//
+// OPT-IN, not opt-out. Set IMMI_EDGE_CACHE_ENABLED="true" to turn the layer on;
+// anything else (including unset) leaves it off. See "Why this ships disabled"
+// in plans/012-restore-edge-caching.md: there is no working cross-colo
+// invalidation, and the case corpus is NOT static — the AustLII scraper Worker
+// writes cases straight into immi-case-mutation-queue via its
+// NATIVE_CASE_QUEUE producer binding
+// (config/wrangler-austlii-native.toml.example:38-40), which bypasses the
+// IMMI_CASE_MUTATIONS_ENABLED flag entirely.
+//
+// IMMI_EDGE_CACHE_VERSION is the global purge lever: every cache key is
+// namespaced by it, so bumping the variable makes every previously stored entry
+// unreachable in every colo at once. A per-colo cache delete() cannot do
+// that — it only affects the colo that served the request.
+const EDGE_CACHEABLE_CONTROL_RE = /^\s*public\s*,/i;
+
+function edgeCache(env) {
+  if (env?.IMMI_EDGE_CACHE_ENABLED !== "true") return null;
+  return typeof caches !== "undefined" && caches?.default ? caches.default : null;
+}
+
+function edgeCacheKey(url, env) {
+  // Canonicalise so ?a=1&b=2 and ?b=2&a=1 share one entry.
+  //
+  // Sort by parameter NAME ONLY. Array.prototype.sort is stable (ES2019+), so
+  // repeated parameters keep their original relative order. Sorting by
+  // [name, value] would be a correctness bug: the handlers read repeated
+  // parameters with searchParams.get(), which returns the FIRST value
+  // (see requestFilters, workers/case-api/cloudflare.js:121-133), so
+  // ?court=FCA&court=AATA and ?court=AATA&court=FCA produce DIFFERENT responses
+  // — and a value-sorting key would collapse them onto one entry and serve the
+  // wrong one.
+  const source = new URL(url.toString());
+  const params = [...source.searchParams.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]));
+  const key = new URL(source.toString());
+  key.search = "";
+  // Namespace by version so an operator can invalidate everything at once.
+  key.searchParams.append("__v", String(env?.IMMI_EDGE_CACHE_VERSION || "1"));
+  for (const [name, value] of params) key.searchParams.append(name, value);
+  return new Request(key.toString(), { method: "GET" });
+}
+
+function isEdgeCacheable(response) {
+  return response instanceof Response
+    && response.status === 200
+    && !response.headers.has("Set-Cookie")
+    && EDGE_CACHEABLE_CONTROL_RE.test(response.headers.get("Cache-Control") || "");
+}
+
 async function handleJudgePhoto(path, stores) {
   const match = path.match(JUDGE_PHOTO_PATH_RE);
   if (!match) return null;
@@ -1156,8 +1227,29 @@ async function handleAnalyticsJudgeCompare(url, stores) {
  * route not yet reimplemented. The eventual activation gate must assert that
  * every public route resolves here before cloudflare mode is traffic-serving.
  */
-export async function dispatchCloudflareCaseRead(request, url, path, env) {
+export async function dispatchCloudflareCaseRead(request, url, path, env, ctx = undefined) {
   if (getStorageMode(env) !== "cloudflare") return null;
+  const cache = edgeCache(env);
+  if (!cache) return resolveCloudflareCaseRead(request, url, path, env);
+  const cacheKey = edgeCacheKey(url, env);
+  try {
+    const hit = await cache.match(cacheKey);
+    if (hit) return hit;
+  } catch (error) {
+    console.error(JSON.stringify({ event: "case.cloudflare.cache_match_error", path, error: error?.message }));
+  }
+  const response = await resolveCloudflareCaseRead(request, url, path, env);
+  if (isEdgeCacheable(response)) {
+    const write = cache.put(cacheKey, response.clone()).catch((error) => {
+      console.error(JSON.stringify({ event: "case.cloudflare.cache_put_error", path, error: error?.message }));
+    });
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(write);
+    else await write;
+  }
+  return response;
+}
+
+async function resolveCloudflareCaseRead(request, url, path, env) {
   if (path === "/api/v1/legislations/update/status") {
     try {
       const command = await createCloudflareStores(env).pipelineStore.latestControlCommand("legislation_update");
