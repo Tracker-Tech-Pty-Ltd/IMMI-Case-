@@ -34,15 +34,18 @@ export function CourtBadge({ court, className }: CourtBadgeProps) {
   const fullName = courtNameMap[court]
 
   return (
-    <span
-      title={fullName}
-      className={cn(
-        "inline-flex shrink-0 cursor-default items-center whitespace-nowrap rounded-sm px-2 py-0.5 text-xs font-medium text-white",
-        bg,
-        className
-      )}
-    >
-      {court}
-    </span>
+    <>
+      <span
+        title={fullName}
+        className={cn(
+          "inline-flex shrink-0 cursor-default items-center whitespace-nowrap rounded-sm px-2 py-0.5 text-xs font-medium text-white",
+          bg,
+          className
+        )}
+      >
+        {court}
+      </span>
+      {fullName ? <span className="sr-only">{fullName}</span> : null}
+    </>
   )
 }
