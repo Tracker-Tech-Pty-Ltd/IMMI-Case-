@@ -518,6 +518,90 @@ class TestPipelineCleanPhase:
         assert len(load_all_cases(str(tmp_path))) == 2
 
 
+# ── Pipeline crawl-phase checkpointing ──────────────────────────────────
+
+
+class TestPipelineCrawlPhase:
+    @patch("immi_case_downloader.pipeline.AUSTLII_DATABASES", {"AATA": {"name": "AATA"}})
+    @patch("immi_case_downloader.sources.austlii.AustLIIScraper")
+    def test_crawl_phase_persists_years_fetched_before_a_stop(
+        self, mock_scraper_cls, tmp_path
+    ):
+        """Stopping must keep the years already crawled, not discard them.
+
+        The crawl accumulated every year in memory and saved once, after both
+        loops. A stop returned straight out of the year loop, so hours of
+        rate-limited fetching against a host that blocks bulk scrapers were
+        thrown away — and the assertion has to read the CSV back, because the
+        bug is lost work, not an uncalled save.
+        """
+        ensure_output_dirs(str(tmp_path))
+        save_cases_csv([], str(tmp_path))
+
+        config = _make_pipeline_config(
+            databases=["AATA"], start_year=2020, end_year=2024
+        )
+        pipeline = SmartPipeline(config, str(tmp_path))
+
+        crawled_years = []
+
+        def fake_crawl(self, scraper, db_code, db_info, year):
+            crawled_years.append(year)
+            if len(crawled_years) == 2:
+                pipeline.request_stop()
+            return [
+                _case(
+                    citation=f"[{year}] AATA {year}",
+                    url=f"https://example.com/{year}",
+                )
+            ]
+
+        with patch.object(SmartPipeline, "_crawl_with_fallback", fake_crawl):
+            pipeline._run_crawl_phase()
+
+        invalidate_cases_cache()
+        urls = {c.url for c in load_all_cases(str(tmp_path))}
+        assert urls == {
+            "https://example.com/2020",
+            "https://example.com/2021",
+        }, "a stop discarded the years already crawled"
+        assert crawled_years == [2020, 2021]
+
+    @patch("immi_case_downloader.pipeline.AUSTLII_DATABASES", {"AATA": {"name": "AATA"}})
+    @patch("immi_case_downloader.sources.austlii.AustLIIScraper")
+    def test_crawl_phase_does_not_erase_a_concurrent_writer(
+        self, mock_scraper_cls, tmp_path
+    ):
+        """The checkpoint merges onto disk, not onto the phase's start snapshot.
+
+        A crawl runs for hours; anything committed in that window must survive
+        the crawl's own save.
+        """
+        ensure_output_dirs(str(tmp_path))
+        save_cases_csv([], str(tmp_path))
+
+        config = _make_pipeline_config(
+            databases=["AATA"], start_year=2020, end_year=2020
+        )
+        pipeline = SmartPipeline(config, str(tmp_path))
+
+        def fake_crawl(self, scraper, db_code, db_info, year):
+            # Another writer commits while this year is being fetched.
+            other = load_all_cases(str(tmp_path), use_cache=False)
+            other.append(
+                _case(citation="[2024] AATA 99", url="https://example.com/other")
+            )
+            save_cases_csv(other, str(tmp_path))
+            return [_case(citation="[2020] AATA 1", url="https://example.com/2020")]
+
+        with patch.object(SmartPipeline, "_crawl_with_fallback", fake_crawl):
+            pipeline._run_crawl_phase()
+
+        invalidate_cases_cache()
+        urls = {c.url for c in load_all_cases(str(tmp_path))}
+        assert urls == {"https://example.com/2020", "https://example.com/other"}
+
+
 # ── Pipeline download-phase stop persistence and failed accounting ──────
 
 

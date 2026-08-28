@@ -322,8 +322,8 @@ class SmartPipeline:
         from .sources.austlii import AustLIIScraper
 
         scraper = AustLIIScraper(delay=self.config.delay)
-        existing = load_all_cases(self.output_dir)
-        existing_urls = {c.url for c in existing}
+        existing_urls = {c.url for c in load_all_cases(self.output_dir)}
+        pending: list[ImmigrationCase] = []
         total_added = 0
         total_found = 0
 
@@ -343,6 +343,7 @@ class SmartPipeline:
 
             for year in years:
                 if self._is_stopped():
+                    total_added += self._flush_crawl_batch(pending)
                     return
 
                 step += 1
@@ -359,10 +360,9 @@ class SmartPipeline:
                 for case in cases:
                     if case.url not in existing_urls:
                         case.ensure_id()
-                        existing.append(case)
+                        pending.append(case)
                         existing_urls.add(case.url)
                         added += 1
-                total_added += added
 
                 self.log.add(
                     "crawl", "info", "year_done",
@@ -370,10 +370,14 @@ class SmartPipeline:
                     db_code=db_code, year=year, found=len(cases), new=added,
                 )
 
-        # Save crawl results
-        if total_added > 0:
-            save_cases_csv(existing, self.output_dir)
-            save_cases_json(existing, self.output_dir)
+                # Checkpoint every year. A crawl runs for hours against a
+                # rate-limited remote; holding every year in memory until the
+                # phase ends means a stop — or a crash — throws all of it away.
+                total_added += self._flush_crawl_batch(pending)
+                pending.clear()
+
+        total_added += self._flush_crawl_batch(pending)
+        pending.clear()
 
         with self._lock:
             self._status["stats"]["crawl"] = {
@@ -385,8 +389,40 @@ class SmartPipeline:
 
         self.log.add(
             "crawl", "success", "phase_done",
-            f"Crawl complete: {total_found} found, {total_added} new. Total: {len(existing)}.",
+            f"Crawl complete: {total_found} found, {total_added} new. "
+            f"Total: {len(load_all_cases(self.output_dir))}.",
         )
+
+    def _flush_crawl_batch(self, pending: list[ImmigrationCase]) -> int:
+        """Persist freshly crawled cases, returning how many were new.
+
+        Merges onto rows read from disk *inside* the write lock rather than
+        onto the snapshot the phase started with: a crawl runs for hours, and
+        anything another writer committed in that window would otherwise be
+        erased by this save.
+        """
+        if not pending:
+            return 0
+
+        with csv_write_lock(
+            os.path.join(self.output_dir, CASES_CSV), job_name="pipeline_crawl"
+        ):
+            stored = load_all_cases(self.output_dir, use_cache=False)
+            stored_urls = {c.url for c in stored if c.url}
+            added = 0
+            for case in pending:
+                if case.url and case.url in stored_urls:
+                    continue
+                case.ensure_id()
+                stored.append(case)
+                if case.url:
+                    stored_urls.add(case.url)
+                added += 1
+
+            if added:
+                save_cases_csv(stored, self.output_dir)
+                save_cases_json(stored, self.output_dir)
+            return added
 
     def _crawl_with_fallback(self, scraper, db_code, db_info, year) -> list:
         """Try crawl strategies in order, rotating on repeated failures."""
