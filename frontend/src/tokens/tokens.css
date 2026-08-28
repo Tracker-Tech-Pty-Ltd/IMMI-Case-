@@ -36,6 +36,7 @@
   --color-court-mrta: #922b5f;
   --color-court-fmca: #b84c00;
   --color-overlay: #111820;
+  --color-on-solid: #ffffff;
 
   /* ── Typography: Font Families ── */
   --font-heading: "Crimson Text", Georgia, "Times New Roman", serif;
@@ -119,6 +120,7 @@
   --color-accent-light: #e0b04a;
   --color-accent-muted: rgba(201, 148, 46, 0.12);
   --color-overlay: #000000;
+  --color-on-solid: #111820;
   --color-background: #111820;
   --color-background-card: #192230;
   --color-background-sidebar: #141c28;

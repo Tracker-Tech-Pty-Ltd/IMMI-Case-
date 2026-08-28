@@ -9,6 +9,8 @@
   --color-accent: var(--color-accent);
   --color-accent-light: var(--color-accent-light);
   --color-accent-muted: var(--color-accent-muted);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-on-solid: var(--color-on-solid);
 
   --color-background: var(--color-background);
   --color-card: var(--color-background-card);
@@ -253,6 +255,19 @@ select:disabled {
 input::placeholder,
 textarea::placeholder {
   color: var(--color-text-muted);
+}
+
+/* ─── Derived interaction colours ───────────────────────────── */
+/* Hover darkens the accent in light mode and lightens it in dark mode, so the
+   foreground (--color-on-solid) gains contrast on hover instead of losing it.
+   Resolved against whatever --color-accent the active preset wrote inline on
+   <html>, so it follows every preset automatically. */
+:root {
+  --color-accent-hover: color-mix(in oklab, var(--color-accent) 86%, black);
+}
+
+.dark {
+  --color-accent-hover: color-mix(in oklab, var(--color-accent) 86%, white);
 }
 
 select {

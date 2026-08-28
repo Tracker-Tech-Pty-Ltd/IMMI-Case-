@@ -54,6 +54,9 @@ export const tokens = {
     "overlay": {
       "DEFAULT": "#111820"
     },
+    "on-solid": {
+      "DEFAULT": "#ffffff"
+    },
     "dark": {
       "primary": {
         "DEFAULT": "#d0d4da",
@@ -67,6 +70,9 @@ export const tokens = {
       },
       "overlay": {
         "DEFAULT": "#000000"
+      },
+      "on-solid": {
+        "DEFAULT": "#111820"
       },
       "background": {
         "DEFAULT": "#111820",
