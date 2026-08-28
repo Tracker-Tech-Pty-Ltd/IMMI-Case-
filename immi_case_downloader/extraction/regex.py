@@ -4,6 +4,10 @@ The legacy ``extract_structured_fields.py`` script is CLI-shaped and reads text
 from case_text files. This module reuses its helper functions without changing
 that script's behaviour, so the Cloudflare container endpoint can extract from
 R2-provided text directly.
+
+Pattern definitions live in ``patterns.py`` inside this package. The
+repo-root ``extract_structured_fields.py`` CLI imports the same module, so
+the two extraction paths cannot drift.
 """
 
 from __future__ import annotations
@@ -11,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from extract_structured_fields import (
+from .patterns import (
     RE_AATA_APPLICANT,
     RE_AATA_REPRESENTATIVE,
     extract_country,

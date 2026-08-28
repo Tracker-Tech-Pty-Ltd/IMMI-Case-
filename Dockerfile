@@ -7,7 +7,7 @@ WORKDIR /app
 COPY requirements-extractor.txt .
 RUN pip install --no-cache-dir -r requirements-extractor.txt
 
-COPY extract_container.py extract_structured_fields.py ./
+COPY extract_container.py ./
 COPY immi_case_downloader/__init__.py ./immi_case_downloader/__init__.py
 COPY immi_case_downloader/extraction ./immi_case_downloader/extraction
 
