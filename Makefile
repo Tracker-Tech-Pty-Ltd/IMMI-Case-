@@ -76,6 +76,40 @@ test-workers:
 coverage-fe:
 	cd "$(REPO_ROOT)/frontend" && npx vitest run --coverage
 
+# Guard against include-glob drift: every Vitest-owned test file on disk must be
+# collected by exactly one vitest config. This is what silently hid
+# frontend/src/lib/__tests__/saved-searches.test.ts (28 tests) for as long as
+# the frontend include was anchored at frontend/__tests__/ only.
+#
+# Compares SETS of repo-relative paths, not counts: a count check passes when one
+# file is missed and another is double-collected, and cannot name the offender.
+#
+# NOT covered here (by design, different runners): frontend/e2e/*.spec.ts and
+# tests/e2e/** are Playwright; tests/**/*.py is pytest, guarded by pytest.ini's
+# `testpaths = tests`.
+check-vitest-collection:
+	@set -e; \
+	TMP=$$(mktemp -d); trap 'rm -rf "$$TMP"' EXIT; \
+	( cd "$(REPO_ROOT)" && find frontend workers -type f \
+	    \( -name '*.test.js' -o -name '*.test.jsx' -o -name '*.test.ts' -o -name '*.test.tsx' \
+	    -o -name '*.spec.js' -o -name '*.spec.jsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) \
+	    -not -path '*/node_modules/*' -not -path 'frontend/e2e/*' -not -path '*/dist/*' \
+	  | sort -u ) > "$$TMP/disk"; \
+	( cd "$(REPO_ROOT)/frontend" && npx vitest list --filesOnly 2>/dev/null | sed 's|^|frontend/|'; \
+	  cd "$(REPO_ROOT)/workers" && npx vitest list --filesOnly 2>/dev/null | sed 's|^|workers/|'; \
+	  cd "$(REPO_ROOT)/workers/austlii-scraper" && npx vitest list --filesOnly --config vitest.config.ts 2>/dev/null | sed 's|^|workers/austlii-scraper/|' \
+	) | sed 's|^\./||' | sort > "$$TMP/collected.raw"; \
+	sort -u "$$TMP/collected.raw" > "$$TMP/collected"; \
+	DUPES=$$(uniq -d "$$TMP/collected.raw" || true); \
+	MISSING=$$(comm -23 "$$TMP/disk" "$$TMP/collected"); \
+	EXTRA=$$(comm -13 "$$TMP/disk" "$$TMP/collected"); \
+	FAIL=0; \
+	if [ -n "$$MISSING" ]; then echo "ERROR: on disk but collected by no vitest config:"; echo "$$MISSING"; FAIL=1; fi; \
+	if [ -n "$$EXTRA" ]; then echo "ERROR: collected but not found on disk (stale path or wrong prefix):"; echo "$$EXTRA"; FAIL=1; fi; \
+	if [ -n "$$DUPES" ]; then echo "ERROR: collected by more than one vitest config:"; echo "$$DUPES"; FAIL=1; fi; \
+	if [ "$$FAIL" = "0" ]; then echo "OK: $$(wc -l < "$$TMP/disk" | tr -d ' ') vitest test files on disk, each collected exactly once"; fi; \
+	exit $$FAIL
+
 # AC4 safety guard: reject any set_config call without transaction-local flag (true).
 # A literal `false` or missing third argument leaks JWT claims across pooled connections.
 audit-rls-guards:
