@@ -69,7 +69,7 @@ Read-path cost and latency.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [012](012-restore-edge-caching.md) | Bring back the Cache API layer the proxy.js deletion removed | P2 | M | MED | 009, 010, 013 | TODO |
-| [013](013-fix-d1-query-shapes.md) | Add the missing indexes and stop the full scans on the hot read paths | P2 | M | MED | 009, 010 | TODO |
+| [013](013-fix-d1-query-shapes.md) | Add the missing indexes and stop the full scans on the hot read paths | P2 | M | MED | 009, 010 | DONE — merged to main |
 | [014](014-bound-the-aggregate-workload.md) | Bound the judge-leaderboard aggregate read inside D1 instead of in Worker memory | P2 | M | MED | 013 | TODO |
 
 ### Tier 3 — Frontend correctness
@@ -101,7 +101,7 @@ The decided 'Legal Codex' direction and WCAG conformance.
 | [021](021-restore-legal-codex-default.md) | Ship the decided Legal Codex palette instead of migrating users off it | P1 | M | MED | 001 | DONE — merged to main |
 | [022](022-fix-contrast-tokens.md) | Bring the colour tokens up to WCAG AA in both themes | P2 | L | MED | — | DONE — merged to main |
 | [023](023-fix-accessibility-semantics.md) | Labels, focus management, table semantics and heading hierarchy | P2 | M | MED | 001 | DONE — merged to main |
-| [024](024-add-accessibility-gates.md) | Make lint and tests able to catch contrast and a11y regressions | P2 | M | LOW | — | TODO |
+| [024](024-add-accessibility-gates.md) | Make lint and tests able to catch contrast and a11y regressions | P2 | M | LOW | — | DONE — merged to main |
 | [025](025-remove-internal-tooling-from-prod.md) | Unadvertise DesignTokensPage and single-source the colour maths | P2 | M | LOW | 001 | DONE — merged to main |
 
 ### Tier 6 — Python correctness (local-dev path)
@@ -165,7 +165,7 @@ The config contract and the ability to debug production.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [045](045-fix-the-config-contract.md) | Make `.env.example` the source of truth it claims to be | P2 | M | MED | — | DONE — merged to main |
-| [046](046-add-worker-observability.md) | Correlation IDs, honest upstream error bodies and real safety gates | P2 | L | MED | 001 | TODO |
+| [046](046-add-worker-observability.md) | Correlation IDs, honest upstream error bodies and real safety gates | P2 | L | MED | 001 | DONE — merged to main |
 
 ### Tier 12 — Direction (spikes, not build-everything)
 
