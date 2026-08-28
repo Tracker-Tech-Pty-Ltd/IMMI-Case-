@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Search, X } from "lucide-react";
 import { useSearchCases } from "@/hooks/use-cases";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 
 interface GlobalSearchProps {
@@ -15,62 +16,38 @@ interface GlobalSearchDialogProps {
   onClose: () => void;
 }
 
-/** Matches JudgeAutocomplete's debounce so the app searches at one rhythm. */
-const SEARCH_DEBOUNCE_MS = 300;
 /** Below this, a query is a prefix of everything and worth no round trip. */
 const MIN_SEARCH_CHARS = 2;
 
 function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
-  const { data } = useSearchCases(debouncedQuery, 8);
+
+  const debouncedQuery = useDebouncedValue(query, 250);
+  // The Worker rejects queries shorter than 2 characters with HTTP 400
+  // (workers/case-api/cloudflare.js:195). Passing "" trips useSearchCases'
+  // existing `enabled: query.length > 0` gate, so no request is made at all.
+  const searchQuery =
+    debouncedQuery.trim().length >= MIN_SEARCH_CHARS
+      ? debouncedQuery.trim()
+      : "";
+  const { data, isFetching } = useSearchCases(searchQuery, 8);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Cleanup debounce on unmount so a closed dialog cannot schedule state.
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
-
-  const handleQueryChange = useCallback((value: string) => {
-    setQuery(value);
-    setActiveIdx(0); // reset keyboard nav on each keystroke
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-
-    const trimmed = value.trim();
-    if (trimmed.length < MIN_SEARCH_CHARS) {
-      // Nothing worth searching for — drop the query immediately so the
-      // dialog never shows results left over from a longer prefix.
-      setDebouncedQuery("");
-      return;
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      setDebouncedQuery(trimmed);
-    }, SEARCH_DEBOUNCE_MS);
-  }, []);
-
-  // True while the user has typed something the hook has not been asked for
-  // yet. Results on screen belong to `debouncedQuery`, not to `query`.
-  const resultsAreStale = query.trim() !== debouncedQuery;
+  // True while the user has typed something the debounce has not caught up
+  // to yet. Results on screen belong to `searchQuery`, not to `query` — this
+  // stops a stale result set (or an Enter/click on it) surviving into a
+  // different in-flight query while the debounce is still pending.
+  const resultsAreStale = query.trim() !== searchQuery;
   const cases = resultsAreStale ? [] : (data?.cases ?? []);
   const hasResults = cases.length > 0;
-  const isExpanded = hasResults && query.length > 0;
+  const isExpanded = hasResults && searchQuery.length > 0;
 
   const clampedActiveIdx = useMemo(() => {
     if (!hasResults) return 0;
@@ -103,7 +80,10 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
                   : undefined
               }
               value={query}
-              onChange={(e) => handleQueryChange(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActiveIdx(0); // reset keyboard nav on each keystroke
+              }}
               onKeyDown={(e) => {
                 if (!hasResults) return;
                 if (e.key === "ArrowDown") {
@@ -175,7 +155,7 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
             </ul>
           )}
 
-          {debouncedQuery.length > 0 && cases.length === 0 && (
+          {searchQuery.length > 0 && !isFetching && cases.length === 0 && (
             <div className="flex flex-col items-center gap-1 p-6 text-center">
               <p className="text-sm font-medium text-foreground">
                 {t("common.no_results")}
