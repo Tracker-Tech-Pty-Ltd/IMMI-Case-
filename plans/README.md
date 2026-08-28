@@ -55,7 +55,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 |------|-------|-----|-----|------|------------|--------|
 | [004](004-fix-council-429-outage.md) | Restore LLM Council — every POST currently fails because its rate-limiter binding is not declared anywhere | P1 | M | MED | — | DONE (code) — awaiting operator deploy |
 | [005](005-fix-worker-async-error-handling.md) | Make the Worker dispatchers' try/catch actually catch handler rejections | P1 | M | MED | 004 | DONE — merged to main |
-| [006](006-harden-auth-and-authorization.md) | Separate platform roles from tenant roles and close the auth gaps | P1 | L | HIGH | 005 | TODO |
+| [006](006-harden-auth-and-authorization.md) | Separate platform roles from tenant roles and close the auth gaps | P1 | L | HIGH | 005 | DONE — merged to main |
 | [007](007-harden-the-public-export-surface.md) | Authenticate, throttle and sanitise the bulk export endpoints | P1 | L | MED | 004 | TODO |
 | [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | TODO |
 | [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | TODO |
