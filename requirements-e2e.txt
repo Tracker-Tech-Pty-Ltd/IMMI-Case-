@@ -1,0 +1,11 @@
+# Browser-automation dependencies for the Python Playwright E2E suite
+# (tests/e2e/**, 25 files). Deliberately NOT in requirements-test.txt: the CI
+# test-python job never runs this suite, and pytest-playwright pulls a large
+# driver plus a browser download that job would pay for on every run.
+#
+# tests/e2e/conftest.py consumes a session-scoped `browser` fixture that is
+# defined nowhere in tests/ — it comes from the pytest-playwright plugin, so
+# bare `playwright` is not enough.
+#
+# Install with:  make install-e2e     (also downloads the chromium binary)
+pytest-playwright>=0.9.0

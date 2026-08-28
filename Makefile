@@ -136,7 +136,30 @@ audit-rls-guards:
 	  echo "$$BAD"; exit 1; \
 	else echo "OK: all set_config calls verified with transaction-local=true"; fi
 
+# tests/e2e/react/react_helpers.py imports playwright.sync_api at module scope,
+# so without the plugin this target dies with 20 collection errors and no hint
+# about what to install. Fail early with an instruction instead.
+#
+# The guard checks the PLUGIN distribution, not `import playwright`. The two are
+# different packages: `playwright` is the browser-automation library, while the
+# session-scoped `browser` fixture that tests/e2e/conftest.py:297 consumes comes
+# from the separate `pytest-playwright` plugin. `import playwright` succeeds with
+# only the library installed, so that check would wave the run through and let it
+# die later on a missing fixture. It also checks that a browser binary is really
+# present, by launching one — `playwright install chromium` is a separate step
+# from installing the package and is just as easy to forget.
 test-e2e:
+	@"$(PYTHON)" -c "import importlib.metadata as m; m.version('pytest-playwright')" 2>/dev/null || { \
+	  echo "ERROR: the pytest-playwright plugin is not installed for $(PYTHON)."; \
+	  echo "(Note: the 'playwright' library alone is NOT enough — tests/e2e needs"; \
+	  echo " the plugin, which is what provides the 'browser' fixture.)"; \
+	  echo "Run 'make install-e2e' first (requirements-e2e.txt + chromium),"; \
+	  echo "then start a server ('make api') before running the E2E suite."; \
+	  exit 1; }
+	@"$(PYTHON)" -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(); b.close(); p.stop()" 2>/dev/null || { \
+	  echo "ERROR: pytest-playwright is installed but chromium will not launch."; \
+	  echo "Run '$(PYTHON) -m playwright install chromium' (or 'make install-e2e')."; \
+	  exit 1; }
 	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60
 
 coverage:
@@ -178,6 +201,10 @@ install:
 	# and the CI-gated `npm run typecheck` there are unrunnable on a clean clone.
 	# npm ci (not npm install) so a lockfile drift is an error, never a silent rewrite.
 	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm ci --ignore-scripts
+
+install-e2e:
+	"$(VENV_PYTHON)" -m pip install -r requirements-e2e.txt
+	"$(VENV_PYTHON)" -m playwright install chromium
 
 migrate:
 	supabase db push
