@@ -57,7 +57,7 @@ Live outages and security gaps in the deployed Cloudflare Worker.
 | [005](005-fix-worker-async-error-handling.md) | Make the Worker dispatchers' try/catch actually catch handler rejections | P1 | M | MED | 004 | DONE — merged to main |
 | [006](006-harden-auth-and-authorization.md) | Separate platform roles from tenant roles and close the auth gaps | P1 | L | HIGH | 005 | DONE — merged to main |
 | [007](007-harden-the-public-export-surface.md) | Authenticate, throttle and sanitise the bulk export endpoints | P1 | L | MED | 004 | TODO |
-| [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | TODO |
+| [008](008-add-security-response-headers.md) | Ship CSP, X-Frame-Options, Referrer-Policy and HSTS on the production SPA | P1 | M | MED | 001, 002, 003 | DONE — merged to main |
 | [009](009-make-the-mutation-queue-safe.md) | Per-message acks, dead-lettering and atomic aggregate rebuilds | P1 | M | MED | 001 | TODO |
 | [010](010-fix-analytics-win-rate.md) | Stop the monthly-trends win rate diverging from every other analytics endpoint | P1 | S | LOW | 009 | TODO |
 | [011](011-fix-scraper-cost-caps-and-retries.md) | Stop double-billing extraction and dropping cases on transient failures | P1 | L | MED | — | DONE — merged to main |
@@ -81,7 +81,7 @@ Silent failures the user cannot see or recover from.
 | [015](015-surface-frontend-errors.md) | Replace infinite spinners and silent failures with real error states | P1 | L | MED | 001 | DONE — merged to main |
 | [016](016-fix-query-cache-correctness.md) | Fix stale-data bleed, query keys and CSRF token lifetime | P2 | M | LOW | 001 | DONE — merged to main |
 | [017](017-fix-frontend-async-and-navigation.md) | Clipboard, blob downloads, share links and stream re-entrancy | P3 | M | LOW | — | DONE — merged to main |
-| [018](018-complete-the-i18n-catalogue.md) | Define the 88 missing keys and translate the hardcoded strings | P2 | M | LOW | 001 | TODO |
+| [018](018-complete-the-i18n-catalogue.md) | Define the 88 missing keys and translate the hardcoded strings | P2 | M | LOW | 001 | DONE — merged to main |
 
 ### Tier 4 — Frontend performance
 
@@ -110,7 +110,7 @@ Real bugs, lower blast radius: the Flask app is not in production.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [026](026-fix-seek-pagination.md) | Make the seek pagination return the right rows on every page | P2 | M | MED | 027 | TODO |
+| [026](026-fix-seek-pagination.md) | Make the seek pagination return the right rows on every page | P2 | M | MED | 027 | DONE — merged to main |
 | [027](027-fix-csv-data-integrity.md) | Stop silently destroying rows and columns in the master CSV | P1 | L | MED | — | DONE — merged to main |
 | [028](028-fix-flask-analytics-fallback.md) | Stop returning empty analytics and calling it a timeout | P2 | M | MED | 027 | DONE — merged to main |
 | [029](029-harden-scraper-and-extraction.md) | Checkpointing, honest failure reporting and safe result truncation | P2 | L | MED | — | DONE — merged to main |
@@ -164,7 +164,7 @@ The config contract and the ability to debug production.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [045](045-fix-the-config-contract.md) | Make `.env.example` the source of truth it claims to be | P2 | M | MED | — | TODO |
+| [045](045-fix-the-config-contract.md) | Make `.env.example` the source of truth it claims to be | P2 | M | MED | — | DONE — merged to main |
 | [046](046-add-worker-observability.md) | Correlation IDs, honest upstream error bodies and real safety gates | P2 | L | MED | 001 | TODO |
 
 ### Tier 12 — Direction (spikes, not build-everything)
