@@ -1,3 +1,18 @@
+> ## ⚠ UNMAINTAINED — not a shipping client
+>
+> This directory is **not** a maintained client of IMMI-Case and has no CI job.
+> The plan below was written on 2026-03-17 against the Flask API; Flask is now
+> local-dev-only and production is the Cloudflare Worker
+> (`workers/cloudflare-native.js`). Six of the 31 endpoints this client calls
+> return 503 in production and never existed on any backend. The client sends
+> no `Authorization` header, and its `applicationId` (`au.gov.immi.cases`)
+> claims the Australian Government namespace and must be renamed before any
+> distribution.
+>
+> Whether this is archived or adopted is an open decision recorded in
+> **`docs/adr/0052-android-client-disposition.md`**. Read that before doing any work
+> here. Nothing below this banner has been revised since 2026-03-17.
+
 # IMMI Android App — 完整實作計劃
 
 **目標**：建立 IMMI-Case 的 Android Native Kotlin 版本，完整復刻所有功能
