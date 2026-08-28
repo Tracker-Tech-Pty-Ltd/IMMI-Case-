@@ -51,7 +51,6 @@ api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 # Stats cache TTL — keep warm for 5 min so Supabase cold-start only hits once per session.
 _STATS_CACHE_TTL_SECONDS = 300.0
 
-_rpc_executor = ThreadPoolExecutor(max_workers=4)
 _stats_cache_lock = threading.Lock()
 _stats_cache_payload: dict | None = None
 _stats_cache_ts: float = 0.0
@@ -922,6 +921,48 @@ def _parse_court_year_trends_rows(trends_rows) -> tuple[dict[str, dict[int, int]
     return court_year_counts, all_years, total_cases
 
 
+_fallback_rpc_executor: ThreadPoolExecutor | None = None
+_fallback_rpc_executor_lock = threading.Lock()
+
+
+def _get_rpc_executor() -> ThreadPoolExecutor:
+    """Resolve the RPC executor for the current Flask application.
+
+    Each ``create_app()`` instance owns its own executor, created by the app
+    factory and stored on ``app.extensions["immi_rpc_executor"]``. This must
+    be per-application, not a module-global: two Flask apps in one process
+    sharing a single fixed-size pool means one app's abandoned work — a task
+    that timed out but is still running, since ``future.cancel()`` cannot
+    stop work that has already started — permanently occupies a worker slot
+    and starves requests made against the *other* app until they time out
+    too (real symptom: intermittent empty `/api/v1/stats` payloads).
+
+    Falls back to a lazily-created, process-wide executor when there is no
+    application context at all — e.g. a caller running before any app
+    context has been pushed.
+    """
+    try:
+        app = current_app._get_current_object()  # type: ignore[attr-defined]
+    except RuntimeError:
+        app = None
+
+    if app is not None:
+        executor = app.extensions.get("immi_rpc_executor")
+        if executor is None:
+            # Defensive fallback: only reached if a Flask app was constructed
+            # without going through immi_case_downloader.webapp.create_app().
+            executor = ThreadPoolExecutor(max_workers=4)
+            app.extensions["immi_rpc_executor"] = executor
+        return executor
+
+    global _fallback_rpc_executor
+    if _fallback_rpc_executor is None:
+        with _fallback_rpc_executor_lock:
+            if _fallback_rpc_executor is None:
+                _fallback_rpc_executor = ThreadPoolExecutor(max_workers=4)
+    return _fallback_rpc_executor
+
+
 def _call_with_timeout(
     func,
     timeout_seconds: float = SUPABASE_RPC_TIMEOUT_SECONDS,
@@ -935,7 +976,7 @@ def _call_with_timeout(
     task that has already started cannot be cancelled — ``cancel()`` returns
     ``False`` and the thread runs to completion.
     """
-    worker = executor or _rpc_executor
+    worker = executor or _get_rpc_executor()
     future = worker.submit(func)
     try:
         return future.result(timeout=timeout_seconds)

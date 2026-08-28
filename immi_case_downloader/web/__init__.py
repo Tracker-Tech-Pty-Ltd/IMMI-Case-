@@ -14,6 +14,7 @@ import secrets
 import warnings
 import logging
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 from flask import Flask
@@ -65,6 +66,14 @@ def create_app(output_dir: str = OUTPUT_DIR, backend: str = "auto"):
 
     # CSRF protection
     csrf.init_app(app)
+
+    # Per-app RPC executor for blocking Supabase/SQLite calls made through
+    # _call_with_timeout() / _call_in_app_context() (routes/api.py). This MUST
+    # be per-application-instance, not a module-global: two Flask apps sharing
+    # one fixed-size pool means one app's abandoned work (future.cancel() is a
+    # no-op once a task has actually started) permanently occupies a worker
+    # and starves the other app's requests until they time out too.
+    app.extensions["immi_rpc_executor"] = ThreadPoolExecutor(max_workers=4)
 
     # App config
     app.config["OUTPUT_DIR"] = output_dir
