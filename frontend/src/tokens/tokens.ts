@@ -21,9 +21,9 @@ export const tokens = {
     },
     "chart": {
       "2": "#8b5cf6",
-      "3": "#10b981",
+      "3": "#0d9b6c",
       "4": "#3b82f6",
-      "5": "#f59e0b"
+      "5": "#bd7a08"
     },
     "border": {
       "DEFAULT": "#6e7177",
@@ -32,7 +32,7 @@ export const tokens = {
     "text": {
       "DEFAULT": "#1b2838",
       "secondary": "#4a5568",
-      "muted": "#8b8680"
+      "muted": "#6e6a65"
     },
     "semantic": {
       "success": "#236238",
@@ -82,19 +82,19 @@ export const tokens = {
         "5": "#fbbf24"
       },
       "border": {
-        "DEFAULT": "#4a5060",
+        "DEFAULT": "#687087",
         "light": "#2d3748"
       },
       "text": {
         "DEFAULT": "#e2dfda",
         "secondary": "#a4acb8",
-        "muted": "#6d7788"
+        "muted": "#858e9e"
       },
       "semantic": {
         "success": "#3da55d",
         "warning": "#d4a017",
-        "danger": "#d04848",
-        "info": "#4a90c4"
+        "danger": "#d96d6d",
+        "info": "#5094c6"
       },
       "court": {
         "AATA": "#1a5276",
