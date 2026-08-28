@@ -85,6 +85,7 @@ const MAX_EXPORT_ROWS = 5000;
 
 const COMPAT_SORT_COLUMNS = Object.freeze({
   date: "c.year",
+  year: "c.year",
   title: "c.title",
   court: "c.court_code",
   outcome: "c.outcome",
