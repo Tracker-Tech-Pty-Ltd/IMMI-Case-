@@ -1,7 +1,7 @@
 # IMMI-Case Makefile — common development commands
 # Usage: make <target>
 
-.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-rls-guards clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
+.PHONY: help dev build test test-py test-fe test-workers test-e2e lint lint-py lint-fe typecheck coverage-fe audit-tenant-guards tokens-check tokens-fix hooks clean test-pipeline test-integration test-preflight check check-vitest-collection check-native typecheck-pipeline build-fe install install-e2e
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,7 @@ help:
 	@echo "  make lint-py      Ruff lint Python source only"
 	@echo "  make lint-fe      ESLint the frontend only"
 	@echo "  make typecheck    TypeScript type check (tsc -b --noEmit, all projects)"
+	@echo "  make audit-tenant-guards  Assert authenticating Workers reach assertMembership() (module-level)"
 	@echo "  make typecheck-pipeline  tsc gate for workers/austlii-scraper"
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
@@ -85,7 +86,7 @@ build:
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
-test: test-py test-fe test-workers test-pipeline
+test: audit-tenant-guards test-py test-fe test-workers test-pipeline
 
 test-py:
 	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration -q
@@ -149,15 +150,51 @@ check-vitest-collection:
 	if [ "$$FAIL" = "0" ]; then echo "OK: $$(wc -l < "$$TMP/disk" | tr -d ' ') vitest test files on disk, each collected exactly once"; fi; \
 	exit $$FAIL
 
-# AC4 safety guard: reject any set_config call without transaction-local flag (true).
-# A literal `false` or missing third argument leaks JWT claims across pooled connections.
-audit-rls-guards:
-	@echo "Checking set_config calls for transaction-local flag..."
-	@BAD=$$(grep -rn "set_config(" "$(REPO_ROOT)/workers" --include="*.js" | grep -v "set_config('request.jwt.claims'.*true)" || true); \
-	if [ -n "$$BAD" ]; then \
-	  echo "ERROR: set_config without transaction-local=true (cross-tenant leak risk):"; \
-	  echo "$$BAD"; exit 1; \
-	else echo "OK: all set_config calls verified with transaction-local=true"; fi
+# Tenant-isolation guard. This stack has no Postgres and no RLS, so
+# CloudflareIdentityStore.assertMembership() is the only thing between an
+# authenticated caller and another tenant's rows. Any Worker module that
+# authenticates a caller must therefore also reach it — either directly, or
+# via assertPlatformOperator(), which calls assertMembership() as its own
+# first step (workers/storage/identity.js) before layering a platform-admin
+# grant on top. Routes over shared, non-tenant-scoped data (bulk export,
+# platform admin reads, pipeline control, catalog writes — the `cases` table
+# has no tenant column) correctly require the STRONGER platform-operator
+# check rather than plain membership; accepting either call here is not a
+# loosening of the guard, since the platform check is a strict superset.
+#
+# KNOWN LIMIT — READ BEFORE TRUSTING THIS: the check is MODULE-granular. It
+# proves the file mentions assertMembership( or assertPlatformOperator(
+# somewhere, not that the handler you just added calls either. A new
+# unguarded route in an already-compliant file passes this guard. It is a
+# floor that catches a whole new authenticating module written without any
+# membership check; it is NOT a proof of per-route isolation. The
+# route-level complement is the route manifest in
+# plans/038-test-the-production-sql-layer.md. Do not cite this target as
+# evidence that a specific route is tenant-isolated.
+#
+# The exemptions are listed explicitly so that adding a fifth is a reviewable
+# diff:
+#   request_auth.js          defines requireAuth; it is not a route handler
+#   auth/cloudflare_handlers.js  login/me/logout/refresh/switch-tenant operate
+#                                on the caller's own identity, before a tenant
+#                                context exists
+#   auth/handlers.js, llm-council/handlers.js  retired pre-cutover modules with
+#                                no live importer (safe to delete from this list
+#                                once the files themselves are gone)
+AUTH_GUARD_EXEMPT := workers/auth/request_auth.js workers/auth/cloudflare_handlers.js workers/auth/handlers.js workers/llm-council/handlers.js
+
+audit-tenant-guards:
+	@echo "Checking every authenticating Worker module reaches assertMembership()..."
+	@cd "$(REPO_ROOT)" || exit 1; \
+	MISSING=""; \
+	for f in $$(grep -rl "requireAuth(" workers --include="*.js" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=__tests__ | sort); do \
+	  case " $(AUTH_GUARD_EXEMPT) " in *" $$f "*) continue ;; esac; \
+	  grep -q -E "assertMembership\(|assertPlatformOperator\(" "$$f" || MISSING="$$MISSING $$f"; \
+	done; \
+	if [ -n "$$MISSING" ]; then \
+	  echo "ERROR: module(s) authenticate without reaching assertMembership() (cross-tenant leak risk):$$MISSING"; \
+	  exit 1; \
+	else echo "OK: every authenticating Worker module reaches assertMembership() (module granularity only)"; fi
 
 # tests/e2e/react/react_helpers.py imports playwright.sync_api at module scope,
 # so without the plugin this target dies with 20 collection errors and no hint
