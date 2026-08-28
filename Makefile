@@ -65,7 +65,7 @@ build:
 test: test-py test-fe test-workers test-pipeline
 
 test-py:
-	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e -q
+	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration -q
 
 test-fe:
 	cd "$(REPO_ROOT)/frontend" && npx vitest run
@@ -80,6 +80,14 @@ test-workers:
 # case-ingestion Worker was broken.
 test-pipeline:
 	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm test
+
+# Opt-in. tests/integration targets the retired Supabase/Postgres-RLS stack and
+# self-skips unless SUPABASE_DB_URL and JWT_SECRET_CURRENT are exported. It is
+# excluded from test-py and from CI (.github/workflows/ci.yml passes the same
+# --ignore) so local and CI collect the same set. Whether to retire it outright
+# is an operator decision about auth acceptance criteria — do not delete it.
+test-integration:
+	"$(PYTHON)" -m pytest tests/integration/ -v
 
 coverage-fe:
 	cd "$(REPO_ROOT)/frontend" && npx vitest run --coverage
@@ -132,7 +140,7 @@ test-e2e:
 	"$(PYTHON)" -m pytest tests/e2e/ -v --timeout=60
 
 coverage:
-	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --cov=immi_case_downloader --cov-report=html -q
+	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e --ignore=tests/integration --cov=immi_case_downloader --cov-report=html -q
 	@echo "Report: htmlcov/index.html"
 
 # ── Code Quality ──────────────────────────────────────────────────────────────
