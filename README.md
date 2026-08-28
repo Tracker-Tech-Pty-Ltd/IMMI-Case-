@@ -114,11 +114,30 @@ It built the labyrinth.
 git clone <repo-url>
 cd IMMI-Case-
 
-# Python dependencies
-pip install -r requirements-app.txt -r requirements-test.txt
+# Python virtualenv（Homebrew Python 禁止全域 pip）
+python3 -m venv .venv
 
-# Frontend dependencies
-cd frontend && npm install && cd ..
+# 一次裝好 Python 相依 + 根目錄 node_modules + frontend node_modules
+make install
+```
+
+`make install` 等同於下列三步（`Makefile` 的 `install:` target）：
+
+```bash
+.venv/bin/python -m pip install -r requirements-app.txt -r requirements-test.txt
+npm install                        # 根目錄：vitest + wrangler，`make test-workers` 靠它解析
+cd frontend && npm install
+```
+
+> 根目錄的 `npm install` 不可省略 —— `workers/` 沒有自己的 `package.json`，
+> Worker 測試是對著根目錄的 `node_modules` 解析的。
+
+**只有要跑 E2E 才需要**的額外相依（刻意不放進 `requirements-test.txt`，
+以免 CI 的單元測試 job 每次都下載瀏覽器驅動）：
+
+```bash
+.venv/bin/python -m pip install -r requirements-e2e.txt
+.venv/bin/python -m playwright install chromium
 ```
 
 ### 4.3 Configure
@@ -176,19 +195,36 @@ open http://localhost:8080/
 ### 4.5 Test
 
 ```bash
-# Python 單元 + E2E 測試（~1,367 個 — 1,107 unit + 260 E2E，source-counted via `grep "def test_"`）
-python3 -m pytest
-
-# 僅前端單元測試（490 個 — 55 files，source-counted via `grep "(it|test)\("`）
-cd frontend && npx vitest run
-
-# 僅 E2E
-python3 -m pytest tests/e2e/
-
-# 快捷（Makefile）
+# Python 單元測試（排除 tests/e2e）
 make test-py
+
+# 前端 Vitest 單元測試
 make test-fe
+
+# Worker Vitest 測試（主 Worker）
+make test-workers
+
+# austlii-scraper（pipeline Worker）Vitest 測試
+make test-pipeline
+
+# 上面四個一次跑完
+make test
+
+# Playwright E2E（需先照 §4.2 裝 requirements-e2e.txt + chromium）
+# 不需要另外開 server：tests/e2e/conftest.py 會自己在 daemon thread 起一個
+# 帶 10 筆種子資料的 Flask fixture server（conftest.py:232-274）。
+# 只有設了 E2E_BASE_URL 才會改打外部伺服器（conftest.py:229、:278-282）。
+make test-e2e
 ```
+
+> **不要直接跑裸 `pytest`（不帶 `--ignore=tests/e2e`）。**
+> `tests/e2e/**` 匯入 `playwright.sync_api`，而 `requirements-app.txt` 與
+> `requirements-test.txt` 都不含 playwright，收集階段就會整批 error。
+> `make test-py` 已帶 `--ignore=tests/e2e`，是唯一保證能在乾淨環境跑綠的 Python 指令。
+>
+> 測試數量以指令輸出為準，本文不再硬編。要 source-count：
+> `grep -rn "def test_" tests/ --include="*.py" | grep -v "/e2e/" | wc -l`
+> （單元）、`grep -rn "def test_" tests/e2e/ --include="*.py" | wc -l`（E2E）。
 
 ### 4.6 Visual Regression Baseline
 
@@ -506,7 +542,7 @@ IMMI-Case-/
 
 - **Symptom**：`test_security.py` 報告找不到 `web.py`
 - **Likely cause**：從錯誤目錄執行 `pytest`
-- **Fix**：永遠從專案根目錄執行：`cd /path/to/IMMI-Case- && python3 -m pytest tests/`
+- **Fix**：永遠從專案根目錄執行：`cd /path/to/IMMI-Case- && make test-py`（`pytest tests/` 會連 `tests/e2e/` 一起收集而失敗，見 §4.5）
 - **Prevention**：使用 `make test-py`
 
 ---
