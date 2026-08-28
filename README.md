@@ -89,7 +89,7 @@ It built the labyrinth.
 | **語意搜尋** | 正式環境 Vectorize + Workers AI 嵌入，三模式（lexical/semantic/hybrid） | 關鍵字搜不到的案件，語意能找到 | 判決策略研究效率 10× |
 | **法官分析** | 勝率 × 法院 × 簽證類別交叉分析 + 104 位成員傳記庫（含法律資格標記） | 律師需要了解裁判官傾向與背景 | 訴訟策略制定的數據基礎 |
 | **LLM 欄位萃取** | 10 個 Claude Sonnet 平行 Agent | 15 萬筆案件的結構化資訊無法純手工 | 萃取覆蓋率 90%+ |
-| **Cloudflare Workers** | 分散式爬蟲 + R2 儲存 | 本地爬蟲易觸發 AustLII IP 封鎖 | 86K 案件 20 分鐘完成 |
+| **Cloudflare Workers** | cron 排程爬蟲 + R2 儲存；正式寫入由外部 VPS crawler POST | 本地爬蟲易觸發 AustLII IP 封鎖 | 每週自動增補當年度案件 |
 | **雙語介面** | EN + 繁體中文，react-i18next | 服務香港、台灣、澳洲移民律師 | 零語言障礙操作 |
 | **案件線系圖** | 法院沿革互動時間軸 | 法院改名/合併造成研究混亂 | 判例搜尋歷史完整性 |
 | **設計令牌系統** | tokens.json → CSS + TS，支援主題切換 | 統一視覺語言跨 26 個頁面 | 深色/淺色/自訂主題 |
@@ -224,7 +224,7 @@ cp .env.example .env
 | `GEMINI_API_KEY` | 同上嵌入腳本，加上 `scripts/fetch_judge_bios.py` |
 | `GOOGLE_API_KEY` | `GEMINI_API_KEY` 的別名（`fill_country_gemini.py`、`fill_outcomes_gemini.py` 等） |
 | `SEMANTIC_SEARCH_PROVIDER` | `/api/v1/cases` 語意搜尋的預設 embedding provider |
-| `CF_ACCOUNT_ID` / `CF_API_TOKEN` / `WORKER_AUTH_TOKEN` | `scripts/cloudflare_config.py`；`WORKER_AUTH_TOKEN` 是腳本端 header 值（`enqueue_urls.py`、`sync_results.py`），**不是**第 7 節同名的 Worker secret |
+| `CF_ACCOUNT_ID` / `CF_API_TOKEN` / `WORKER_AUTH_TOKEN` | `scripts/cloudflare_config.py`；`WORKER_AUTH_TOKEN` 是腳本端 header 值，**不是**第 7 節同名的 Worker secret（其中一個消費者已在 §10 troubleshooting ② 標記為對已刪除端點失效） |
 | `R2_BUCKET_NAME` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | `scripts/cloudflare_config.py` |
 | `DATABASE_URL` / `SUPABASE_DB_URL` / `HYPERDRIVE_SERVICE_URL` | `scripts/bootstrap_pipeline_baselines.py`；僅限已退役的舊 stack |
 | `IMMI_SOURCE_DATABASE_URL` / `IMMI_SOURCE_TEXT_ROOT` | `scripts/export_immi_ndjson.py` |
@@ -601,11 +601,21 @@ IMMI-Case-/
 | 律師代理人資料完善（目前僅 Y/N） | 🔴 高 | 🔴 高 | 🟡 中 | 近期 |
 | 判決書 LLM 摘要（每案 ≤500 字） | 🟡 中 | 🟡 中 | 🟢 低 | 近期 |
 | 法律概念正規化（大小寫/同義詞合併） | 🟡 中 | 🟢 低 | 🟢 低 | 近期 |
-| 多用戶認證（JWT + RBAC） | 🔴 高 | 🔴 高 | 🔴 高 | 中期 |
 | 訴訟記錄時間軸（跨審級追蹤） | 🔴 高 | 🔴 高 | 🟡 中 | 中期 |
 | 案件 PDF 匯出（含引用格式） | 🟡 中 | 🟢 低 | 🟢 低 | 中期 |
 | GraphQL API 閘道 | 🟢 低 | 🟡 中 | 🟡 中 | 長期 |
 | 公開 SaaS 部署（Fly.io / Railway） | 🔴 高 | 🟡 中 | 🔴 高 | 長期 |
+
+**已交付（不要再排進 roadmap）**
+
+| 項目 | 交付日 | 位置 |
+|------|--------|------|
+| 多用戶認證（Telegram Login + HS256 JWT + refresh 輪替） | 2026-05-03 | `workers/auth/`（`jwt.js`、`telegram.js`、`nonce_do.js`、`refresh_sessions.js`、`cloudflare_handlers.js`） |
+| 租戶隔離與角色 | 2026-05-03 | `CloudflareIdentityStore.assertMembership()`（`workers/storage/cloudflare.js`）；角色 `owner`/`admin`/`member`/`viewer` 定義於 `migrations/d1/account/0001_account.sql` |
+
+> 租戶隔離是 **app 層**（每次請求對 `IMMI_ACCOUNT_DB` 做一次 membership 查詢），
+> 不是 Postgres RLS —— 這條路徑上沒有 Postgres。忘記呼叫 `assertMembership()`
+> 的新路由就是真實的越權漏洞。
 
 ---
 
@@ -624,8 +634,8 @@ IMMI-Case-/
 
 - **Symptom**：所有 AustLII 請求回傳 403 或連線超時
 - **Likely cause**：短時間大量請求觸發速率限制
-- **Fix**：等待數小時（通常 4-12 小時自動解封）；或切換至 Cloudflare Workers 模式（`scripts/enqueue_urls.py`）
-- **Prevention**：`BaseScraper` 預設 1 秒間隔；勿同時執行多個爬蟲實例
+- **Fix**：等待數小時（通常 4-12 小時自動解封）。**沒有 Cloudflare 手動繞道可用**：`workers/austlii-scraper/` 自 commit `d0972db` 起只剩 cron 觸發，`/scrape`、`/enqueue`、`/progress`、`/list`、`/batch-get`、`/admin/discovery-diff` 全部已移除，`fetch()` 只服務 `/health`。`scripts/enqueue_urls.py` 打的正是那些已不存在的端點，現在跑只會失敗
+- **Prevention**：`BaseScraper` 預設 1 秒間隔；勿同時執行多個爬蟲實例。正式環境的案件增補不靠本機爬蟲，而是外部 VPS crawler 每週 cron（`0 14 * * 1` UTC）帶 `CRAWLER_WRITE_TOKEN` POST 到主 Worker 的 `/api/v1/cases`
 
 ---
 
@@ -652,7 +662,7 @@ IMMI-Case-/
 - **Symptom**：`CREATE INDEX` 執行超過 2 小時後連線中斷
 - **Likely cause**：PgBouncer `session_lifetime = 2 小時`；149K 向量建立 HNSW (m=16, ef=64) 超時
 - **Fix**：改用精簡參數 `m=8, ef_construction=32`；先 DROP 舊索引再建立
-- **Prevention**：`supabase/migrations/20260226040000_drop_hnsw_for_bulk_load.sql` 已處理此流程
+- **Prevention**：`supabase/archive/migrations-pre-baseline-2026-05-12/20260226040000_drop_hnsw_for_bulk_load.sql` 已處理此流程（該 migration 在 2026-05-12 baseline 之後被歸檔；正式環境已無 Postgres，本項僅適用於本機 Supabase 開發）
 
 ---
 
