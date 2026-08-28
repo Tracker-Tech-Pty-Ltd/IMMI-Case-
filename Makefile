@@ -150,12 +150,26 @@ typecheck:
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
+# Uses $(VENV_PYTHON), never $(PYTHON): on a fresh clone $(PYTHON) resolves to
+# bare python3 (see the ?= above), which would install pandas/numpy/lxml/
+# psycopg2 into the user's global site-packages — or hard-fail under PEP 668 —
+# and would never produce the .venv that test-py, lint and coverage assume.
 install:
-	"$(PYTHON)" -m pip install -r requirements-app.txt -r requirements-test.txt
+	@if [ ! -x "$(VENV_PYTHON)" ]; then \
+	  echo "==> creating virtualenv at $(REPO_ROOT)/.venv"; \
+	  python3 -m venv "$(REPO_ROOT)/.venv"; \
+	else \
+	  echo "==> reusing existing virtualenv at $(REPO_ROOT)/.venv"; \
+	fi
+	"$(VENV_PYTHON)" -m pip install -r requirements-app.txt -r requirements-test.txt
 	# Root deps hold vitest + wrangler; workers/ has no package.json of its own,
 	# so test-workers resolves against the root node_modules.
 	npm install
 	cd "$(REPO_ROOT)/frontend" && npm install
+	# workers/austlii-scraper is its own package; without this, `make test-pipeline`
+	# and the CI-gated `npm run typecheck` there are unrunnable on a clean clone.
+	# npm ci (not npm install) so a lockfile drift is an error, never a silent rewrite.
+	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm ci --ignore-scripts
 
 migrate:
 	supabase db push
