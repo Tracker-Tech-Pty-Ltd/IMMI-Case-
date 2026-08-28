@@ -45,7 +45,7 @@ Nothing downstream is trustworthy until these land. 001 must be first.
 |------|-------|-----|-----|------|------------|--------|
 | [001](001-restore-the-frontend-compile-gate.md) | Make CI actually type-check and build the frontend | P1 | M | LOW | — | DONE — merged to main |
 | [002](002-fix-test-collection-and-install.md) | Collect every test that exists and make a fresh clone installable | P1 | M | LOW | 001 | DONE — merged to main |
-| [003](003-lint-the-test-suite.md) | Lint `tests/` and fix the 43 violations hiding behind the narrowed path | P1 | S | LOW | 002 | TODO |
+| [003](003-lint-the-test-suite.md) | Lint `tests/` and fix the 43 violations hiding behind the narrowed path | P1 | S | LOW | 002 | DONE — merged to main |
 
 ### Tier 1 — Production-breaking Worker defects
 
@@ -99,8 +99,8 @@ The decided 'Legal Codex' direction and WCAG conformance.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [021](021-restore-legal-codex-default.md) | Ship the decided Legal Codex palette instead of migrating users off it | P1 | M | MED | 001 | DONE — merged to main |
-| [022](022-fix-contrast-tokens.md) | Bring the colour tokens up to WCAG AA in both themes | P2 | L | MED | — | TODO |
-| [023](023-fix-accessibility-semantics.md) | Labels, focus management, table semantics and heading hierarchy | P2 | M | MED | 001 | TODO |
+| [022](022-fix-contrast-tokens.md) | Bring the colour tokens up to WCAG AA in both themes | P2 | L | MED | — | DONE — merged to main |
+| [023](023-fix-accessibility-semantics.md) | Labels, focus management, table semantics and heading hierarchy | P2 | M | MED | 001 | DONE — merged to main |
 | [024](024-add-accessibility-gates.md) | Make lint and tests able to catch contrast and a11y regressions | P2 | M | LOW | — | TODO |
 | [025](025-remove-internal-tooling-from-prod.md) | Unadvertise DesignTokensPage and single-source the colour maths | P2 | M | LOW | 001 | TODO |
 
@@ -133,7 +133,7 @@ Four manifests, no lockfile on the Python side, 8 production advisories.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [035](035-fix-frontend-dependency-advisories.md) | Clear the 8 production advisories and the manifest hygiene issues | P1 | S | MED | — | TODO |
+| [035](035-fix-frontend-dependency-advisories.md) | Clear the 8 production advisories and the manifest hygiene issues | P1 | S | MED | — | DONE — merged to main |
 | [036](036-bound-the-python-dependencies.md) | Pin, lock and declare what the code actually imports | P2 | M | MED | 032 | TODO |
 | [037](037-align-the-worker-toolchains.md) | One wrangler, one vitest, one declared Node version | P2 | S | LOW | — | DONE — merged to main |
 
@@ -144,9 +144,9 @@ Coverage where it protects production, not where it inflates a number.
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
 | [038](038-test-the-production-sql-layer.md) | Run the D1 query layer against a real schema | P1 | M | LOW | — | DONE — merged to main |
-| [039](039-fix-the-frontend-test-harness.md) | Make the mocks able to fail and the assertions about behaviour | P2 | M | LOW | 002 | TODO |
+| [039](039-fix-the-frontend-test-harness.md) | Make the mocks able to fail and the assertions about behaviour | P2 | M | LOW | 002 | DONE — merged to main |
 | [040](040-revive-the-e2e-suites.md) | Pick one E2E stack, make it run, and gate it | P2 | L | MED | 001, 002, 003 | TODO |
-| [041](041-cover-the-extraction-scripts.md) | Give the 2,821 unmeasured extraction lines a coverage story | P3 | M | LOW | 002 | TODO |
+| [041](041-cover-the-extraction-scripts.md) | Give the 2,821 unmeasured extraction lines a coverage story | P3 | M | LOW | 002 | DONE — merged to main |
 
 ### Tier 10 — Docs
 
@@ -173,12 +173,12 @@ Grounded options for the maintainer. Each produces a decision + ADR, not a finis
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [047](047-decide-the-ingestion-architecture.md) | Spike — pick one of the two AustLII ingestion pipelines and retire the other | P1 | M | LOW | — | TODO |
+| [047](047-decide-the-ingestion-architecture.md) | Spike — pick one of the two AustLII ingestion pipelines and retire the other | P1 | M | LOW | — | DONE — merged to main |
 | [048](048-wire-council-to-the-case-reader.md) | Spike — connect the LLM Council to the case the user is reading | P2 | S | LOW | — | TODO |
-| [049](049-ship-the-legislation-corpus.md) | Make the legislation browser safe to publish into, then publish the 1,796 scraped sections | P2 | S | LOW | 001 | TODO |
+| [049](049-ship-the-legislation-corpus.md) | Make the legislation browser safe to publish into, then publish the 1,796 scraped sections | P2 | S | LOW | 001 | DONE — merged to main |
 | [050](050-move-user-data-server-side.md) | Decide how bookmarks, collections and saved searches become server-side data | P3 | M | LOW | — | TODO |
 | [051](051-make-judge-identity-first-class.md) | Spike — decide how judge identity gets fixed before wiring the normaliser into production | P3 | M | LOW | 003 | TODO |
-| [052](052-decide-the-android-client.md) | Spike — decide whether the 135-file Kotlin client is archived or adopted, and mark it either way | P3 | S | LOW | — | TODO |
+| [052](052-decide-the-android-client.md) | Spike — decide whether the 135-file Kotlin client is archived or adopted, and mark it either way | P3 | S | LOW | — | DONE — merged to main |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (with a one-line reason) | `REJECTED` (with rationale).
 
