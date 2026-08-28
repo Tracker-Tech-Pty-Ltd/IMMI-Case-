@@ -79,9 +79,14 @@ async function fetchCsrfToken(): Promise<{ token: string; generation: number }> 
   // two concurrent mints leave one caller holding a header that no longer
   // matches the cookie and gets a 403 it cannot distinguish from a real one.
   if (!csrfTokenInFlight) {
-    csrfTokenInFlight = mintCsrfToken().finally(() => {
-      csrfTokenInFlight = null;
+    const mint: Promise<string> = mintCsrfToken().finally(() => {
+      // Compare by identity. Clearing unconditionally let a *finishing* mint
+      // wipe a newer one that had already been started, so the callers waiting
+      // on that newer promise were joined to nothing and each started their
+      // own — the single-flight defeated itself precisely when it mattered.
+      if (csrfTokenInFlight === mint) csrfTokenInFlight = null;
     });
+    csrfTokenInFlight = mint;
   }
   const token = await csrfTokenInFlight;
   return { token, generation: csrfTokenGeneration };
@@ -1435,10 +1440,10 @@ export interface CollectionExportPayload {
   case_notes: Record<string, string>;
 }
 
-export async function exportCollection(
+async function postCollectionExportOnce(
   payload: CollectionExportPayload,
-): Promise<string> {
-  const { token } = await fetchCsrfToken();
+): Promise<{ res: Response; generation: number }> {
+  const { token, generation } = await fetchCsrfToken();
   const res = await fetch("/api/v1/collections/export", {
     method: "POST",
     headers: {
@@ -1448,6 +1453,30 @@ export async function exportCollection(
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30_000),
   });
+  return { res, generation };
+}
+
+/**
+ * Export returns HTML, not JSON, so it cannot go through `apiFetch`. It still
+ * has to share its CSRF lifetime recovery: reading the tab-lifetime cached
+ * token and posting it raw meant that once the 1h TTL passed, every export
+ * failed with `csrf_expired` until a reload or until some unrelated mutation
+ * happened to re-mint. Replay exactly once, on exactly the stale-CSRF 403s.
+ */
+export async function exportCollection(
+  payload: CollectionExportPayload,
+): Promise<string> {
+  let { res, generation } = await postCollectionExportOnce(payload);
+  if (!res.ok && res.status === 403) {
+    const body = await res.clone().json().catch(() => ({}) as { code?: string });
+    if (body.code === "csrf" || body.code === "csrf_expired") {
+      // Same generation guard as apiFetch: only the caller whose token was
+      // current at send time may invalidate, so a concurrent re-mint is not
+      // thrown away and re-raced.
+      if (generation === csrfTokenGeneration) clearCsrfToken();
+      ({ res } = await postCollectionExportOnce(payload));
+    }
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? `Export failed: ${res.status}`);
@@ -1520,5 +1549,10 @@ export async function fetchSemanticSearch(
 // ─── Invalidate CSRF (call on auth errors) ─────────────────────
 export function clearCsrfToken(): void {
   csrfToken = null;
-  csrfTokenInFlight = null;
+  // Deliberately does NOT drop `csrfTokenInFlight`. Invalidating the cached
+  // token is the caller's intent; killing an active mint is not. Two mutations
+  // recovering from the same expiry both call this, and dropping the promise
+  // made the second one start a *second* mint — whose Set-Cookie overwrote the
+  // first, leaving one retry pairing header token A with cookie token B and
+  // failing again. The in-flight mint is already the fresh pair both want.
 }

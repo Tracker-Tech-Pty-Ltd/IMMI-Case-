@@ -203,4 +203,135 @@ describe("apiFetch — stale CSRF recovery", () => {
     expect(mints).toBe(1);
     expect(rejected).toEqual([]);
   });
+
+  it("mints exactly one token when two live mutations hit the same expiry", async () => {
+    // The case the empty-cache test above cannot reach. Both callers already
+    // hold token t1, both get `csrf_expired`, and both enter recovery. If
+    // invalidation also drops the in-flight mint, the second caller starts a
+    // second mint whose Set-Cookie overwrites the first — and at least one
+    // replay then pairs header t2 with cookie t3 and fails for real.
+    let cookieToken = "t0";
+    let mints = 0;
+    const expired = new Set<string>(["t0"]);
+    const rejectedReplays: string[] = [];
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith(CSRF_URL)) {
+          mints += 1;
+          cookieToken = `t${mints}`;
+          await new Promise((r) => setTimeout(r, 0));
+          return jsonResponse({ csrf_token: cookieToken });
+        }
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const sent = String(headers["X-CSRFToken"]);
+        if (expired.has(sent)) {
+          return jsonResponse({ error: "expired", code: "csrf_expired" }, 403);
+        }
+        if (sent !== cookieToken) {
+          rejectedReplays.push(sent);
+          return jsonResponse({ error: "csrf", code: "csrf" }, 403);
+        }
+        return jsonResponse({ success: true });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Prime the tab-lifetime cache with the token that is about to expire.
+    await apiFetch(MUTATION_URL, { method: "POST", body: "{}" }).catch(() => {});
+    expired.clear();
+    expired.add(cookieToken);
+    clearCsrfToken();
+    await apiFetch(MUTATION_URL, { method: "POST", body: "{}" }).catch(() => {});
+    const mintsBefore = mints;
+    expired.add(cookieToken); // the now-cached token expires
+
+    const [a, b] = await Promise.all([
+      apiFetch<{ success: boolean }>(MUTATION_URL, { method: "POST", body: "{}" }),
+      apiFetch<{ success: boolean }>(MUTATION_URL, { method: "POST", body: "{}" }),
+    ]);
+
+    expect(a.success).toBe(true);
+    expect(b.success).toBe(true);
+    expect(mints - mintsBefore).toBe(1);
+    expect(rejectedReplays).toEqual([]);
+  });
+});
+
+describe("exportCollection CSRF recovery", () => {
+  const payload = {
+    collection_id: "c1",
+    collection_name: "Mine",
+    case_ids: ["a"],
+    case_notes: {},
+  };
+
+  it("re-mints and replays once when the cached token has expired", async () => {
+    // Export returns HTML so it cannot use apiFetch, but it shares the same
+    // 1h token. Without its own recovery every export failed from the moment
+    // the TTL passed until an unrelated mutation happened to re-mint.
+    let cookieToken = "";
+    let mints = 0;
+    const sentHeaders: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith(CSRF_URL)) {
+          mints += 1;
+          cookieToken = `t${mints}`;
+          return jsonResponse({ csrf_token: cookieToken });
+        }
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        const sent = String(headers["X-CSRFToken"]);
+        sentHeaders.push(sent);
+        if (sent !== cookieToken) {
+          return {
+            ...jsonResponse({ error: "expired", code: "csrf_expired" }, 403),
+            clone: () => jsonResponse({ error: "expired", code: "csrf_expired" }, 403),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: "200",
+          json: async () => ({}),
+          clone: () => ({}) as Response,
+          text: async () => "<html>report</html>",
+        } as Response;
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Prime the cache, then expire it out from under the caller.
+    const { exportCollection } = await import("@/lib/api");
+    await exportCollection(payload);
+    cookieToken = "stale-cookie";
+
+    const html = await exportCollection(payload);
+    expect(html).toBe("<html>report</html>");
+    // One stale attempt, one re-mint, one successful replay — never a loop.
+    expect(mints).toBe(2);
+    expect(sentHeaders).toHaveLength(3);
+  });
+
+  it("does not replay a genuine authorization failure", async () => {
+    let cookieToken = "";
+    let exportAttempts = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(CSRF_URL)) {
+        cookieToken = "t1";
+        return jsonResponse({ csrf_token: cookieToken });
+      }
+      exportAttempts += 1;
+      const forbidden = () => jsonResponse({ error: "nope", code: "forbidden" }, 403);
+      return { ...forbidden(), clone: forbidden } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { exportCollection } = await import("@/lib/api");
+    await expect(exportCollection(payload)).rejects.toThrow();
+    expect(exportAttempts).toBe(1);
+  });
 });

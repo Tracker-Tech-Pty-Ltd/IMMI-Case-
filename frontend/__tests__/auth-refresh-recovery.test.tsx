@@ -330,3 +330,286 @@ describe("AuthContext refresh recovery", () => {
     expect(meCalls()).toBe(meCallsBefore);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rotation idempotency, tenant continuity, and sign-out.
+//
+// The suite above modelled a failed refresh as a side-effect-free rejection,
+// so it stayed green even though the real Worker had already consumed the
+// presented token by the time the response was lost. These exercise the
+// server-visible consequence: what the retry actually puts on the wire.
+// ---------------------------------------------------------------------------
+
+function refreshHeaders(): Record<string, string>[] {
+  return fetchMock.mock.calls
+    .filter((call: unknown[]) => String(call[0]).includes("/auth/refresh"))
+    .map((call: unknown[]) => {
+      const init = call[1] as RequestInit | undefined;
+      return (init?.headers ?? {}) as Record<string, string>;
+    });
+}
+
+describe("AuthContext rotation idempotency", () => {
+  beforeEach(() => {
+    ctx = null;
+    vi.useFakeTimers();
+    try {
+      window.localStorage.clear();
+    } catch {
+      /* storage disabled */
+    }
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("retries a lost response under the SAME rotation id, not a fresh one", async () => {
+    // The defect this pins: the Worker commits the rotation, the response is
+    // lost, and a retry carrying a *new* rotation id is indistinguishable from
+    // a stolen cookie — the server revokes the entire family and one network
+    // blip signs the user out everywhere.
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/refresh")) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await act(async () => {
+      await ctx!.refresh();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_001);
+    });
+
+    const headers = refreshHeaders();
+    expect(headers.length).toBeGreaterThanOrEqual(2);
+    const ids = headers.map((h) => h["X-Refresh-Rotation-Id"]);
+    expect(ids[0]).toBeTruthy();
+    expect(ids[1]).toBe(ids[0]);
+  });
+
+  it("starts a new rotation id once a refresh has actually succeeded", async () => {
+    // The stamp must not outlive its rotation, or a later refresh would ask
+    // the server to replay a successor that has since been consumed.
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/refresh")) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: token }) });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await act(async () => {
+      await ctx!.refresh();
+    });
+    await act(async () => {
+      await ctx!.refresh();
+    });
+
+    const ids = refreshHeaders().map((h) => h["X-Refresh-Rotation-Id"]);
+    expect(ids).toHaveLength(2);
+    expect(ids[1]).not.toBe(ids[0]);
+  });
+
+  it("collapses two concurrent refreshes into one POST", async () => {
+    // Two POSTs presenting the same cookie means one loses the server's
+    // compare-and-swap — and losing it now revokes the family.
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/refresh")) {
+        return new Promise((resolve) => {
+          setTimeout(() => resolve({ ok: true, json: async () => ({ access_token: token }) }), 10);
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    const before = refreshCalls();
+    await act(async () => {
+      const both = Promise.all([ctx!.refresh(), ctx!.refresh()]);
+      await vi.advanceTimersByTimeAsync(20);
+      await both;
+    });
+    expect(refreshCalls() - before).toBe(1);
+  });
+
+  it("hydrates user and tenant from a refresh that recovers a failed bootstrap", async () => {
+    // `/me` 401 → refresh 503 → scheduled retry succeeds. The old code set
+    // isAuthenticated without ever re-reading /me, so the app ran with a null
+    // user behind a signed-in shell.
+    const token = tokenFarFuture();
+    let refreshAttempts = 0;
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) {
+        return Promise.resolve({ ok: false, status: 401, json: async () => ({}) });
+      }
+      if (u.includes("/auth/refresh")) {
+        refreshAttempts += 1;
+        if (refreshAttempts === 1) {
+          return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            access_token: token,
+            user: { id: "u1", name: "Test User" },
+            tenant: { id: "t9", name: "Recovered" },
+            tenants: [{ id: "t9", name: "Recovered" }],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+    expect(ctx?.isLoading).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_001);
+    });
+    await flush();
+
+    expect(ctx?.isAuthenticated).toBe(true);
+    expect(ctx?.user).not.toBeNull();
+    expect(ctx?.tenant?.id).toBe("t9");
+  });
+
+  it("tells the server which workspace is active so a switch survives refresh", async () => {
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/refresh")) {
+        return Promise.resolve({ ok: true, json: async () => ({ access_token: token }) });
+      }
+      if (u.includes("/auth/switch-tenant")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            access_token: token,
+            tenant: { id: "t2", kind: "organization", name: "Team" },
+            tenants: [
+              { id: "t1", kind: "individual", name: "Tenant" },
+              { id: "t2", kind: "organization", name: "Team" },
+            ],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await act(async () => {
+      await ctx!.switchTenant("t2");
+    });
+    await act(async () => {
+      await ctx!.refresh();
+    });
+
+    const headers = refreshHeaders();
+    expect(headers.at(-1)?.["X-Active-Tenant-Id"]).toBe("t2");
+    expect(ctx?.tenant?.id).toBe("t2");
+  });
+
+  it("keeps the session when sign-out fails so the user can retry", async () => {
+    // The server keeps the refresh cookie on a failed revoke. Clearing local
+    // state anyway would leave the session live with nothing left to press.
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/logout")) {
+        return Promise.resolve({ ok: false, status: 503, json: async () => ({ ok: false }) });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+    expect(ctx?.isAuthenticated).toBe(true);
+
+    await act(async () => {
+      await expect(ctx!.logout()).rejects.toThrow(/try again/i);
+    });
+    expect(ctx?.isAuthenticated).toBe(true);
+  });
+
+  it("signs out locally when the server confirms the revocation", async () => {
+    const token = tokenFarFuture();
+    fetchMock = vi.fn((url: unknown) => {
+      const u = String(url);
+      if (u.includes("/auth/me")) return meOk(token);
+      if (u.includes("/auth/logout")) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${u}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await flush();
+
+    await act(async () => {
+      await ctx!.logout();
+    });
+    expect(ctx?.isAuthenticated).toBe(false);
+    expect(ctx?.user).toBeNull();
+  });
+});

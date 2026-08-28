@@ -57,7 +57,10 @@ export function useJudgeCompare(
     enabled: names.length >= 2,
     retry: 0,
     staleTime: 5 * 60_000,
-    placeholderData: keepPreviousData,
+    // No keepPreviousData here, unlike the leaderboard. The compare result IS
+    // the identity of the judges named in the URL: holding the previous pair's
+    // data while the heading already reads the new names attributes one
+    // judge's record to another. A pagination flash is cosmetic; this is not.
   });
 }
 

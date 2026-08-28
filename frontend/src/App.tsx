@@ -1,9 +1,10 @@
 import { lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { resolveRouterBasename } from "@/lib/router";
+import { queryClient } from "@/lib/query-client";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ErrorBoundary, RouteBoundary } from "@/components/shared/RouteErrorBoundary";
 
@@ -123,17 +124,6 @@ const LlmCouncilSessionsPage = lazy(() =>
 const LoginPage = lazy(() =>
   import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 min — legal DB data doesn't change mid-session
-      gcTime: 30 * 60 * 1000, // 30 min — keep cache alive for a full work session
-    },
-  },
-});
 
 export default function App() {
   const basename = resolveRouterBasename(window.location.pathname);
