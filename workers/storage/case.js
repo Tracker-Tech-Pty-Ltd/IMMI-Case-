@@ -23,6 +23,9 @@ const D1_BATCH_STATEMENT_LIMIT = 20;
  */
 const D1_CHUNK_TRANSACTION_STATEMENT_LIMIT = 40;
 
+/** Row cap on the concept-scope read. Callers must surface `truncated`. */
+const CONCEPT_SCOPE_ROW_LIMIT = 10000;
+
 function safeCaseFilters(filters = {}) {
   const clauses = [];
   const params = [];
@@ -411,12 +414,19 @@ export class CloudflareCaseStore {
     if (yearFrom) { clauses.push("s.year >= ?"); params.push(Number(yearFrom)); }
     if (yearTo) { clauses.push("s.year <= ?"); params.push(Number(yearTo)); }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return rows(await bindAll(this.db, `
+    // Read one row past the cap so truncation can be DETECTED rather than
+    // guessed: `length >= LIMIT` cannot tell "exactly 10,000 rows exist" from
+    // "more than 10,000 exist and we truncated", and would report the honest
+    // full-corpus case as truncated forever. Fetching LIMIT+1 makes
+    // `length > LIMIT` an exact test; the extra row is then discarded.
+    const results = rows(await bindAll(this.db, `
       SELECT s.concept_id, c.label AS concept, s.court_code, s.year, s.outcome, s.case_count AS cnt
       FROM aggregate_concept_scope s JOIN concepts c ON c.concept_id = s.concept_id
       ${where}
-      ORDER BY s.case_count DESC LIMIT 10000
+      ORDER BY s.case_count DESC LIMIT ${CONCEPT_SCOPE_ROW_LIMIT + 1}
     `, params).all());
+    const truncated = results.length > CONCEPT_SCOPE_ROW_LIMIT;
+    return { rows: truncated ? results.slice(0, CONCEPT_SCOPE_ROW_LIMIT) : results, truncated };
   }
 
   async analyticsConceptPairs({ limit = 20000 } = {}) {

@@ -828,10 +828,13 @@ async function handleAnalyticsSuccessRate(url, stores) {
   const yearTo = intParam(url.searchParams.get("year_to"), 0, 0, 3000);
   const visaSubclass = (url.searchParams.get("visa_subclass") || "").trim();
   const caseNature = (url.searchParams.get("case_nature") || "").trim();
-  const [baseRows, conceptRows] = await Promise.all([
+  const [baseRows, conceptScope] = await Promise.all([
     stores.caseStore.analyticsRateRows({ court, yearFrom, yearTo, visaSubclass, caseNature }),
-    (visaSubclass || caseNature) ? Promise.resolve([]) : stores.caseStore.analyticsConceptScope({ court, yearFrom, yearTo }),
+    (visaSubclass || caseNature)
+      ? Promise.resolve({ rows: [], truncated: false })
+      : stores.caseStore.analyticsConceptScope({ court, yearFrom, yearTo }),
   ]);
+  const conceptRows = conceptScope.rows;
   let total = 0;
   let wins = 0;
   const yearTotal = {};
@@ -871,15 +874,17 @@ async function handleAnalyticsSuccessRate(url, stores) {
     query: { court: court || null, year_from: yearFrom || null, year_to: yearTo || null, visa_subclass: visaSubclass || null, case_nature: caseNature || null, legal_concepts: [], total_matching: total },
     success_rate: { overall, court_type: courtType, win_outcomes: winOutcomes, win_count: wins, loss_count: Math.max(0, total - wins), confidence: total > 100 ? "high" : total >= 20 ? "medium" : "low" },
     by_concept: byConcept, top_combos: [], trend,
+    concepts_truncated: conceptScope.truncated,
   }, "public, max-age=120, stale-while-revalidate=30");
 }
 
 async function handleAnalyticsConceptEffectiveness(url, stores) {
   const limit = intParam(url.searchParams.get("limit"), 30, 1, 100);
-  const [baseRows, conceptRows] = await Promise.all([
+  const [baseRows, conceptScope] = await Promise.all([
     stores.caseStore.analyticsRateRows(),
     stores.caseStore.analyticsConceptScope(),
   ]);
+  const conceptRows = conceptScope.rows;
   let baseTotal = 0;
   let baseWins = 0;
   for (const row of baseRows) {
@@ -912,7 +917,7 @@ async function handleAnalyticsConceptEffectiveness(url, stores) {
       by_court: Object.fromEntries(Object.entries(byCourt[name] || {}).map(([court, values]) => [court, { total: values.total, win_rate: roundRate(values.wins, values.total) }])),
     };
   });
-  return jsonOk({ baseline_rate: baselineRate, concepts }, "public, max-age=600, stale-while-revalidate=120");
+  return jsonOk({ baseline_rate: baselineRate, concepts, truncated: conceptScope.truncated }, "public, max-age=600, stale-while-revalidate=120");
 }
 
 async function handleAnalyticsConceptCooccurrence(url, stores) {
@@ -963,7 +968,7 @@ async function handleAnalyticsConceptCooccurrence(url, stores) {
 
 async function handleAnalyticsConceptTrends(url, stores) {
   const limit = intParam(url.searchParams.get("limit"), 10, 1, 30);
-  const rows = await stores.caseStore.analyticsConceptScope();
+  const { rows, truncated } = await stores.caseStore.analyticsConceptScope();
   const frequency = {};
   const yearTotals = {};
   const yearWins = {};
@@ -998,7 +1003,7 @@ async function handleAnalyticsConceptTrends(url, stores) {
   }
   emerging.sort((a, b) => b.growth_pct - a.growth_pct);
   declining.sort((a, b) => a.decline_pct - b.decline_pct);
-  return jsonOk({ series, emerging, declining }, "public, max-age=600, stale-while-revalidate=120");
+  return jsonOk({ series, emerging, declining, truncated }, "public, max-age=600, stale-while-revalidate=120");
 }
 
 async function handleAnalyticsJudgeLeaderboard(url, stores) {
