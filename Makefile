@@ -62,7 +62,7 @@ build:
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
-test: test-py test-fe test-workers
+test: test-py test-fe test-workers test-pipeline
 
 test-py:
 	"$(PYTHON)" -m pytest tests/ --ignore=tests/e2e -q
@@ -72,6 +72,14 @@ test-fe:
 
 test-workers:
 	cd "$(REPO_ROOT)/workers" && npx vitest run
+
+# workers/austlii-scraper is a separate npm package with its own manifest,
+# lockfile, node_modules, vitest config and tsc gate. Until this target existed
+# its 7 test files ran only in CI (.github/workflows/ci.yml, "Run native
+# pipeline tests"), so `make test` could be green while the production
+# case-ingestion Worker was broken.
+test-pipeline:
+	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm test
 
 coverage-fe:
 	cd "$(REPO_ROOT)/frontend" && npx vitest run --coverage
