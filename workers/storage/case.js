@@ -339,13 +339,21 @@ export class CloudflareCaseStore {
     `).bind(value).all()).slice(0, size);
   }
 
-  async analyticsOutcomes() {
-    const [court, year, subclass] = await Promise.all([
-      this.db.prepare("SELECT court_code, outcome, case_count AS cnt FROM aggregate_court_year_outcome").all(),
-      this.db.prepare("SELECT year AS year_key, outcome, case_count AS cnt FROM aggregate_court_year_outcome").all(),
-      this.db.prepare("SELECT visa_subclass, court_code, outcome, case_count AS cnt FROM aggregate_visa").all(),
-    ]);
-    return { court: rows(court), year: rows(year), subclass: rows(subclass) };
+  /**
+   * One scan of aggregate_court_year_outcome. `court_code` is required by the
+   * caller so isWin() can pick the tribunal or court win set; `year AS year_key`
+   * keeps the by-year grouping key stable for /api/v1/analytics/outcomes.
+   */
+  async analyticsCourtYearOutcomes() {
+    return rows(await this.db.prepare(
+      "SELECT court_code, year AS year_key, outcome, case_count AS cnt FROM aggregate_court_year_outcome",
+    ).all());
+  }
+
+  async analyticsVisaOutcomes() {
+    return rows(await this.db.prepare(
+      "SELECT visa_subclass, court_code, outcome, case_count AS cnt FROM aggregate_visa",
+    ).all());
   }
 
   async analyticsNatureOutcome() {
