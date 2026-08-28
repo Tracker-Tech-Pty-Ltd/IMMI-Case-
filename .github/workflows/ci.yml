@@ -68,6 +68,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The coverage-ratchet step below compares this commit's thresholds
+          # against the ones they replaced, so it needs more than a shallow tip.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -133,6 +137,37 @@ jobs:
 
       - name: Assert the committed design tokens are not stale
         run: git diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts
+
+      # Runs BEFORE the coverage suite: a lowered bar should fail immediately and
+      # unambiguously, not be masked by whatever the suite then reports against
+      # the lowered numbers.
+      #
+      # `thresholds` stops coverage falling below the floor. This stops the floor
+      # itself being edited down in the same commit that breaks it — otherwise
+      # the whole gate is one two-character diff away from disabled, and catching
+      # it depends on a reviewer noticing.
+      - name: Assert no coverage floor was lowered
+        env:
+          # Via env, never inlined into the script: a branch name is attacker-
+          # influencable text and ${{ }} interpolation would splice it into the
+          # shell.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_REF" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            BASE="origin/$BASE_REF"
+          else
+            BASE="HEAD~1"
+          fi
+          if ! git cat-file -e "$BASE:frontend/vitest.config.ts" 2>/dev/null; then
+            echo "No frontend/vitest.config.ts at $BASE (first commit of the file); nothing to compare."
+            exit 0
+          fi
+          git show "$BASE:frontend/vitest.config.ts" > "$RUNNER_TEMP/baseline-vitest.config.ts"
+          node scripts/check_coverage_ratchet.mjs \
+            "$RUNNER_TEMP/baseline-vitest.config.ts" \
+            frontend/vitest.config.ts
 
       - name: Run Vitest tests with coverage thresholds
         run: npx vitest run --coverage

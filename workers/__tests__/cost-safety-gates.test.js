@@ -126,3 +126,63 @@ describe("the vitest collection guard runs in CI, not only locally", () => {
     expect(makeRecipe(makefile, "check-vitest-collection")).not.toBeNull();
   });
 });
+
+describe("the coverage ratchet cannot be walked backwards", () => {
+  const ci = readRepoFile(".github/workflows/ci.yml");
+  const vitestConfig = readRepoFile("frontend/vitest.config.ts");
+
+  function thresholds() {
+    const block = vitestConfig.match(/thresholds\s*:\s*\{[\s\S]*?\n {6}\}/);
+    expect(block).not.toBeNull();
+    const read = (metric) => {
+      const match = block[0].match(new RegExp(`\\b${metric}\\s*:\\s*(\\d+(?:\\.\\d+)?)`));
+      expect(match, `threshold ${metric} must be a plain number`).not.toBeNull();
+      return Number(match[1]);
+    };
+    return {
+      lines: read("lines"),
+      functions: read("functions"),
+      branches: read("branches"),
+      statements: read("statements"),
+    };
+  }
+
+  // The floors were 29/24/30/28 while the suite actually measured
+  // 40.23/38.82/32.50/41.17 — twelve points of free headroom, enough to delete a
+  // third of the frontend tests and stay green. These assertions pin the floors
+  // above the stale values so a revert to them is a test failure, not a silent
+  // regression.
+  it("keeps the floors at the measured level, not a point below it", () => {
+    const current = thresholds();
+    expect(current.lines).toBeGreaterThanOrEqual(41);
+    expect(current.statements).toBeGreaterThanOrEqual(40);
+    expect(current.branches).toBeGreaterThanOrEqual(38.8);
+    expect(current.functions).toBeGreaterThanOrEqual(32.5);
+  });
+
+  // Hand-maintained floors are what went stale. autoUpdate makes the raise
+  // automatic, so the gap cannot silently reopen.
+  it("raises the floors automatically when coverage improves", () => {
+    expect(vitestConfig).toMatch(/autoUpdate\s*:/);
+  });
+
+  it("runs the no-lowering check in CI, before the coverage suite", () => {
+    expect(ci).toMatch(/check_coverage_ratchet\.mjs/);
+    const ratchetAt = ci.indexOf("check_coverage_ratchet.mjs");
+    const coverageAt = ci.indexOf("npx vitest run --coverage");
+    expect(ratchetAt).toBeGreaterThan(-1);
+    expect(coverageAt).toBeGreaterThan(-1);
+    expect(ratchetAt).toBeLessThan(coverageAt);
+  });
+
+  it("fetches enough history for the comparison to be possible", () => {
+    // With the default shallow checkout there is no HEAD~1 to compare against,
+    // and the step would skip rather than gate.
+    expect(ci).toMatch(/fetch-depth:\s*0/);
+  });
+
+  it("does not interpolate a branch name straight into the shell", () => {
+    // github.base_ref is attacker-influencable text.
+    expect(ci).not.toMatch(/git fetch[^\n]*\$\{\{\s*github\.base_ref/);
+  });
+});

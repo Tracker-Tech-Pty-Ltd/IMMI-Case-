@@ -35,19 +35,37 @@ export default defineConfig({
       ],
       // Vitest 4 only reads thresholds nested under `thresholds`. The four
       // flat `80`s that used to live here were not recognised options and
-      // never gated anything. These numbers are a RATCHET pinned to the
-      // coverage measured on the universe defined by `include` above —
-      // raise them, never lower them. Re-measured 2026-08-28 on
-      // advisor/002-fix-test-collection-and-install after widening `include`
-      // above to also collect src/**/__tests__/**: statements 28.92,
-      // branches 30.74, functions 24.25, lines 29.78 (plan 001's numbers —
-      // statements 27.55, branches 29.09, functions 23.53, lines 28.39 —
-      // are the floor these must never go back below).
+      // never gated anything.
+      //
+      // A RATCHET, AND WHY THE NUMBERS ARE NOT HAND-MAINTAINED ANY MORE
+      //
+      // Hand-written floors go stale in one direction only: coverage rises,
+      // nobody edits the config, and the gap becomes free headroom for a
+      // regression. That is exactly what happened here — the previous comment
+      // recorded 28.92/30.74/24.25/29.78 as "measured", while the suite had
+      // since climbed to 40.23/38.82/32.50/41.17. The floors were 12 points
+      // below reality, so a PR could have deleted a third of the frontend tests
+      // and still gone green.
+      //
+      // `autoUpdate` closes that gap permanently: whenever a local run measures
+      // higher than the stored floor, Vitest rewrites the numbers below, and the
+      // raise is committed with the work that earned it. The formatter rounds
+      // DOWN to one decimal, which is the only slack in the system (<= 0.1pp) —
+      // enough to absorb noise, far too little to hide a regression.
+      //
+      // Lowering these is still possible in a text editor, which is why
+      // scripts/check_coverage_ratchet.mjs runs in CI and fails any commit that
+      // reduces a floor. Together: coverage cannot fall, and the floor cannot be
+      // quietly moved to let it.
+      //
+      // Measured 2026-08-28: statements 40.23, branches 38.82, functions 32.50,
+      // lines 41.17.
       thresholds: {
-        lines: 29,
-        functions: 24,
-        branches: 30,
-        statements: 28,
+        autoUpdate: (measured: number) => Math.floor(measured * 10) / 10,
+        lines: 41.1,
+        functions: 32.5,
+        branches: 38.8,
+        statements: 40.2,
       },
     },
   },
