@@ -118,8 +118,8 @@ function jsonErr(error, status = 400, code = undefined) {
 //
 // IMMI_EDGE_CACHE_VERSION is the global purge lever: every cache key is
 // namespaced by it, so bumping the variable makes every previously stored entry
-// unreachable in every colo at once. caches.default.delete() cannot do that —
-// it only affects the colo that served the request.
+// unreachable in every colo at once. A per-colo cache delete() cannot do
+// that — it only affects the colo that served the request.
 const EDGE_CACHEABLE_CONTROL_RE = /^\s*public\s*,/i;
 
 function edgeCache(env) {
