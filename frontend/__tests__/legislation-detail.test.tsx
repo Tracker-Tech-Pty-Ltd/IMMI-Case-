@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { mockLegislationDetail } from "@/__mocks__/legislations";
+import {
+  mockLegislationDetail,
+  mockLegislationWithSections,
+} from "@/__mocks__/legislations";
 
 // Define mocks at module level using hoisted
 const { mockUseLegislationDetail } = vi.hoisted(() => {
@@ -451,5 +454,82 @@ describe("LegislationDetailPage", () => {
         screen.getByText(/primary legislation governing immigration/i),
       ).toBeInTheDocument();
     });
+  });
+
+  const unpublishedDetail = {
+    success: true as const,
+    data: { ...mockLegislationWithSections, sections: [] },
+  };
+
+  const successQuery = (data: unknown) => ({
+    data,
+    isLoading: false,
+    error: null,
+    status: "success",
+    isPending: false,
+    isSuccess: true,
+    failureCount: 0,
+    failureReason: null,
+    isFetching: false,
+    isStale: false,
+    dataUpdatedAt: Date.now(),
+    remove: vi.fn(),
+    refetch: vi.fn(),
+  });
+
+  // Test 16: an unpublished law must not advertise a section count
+  it("在條文尚未發佈時不顯示條款數", async () => {
+    mockUseLegislationDetail.mockReturnValue(successQuery(unpublishedDetail));
+
+    renderWithProviders(<LegislationDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText("500")).not.toBeInTheDocument();
+    });
+  });
+
+  // Test 16b: a partially-loaded law must advertise what it has, not what the
+  // payload claims. mockLegislationWithSections declares sections_count: 500
+  // and carries 2 sections — the regression this guards is showing "500".
+  it("條款數以實際載入的條文數為準", async () => {
+    mockUseLegislationDetail.mockReturnValue(
+      successQuery({ success: true as const, data: mockLegislationWithSections }),
+    );
+
+    renderWithProviders(<LegislationDetailPage />);
+
+    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("500")).not.toBeInTheDocument();
+  });
+
+  // Test 17: the empty state sends the reader to AustLII, not to a dead end
+  it("在條文尚未發佈時提供 AustLII 連結", async () => {
+    mockUseLegislationDetail.mockReturnValue(successQuery(unpublishedDetail));
+
+    renderWithProviders(<LegislationDetailPage />);
+
+    const links = await screen.findAllByRole("link", { name: /austlii/i });
+    // one in the page header, one in the empty state
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute(
+        "href",
+        "https://www.austlii.edu.au/au/legis/cth/consol_act/ma1958116/",
+      );
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+  });
+
+  // Test 18: regression guard — the empty state must not name a control that
+  // does not exist. `useStartLegislationUpdate` has no callers in the SPA.
+  it("空狀態不得提及不存在的 Update Laws 控制項", async () => {
+    mockUseLegislationDetail.mockReturnValue(successQuery(unpublishedDetail));
+
+    renderWithProviders(<LegislationDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/not yet been imported from AustLII/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Update Laws/i)).not.toBeInTheDocument();
   });
 });
