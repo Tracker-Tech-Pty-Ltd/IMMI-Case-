@@ -15,7 +15,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # github.event_name is part of the key on purpose. Push, schedule and
+  # workflow_dispatch all report github.ref as refs/heads/main, so a key of
+  # ci-${{ github.ref }} alone put them in one cancellation group: a push to main
+  # would kill the nightly E2E run mid-flight, and the nightly would kill a
+  # running main CI. Same-kind runs on the same ref still supersede each other,
+  # which is all cancel-in-progress was ever meant to do.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -94,14 +100,30 @@ jobs:
         run: |
           set -euo pipefail
           src=$(grep -c '/frontend/src/' /tmp/tsc-listfiles.txt || true)
-          tests=$(grep -c '/frontend/__tests__/' /tmp/tsc-listfiles.txt || true)
-          echo "typechecked $src files under frontend/src/, $tests under frontend/__tests__/"
+          echo "typechecked $src files under frontend/src/"
           if [ "$src" -lt 150 ]; then
             echo "::error::TypeScript project graph collapsed: only $src files under src/ were typechecked (expected >= 150)."
             exit 1
           fi
-          if [ "$tests" -lt 50 ]; then
-            echo "::error::TypeScript project graph collapsed: only $tests files under __tests__/ were typechecked (expected >= 50). Check that tsconfig.test.json is still referenced from tsconfig.json."
+
+          # SETS, not a count. A ">= 50 files" floor is satisfied by plenty of
+          # subsets: narrowing tsconfig.test.json's include to "*.test.tsx" drops
+          # every .test.ts — including api-csrf-lifecycle.test.ts, the CSRF
+          # lifecycle suite — and still clears 50 comfortably. Comparing sets
+          # names the file that stopped being typechecked instead of inferring
+          # that something might have.
+          find __tests__ -type f \
+            \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) \
+            | sed 's|^|frontend/|' | sort -u > /tmp/tests-on-disk.txt
+          grep -oE '/frontend/__tests__/[^[:space:]]+' /tmp/tsc-listfiles.txt \
+            | sed 's|^.*/frontend/|frontend/|' \
+            | grep -E '\.(test|spec)\.tsx?$' | sort -u > /tmp/tests-typechecked.txt
+
+          echo "test files on disk: $(wc -l < /tmp/tests-on-disk.txt), typechecked: $(wc -l < /tmp/tests-typechecked.txt)"
+          untyped=$(comm -23 /tmp/tests-on-disk.txt /tmp/tests-typechecked.txt)
+          if [ -n "$untyped" ]; then
+            echo "::error::these test files exist but were NOT typechecked — tsconfig.test.json include/references have drifted:"
+            echo "$untyped"
             exit 1
           fi
 
@@ -285,8 +307,16 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Mark the pre-build state
-        run: touch "$RUNNER_TEMP/pre-build-marker"
+      # Emptied, not just marked. "Some file is newer than the marker" passes
+      # while a stale index.html sits next to one freshly written orphan, and the
+      # smoke tests would then exercise the bundle committed on main. If the
+      # directory starts empty, everything the tests load provably came from this
+      # build.
+      - name: Clear the served bundle and mark the pre-build state
+        run: |
+          set -euo pipefail
+          rm -rf immi_case_downloader/static/react
+          touch "$RUNNER_TEMP/pre-build-marker"
 
       - name: Build the SPA under test
         run: npm run build
@@ -294,13 +324,29 @@ jobs:
 
       - name: Assert the served bundle is this PR's build
         run: |
-          test -f immi_case_downloader/static/react/index.html
-          # Fails if the build step is ever removed or silently no-ops: the
-          # served directory must contain assets written AFTER the marker.
-          if ! find immi_case_downloader/static/react -type f -newer "$RUNNER_TEMP/pre-build-marker" | grep -q .; then
-            echo "::error::E2E would run against the committed bundle, not this PR's build"
+          set -euo pipefail
+          root=immi_case_downloader/static/react
+          test -f "$root/index.html" || { echo "::error::no index.html was built"; exit 1; }
+          [ -n "$(find "$root/index.html" -newer "$RUNNER_TEMP/pre-build-marker")" ] || {
+            echo "::error::index.html predates the build; E2E would run against a stale bundle"
             exit 1
-          fi
+          }
+          # Every local asset index.html references must exist and also postdate
+          # the marker, so a partially-restored tree cannot masquerade as a build.
+          missing=0
+          for asset in $(grep -oE '(src|href)="/[^"]+"' "$root/index.html" \
+                         | sed -E 's/.*="([^"]+)"/\1/' | sed 's|^/||' | sort -u); do
+            path="$root/$asset"
+            if [ ! -f "$path" ]; then
+              echo "::error::index.html references $asset, which was not built"
+              missing=1
+            elif [ -z "$(find "$path" -newer "$RUNNER_TEMP/pre-build-marker")" ]; then
+              echo "::error::$asset predates this build"
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] || exit 1
+          echo "served bundle verified against this build"
 
       # tests/e2e/conftest.py launches Flask in-process on a free port with 10
       # seeded cases; no external server is required.

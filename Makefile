@@ -374,10 +374,30 @@ install:
 # Opt-in on purpose: `make install` must stay deterministic and offline-safe,
 # and a git hook that appears without the contributor asking for it is a
 # surprise, not a service.
+# $(VENV_PYTHON), never $(PYTHON): on a fresh clone $(PYTHON) falls back to bare
+# python3, so this used to pip-install into the user's global site-packages (or
+# hard-fail under PEP 668) — and then install a hook that could not possibly work,
+# because .pre-commit-config.yaml invokes .venv/bin/ruff and the frontend's ESLint
+# directly. "Installed successfully, fails on your first commit" is the worst of
+# the available outcomes, so the prerequisites are checked before anything is
+# written.
 hooks:
-	"$(PYTHON)" -m pip install pre-commit
-	"$(PYTHON)" -m pre_commit install
-	@echo "Installed .git/hooks/pre-commit (ruff + eslint). Remove with: $(PYTHON) -m pre_commit uninstall"
+	@test -x "$(VENV_PYTHON)" || { \
+	  echo "ERROR: no virtualenv at $(REPO_ROOT)/.venv — run 'make install' first."; \
+	  echo "(The pre-commit hook shells out to .venv/bin/ruff, so a global"; \
+	  echo " pre-commit would install cleanly and then fail on every commit.)"; \
+	  exit 1; }
+	@test -x "$(REPO_ROOT)/.venv/bin/ruff" || { \
+	  echo "ERROR: .venv exists but .venv/bin/ruff is missing — the hook needs it."; \
+	  echo "Run 'make install' to install requirements-test.txt into the venv."; \
+	  exit 1; }
+	@test -d "$(REPO_ROOT)/frontend/node_modules" || { \
+	  echo "ERROR: frontend/node_modules is missing — the hook also runs ESLint."; \
+	  echo "Run 'make install' (or 'cd frontend && npm ci') first."; \
+	  exit 1; }
+	"$(VENV_PYTHON)" -m pip install pre-commit
+	"$(VENV_PYTHON)" -m pre_commit install
+	@echo "Installed .git/hooks/pre-commit (ruff + eslint). Remove with: $(VENV_PYTHON) -m pre_commit uninstall"
 
 install-e2e:
 	"$(VENV_PYTHON)" -m pip install -c constraints.txt -r requirements-e2e.txt

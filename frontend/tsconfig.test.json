@@ -9,5 +9,5 @@
       "node"
     ]
   },
-  "include": ["__tests__", "vitest.config.ts", "playwright.config.ts", "scripts"]
+  "include": ["__tests__", "vitest.config.ts", "scripts"]
 }

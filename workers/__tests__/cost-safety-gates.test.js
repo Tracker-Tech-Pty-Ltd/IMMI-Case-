@@ -186,3 +186,54 @@ describe("the coverage ratchet cannot be walked backwards", () => {
     expect(ci).not.toMatch(/git fetch[^\n]*\$\{\{\s*github\.base_ref/);
   });
 });
+
+describe("CI gates that were passing without checking anything", () => {
+  const ci = readRepoFile(".github/workflows/ci.yml");
+  const makefile = readRepoFile("Makefile");
+  const packageJson = JSON.parse(readRepoFile("frontend/package.json"));
+  const tsconfigTest = readRepoFile("frontend/tsconfig.test.json");
+
+  // push / schedule / workflow_dispatch all report refs/heads/main, so a group
+  // keyed on github.ref alone let a push to main cancel the nightly E2E run and
+  // vice versa.
+  it("scopes the concurrency group by event, not by ref alone", () => {
+    expect(ci).toMatch(/group:\s*ci-\$\{\{\s*github\.event_name\s*\}\}/);
+  });
+
+  // "some file is newer than the marker" passed with a stale index.html beside
+  // one fresh orphan, and the smoke tests then ran the committed bundle.
+  it("empties the served bundle before building it", () => {
+    expect(ci).toMatch(/rm -rf immi_case_downloader\/static\/react/);
+  });
+
+  it("compares typechecked test files as a set, not as a count", () => {
+    // A ">= 50 files" floor is cleared by narrowing the include to *.test.tsx,
+    // which drops 26 files including the CSRF lifecycle suite.
+    expect(ci).toMatch(/comm -23 \/tmp\/tests-on-disk\.txt \/tmp\/tests-typechecked\.txt/);
+    expect(ci).not.toMatch(/only \$tests files under __tests__/);
+  });
+
+  // frontend/playwright.config.ts and frontend/e2e/ do not exist; these scripts
+  // could only ever end in a matcher error.
+  it("has no npm scripts pointing at the deleted Playwright suite", () => {
+    for (const name of ["e2e", "e2e:ui", "e2e:headed"]) {
+      expect(packageJson.scripts, `frontend script "${name}" targets a deleted suite`)
+        .not.toHaveProperty(name);
+    }
+  });
+
+  it("does not typecheck a playwright config that is not in the tree", () => {
+    expect(tsconfigTest).not.toMatch(/playwright\.config\.ts/);
+  });
+
+  // The hook shells out to .venv/bin/ruff, so installing it with the global
+  // python3 produced a hook that could not work — after polluting system
+  // site-packages or failing under PEP 668.
+  it("installs pre-commit into the repo venv and checks the hook can run", () => {
+    const recipe = makeRecipe(makefile, "hooks");
+    expect(recipe).toMatch(/VENV_PYTHON/);
+    expect(recipe).not.toMatch(/"\$\(PYTHON\)" -m pip install pre-commit/);
+    expect(recipe).toMatch(/\.venv\/bin\/ruff/);
+    expect(recipe).toMatch(/frontend\/node_modules/);
+  });
+});
