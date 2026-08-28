@@ -11,6 +11,18 @@ import {
 } from "./contracts.js";
 import { bindAll, changeCount, requireD1, rows } from "./cloudflare_shared.js";
 
+/** D1 wraps one batch() call in one transaction; keep batches modest. */
+const D1_BATCH_STATEMENT_LIMIT = 20;
+
+/**
+ * Statement ceiling for the one-shot chunk write. A chunk holds up to
+ * FTS_CHUNK_MAX_BYTES (128 KiB, workers/storage/contracts.js), so 40
+ * statements is ~5 MB of canonical text — far past any AustLII judgment. Past
+ * this the import fails loudly instead of silently splitting the transaction
+ * and leaving a prefix of the new text behind.
+ */
+const D1_CHUNK_TRANSACTION_STATEMENT_LIMIT = 40;
+
 function safeCaseFilters(filters = {}) {
   const clauses = [];
   const params = [];
@@ -711,81 +723,142 @@ export class CloudflareCaseStore {
    */
   async rebuildAggregates() {
     const now = utcNow();
-    const statements = [];
-    for (const table of [
-      "aggregate_court_year_outcome", "aggregate_visa", "aggregate_country",
-      "aggregate_judge", "aggregate_judge_court", "aggregate_nature_outcome",
-      "aggregate_source", "catalog_summary", "aggregate_concept", "aggregate_scope",
-      "aggregate_court_nature_outcome", "aggregate_concept_scope", "aggregate_concept_pair",
-      "aggregate_judge_outcome", "aggregate_judge_year", "aggregate_judge_visa", "filter_options",
-    ]) statements.push(this.db.prepare(`DELETE FROM ${table}`));
-    statements.push(
-      this.db.prepare(`INSERT INTO aggregate_court_year_outcome (court_code,year,outcome,case_count,updated_at)
-        SELECT court_code, year, outcome, COUNT(*), ? FROM cases GROUP BY court_code, year, outcome`).bind(now),
-      this.db.prepare(`INSERT INTO aggregate_source (source,case_count,updated_at)
-        SELECT source, COUNT(*), ? FROM cases WHERE source <> '' GROUP BY source`).bind(now),
-      this.db.prepare(`INSERT INTO catalog_summary (summary_key,value_int,updated_at)
-        SELECT 'total_cases', COUNT(*), ? FROM cases`).bind(now),
-      this.db.prepare(`INSERT INTO catalog_summary (summary_key,value_int,updated_at)
-        SELECT 'with_full_text', COUNT(*), ? FROM cases WHERE content_key <> ''`).bind(now),
-      this.db.prepare(`INSERT INTO aggregate_judge_court (judge_id,court_code,case_count)
-        SELECT cj.judge_id, c.court_code, COUNT(DISTINCT cj.case_id)
-        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id
-        WHERE c.court_code <> '' GROUP BY cj.judge_id, c.court_code`),
-      this.db.prepare(`INSERT INTO aggregate_nature_outcome (case_nature,outcome,case_count)
-        SELECT case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> '' GROUP BY case_nature, outcome`),
-      this.db.prepare(`INSERT INTO aggregate_concept (concept_id,label,case_count)
-        SELECT cc.concept_id, c.label, COUNT(DISTINCT cc.case_id)
-        FROM case_concepts cc JOIN concepts c ON c.concept_id = cc.concept_id GROUP BY cc.concept_id, c.label`),
-      this.db.prepare(`INSERT INTO aggregate_country (country,case_count,updated_at)
-        SELECT country_of_origin, COUNT(*), ? FROM cases WHERE country_of_origin <> '' GROUP BY country_of_origin`).bind(now),
-      this.db.prepare(`INSERT INTO aggregate_judge (judge_id,canonical_name,case_count,updated_at)
-        SELECT j.judge_id, j.canonical_name, COUNT(DISTINCT cj.case_id), ?
-        FROM judges j JOIN case_judges cj ON cj.judge_id = j.judge_id GROUP BY j.judge_id, j.canonical_name`).bind(now),
-      this.db.prepare(`INSERT INTO aggregate_visa (visa_subclass,court_code,outcome,case_count,updated_at)
-        SELECT visa_subclass, court_code, outcome, COUNT(*), ? FROM cases
-        WHERE visa_subclass <> '' GROUP BY visa_subclass, court_code, outcome`).bind(now),
-      this.db.prepare(`INSERT INTO aggregate_scope
-        (court_code,year,outcome,visa_subclass,visa_type,source,case_nature,country_of_origin,has_full_text,case_count)
-        SELECT COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),
-               COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),
-               CASE WHEN content_key <> '' THEN 1 ELSE 0 END, COUNT(*)
-        FROM cases GROUP BY COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),
-          COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),
-          CASE WHEN content_key <> '' THEN 1 ELSE 0 END`),
-      this.db.prepare(`INSERT INTO aggregate_court_nature_outcome (court_code,case_nature,outcome,case_count)
-        SELECT court_code, case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> ''
-        GROUP BY court_code, case_nature, outcome`),
-      this.db.prepare(`INSERT INTO aggregate_concept_scope (concept_id,court_code,year,outcome,case_count)
-        SELECT cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome, COUNT(DISTINCT cc.case_id)
-        FROM case_concepts cc JOIN cases c ON c.case_id = cc.case_id
-        GROUP BY cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome`),
-      this.db.prepare(`INSERT INTO aggregate_concept_pair
-        (concept_id_a,concept_id_b,court_code,outcome,case_count)
-        SELECT a.concept_id, b.concept_id, c.court_code, c.outcome, COUNT(DISTINCT a.case_id)
-        FROM case_concepts a JOIN case_concepts b ON b.case_id = a.case_id AND a.concept_id < b.concept_id
-        JOIN cases c ON c.case_id = a.case_id
-        GROUP BY a.concept_id, b.concept_id, c.court_code, c.outcome`),
-      this.db.prepare(`INSERT INTO aggregate_judge_outcome (judge_id,court_code,outcome,case_count)
-        SELECT cj.judge_id, c.court_code, c.outcome, COUNT(DISTINCT cj.case_id)
-        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id
-        GROUP BY cj.judge_id, c.court_code, c.outcome`),
-      this.db.prepare(`INSERT INTO aggregate_judge_year (judge_id,year,case_count)
-        SELECT cj.judge_id, c.year, COUNT(DISTINCT cj.case_id)
-        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.year IS NOT NULL
-        GROUP BY cj.judge_id, c.year`),
-      this.db.prepare(`INSERT INTO aggregate_judge_visa (judge_id,visa_subclass,case_count)
-        SELECT cj.judge_id, c.visa_subclass, COUNT(DISTINCT cj.case_id)
-        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.visa_subclass <> ''
-        GROUP BY cj.judge_id, c.visa_subclass`),
-    );
-    for (const [filterName, column] of [["court", "court_code"], ["year", "year"], ["outcome", "outcome"], ["visa_type", "visa_type"], ["visa_subclass", "visa_subclass"], ["source", "source"], ["case_nature", "case_nature"]]) {
-      statements.push(this.db.prepare(`INSERT INTO filter_options (filter_name, option_value, sort_order)
+    const filterOptions = [["court", "court_code"], ["year", "year"], ["outcome", "outcome"], ["visa_type", "visa_type"], ["visa_subclass", "visa_subclass"], ["source", "source"], ["case_nature", "case_nature"]]
+      .map(([filterName, column]) => this.db.prepare(`INSERT INTO filter_options (filter_name, option_value, sort_order)
         SELECT ?, CAST(${column} AS TEXT), ROW_NUMBER() OVER (ORDER BY ${column}) - 1
         FROM (SELECT DISTINCT ${column} FROM cases WHERE ${column} IS NOT NULL AND ${column} <> '')`).bind(filterName));
+    // One entry per table: its DELETE and the INSERT(s) that repopulate it ride
+    // the same D1 transaction, so a mid-rebuild failure leaves that table's
+    // previous rows in place instead of publishing an empty analytics table.
+    const groups = [
+      ["aggregate_court_year_outcome", [
+        this.db.prepare(`INSERT INTO aggregate_court_year_outcome (court_code,year,outcome,case_count,updated_at)
+          SELECT court_code, year, outcome, COUNT(*), ? FROM cases GROUP BY court_code, year, outcome`).bind(now),
+      ]],
+      ["aggregate_source", [
+        this.db.prepare(`INSERT INTO aggregate_source (source,case_count,updated_at)
+          SELECT source, COUNT(*), ? FROM cases WHERE source <> '' GROUP BY source`).bind(now),
+      ]],
+      ["catalog_summary", [
+        this.db.prepare(`INSERT INTO catalog_summary (summary_key,value_int,updated_at)
+          SELECT 'total_cases', COUNT(*), ? FROM cases`).bind(now),
+        this.db.prepare(`INSERT INTO catalog_summary (summary_key,value_int,updated_at)
+          SELECT 'with_full_text', COUNT(*), ? FROM cases WHERE content_key <> ''`).bind(now),
+      ]],
+      ["aggregate_judge_court", [
+        this.db.prepare(`INSERT INTO aggregate_judge_court (judge_id,court_code,case_count)
+          SELECT cj.judge_id, c.court_code, COUNT(DISTINCT cj.case_id)
+          FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id
+          WHERE c.court_code <> '' GROUP BY cj.judge_id, c.court_code`),
+      ]],
+      ["aggregate_nature_outcome", [
+        this.db.prepare(`INSERT INTO aggregate_nature_outcome (case_nature,outcome,case_count)
+          SELECT case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> '' GROUP BY case_nature, outcome`),
+      ]],
+      ["aggregate_concept", [
+        this.db.prepare(`INSERT INTO aggregate_concept (concept_id,label,case_count)
+          SELECT cc.concept_id, c.label, COUNT(DISTINCT cc.case_id)
+          FROM case_concepts cc JOIN concepts c ON c.concept_id = cc.concept_id GROUP BY cc.concept_id, c.label`),
+      ]],
+      ["aggregate_country", [
+        this.db.prepare(`INSERT INTO aggregate_country (country,case_count,updated_at)
+          SELECT country_of_origin, COUNT(*), ? FROM cases WHERE country_of_origin <> '' GROUP BY country_of_origin`).bind(now),
+      ]],
+      ["aggregate_judge", [
+        this.db.prepare(`INSERT INTO aggregate_judge (judge_id,canonical_name,case_count,updated_at)
+          SELECT j.judge_id, j.canonical_name, COUNT(DISTINCT cj.case_id), ?
+          FROM judges j JOIN case_judges cj ON cj.judge_id = j.judge_id GROUP BY j.judge_id, j.canonical_name`).bind(now),
+      ]],
+      ["aggregate_visa", [
+        this.db.prepare(`INSERT INTO aggregate_visa (visa_subclass,court_code,outcome,case_count,updated_at)
+          SELECT visa_subclass, court_code, outcome, COUNT(*), ? FROM cases
+          WHERE visa_subclass <> '' GROUP BY visa_subclass, court_code, outcome`).bind(now),
+      ]],
+      ["aggregate_scope", [
+        this.db.prepare(`INSERT INTO aggregate_scope
+          (court_code,year,outcome,visa_subclass,visa_type,source,case_nature,country_of_origin,has_full_text,case_count)
+          SELECT COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),
+                 COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),
+                 CASE WHEN content_key <> '' THEN 1 ELSE 0 END, COUNT(*)
+          FROM cases GROUP BY COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),
+            COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),
+            CASE WHEN content_key <> '' THEN 1 ELSE 0 END`),
+      ]],
+      ["aggregate_court_nature_outcome", [
+        this.db.prepare(`INSERT INTO aggregate_court_nature_outcome (court_code,case_nature,outcome,case_count)
+          SELECT court_code, case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> ''
+          GROUP BY court_code, case_nature, outcome`),
+      ]],
+      ["aggregate_concept_scope", [
+        this.db.prepare(`INSERT INTO aggregate_concept_scope (concept_id,court_code,year,outcome,case_count)
+          SELECT cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome, COUNT(DISTINCT cc.case_id)
+          FROM case_concepts cc JOIN cases c ON c.case_id = cc.case_id
+          GROUP BY cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome`),
+      ]],
+      ["aggregate_concept_pair", [
+        this.db.prepare(`INSERT INTO aggregate_concept_pair
+          (concept_id_a,concept_id_b,court_code,outcome,case_count)
+          SELECT a.concept_id, b.concept_id, c.court_code, c.outcome, COUNT(DISTINCT a.case_id)
+          FROM case_concepts a JOIN case_concepts b ON b.case_id = a.case_id AND a.concept_id < b.concept_id
+          JOIN cases c ON c.case_id = a.case_id
+          GROUP BY a.concept_id, b.concept_id, c.court_code, c.outcome`),
+      ]],
+      ["aggregate_judge_outcome", [
+        this.db.prepare(`INSERT INTO aggregate_judge_outcome (judge_id,court_code,outcome,case_count)
+          SELECT cj.judge_id, c.court_code, c.outcome, COUNT(DISTINCT cj.case_id)
+          FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id
+          GROUP BY cj.judge_id, c.court_code, c.outcome`),
+      ]],
+      ["aggregate_judge_year", [
+        this.db.prepare(`INSERT INTO aggregate_judge_year (judge_id,year,case_count)
+          SELECT cj.judge_id, c.year, COUNT(DISTINCT cj.case_id)
+          FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.year IS NOT NULL
+          GROUP BY cj.judge_id, c.year`),
+      ]],
+      ["aggregate_judge_visa", [
+        this.db.prepare(`INSERT INTO aggregate_judge_visa (judge_id,visa_subclass,case_count)
+          SELECT cj.judge_id, c.visa_subclass, COUNT(DISTINCT cj.case_id)
+          FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.visa_subclass <> ''
+          GROUP BY cj.judge_id, c.visa_subclass`),
+      ]],
+      ["filter_options", filterOptions],
+    ];
+    const batches = [];
+    let current = { tables: [], statements: [] };
+    for (const [table, inserts] of groups) {
+      const group = [this.db.prepare(`DELETE FROM ${table}`), ...inserts];
+      if (current.statements.length > 0
+        && current.statements.length + group.length > D1_BATCH_STATEMENT_LIMIT) {
+        batches.push(current);
+        current = { tables: [], statements: [] };
+      }
+      current = {
+        tables: [...current.tables, table],
+        statements: [...current.statements, ...group],
+      };
     }
-    for (let offset = 0; offset < statements.length; offset += 20) await this.db.batch(statements.slice(offset, offset + 20));
-    return { rebuilt_at: now };
+    if (current.statements.length > 0) batches.push(current);
+    // A rebuild spans more than one transaction, so a failure part-way through
+    // leaves a mixed generation: `committed_tables` names the tables that
+    // already hold the new rows. Log it so the skew is observable in Logpush
+    // instead of being inferred from a dashboard that looks slightly wrong.
+    const committed = [];
+    for (const [index, batch] of batches.entries()) {
+      try {
+        await this.db.batch(batch.statements);
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "cloudflare.aggregate_rebuild_partial",
+          batch_index: index,
+          batches: batches.length,
+          committed_tables: committed,
+          error: error?.message,
+        }));
+        throw error;
+      }
+      committed.push(...batch.tables);
+    }
+    return { rebuilt_at: now, rebuilt_tables: committed };
   }
 
   async relatedCompat(caseId, { limit = 5 } = {}) {
