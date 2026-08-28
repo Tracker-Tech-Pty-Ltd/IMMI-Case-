@@ -112,9 +112,10 @@ describe("D1 read path against the shipped catalog schema", () => {
     expect(options.outcomes.map((row) => row.value).sort()).toEqual(["affirmed", "allowed"]);
 
     expect(await stores.caseStore.getFilterOptions()).not.toHaveLength(0);
-    const outcomes = await stores.caseStore.analyticsOutcomes();
-    expect(outcomes.court).not.toHaveLength(0);
-    expect(outcomes.subclass).not.toHaveLength(0);
+    const courtYear = await stores.caseStore.analyticsCourtYearOutcomes();
+    const subclass = await stores.caseStore.analyticsVisaOutcomes();
+    expect(courtYear).not.toHaveLength(0);
+    expect(subclass).not.toHaveLength(0);
   });
 });
 

@@ -23,6 +23,9 @@ const D1_BATCH_STATEMENT_LIMIT = 20;
  */
 const D1_CHUNK_TRANSACTION_STATEMENT_LIMIT = 40;
 
+/** Row cap on the concept-scope read. Callers must surface `truncated`. */
+const CONCEPT_SCOPE_ROW_LIMIT = 10000;
+
 function safeCaseFilters(filters = {}) {
   const clauses = [];
   const params = [];
@@ -339,34 +342,25 @@ export class CloudflareCaseStore {
     `).bind(value).all()).slice(0, size);
   }
 
-  async analyticsOutcomes() {
-    const [court, year, subclass] = await Promise.all([
-      this.db.prepare("SELECT court_code, outcome, case_count AS cnt FROM aggregate_court_year_outcome").all(),
-      this.db.prepare("SELECT year AS year_key, outcome, case_count AS cnt FROM aggregate_court_year_outcome").all(),
-      this.db.prepare("SELECT visa_subclass, court_code, outcome, case_count AS cnt FROM aggregate_visa").all(),
-    ]);
-    return { court: rows(court), year: rows(year), subclass: rows(subclass) };
+  /**
+   * One scan of aggregate_court_year_outcome. `court_code` is required by the
+   * caller so isWin() can pick the tribunal or court win set; `year AS year_key`
+   * keeps the by-year grouping key stable for /api/v1/analytics/outcomes.
+   */
+  async analyticsCourtYearOutcomes() {
+    return rows(await this.db.prepare(
+      "SELECT court_code, year AS year_key, outcome, case_count AS cnt FROM aggregate_court_year_outcome",
+    ).all());
+  }
+
+  async analyticsVisaOutcomes() {
+    return rows(await this.db.prepare(
+      "SELECT visa_subclass, court_code, outcome, case_count AS cnt FROM aggregate_visa",
+    ).all());
   }
 
   async analyticsNatureOutcome() {
     return rows(await this.db.prepare("SELECT case_nature, outcome, case_count AS cnt FROM aggregate_nature_outcome").all());
-  }
-
-  async analyticsScope({ court = "", yearFrom = 0, yearTo = 0, visaSubclass = "", caseNature = "" } = {}) {
-    const clauses = [];
-    const params = [];
-    if (court) { clauses.push("court_code = ?"); params.push(String(court)); }
-    if (visaSubclass) { clauses.push("visa_subclass = ?"); params.push(String(visaSubclass)); }
-    if (caseNature) { clauses.push("lower(case_nature) = lower(?)"); params.push(String(caseNature)); }
-    if (yearFrom) { clauses.push("year >= ?"); params.push(Number(yearFrom)); }
-    if (yearTo) { clauses.push("year <= ?"); params.push(Number(yearTo)); }
-    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return rows(await bindAll(this.db, `
-      SELECT court_code, year, outcome, visa_subclass, visa_type, source, case_nature,
-             has_full_text, case_count AS cnt
-      FROM aggregate_scope ${where}
-      ORDER BY year ASC, court_code ASC, outcome ASC
-    `, params).all());
   }
 
   async analyticsRateRows({ court = "", yearFrom = 0, yearTo = 0, visaSubclass = "", caseNature = "" } = {}) {
@@ -420,12 +414,19 @@ export class CloudflareCaseStore {
     if (yearFrom) { clauses.push("s.year >= ?"); params.push(Number(yearFrom)); }
     if (yearTo) { clauses.push("s.year <= ?"); params.push(Number(yearTo)); }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    return rows(await bindAll(this.db, `
+    // Read one row past the cap so truncation can be DETECTED rather than
+    // guessed: `length >= LIMIT` cannot tell "exactly 10,000 rows exist" from
+    // "more than 10,000 exist and we truncated", and would report the honest
+    // full-corpus case as truncated forever. Fetching LIMIT+1 makes
+    // `length > LIMIT` an exact test; the extra row is then discarded.
+    const results = rows(await bindAll(this.db, `
       SELECT s.concept_id, c.label AS concept, s.court_code, s.year, s.outcome, s.case_count AS cnt
       FROM aggregate_concept_scope s JOIN concepts c ON c.concept_id = s.concept_id
       ${where}
-      ORDER BY s.case_count DESC LIMIT 10000
+      ORDER BY s.case_count DESC LIMIT ${CONCEPT_SCOPE_ROW_LIMIT + 1}
     `, params).all());
+    const truncated = results.length > CONCEPT_SCOPE_ROW_LIMIT;
+    return { rows: truncated ? results.slice(0, CONCEPT_SCOPE_ROW_LIMIT) : results, truncated };
   }
 
   async analyticsConceptPairs({ limit = 20000 } = {}) {
