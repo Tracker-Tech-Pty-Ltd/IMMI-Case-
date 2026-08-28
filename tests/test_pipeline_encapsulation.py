@@ -7,14 +7,14 @@ def test_pipeline_has_instance_status():
     p = SmartPipeline(config, output_dir="/tmp/test_pipeline")
     status = p.get_status()
     assert isinstance(status, dict)
-    assert status["running"] == False
+    assert status["running"] is False
 
 
 def test_pipeline_stop_flag():
     config = PipelineConfig()
     p = SmartPipeline(config, output_dir="/tmp/test_pipeline")
     p.request_stop()
-    assert p.get_status()["stop_requested"] == True
+    assert p.get_status()["stop_requested"] is True
 
 
 def test_pipeline_independent_instances():
@@ -22,7 +22,7 @@ def test_pipeline_independent_instances():
     p1 = SmartPipeline(config, output_dir="/tmp/p1")
     p2 = SmartPipeline(config, output_dir="/tmp/p2")
     p1.request_stop()
-    assert p2.get_status()["stop_requested"] == False
+    assert p2.get_status()["stop_requested"] is False
 
 
 def test_pipeline_config_from_dict():
@@ -38,7 +38,7 @@ def test_pipeline_config_preset_full():
 
 def test_pipeline_config_preset_download_only():
     config = PipelineConfig.from_form({"preset": "download_only"})
-    assert config.download_enabled == True
+    assert config.download_enabled is True
 
 
 def test_get_status_returns_copy():
@@ -48,14 +48,14 @@ def test_get_status_returns_copy():
     s1 = p.get_status()
     s1["running"] = True
     s2 = p.get_status()
-    assert s2["running"] == False
+    assert s2["running"] is False
 
 
 def test_module_get_pipeline_status_without_active():
     """get_pipeline_status() returns initial state when no pipeline has run."""
     from immi_case_downloader.pipeline import get_pipeline_status, _INITIAL_STATUS
     status = get_pipeline_status()
-    assert status["running"] == False
+    assert status["running"] is False
     assert "stats" in status
 
 
