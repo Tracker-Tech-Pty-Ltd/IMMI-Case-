@@ -1,3 +1,15 @@
+/**
+ * Bookmarks and collections, persisted per-browser in localStorage.
+ *
+ * Client-only by design today, not by oversight. The server-side replacement —
+ * the D1 tables, the Worker CRUD surface, and the one-way import performed on
+ * first login — is decided in `docs/adr/0050-user-data-server-side.md`.
+ *
+ * Read that ADR before adding a field here: the shapes in this file are the
+ * migration source, so every new field becomes another column to carry across,
+ * and `BookmarkEntry` has no destination table at all yet.
+ */
+
 import { useCallback, useSyncExternalStore } from "react";
 import type {
   BookmarksState,

@@ -1,3 +1,16 @@
+/**
+ * Saved searches, persisted per-browser in localStorage.
+ *
+ * Client-only by design today, not by oversight. The server-side replacement —
+ * `saved_searches` in IMMI_ACCOUNT_DB, the Worker CRUD surface, and the one-way
+ * import performed on first login — is decided in
+ * `docs/adr/0050-user-data-server-side.md`.
+ *
+ * Note the failure mode that ADR exists to remove: `loadSavedSearches` deletes
+ * the storage key when the payload is not an array, and `saveSavedSearches`
+ * swallows quota and private-mode errors. Both are silent to the user.
+ */
+
 import type { SavedSearch, CaseFilters } from "@/types/case";
 import { resolveRouterBasename } from "@/lib/router";
 
