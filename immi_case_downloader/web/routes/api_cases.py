@@ -30,6 +30,7 @@ from ...config import START_YEAR, END_YEAR
 from ...cases_pagination import (
     CaseListQuery,
     backend_kind_for_repo,
+    can_seek_cases_query,
     choose_pagination_plan,
     remember_page_anchor,
 )
@@ -377,6 +378,35 @@ def _load_cases_via_seek(
         current_page += 1
 
     return final_page, strategy, fallback_reason
+
+
+def _maybe_remember_offset_anchor(
+    repo,
+    *,
+    query: CaseListQuery,
+    page: int,
+    page_size: int,
+    page_cases: list[ImmigrationCase],
+) -> None:
+    """Record a seek anchor from a page the offset path just served.
+
+    The offset and seek paths order seek-eligible queries identically
+    (`ORDER BY year <dir>, case_id <dir>`), so the last row of an offset page is
+    a valid forward cursor. Without this, a cold forward walk never reaches the
+    anchor interval and the cache is never populated.
+    """
+    if not can_seek_cases_query(query):
+        return
+    if not getattr(repo, "supports_seek_pagination", False):
+        return
+    if len(page_cases) != page_size:
+        return
+    remember_page_anchor(
+        repo=repo,
+        query=query,
+        page=page,
+        page_cases=page_cases,
+    )
 
 
 # ── Filter-options helpers ────────────────────────────────────────────────────
@@ -866,6 +896,13 @@ def list_cases():
                         page=page,
                         page_size=page_size,
                         count_mode=count_mode,
+                    )
+                    _maybe_remember_offset_anchor(
+                        repo,
+                        query=query,
+                        page=page,
+                        page_size=page_size,
+                        page_cases=page_cases,
                     )
                     total_pages = max(1, (total + page_size - 1) // page_size)
     except Exception:
