@@ -174,8 +174,15 @@ describe("useCouncilStream re-entrancy", () => {
 
   it("still clears isStreaming when the only run fails", async () => {
     const hook = renderHook(() => useCouncilStream());
+    let startPromise!: ReturnType<typeof hook.result.current.start>;
     await act(async () => {
-      void hook.result.current.start({ message: "only" });
+      startPromise = hook.result.current.start({ message: "only" });
+      // FECORR-02 makes a pre-stream failure reject start(). Attach a
+      // handler in the same tick the promise is created so Node/Vitest
+      // never flags it as unhandled — the `.rejects` assertion below is
+      // the real handler; this just prevents a spurious report before we
+      // get there through the awaits above.
+      startPromise.catch(() => {});
     });
     await act(async () => {
       rejecters[0](new Error("boom"));
@@ -185,6 +192,11 @@ describe("useCouncilStream re-entrancy", () => {
 
     expect(hook.result.current.isStreaming).toBe(false);
     expect(hook.result.current.state.council.status).toBe("error");
+    // The fetch never resolved to a Response, so streamOpened stayed false
+    // and start() must reject with the original error rather than swallow
+    // it — this is the contract LlmCouncilPage's try/catch now depends on.
+    await expect(startPromise).rejects.toThrow("boom");
+
     await unmountAndSettle(hook);
   });
 

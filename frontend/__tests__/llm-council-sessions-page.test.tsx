@@ -67,6 +67,7 @@ import {
   SessionListItem,
 } from "@/components/llm-council/SessionListItem";
 import { relativeTime } from "@/components/llm-council/session-list-item-helpers";
+import { toast } from "sonner";
 import type { LlmCouncilSessionListItem } from "@/lib/api-llm-council";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -260,8 +261,8 @@ describe("LlmCouncilSessionsPage", () => {
     );
   });
 
-  // 9. Delete → confirm → calls deleteSession.mutate with sessionId
-  it("clicking delete then confirming calls deleteSession.mutate with sessionId", async () => {
+  // 9. Delete → confirm → calls deleteSession.mutate with sessionId + onError
+  it("clicking delete then confirming calls deleteSession.mutate with sessionId and an onError handler", async () => {
     const mutateMock = vi.fn();
     mockUseDeleteSession.mockReturnValue(idleDelete({ mutate: mutateMock }));
     mockUseLlmCouncilSessions.mockReturnValue({
@@ -282,9 +283,54 @@ describe("LlmCouncilSessionsPage", () => {
     const deleteButtons = screen.getAllByRole("button", { name: /^Delete$/i });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
+    // TanStack Query mutations have no per-call error handler without a
+    // second `options` argument, so `mutate` must now be called with the
+    // sessionId AND an `onError` — a handler that is merely present but
+    // inert would still satisfy this assertion, which is why the next test
+    // exercises what the handler actually does.
     await waitFor(() => {
-      expect(mutateMock).toHaveBeenCalledWith("to-delete-123");
+      expect(mutateMock).toHaveBeenCalledWith(
+        "to-delete-123",
+        expect.objectContaining({ onError: expect.any(Function) }),
+      );
     });
+  });
+
+  // 9b. The onError handler passed to mutate actually surfaces an error to
+  // the user — proves the handler isn't a no-op that would still satisfy #9.
+  it("invoking the captured onError handler shows a user-visible error toast", async () => {
+    const mutateMock = vi.fn();
+    mockUseDeleteSession.mockReturnValue(idleDelete({ mutate: mutateMock }));
+    mockUseLlmCouncilSessions.mockReturnValue({
+      data: { sessions: [makeSession({ session_id: "to-delete-123" })] },
+      isLoading: false,
+      isError: false,
+    });
+    renderPage();
+
+    fireEvent.click(screen.getByTestId("session-delete-btn"));
+    await waitFor(() => {
+      expect(screen.getByText(/This cannot be undone/i)).toBeInTheDocument();
+    });
+    const deleteButtons = screen.getAllByRole("button", { name: /^Delete$/i });
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(mutateMock).toHaveBeenCalled();
+    });
+
+    const onError = mutateMock.mock.calls[0][1].onError as (
+      err: unknown,
+    ) => void;
+    onError(new Error("D1_ERROR: no such table"));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      "Could not delete this session. Please try again.",
+    );
+    // The user-visible surface must never leak the raw backend error string.
+    expect(
+      vi.mocked(toast.error).mock.calls.flat().join(" "),
+    ).not.toContain("D1_ERROR");
   });
 });
 
