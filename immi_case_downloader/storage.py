@@ -120,14 +120,30 @@ def save_case_text(
 
     filepath = os.path.join(text_dir, filename)
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(f"Title: {case.title}\n")
-        f.write(f"Citation: {case.citation}\n")
-        f.write(f"Court: {case.court}\n")
-        f.write(f"Date: {case.date}\n")
-        f.write(f"URL: {case.url}\n")
-        f.write(f"{'='*80}\n\n")
-        f.write(text)
+    # Write to a sibling temp file and rename onto the final path. The bulk
+    # downloader's resume treats "the .txt exists" as "this case is done" and
+    # never re-fetches it, so a file written in place and interrupted part-way
+    # becomes a permanently truncated case body that no later run repairs.
+    # The rename makes existence mean completeness.
+    tmp_path = f"{filepath}.{os.getpid()}.part"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(f"Title: {case.title}\n")
+            f.write(f"Citation: {case.citation}\n")
+            f.write(f"Court: {case.court}\n")
+            f.write(f"Date: {case.date}\n")
+            f.write(f"URL: {case.url}\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, filepath)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     case.full_text_path = filepath
     return filepath

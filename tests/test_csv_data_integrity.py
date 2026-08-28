@@ -11,6 +11,7 @@ downloaded_cases/.
 """
 
 import ast
+import builtins
 import sqlite3
 import threading
 from pathlib import Path
@@ -31,6 +32,7 @@ from immi_case_downloader.storage import (
     ensure_output_dirs,
     invalidate_cases_cache,
     load_all_cases,
+    save_case_text,
     save_cases_csv,
     update_case,
 )
@@ -953,3 +955,69 @@ class TestCsvWriteLock:
             assert not errors, errors
             invalidate_cases_cache()
             assert len(repo.load_all()) == 100, f"round {round_num} lost rows"
+
+
+# ── Full-text writes must be atomic, because resume trusts existence ─────
+
+
+class TestSaveCaseTextIsCrashSafe:
+    def test_a_failed_write_leaves_no_file_for_resume_to_trust(self, tmp_path):
+        """An interrupted write must not leave a file resume calls complete.
+
+        download_fulltext.py skips any case whose .txt exists — it never
+        re-fetches. save_case_text wrote the final path directly, so a crash
+        or a full disk part-way through left a truncated case body that every
+        later run treated as done. The write is now tmp-then-rename, so
+        existence means completeness.
+        """
+        ensure_output_dirs(str(tmp_path))
+        case = _case(citation="[2024] AATA 60", url="https://example.com/60")
+
+        real_open = builtins.open
+        state = {"n": 0}
+
+        class DiskFillsUp:
+            """Delegates to a real handle, then fails mid-body like a full disk."""
+
+            def __init__(self, handle):
+                self._handle = handle
+
+            def write(self, s):
+                state["n"] += 1
+                if state["n"] > 3:
+                    raise OSError("No space left on device")
+                return self._handle.write(s)
+
+            def __getattr__(self, name):
+                return getattr(self._handle, name)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return self._handle.__exit__(*exc)
+
+        def flaky_open(path, *args, **kwargs):
+            handle = real_open(path, *args, **kwargs)
+            # Any case-text write, however it is staged — so an in-place
+            # writer is caught the same way a tmp-then-rename one is.
+            if "case_texts" in str(path):
+                return DiskFillsUp(handle)
+            return handle
+
+        with patch("builtins.open", flaky_open):
+            with pytest.raises(OSError):
+                save_case_text(case, "body text that never lands", str(tmp_path))
+
+        text_dir = Path(tmp_path) / "case_texts"
+        assert list(text_dir.glob("*.txt")) == [], "resume would skip a truncated file"
+        assert list(text_dir.glob("*.part")) == [], "temp file left behind"
+
+    def test_a_successful_write_round_trips(self, tmp_path):
+        ensure_output_dirs(str(tmp_path))
+        case = _case(citation="[2024] AATA 61", url="https://example.com/61")
+
+        path = save_case_text(case, "the full body", str(tmp_path))
+
+        assert Path(path).read_text(encoding="utf-8").endswith("the full body")
+        assert case.full_text_path == path
