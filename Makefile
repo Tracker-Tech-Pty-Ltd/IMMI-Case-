@@ -179,6 +179,42 @@ lint-fe:
 typecheck:
 	cd "$(REPO_ROOT)/frontend" && npx tsc -b --noEmit
 
+# CI runs this in the test-worker job; nothing ran it locally.
+test-preflight:
+	bash "$(REPO_ROOT)/scripts/test_preflight_secrets.sh"
+
+# The two Cloudflare-native boundary gates the test-worker job runs. Both are
+# read-only checkers; neither writes to the tree.
+check-native:
+	python3 "$(REPO_ROOT)/scripts/check_native_effective_references.py" --json
+	node "$(REPO_ROOT)/scripts/check_cloudflare_native_bundle.mjs"
+
+# The pipeline Worker has its own tsc gate, run only in CI until now.
+typecheck-pipeline:
+	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm run typecheck
+
+# The production bundle, exactly as CI and deploy-worker.yml build it.
+# build:cloudflare writes to frontend/dist/, which .gitignore:7 ignores — unlike
+# `npm run build`, which rewrites the TRACKED immi_case_downloader/static/react/
+# tree and would leave ~80 modified files behind on every run. The two are not
+# interchangeable; do not "simplify" this to `build`.
+build-fe:
+	cd "$(REPO_ROOT)/frontend" && npm run build:cloudflare
+	@git -C "$(REPO_ROOT)" diff --exit-code -- frontend/src/tokens/tokens.css frontend/src/tokens/tokens.ts \
+	  || { echo "ERROR: the committed generated design tokens are stale (npm run tokens changed them)."; exit 1; }
+
+# The single command to run before pushing. Mirrors the CI job set in
+# .github/workflows/ci.yml, job by job — see the table in plans/002. Ordered
+# cheapest-first so failures surface early. ~8 minutes.
+#
+# coverage-fe, not test-fe: CI runs `vitest run --coverage`, so the thresholds
+# are part of the gate. Running test-fe here would let a coverage regression
+# pass locally and fail on the PR — and running both would run the suite twice.
+check: lint typecheck typecheck-pipeline check-vitest-collection check-native \
+       test-preflight build-fe test-py coverage-fe test-workers test-pipeline
+	@echo ""
+	@echo "make check: all gates passed."
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 # Uses $(VENV_PYTHON), never $(PYTHON): on a fresh clone $(PYTHON) resolves to
