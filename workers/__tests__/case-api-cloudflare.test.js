@@ -1,19 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreateStores = vi.fn();
+const mockRequireAuth = vi.fn();
 
 vi.mock("../storage/cloudflare.js", () => ({
   createCloudflareStores: (...args) => mockCreateStores(...args),
 }));
+vi.mock("../auth/request_auth.js", () => ({ requireAuth: (...args) => mockRequireAuth(...args) }));
+vi.mock("../auth/jwt.js", () => ({ verifyJwt: vi.fn() }));
 
 import { dispatchCloudflareCaseRead } from "../case-api/cloudflare.js";
 import { StorageBoundaryError } from "../storage/contracts.js";
 
 const CASE_ID = "0123456789ab";
 const OTHER_CASE_ID = "abcdef012345";
+const OPERATOR_USER_ID = "11111111-2222-4333-8444-555555555555";
+const TENANT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
 function url(path) {
   return new URL(`https://immi.example${path}`);
+}
+
+function request(path) {
+  return new Request(`https://immi.example${path}`, {
+    headers: { Authorization: "Bearer valid" },
+  });
+}
+
+function operatorEnv(overrides = {}) {
+  return {
+    IMMI_STORAGE_MODE: "cloudflare",
+    RL_EXPORT: { limit: vi.fn(async () => ({ success: true })) },
+    ...overrides,
+  };
 }
 
 function stores() {
@@ -136,6 +155,11 @@ function stores() {
       getJudgePhoto: vi.fn(async () => null),
       getLegislation: vi.fn(async () => null),
     },
+    identityStore: {
+      assertPlatformOperator: vi.fn(async () => ({
+        userId: OPERATOR_USER_ID, tenantId: TENANT_ID, platformOperator: true, grant: "platform_admin",
+      })),
+    },
     semanticIndex: {
       relatedById: vi.fn(async () => ({ matches: [{ id: OTHER_CASE_ID, score: 0.91 }] })),
       searchText: vi.fn(async () => ({ matches: [{ id: OTHER_CASE_ID, score: 0.88 }] })),
@@ -149,11 +173,14 @@ function stores() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockCreateStores.mockReturnValue(stores());
+  mockRequireAuth.mockResolvedValue({
+    claims: { sub: OPERATOR_USER_ID, tenant_id: TENANT_ID, tenants: [TENANT_ID] },
+  });
 });
 
 describe("Cloudflare case read router", () => {
   it("is inert outside explicit cloudflare mode", async () => {
-    const result = await dispatchCloudflareCaseRead(url("/api/v1/cases"), "/api/v1/cases", {
+    const result = await dispatchCloudflareCaseRead(request("/api/v1/cases"), url("/api/v1/cases"), "/api/v1/cases", {
       IMMI_STORAGE_MODE: "legacy",
     });
     expect(result).toBeNull();
@@ -163,7 +190,7 @@ describe("Cloudflare case read router", () => {
   it("keeps the paginated case response shape and hides R2 pointers", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/cases?court=FCA&page_size=20&sort_by=title&sort_dir=asc"),
+      request("/api/v1/cases?court=FCA&page_size=20&sort_by=title&sort_dir=asc"), url("/api/v1/cases?court=FCA&page_size=20&sort_by=title&sort_dir=asc"),
       "/api/v1/cases",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -187,7 +214,7 @@ describe("Cloudflare case read router", () => {
       content_size: 15,
     });
     const result = await dispatchCloudflareCaseRead(
-      url(`/api/v1/cases/${CASE_ID}`), `/api/v1/cases/${CASE_ID}`,
+      request(`/api/v1/cases/${CASE_ID}`), url(`/api/v1/cases/${CASE_ID}`), `/api/v1/cases/${CASE_ID}`,
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(result.status).toBe(200);
@@ -205,7 +232,7 @@ describe("Cloudflare case read router", () => {
   it("uses Vectorize queryById for related semantic cases and preserves the legacy response", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url(`/api/v1/cases/${CASE_ID}/similar?limit=10`),
+      request(`/api/v1/cases/${CASE_ID}/similar?limit=10`), url(`/api/v1/cases/${CASE_ID}/similar?limit=10`),
       `/api/v1/cases/${CASE_ID}/similar`,
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -226,7 +253,7 @@ describe("Cloudflare case read router", () => {
   it("uses Workers AI semantic candidates for hybrid search rather than a legacy fallback", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/search?q=protection+visa&mode=hybrid"),
+      request("/api/v1/search?q=protection+visa&mode=hybrid"), url("/api/v1/search?q=protection+visa&mode=hybrid"),
       "/api/v1/search",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -243,7 +270,7 @@ describe("Cloudflare case read router", () => {
   it("preserves the dedicated semantic-search response while using Vectorize", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/search/semantic?q=procedural+fairness&limit=5"),
+      request("/api/v1/search/semantic?q=procedural+fairness&limit=5"), url("/api/v1/search/semantic?q=procedural+fairness&limit=5"),
       "/api/v1/search/semantic",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -269,7 +296,7 @@ describe("Cloudflare case read router", () => {
   it("keeps judge-bio lookup in D1/R2 while preserving found semantics", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-bio?name=Justice+Example"),
+      request("/api/v1/analytics/judge-bio?name=Justice+Example"), url("/api/v1/analytics/judge-bio?name=Justice+Example"),
       "/api/v1/analytics/judge-bio",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -283,13 +310,13 @@ describe("Cloudflare case read router", () => {
 
   it("keeps the missing-name and absent-bio contracts", async () => {
     const missingName = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-bio"), "/api/v1/analytics/judge-bio", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judge-bio"), url("/api/v1/analytics/judge-bio"), "/api/v1/analytics/judge-bio", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(missingName.status).toBe(400);
     const current = mockCreateStores();
     current.caseStore.findJudgeBio.mockResolvedValueOnce(null);
     const absent = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-bio?name=Nobody"), "/api/v1/analytics/judge-bio", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judge-bio?name=Nobody"), url("/api/v1/analytics/judge-bio?name=Nobody"), "/api/v1/analytics/judge-bio", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(await absent.json()).toEqual({ found: false });
   });
@@ -302,7 +329,7 @@ describe("Cloudflare case read router", () => {
       etag: '"photo-etag"',
     });
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/judge-photo/example.jpg"),
+      request("/api/v1/judge-photo/example.jpg"), url("/api/v1/judge-photo/example.jpg"),
       "/api/v1/judge-photo/example.jpg",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -316,13 +343,13 @@ describe("Cloudflare case read router", () => {
 
   it("keeps missing or unsafe judge portraits as a 404", async () => {
     const missing = await dispatchCloudflareCaseRead(
-      url("/api/v1/judge-photo/missing.jpg"),
+      request("/api/v1/judge-photo/missing.jpg"), url("/api/v1/judge-photo/missing.jpg"),
       "/api/v1/judge-photo/missing.jpg",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(missing.status).toBe(404);
     const unsafe = await dispatchCloudflareCaseRead(
-      url("/api/v1/judge-photo/../secret.jpg"),
+      request("/api/v1/judge-photo/../secret.jpg"), url("/api/v1/judge-photo/../secret.jpg"),
       "/api/v1/judge-photo/../secret.jpg",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -331,7 +358,7 @@ describe("Cloudflare case read router", () => {
 
   it("serves legislation detail metadata with an explicit not-scraped section list", async () => {
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/migration-act-1958"),
+      request("/api/v1/legislations/migration-act-1958"), url("/api/v1/legislations/migration-act-1958"),
       "/api/v1/legislations/migration-act-1958",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -345,7 +372,7 @@ describe("Cloudflare case read router", () => {
     const current = mockCreateStores();
     current.objectStore.getLegislation.mockResolvedValueOnce({ id: "migration-act-1958", sections: [{ id: "s1", text: "Short title" }] });
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/migration-act-1958"),
+      request("/api/v1/legislations/migration-act-1958"), url("/api/v1/legislations/migration-act-1958"),
       "/api/v1/legislations/migration-act-1958",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -364,7 +391,7 @@ describe("Cloudflare case read router", () => {
       }),
     );
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/migration-act-1958"),
+      request("/api/v1/legislations/migration-act-1958"), url("/api/v1/legislations/migration-act-1958"),
       "/api/v1/legislations/migration-act-1958",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -382,7 +409,7 @@ describe("Cloudflare case read router", () => {
       sections: [{ id: "s1", number: "1", title: "Short title", part: "", division: "", text: "x" }],
     });
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/migration-act-1958"),
+      request("/api/v1/legislations/migration-act-1958"), url("/api/v1/legislations/migration-act-1958"),
       "/api/v1/legislations/migration-act-1958",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -394,7 +421,7 @@ describe("Cloudflare case read router", () => {
 
   it("serves a native idle legislation update status without starting a job", async () => {
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/update/status"),
+      request("/api/v1/legislations/update/status"), url("/api/v1/legislations/update/status"),
       "/api/v1/legislations/update/status",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -405,13 +432,13 @@ describe("Cloudflare case read router", () => {
   it("serves native filter options and court/year trends from aggregates", async () => {
     const current = mockCreateStores();
     const filters = await dispatchCloudflareCaseRead(
-      url("/api/v1/filter-options"), "/api/v1/filter-options", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/filter-options"), url("/api/v1/filter-options"), "/api/v1/filter-options", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(await filters.json()).toEqual({
       courts: ["FCA"], years: [2025], natures: [], visa_types: ["Protection"], sources: [], outcomes: [], tags: [],
     });
     const trends = await dispatchCloudflareCaseRead(
-      url("/api/v1/stats/trends?court=FCA&year_from=2020"), "/api/v1/stats/trends", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/stats/trends?court=FCA&year_from=2020"), url("/api/v1/stats/trends?court=FCA&year_from=2020"), "/api/v1/stats/trends", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(current.caseStore.getCourtYearTrends).toHaveBeenCalledWith({ court: "FCA", yearFrom: 2020, yearTo: 0 });
     expect(await trends.json()).toEqual({ trends: [{ year: 2025, FCA: 7, AATA: 3 }] });
@@ -420,7 +447,7 @@ describe("Cloudflare case read router", () => {
   it("serves the canonical legal-concept taxonomy from aggregate counts", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/taxonomy/legal-concepts"),
+      request("/api/v1/taxonomy/legal-concepts"), url("/api/v1/taxonomy/legal-concepts"),
       "/api/v1/taxonomy/legal-concepts",
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
@@ -434,7 +461,7 @@ describe("Cloudflare case read router", () => {
   it("serves unfiltered dashboard stats from catalog aggregates", async () => {
     const current = mockCreateStores();
     const result = await dispatchCloudflareCaseRead(
-      url("/api/v1/stats"), "/api/v1/stats", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/stats"), url("/api/v1/stats"), "/api/v1/stats", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(result.status).toBe(200);
     expect(current.caseStore.getStats).toHaveBeenCalledOnce();
@@ -448,49 +475,215 @@ describe("Cloudflare case read router", () => {
   it("exports JSON and CSV from the native catalog boundary", async () => {
     const current = mockCreateStores();
     const json = await dispatchCloudflareCaseRead(
-      url("/api/v1/export/json?limit=1"), "/api/v1/export/json", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/export/json?limit=1"), url("/api/v1/export/json?limit=1"), "/api/v1/export/json", operatorEnv(),
     );
     expect(json.status).toBe(200);
-    expect((await json.json()).cases[0]).toMatchObject({ case_id: CASE_ID, full_text_path: "cases/0123456789ab/source/abc.txt" });
+    const exported = (await json.json()).cases[0];
+    expect(exported).toMatchObject({ case_id: CASE_ID, has_full_text: 1 });
+    expect(exported).not.toHaveProperty("full_text_path");
+    expect(exported).not.toHaveProperty("content_key");
     const csv = await dispatchCloudflareCaseRead(
-      url("/api/v1/export/csv?limit=1"), "/api/v1/export/csv", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"), "/api/v1/export/csv", operatorEnv(),
     );
     expect(csv.headers.get("content-type")).toContain("text/csv");
     expect(await csv.text()).toContain("case_id,citation,title");
     expect(current.caseStore.exportCases).toHaveBeenCalledWith(expect.objectContaining({ limit: 1 }));
   });
 
+  it("neutralises spreadsheet formula prefixes in the CSV export", async () => {
+    const current = mockCreateStores();
+    current.caseStore.exportCases.mockResolvedValueOnce([
+      { case_id: CASE_ID, title: "=HYPERLINK(\"http://evil\",\"click\")", tags: "-2+3", catchwords: "@SUM(A1)", representative: "\tcmd", legislation: "\r=cmd|'/c calc'!A1", citation: "[2025] FCA 1" },
+    ]);
+    const csv = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    const body = await csv.text();
+    expect(body).toContain(`"'=HYPERLINK(""http://evil"",""click"")"`);
+    expect(body).toContain(`"'-2+3"`);
+    expect(body).toContain(`"'@SUM(A1)"`);
+    expect(body).toContain(`"'\tcmd"`);
+    // CR is in CSV_FORMULA_PREFIX_RE and must be covered too — an earlier
+    // draft of this test listed the regex's six prefixes and then asserted
+    // only five, leaving the CR branch unexercised.
+    expect(body).toContain(`"'\r=cmd`);
+    // A benign value is still written unquoted.
+    expect(body).toContain("[2025] FCA 1");
+  });
+
+  it("prefixes a value that begins with +", async () => {
+    // Separated from the case above because `+` is the prefix most likely to
+    // be "optimised away" by someone adding a numeric exemption later.
+    const current = mockCreateStores();
+    current.caseStore.exportCases.mockResolvedValueOnce([
+      { case_id: CASE_ID, title: "+1+1", citation: "[2025] FCA 2" },
+    ]);
+    const csv = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    expect(await csv.text()).toContain(`"'+1+1"`);
+  });
+
+  it("never publishes the internal R2 object key in an export", async () => {
+    const csv = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    const body = await csv.text();
+    expect(body).toContain("has_full_text");
+    expect(body).not.toContain("full_text_path");
+    expect(body).not.toContain("cases/0123456789ab/source/abc.txt");
+  });
+
+  it("excludes user_notes from every export format", async () => {
+    const current = mockCreateStores();
+    current.caseStore.exportCases.mockResolvedValueOnce([
+      { case_id: CASE_ID, citation: "[2025] FCA 1", user_notes: "private annotation" },
+    ]);
+    const json = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/json?limit=1"), url("/api/v1/export/json?limit=1"),
+      "/api/v1/export/json", operatorEnv(),
+    );
+    const row = (await json.json()).cases[0];
+    expect(Object.keys(row)).not.toContain("user_notes");
+    expect(JSON.stringify(row)).not.toContain("private annotation");
+
+    const csv = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    const header = (await csv.text()).split("\n")[0].replace("﻿", "").split(",");
+    expect(header).not.toContain("user_notes");
+    expect(header).toContain("has_full_text");
+  });
+
+  it("audits every export with actor, format, limit, filter shape and row count", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await dispatchCloudflareCaseRead(
+        request("/api/v1/export/json?limit=10&court=FCA"), url("/api/v1/export/json?limit=10&court=FCA"),
+        "/api/v1/export/json", operatorEnv(),
+      );
+      const entry = logSpy.mock.calls
+        .map(([line]) => JSON.parse(line))
+        .find((item) => item.event === "case.export");
+      expect(entry).toMatchObject({
+        event: "case.export", format: "json", limit: 10,
+        actor: OPERATOR_USER_ID, filters: { court: "FCA" }, rows: 1,
+      });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("records a free-text filter as a digest, never as its value", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await dispatchCloudflareCaseRead(
+        request("/api/v1/export/json?keyword=Nguyen%20visa%20866"), url("/api/v1/export/json?keyword=Nguyen%20visa%20866"),
+        "/api/v1/export/json", operatorEnv(),
+      );
+      const lines = logSpy.mock.calls.map(([line]) => line).join("\n");
+      // The load-bearing assertion: the searched-for text is nowhere in the
+      // log stream, in any field.
+      expect(lines).not.toContain("Nguyen");
+      const entry = logSpy.mock.calls
+        .map(([line]) => JSON.parse(line))
+        .find((item) => item.event === "case.export");
+      // "Nguyen visa 866" is 15 chars — the plan's draft asserted 16, an
+      // off-by-one in the test itself; corrected here against the actual
+      // decoded string length rather than papering over it.
+      expect(entry.filters.keyword).toMatchObject({ len: 15 });
+      expect(entry.filters.keyword.sha256_8).toMatch(/^[0-9a-f]{16}$/);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("rejects an anonymous bulk export", async () => {
+    const current = mockCreateStores();
+    mockRequireAuth.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Authentication required", code: "auth_required" }), {
+        status: 401, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const response = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    expect(response.status).toBe(401);
+    expect(current.caseStore.exportCases).not.toHaveBeenCalled();
+  });
+
+  it("rejects an authenticated user with no platform grant", async () => {
+    const current = mockCreateStores();
+    current.identityStore.assertPlatformOperator.mockRejectedValueOnce(
+      new StorageBoundaryError("Platform operator access is required", {
+        code: "platform_operator_required", status: 403,
+      }),
+    );
+    const response = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv(),
+    );
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe("platform_operator_required");
+    expect(current.caseStore.exportCases).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when the export limiter rejects the caller", async () => {
+    const current = mockCreateStores();
+    const response = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv({ RL_EXPORT: { limit: vi.fn(async () => ({ success: false })) } }),
+    );
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe("rate_limited");
+    expect(current.caseStore.exportCases).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 503 when the export limiter binding is absent", async () => {
+    const response = await dispatchCloudflareCaseRead(
+      request("/api/v1/export/csv?limit=1"), url("/api/v1/export/csv?limit=1"),
+      "/api/v1/export/csv", operatorEnv({ RL_EXPORT: undefined }),
+    );
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("rate_limiter_unconfigured");
+  });
+
   it("serves analytics filter, flow, rate and concept contracts from aggregates", async () => {
     const current = mockCreateStores();
     const filterOptions = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/filter-options?court=FCA&year_from=2020"),
+      request("/api/v1/analytics/filter-options?court=FCA&year_from=2020"), url("/api/v1/analytics/filter-options?court=FCA&year_from=2020"),
       "/api/v1/analytics/filter-options", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await filterOptions.json()).query.total_matching).toBe(10);
     expect(current.caseStore.analyticsFilterOptions).toHaveBeenCalledWith({ court: "FCA", yearFrom: 2020, yearTo: 0 });
 
     const flow = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/flow-matrix?top_n=3"), "/api/v1/analytics/flow-matrix", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/flow-matrix?top_n=3"), url("/api/v1/analytics/flow-matrix?top_n=3"), "/api/v1/analytics/flow-matrix", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await flow.json()).links.length).toBeGreaterThan(0);
 
     const rate = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/success-rate?court=FCA"), "/api/v1/analytics/success-rate", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/success-rate?court=FCA"), url("/api/v1/analytics/success-rate?court=FCA"), "/api/v1/analytics/success-rate", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await rate.json()).success_rate).toMatchObject({ overall: 70, win_count: 7 });
 
     const effectiveness = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/concept-effectiveness?limit=5"), "/api/v1/analytics/concept-effectiveness", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/concept-effectiveness?limit=5"), url("/api/v1/analytics/concept-effectiveness?limit=5"), "/api/v1/analytics/concept-effectiveness", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await effectiveness.json()).concepts[0]).toMatchObject({ name: "Procedural Fairness" });
 
     const cooccurrence = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/concept-cooccurrence?min_count=1"), "/api/v1/analytics/concept-cooccurrence", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/concept-cooccurrence?min_count=1"), url("/api/v1/analytics/concept-cooccurrence?min_count=1"), "/api/v1/analytics/concept-cooccurrence", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await cooccurrence.json()).top_pairs[0]).toMatchObject({ a: "Evidence", b: "Procedural Fairness" });
 
     const trends = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/concept-trends?limit=5"), "/api/v1/analytics/concept-trends", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/concept-trends?limit=5"), url("/api/v1/analytics/concept-trends?limit=5"), "/api/v1/analytics/concept-trends", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await trends.json()).series["Procedural Fairness"]).toHaveLength(2);
   });
@@ -498,15 +691,15 @@ describe("Cloudflare case read router", () => {
   it("serves judge leaderboard, profile and compare from normalized aggregates", async () => {
     const current = mockCreateStores();
     const leaderboard = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-leaderboard?limit=1"), "/api/v1/analytics/judge-leaderboard", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judge-leaderboard?limit=1"), url("/api/v1/analytics/judge-leaderboard?limit=1"), "/api/v1/analytics/judge-leaderboard", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await leaderboard.json()).judges[0]).toMatchObject({ name: "Justice Example", total_cases: 7 });
     const profile = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-profile?name=Justice%20Example"), "/api/v1/analytics/judge-profile", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judge-profile?name=Justice%20Example"), url("/api/v1/analytics/judge-profile?name=Justice%20Example"), "/api/v1/analytics/judge-profile", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await profile.json()).judge).toMatchObject({ name: "Justice Example", total_cases: 1 });
     const compare = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judge-compare?names=Justice%20Example,Member%20Other"), "/api/v1/analytics/judge-compare", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judge-compare?names=Justice%20Example,Member%20Other"), url("/api/v1/analytics/judge-compare?names=Justice%20Example,Member%20Other"), "/api/v1/analytics/judge-compare", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await compare.json()).judges).toHaveLength(2);
     expect(current.caseStore.getJudgeCases).toHaveBeenCalled();
@@ -515,64 +708,64 @@ describe("Cloudflare case read router", () => {
   it("serves static dictionary, visa registry and legislation contracts without legacy imports", async () => {
     const current = mockCreateStores();
     const dictionary = await dispatchCloudflareCaseRead(
-      url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/data-dictionary"), url("/api/v1/data-dictionary"), "/api/v1/data-dictionary", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await dictionary.json()).fields.length).toBeGreaterThan(20);
     const registry = await dispatchCloudflareCaseRead(
-      url("/api/v1/visa-registry"), "/api/v1/visa-registry", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/visa-registry"), url("/api/v1/visa-registry"), "/api/v1/visa-registry", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await registry.json()).entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ subclass: "189", family: "Skilled" }),
     ]));
     const list = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations?limit=2"), "/api/v1/legislations", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/legislations?limit=2"), url("/api/v1/legislations?limit=2"), "/api/v1/legislations", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(await list.json()).toMatchObject({ success: true, meta: { total: 5, limit: 2, pages: 3 } });
     const search = await dispatchCloudflareCaseRead(
-      url("/api/v1/legislations/search?q=migration"), "/api/v1/legislations/search", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/legislations/search?q=migration"), url("/api/v1/legislations/search?q=migration"), "/api/v1/legislations/search", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await search.json()).data.length).toBeGreaterThan(0);
     const lookup = await dispatchCloudflareCaseRead(
-      url("/api/v1/taxonomy/visa-lookup?q=189"), "/api/v1/taxonomy/visa-lookup", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/taxonomy/visa-lookup?q=189"), url("/api/v1/taxonomy/visa-lookup?q=189"), "/api/v1/taxonomy/visa-lookup", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(current.caseStore.countVisaSubclasses).toHaveBeenCalledWith(["189"]);
     expect((await lookup.json()).data[0]).toMatchObject({ subclass: "189", case_count: 12 });
     const countries = await dispatchCloudflareCaseRead(
-      url("/api/v1/taxonomy/countries?limit=10"), "/api/v1/taxonomy/countries", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/taxonomy/countries?limit=10"), url("/api/v1/taxonomy/countries?limit=10"), "/api/v1/taxonomy/countries", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(current.caseStore.listCountries).toHaveBeenCalledWith(10);
     expect((await countries.json()).countries[0]).toEqual({ country: "India", name: "India", case_count: 33 });
     const judges = await dispatchCloudflareCaseRead(
-      url("/api/v1/taxonomy/judges/autocomplete?q=justice"), "/api/v1/taxonomy/judges/autocomplete", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/taxonomy/judges/autocomplete?q=justice"), url("/api/v1/taxonomy/judges/autocomplete?q=justice"), "/api/v1/taxonomy/judges/autocomplete", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await judges.json()).judges[0]).toEqual({ name: "Justice Example", case_count: 7 });
     const lineage = await dispatchCloudflareCaseRead(
-      url("/api/v1/court-lineage"), "/api/v1/court-lineage", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/court-lineage"), url("/api/v1/court-lineage"), "/api/v1/court-lineage", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(current.caseStore.getCourtYearTrends).toHaveBeenCalledWith();
     expect((await lineage.json()).lineages).toHaveLength(2);
     const outcomes = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/outcomes"), "/api/v1/analytics/outcomes", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/outcomes"), url("/api/v1/analytics/outcomes"), "/api/v1/analytics/outcomes", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await outcomes.json()).by_court.FCA.Allowed).toBe(4);
     const judgeAnalytics = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/judges?limit=5"), "/api/v1/analytics/judges", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/judges?limit=5"), url("/api/v1/analytics/judges?limit=5"), "/api/v1/analytics/judges", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await judgeAnalytics.json()).judges[0]).toMatchObject({ name: "Justice Example", courts: ["FCA"] });
     const concepts = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/legal-concepts?limit=5"), "/api/v1/analytics/legal-concepts", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/legal-concepts?limit=5"), url("/api/v1/analytics/legal-concepts?limit=5"), "/api/v1/analytics/legal-concepts", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await concepts.json()).concepts[0]).toEqual({ name: "Procedural Fairness", count: 6 });
     const nature = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/nature-outcome"), "/api/v1/analytics/nature-outcome", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/nature-outcome"), url("/api/v1/analytics/nature-outcome"), "/api/v1/analytics/nature-outcome", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await nature.json()).matrix["Protection visa refusal"].Allowed).toBe(5);
     const families = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/visa-families"), "/api/v1/analytics/visa-families", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/visa-families"), url("/api/v1/analytics/visa-families"), "/api/v1/analytics/visa-families", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await families.json()).families[0]).toMatchObject({ family: "Skilled", total: 4, win_count: 4, win_rate: 100 });
     const monthly = await dispatchCloudflareCaseRead(
-      url("/api/v1/analytics/monthly-trends"), "/api/v1/analytics/monthly-trends", { IMMI_STORAGE_MODE: "cloudflare" },
+      request("/api/v1/analytics/monthly-trends"), url("/api/v1/analytics/monthly-trends"), "/api/v1/analytics/monthly-trends", { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect((await monthly.json()).series[0]).toMatchObject({ month: "2025-01", total: 4, wins: 4, win_rate: 100 });
   });

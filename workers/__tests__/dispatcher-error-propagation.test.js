@@ -39,6 +39,7 @@ describe("Dispatcher error propagation", () => {
       },
     });
     const response = await dispatchCloudflareCaseRead(
+      new Request("https://immi.example/api/v1/stats"),
       new URL("https://immi.example/api/v1/stats"),
       "/api/v1/stats",
       ENV,

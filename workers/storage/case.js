@@ -65,6 +65,9 @@ const LEGACY_CASE_PROJECTION = `
   ), '') AS legal_concepts
 `;
 
+// Hard server-side cap on a single export, independent of the caller's limit.
+const MAX_EXPORT_ROWS = 5000;
+
 const COMPAT_SORT_COLUMNS = Object.freeze({
   date: "c.year",
   title: "c.title",
@@ -230,13 +233,12 @@ export class CloudflareCaseStore {
     };
   }
 
-  async exportCases({ filters = {}, limit = 50000 } = {}) {
-    const size = compatPageNumber(limit, 50000, 1, 50000);
+  async exportCases({ filters = {}, limit = MAX_EXPORT_ROWS } = {}) {
+    const size = compatPageNumber(limit, MAX_EXPORT_ROWS, 1, MAX_EXPORT_ROWS);
     const { clauses, params } = compatCaseFilters(filters);
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     return rows(await bindAll(this.db, `
-      SELECT ${LEGACY_CASE_PROJECTION}, c.url, c.visa_outcome_reason,
-             c.content_key, c.content_sha256, c.content_size
+      SELECT ${LEGACY_CASE_PROJECTION}
       FROM cases c ${where}
       ORDER BY c.year DESC, c.case_id ASC
       LIMIT ?

@@ -12,6 +12,8 @@ import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError, VECTOR_MODEL } from "../storage/contracts.js";
 import { DATA_DICTIONARY_FIELDS, LEGISLATIONS_META, VISA_REGISTRY_API, VISA_REGISTRY_RAW } from "./static.js";
 import { LEGAL_CONCEPTS } from "./legal_concepts.js";
+import { requireAuth } from "../auth/request_auth.js";
+import { verifyJwt } from "../auth/jwt.js";
 
 const CASE_ID_RE = /^[0-9a-f]{12}$/;
 const JUDGE_PHOTO_PATH_RE = /^\/api\/v1\/judge-photo\/([^/]+)$/;
@@ -53,10 +55,14 @@ const COURT_CODES = new Set(["FCA", "FCCA", "FMCA", "FedCFamC2G", "HCA"]);
 const TRIBUNAL_WIN = new Set(["Remitted", "Set Aside", "Granted", "Quashed"]);
 const COURT_WIN = new Set(["Allowed", "Set Aside", "Granted", "Quashed"]);
 const ALL_WIN = new Set([...TRIBUNAL_WIN, ...COURT_WIN]);
+// Hard cap on export size — reduces risk of data exfiltration and memory
+// spikes. Mirrors the Flask exporter this route replaced
+// (immi_case_downloader/web/routes/api_export.py MAX_EXPORT_ROWS, sec-008).
+const MAX_EXPORT_ROWS = 5000;
 const EXPORT_FIELDS = Object.freeze([
   "case_id", "citation", "title", "court", "court_code", "date", "year", "url", "judges",
-  "catchwords", "outcome", "visa_type", "legislation", "text_snippet", "full_text_path",
-  "source", "user_notes", "tags", "case_nature", "legal_concepts", "visa_subclass",
+  "catchwords", "outcome", "visa_type", "legislation", "text_snippet", "has_full_text",
+  "source", "tags", "case_nature", "legal_concepts", "visa_subclass",
   "visa_class_code", "applicant_name", "respondent", "country_of_origin", "visa_subclass_number",
   "hearing_date", "is_represented", "representative", "visa_outcome_reason",
 ]);
@@ -96,8 +102,13 @@ async function handleJudgePhoto(path, stores) {
   return new Response(photo.body, { status: 200, headers });
 }
 
+// A leading =, +, -, @, TAB or CR makes Excel/Sheets treat the cell as a
+// formula. Force-quote and prefix an apostrophe so the value stays inert data.
+const CSV_FORMULA_PREFIX_RE = /^[=+\-@\t\r]/;
+
 function csvCell(value) {
   const text = value === null || value === undefined ? "" : String(value);
+  if (CSV_FORMULA_PREFIX_RE.test(text)) return `"'${text.replace(/"/g, '""')}"`;
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
@@ -121,13 +132,89 @@ function requestFilters(params) {
   };
 }
 
-async function handleExport(url, stores, format) {
-  const limit = intParam(url.searchParams.get("limit"), 50000, 1, 50000);
-  const rows = await stores.caseStore.exportCases({ filters: requestFilters(url.searchParams), limit });
+// Free-text filters on an immigration-case corpus can carry applicant names
+// and file numbers, so the audit line records their SHAPE, never their value.
+// Enumeration is still detectable: the key set plus the digest identifies
+// "the same query repeated" and "many different queries" without retaining
+// what was searched for.
+const AUDIT_FREE_TEXT_KEYS = new Set(["keyword"]);
+
+async function auditFilterDigest(value) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function auditFilters(filters) {
+  const out = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === "" || value === 0 || value === null || value === undefined) continue;
+    if (AUDIT_FREE_TEXT_KEYS.has(key)) {
+      out[key] = { len: String(value).length, sha256_8: await auditFilterDigest(String(value)) };
+      continue;
+    }
+    // court / year / visa_type / source / tag / nature are bounded enum-ish
+    // values, safe to record verbatim, truncated for log hygiene.
+    out[key] = typeof value === "string" ? value.slice(0, 64) : value;
+  }
+  return out;
+}
+
+function exportClientIp(request) {
+  return request.headers.get("CF-Connecting-IP") || "unknown";
+}
+
+// Fails closed, exactly like the Council limiter: an unbound binding must
+// never degrade a rate-limited bulk-data route to unlimited. A misconfigured
+// deploy is reported as 503, not as a misleading 429.
+async function applyExportRateLimit(request, env) {
+  if (!env.RL_EXPORT) {
+    console.error(JSON.stringify({ event: "case.export.rate_limiter_unconfigured" }));
+    return { success: false, reason: "rate_limiter_unconfigured" };
+  }
+  return env.RL_EXPORT.limit({ key: exportClientIp(request) });
+}
+
+function exportRateLimitFailure(limited) {
+  return limited.reason === "rate_limiter_unconfigured"
+    ? jsonErr("Export is misconfigured: rate limiter binding missing", 503, "rate_limiter_unconfigured")
+    : jsonErr("Export rate limit exceeded \u2014 try again shortly", 429, "rate_limited");
+}
+
+async function handleExport(request, url, stores, env, format) {
+  // Bulk export is a platform-operator surface. Tenant membership is not
+  // enough: the `cases` table has no tenant column, so an export is a dump of
+  // the shared catalog, and the tenant role is self-granted at signup
+  // (see plans/006 and CloudflareIdentityStore.assertPlatformOperator).
+  const authResult = await requireAuth(request, env, verifyJwt);
+  if (authResult instanceof Response) return authResult;
+  const auth = await stores.identityStore.assertPlatformOperator(authResult.claims);
+  // Throttle AFTER authorization so an anonymous flood cannot consume the
+  // limiter budget of a legitimate operator sharing an egress IP.
+  const limited = await applyExportRateLimit(request, env);
+  if (!limited.success) return exportRateLimitFailure(limited);
+  // sec-008 cap: the Flask exporter this route replaced truncates at 5 000
+  // rows (immi_case_downloader/web/routes/api_export.py MAX_EXPORT_ROWS).
+  const limit = intParam(url.searchParams.get("limit"), MAX_EXPORT_ROWS, 1, MAX_EXPORT_ROWS);
+  const filters = requestFilters(url.searchParams);
+  const rows = await stores.caseStore.exportCases({ filters, limit });
   const values = rows.map((row) => {
-    const publicRow = publicCase(row);
-    return { ...publicRow, full_text_path: row.content_key || null, visa_outcome_reason: row.visa_outcome_reason || "" };
+    // Drop full_text_path: LEGACY_CASE_PROJECTION aliases the internal R2
+    // object key to that name, and the export must not publish it.
+    // Drop user_notes: free text on the shared, tenant-less cases table \u2014 an
+    // authenticated user's notes must not be readable by every export caller.
+    const { full_text_path, user_notes, ...publicRow } = publicCase(row);
+    return { ...publicRow, has_full_text: full_text_path ? 1 : 0, visa_outcome_reason: row.visa_outcome_reason || "" };
   });
+  console.log(JSON.stringify({
+    event: "case.export",
+    format,
+    limit,
+    actor: auth?.userId ?? null,
+    tenant: auth?.tenantId ?? null,
+    grant: auth?.grant ?? null,
+    filters: await auditFilters(filters),
+    rows: values.length,
+  }));
   const filename = `immigration_cases_${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.${format}`;
   if (format === "json") {
     return new Response(JSON.stringify({ cases: values }), {
@@ -1061,7 +1148,7 @@ async function handleAnalyticsJudgeCompare(url, stores) {
  * route not yet reimplemented. The eventual activation gate must assert that
  * every public route resolves here before cloudflare mode is traffic-serving.
  */
-export async function dispatchCloudflareCaseRead(url, path, env) {
+export async function dispatchCloudflareCaseRead(request, url, path, env) {
   if (getStorageMode(env) !== "cloudflare") return null;
   if (path === "/api/v1/legislations/update/status") {
     try {
@@ -1095,8 +1182,8 @@ export async function dispatchCloudflareCaseRead(url, path, env) {
       return await handleJudgePhoto(path, stores);
     }
     if (path === "/api/v1/stats") return await handleStats(url, stores);
-    if (path === "/api/v1/export/csv") return await handleExport(url, stores, "csv");
-    if (path === "/api/v1/export/json") return await handleExport(url, stores, "json");
+    if (path === "/api/v1/export/csv") return await handleExport(request, url, stores, env, "csv");
+    if (path === "/api/v1/export/json") return await handleExport(request, url, stores, env, "json");
     if (path === "/api/v1/analytics/judge-bio") return await handleJudgeBio(url, stores);
     if (path === "/api/v1/filter-options") return await handleFilterOptions(stores);
     if (path === "/api/v1/stats/trends") return await handleStatsTrends(url, stores);
