@@ -64,6 +64,7 @@ help:
 	@echo "  make clean        Remove build artifacts"
 	@echo ""
 	@echo "  make install      Install all Python + Node deps (creates .venv)"
+	@echo "  make hooks        Install the pre-commit gate (ruff + eslint)"
 	@echo "  make install-e2e  Playwright + chromium, for make test-e2e"
 	@echo "  make migrate      Where migrations live (the legacy Supabase push is manual)"
 	@echo ""
@@ -331,6 +332,14 @@ install:
 	# and the CI-gated `npm run typecheck` there are unrunnable on a clean clone.
 	# npm ci (not npm install) so a lockfile drift is an error, never a silent rewrite.
 	cd "$(REPO_ROOT)/workers/austlii-scraper" && npm ci --ignore-scripts
+
+# Opt-in on purpose: `make install` must stay deterministic and offline-safe,
+# and a git hook that appears without the contributor asking for it is a
+# surprise, not a service.
+hooks:
+	"$(PYTHON)" -m pip install pre-commit
+	"$(PYTHON)" -m pre_commit install
+	@echo "Installed .git/hooks/pre-commit (ruff + eslint). Remove with: $(PYTHON) -m pre_commit uninstall"
 
 install-e2e:
 	"$(VENV_PYTHON)" -m pip install -c constraints.txt -r requirements-e2e.txt
