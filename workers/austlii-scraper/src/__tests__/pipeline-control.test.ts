@@ -53,6 +53,10 @@ function env(): Env {
   } as unknown as Env;
 }
 
+function gatedEnv(): Env {
+  return { ...env(), NATIVE_PIPELINE_ENABLED: "false" } as Env;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.startPipelineRun.mockResolvedValue(RUN_ID);
@@ -189,5 +193,34 @@ describe("native pipeline control queue", () => {
     } as never, current);
     expect(mocks.startPipelineRun).toHaveBeenCalledOnce();
     expect(mocks.startPipelineRun.mock.calls[0][1]).toEqual(expect.objectContaining({ runId: "cmd-cmd-download" }));
+  });
+
+  it("records a terminal failure and acks when the native pipeline is gated", async () => {
+    const ack = vi.fn();
+    const retry = vi.fn();
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: "cmd-gated", action: "start", courts: ["FCA"] }, ack, retry }],
+    } as never, gatedEnv());
+    expect(mocks.updateControlCommand).toHaveBeenCalledWith(
+      expect.anything(), "cmd-gated", { status: "failed", error: expect.stringContaining("native pipeline is disabled") },
+    );
+    expect(mocks.updateControlCommand).toHaveBeenCalledTimes(1);
+    expect(mocks.startPipelineRun).not.toHaveBeenCalled();
+    expect(mocks.runDiscoveryAndEnqueue).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledOnce();
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("retries a gated control command when the ops record cannot be written", async () => {
+    mocks.updateControlCommand.mockRejectedValueOnce(new Error("d1 down"));
+    const ack = vi.fn();
+    const retry = vi.fn();
+    await worker.queue({
+      queue: "immi-pipeline-control-queue",
+      messages: [{ body: { kind: "pipeline.control", command_id: "cmd-gated", action: "start", courts: ["FCA"] }, ack, retry }],
+    } as never, gatedEnv());
+    expect(retry).toHaveBeenCalledOnce();
+    expect(ack).not.toHaveBeenCalled();
   });
 });

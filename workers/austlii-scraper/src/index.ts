@@ -85,14 +85,41 @@ function controlCourts(value: unknown): CourtCode[] {
   return courts.length ? [...new Set(courts)] : [...COURT_CODES];
 }
 
+// A closed feature gate is not a transient fault. Retrying it only buries the
+// command in immi-pipeline-control-dlq, which no route reads back.
+const PIPELINE_DISABLED_REASON =
+  'native pipeline is disabled (PIPELINE_ENABLED and NATIVE_PIPELINE_ENABLED must both be "true")';
+
 async function handlePipelineControlBatch(
   batch: MessageBatch<PipelineControlMessage>,
   env: Env,
 ): Promise<void> {
   for (const message of batch.messages) {
     const control = message.body;
+    if (!nativePipelineReady(env)) {
+      try {
+        await updateControlCommand(env, control.command_id, {
+          status: "failed",
+          error: PIPELINE_DISABLED_REASON,
+        });
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: "pipeline.control.disabled_record_failed",
+          command_id: control.command_id,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        message.retry();
+        continue;
+      }
+      console.log(JSON.stringify({
+        event: "pipeline.control.rejected_disabled",
+        command_id: control.command_id,
+        action: control.action,
+      }));
+      message.ack();
+      continue;
+    }
     try {
-      if (!nativePipelineReady(env)) throw new Error("native pipeline is disabled");
       const prior = await readControlCommand(env, control.command_id);
       if (prior?.status === "completed") {
         console.log(JSON.stringify({
