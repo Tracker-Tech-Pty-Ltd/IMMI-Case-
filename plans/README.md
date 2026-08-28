@@ -78,7 +78,7 @@ Silent failures the user cannot see or recover from.
 
 | Plan | Title | Pri | Eff | Risk | Depends on | Status |
 |------|-------|-----|-----|------|------------|--------|
-| [015](015-surface-frontend-errors.md) | Replace infinite spinners and silent failures with real error states | P1 | L | MED | 001 | TODO |
+| [015](015-surface-frontend-errors.md) | Replace infinite spinners and silent failures with real error states | P1 | L | MED | 001 | DONE — merged to main |
 | [016](016-fix-query-cache-correctness.md) | Fix stale-data bleed, query keys and CSRF token lifetime | P2 | M | LOW | 001 | DONE — merged to main |
 | [017](017-fix-frontend-async-and-navigation.md) | Clipboard, blob downloads, share links and stream re-entrancy | P3 | M | LOW | — | DONE — merged to main |
 | [018](018-complete-the-i18n-catalogue.md) | Define the 88 missing keys and translate the hardcoded strings | P2 | M | LOW | 001 | TODO |
