@@ -87,18 +87,15 @@ function stores() {
       }]),
       listCountries: vi.fn(async () => [{ country: "India", case_count: 33 }]),
       autocompleteJudges: vi.fn(async () => [{ name: "Justice Example", case_count: 7 }]),
-      analyticsOutcomes: vi.fn(async () => ({
-        court: [{ court_code: "FCA", outcome: "Allowed", cnt: 4 }],
-        year: [{ year_key: 2025, outcome: "Allowed", cnt: 4 }],
-        subclass: [{ visa_subclass: "189", outcome: "Allowed", cnt: 4 }],
-      })),
+      analyticsCourtYearOutcomes: vi.fn(async () => [
+        { court_code: "FCA", year_key: 2025, outcome: "Allowed", cnt: 4 },
+      ]),
+      analyticsVisaOutcomes: vi.fn(async () => [
+        { visa_subclass: "189", court_code: "FCA", outcome: "Allowed", cnt: 4 },
+      ]),
       analyticsJudges: vi.fn(async () => [{ name: "Justice Example", count: 7, courts_json: '["FCA"]' }]),
       analyticsConcepts: vi.fn(async () => [{ concept: "procedural fairness", cnt: 6 }]),
       analyticsNatureOutcome: vi.fn(async () => [{ case_nature: "Protection visa refusal", outcome: "Allowed", cnt: 5 }]),
-      analyticsScope: vi.fn(async () => [
-        { court_code: "FCA", year: 2025, outcome: "Allowed", visa_subclass: "189", case_nature: "Protection visa refusal", cnt: 7 },
-        { court_code: "AATA", year: 2024, outcome: "Dismissed", visa_subclass: "866", case_nature: "Character", cnt: 3 },
-      ]),
       analyticsRateRows: vi.fn(async () => [
         { court_code: "FCA", year: 2025, outcome: "Allowed", has_full_text: 1, cnt: 7 },
         { court_code: "AATA", year: 2024, outcome: "Dismissed", has_full_text: 1, cnt: 3 },
@@ -113,10 +110,13 @@ function stores() {
         { court_code: "FCA", case_nature: "Protection visa refusal", outcome: "Allowed", cnt: 7 },
         { court_code: "AATA", case_nature: "Character", outcome: "Dismissed", cnt: 3 },
       ]),
-      analyticsConceptScope: vi.fn(async () => [
-        { concept_id: "concept-a", concept: "procedural fairness", court_code: "FCA", year: 2025, outcome: "Allowed", cnt: 4 },
-        { concept_id: "concept-a", concept: "procedural fairness", court_code: "FCA", year: 2024, outcome: "Dismissed", cnt: 2 },
-      ]),
+      analyticsConceptScope: vi.fn(async () => ({
+        rows: [
+          { concept_id: "concept-a", concept: "procedural fairness", court_code: "FCA", year: 2025, outcome: "Allowed", cnt: 4 },
+          { concept_id: "concept-a", concept: "procedural fairness", court_code: "FCA", year: 2024, outcome: "Dismissed", cnt: 2 },
+        ],
+        truncated: false,
+      })),
       analyticsConceptPairs: vi.fn(async () => [{
         concept_id_a: "concept-a", concept_a: "procedural fairness",
         concept_id_b: "concept-b", concept_b: "evidence",
