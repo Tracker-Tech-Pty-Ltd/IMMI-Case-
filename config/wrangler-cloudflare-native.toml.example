@@ -58,6 +58,11 @@ AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS = "300"
 # refreshes aggregates, at most once per this window (never leaves the
 # dashboard frozen forever).
 AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
+# Quiet window: rebuild only after mutations have stopped for this long, so a
+# bulk import costs one rebuild instead of one per interval (~$28 -> ~$0.58).
+AGGREGATE_REBUILD_QUIET_SECONDS = "300"
+# Hard bound on staleness while mutations never pause (default 6 hours).
+AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
 
 # Coalesced analytics rebuild: the mutation queue only marks aggregates dirty,
 # and this cron performs at most one full rebuild per

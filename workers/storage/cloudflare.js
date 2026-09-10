@@ -53,6 +53,7 @@ function rows(result) {
 const AGGREGATE_BOOKKEEPING_KEYS = [
   "rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
   "rebuild_last_attempt_at", "rebuild_lease_until",
+  "rebuild_last_mutation_at", "rebuild_dirty_since",
 ];
 
 // The rebuild lease keeps its fencing token in the `updated_at` column of the
@@ -1104,6 +1105,8 @@ export class CloudflareCaseStore {
         SELECT 'rebuild_applied_generation', ?, ?`).bind(appliedGeneration, now),
       this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
         SELECT 'rebuild_last_at', ?, ?`).bind(Math.floor(Date.now() / 1000), now),
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_dirty_since', 0, ?`).bind(now),
     );
     for (let offset = 0; offset < statements.length; offset += 20) {
       // While we still own the lease, extend it before each chunk; if another
@@ -1128,10 +1131,26 @@ export class CloudflareCaseStore {
    * instead of being wiped by the rebuild's own bookkeeping write.
    */
   async markAggregatesDirty() {
+    const now = Math.floor(Date.now() / 1000);
+    const stamp = utcNow();
     await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
         VALUES ('rebuild_generation', 1, ?)
       ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at`)
-      .bind(utcNow()).run();
+      .bind(stamp).run();
+    // When the last mutation happened: the scheduled rebuild waits for a quiet
+    // window so a long bulk import costs one rebuild, not one per interval.
+    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_last_mutation_at', ?, ?)
+      ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int, updated_at = excluded.updated_at`)
+      .bind(now, stamp).run();
+    // When the pending work first appeared: bounds how stale analytics may get
+    // while mutations keep arriving without a quiet gap.
+    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_dirty_since', ?, ?)
+      ON CONFLICT(summary_key) DO UPDATE SET
+        value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,
+        updated_at = excluded.updated_at`)
+      .bind(now, stamp).run();
     return true;
   }
 
@@ -1139,7 +1158,8 @@ export class CloudflareCaseStore {
     const current = rows(await this.db.prepare(
       `SELECT summary_key, value_int FROM catalog_summary
         WHERE summary_key IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at',
-                              'rebuild_last_attempt_at', 'rebuild_lease_until')`,
+                              'rebuild_last_attempt_at', 'rebuild_lease_until',
+                              'rebuild_last_mutation_at', 'rebuild_dirty_since')`,
     ).all());
     return new Map(current.map((row) => [row.summary_key, Number(row.value_int || 0)]));
   }
@@ -1150,30 +1170,61 @@ export class CloudflareCaseStore {
    * This is the only guard preventing a bulk import from rewriting the whole
    * summary set thousands of times.
    */
-  async aggregatesNeedRebuild({ minIntervalSeconds = 300 } = {}) {
+  async aggregatesNeedRebuild({ minIntervalSeconds = 300, quietSeconds = 0, maxStalenessSeconds = 0 } = {}) {
     const interval = Number.isFinite(minIntervalSeconds) && minIntervalSeconds > 0
       ? Math.floor(minIntervalSeconds) : 300;
+    const quiet = Number.isFinite(quietSeconds) && quietSeconds > 0 ? Math.floor(quietSeconds) : 0;
+    const maxStaleness = Number.isFinite(maxStalenessSeconds) && maxStalenessSeconds > 0
+      ? Math.floor(maxStalenessSeconds) : 0;
     const state = await this.readAggregateState();
     const pending = state.get("rebuild_generation") || 0;
     const applied = state.get("rebuild_applied_generation") || 0;
     if (pending <= applied) return { due: false, reason: "clean" };
+
     // Throttle on the last *attempt*, not only the last success: a rebuild that
     // throws releases its lease without stamping `rebuild_last_at`, and the
     // 30-second queue retry must not therefore rebuild on every retry.
     const lastSuccessAt = state.get("rebuild_last_at") || 0;
     const lastAttemptAt = state.get("rebuild_last_attempt_at") || 0;
     const lastAt = Math.max(lastSuccessAt, lastAttemptAt);
-    const elapsedSeconds = lastAt > 0 ? Math.floor(Date.now() / 1000) - lastAt : interval;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const elapsedSeconds = lastAt > 0 ? nowSeconds - lastAt : interval;
     if (elapsedSeconds < interval) {
       return { due: false, reason: "debounced", seconds_until_due: interval - elapsedSeconds };
     }
-    return {
-      due: true,
-      reason: "dirty",
+
+    const dirtySince = state.get("rebuild_dirty_since") || 0;
+    const staleness = dirtySince > 0 ? nowSeconds - dirtySince : 0;
+    const base = {
       pending_generation: pending,
       applied_generation: applied,
       seconds_since_last_rebuild: lastSuccessAt > 0 ? elapsedSeconds : null,
     };
+
+    // Hard bound: however busy the queue is, analytics may not stay stale longer
+    // than this, so a bulk import costs one rebuild per window instead of one
+    // per interval.
+    if (maxStaleness > 0 && staleness >= maxStaleness) {
+      return { due: true, reason: "max-staleness", seconds_since_first_pending: staleness, ...base };
+    }
+
+    // Quiet window: wait for mutations to stop, so a multi-hour import collapses
+    // into a single rebuild afterwards.
+    if (quiet > 0) {
+      const lastMutationAt = state.get("rebuild_last_mutation_at") || 0;
+      const quietFor = lastMutationAt > 0 ? nowSeconds - lastMutationAt : Number.MAX_SAFE_INTEGER;
+      if (quietFor < quiet) {
+        return {
+          due: false,
+          reason: "awaiting-quiet",
+          seconds_until_quiet: quiet - quietFor,
+          seconds_since_first_pending: staleness,
+          ...base,
+        };
+      }
+    }
+
+    return { due: true, reason: "dirty", seconds_since_first_pending: staleness, ...base };
   }
 
   /**

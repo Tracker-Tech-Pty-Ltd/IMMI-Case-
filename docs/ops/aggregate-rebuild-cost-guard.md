@@ -46,6 +46,8 @@ internal keys, none of which reach API responses (`getStats()` reads only
 | `rebuild_applied_generation` | `rebuildAggregates()` | The generation the last completed rebuild actually covered |
 | `rebuild_last_at` | `rebuildAggregates()` | Epoch seconds of the last **successful** rebuild |
 | `rebuild_last_attempt_at` | `claimRebuildLease()` | Epoch seconds of the last attempt — throttles retries of a *failed* rebuild, which never stamps `rebuild_last_at` |
+| `rebuild_last_mutation_at` | `markAggregatesDirty()` | Epoch seconds of the most recent queue mutation — the quiet window is measured from here |
+| `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the *current* batch of pending work first appeared; armed only on the clean→dirty edge and reset by every rebuild, so it bounds total staleness |
 | `rebuild_lease_until` | `claimRebuildLease()` | Epoch seconds until which one invocation owns the rebuild; its **`updated_at` column holds the owner's fencing token** (a UUID-style string) rather than a timestamp |
 
 "Dirty" is `rebuild_generation > rebuild_applied_generation`. A boolean flag
@@ -86,11 +88,29 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 | Scenario | Before | After (300 s interval) |
 |---|---|---|
 | One queue batch | ~584k rows (~$0.58) | 1–2 rows |
-| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | ≤ 48 rebuilds ≈ 28M rows ≈ **$28** |
+| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window); ≤ 4 rebuilds ≈ $2.3 if it runs longer than the staleness bound |
+| Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $2.30 at the 6 h default) |
 | Dashboard freshness | per batch | ≤ 5 minutes stale |
 | Cron missing / failing (fallback path only) | n/a | ≤ 1 rebuild/hour ≈ 14M rows/day ≈ **$14/day** |
 
-Two knobs, both operator-side vars:
+### Quiet window (why an import costs cents, not dollars)
+
+The interval alone only bounds *how often* a rebuild may run; during a four-hour
+bulk import it still fires every interval, which is how a fixed version could
+still spend ~$28 on one import. The rebuild therefore waits for a **quiet
+window**: it will not run until mutations have been silent for
+`AGGREGATE_REBUILD_QUIET_SECONDS` (default 300). A 153k-case import now costs
+**one rebuild (~$0.58)** because the pending work accumulates while the import
+runs and is rebuilt once afterwards. A dashboard read during an import therefore
+sees figures from before the import — acceptable, since nobody is reading
+aggregates while bulk data is still landing.
+
+The safety net is `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (default 21600, six
+hours): if mutations never pause, analytics are still refreshed on that cadence
+instead of drifting indefinitely. Lower it if continuous-write periods must stay
+fresher; raise it to make very long imports even cheaper.
+
+Four operator-side knobs:
 
 - `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (default 300) — the cron's own
   debounce. Raising it to 900 cuts a full import to about $10.
@@ -103,6 +123,10 @@ Two knobs, both operator-side vars:
   the rebuild before another may take over. It is renewed per chunk while the
   owner is alive, so it only matters if an invocation dies mid-rebuild: the
   longer the lease, the longer a crashed run blocks the next one.
+- `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300) — the quiet window described
+  above: no rebuild until mutations have been silent this long.
+- `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (default 21600) — the upper bound on
+  staleness while mutations never stop.
 
 Removing the cron, lowering the interval towards the cron period, or moving the
 rebuild back into the queue consumer restores the old cost curve.
@@ -158,6 +182,9 @@ keeps agent scratch dirs untracked).
 - [ ] `SELECT summary_key, value_int FROM catalog_summary WHERE summary_key LIKE 'rebuild_%'`
       shows `rebuild_applied_generation` catching up with `rebuild_generation`
       after each mutation burst, and `rebuild_lease_until` back at 0 between runs.
+- [ ] During a bulk import, `rebuild_dirty_since` stays armed and
+      `rebuild_applied_generation` does **not** chase it until the import goes
+      quiet — that is the quiet window working, not a stalled pipeline.
 - [ ] No `cloudflare.aggregate_rebuild_lease_held` storms — an occasional entry
       is normal; constant entries mean rebuilds take longer than the lease.
 - [ ] `rebuild_last_attempt_at` and `rebuild_last_at` stay close together in

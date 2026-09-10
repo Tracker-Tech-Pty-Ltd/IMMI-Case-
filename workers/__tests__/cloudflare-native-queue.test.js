@@ -148,7 +148,7 @@ describe("Cloudflare-native case mutation queue", () => {
     await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_FALLBACK_SECONDS: "1800" });
 
     expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
-    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 1800 });
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 1800, quietSeconds: 300, maxStalenessSeconds: 21600 });
     expect(current.caseStore.claimRebuildLease).toHaveBeenCalledWith({ leaseSeconds: 900 });
     expect(current.caseStore.rebuildAggregates).toHaveBeenCalledWith({ lease: { token: "queue-lease", leaseSeconds: 900 } });
     expect(current.caseStore.releaseRebuildLease).toHaveBeenCalledWith({ token: "queue-lease" });
@@ -161,7 +161,7 @@ describe("Cloudflare-native case mutation queue", () => {
 
     await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
 
-    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 3600 });
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 3600, quietSeconds: 300, maxStalenessSeconds: 21600 });
     expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
   });
 
@@ -177,6 +177,23 @@ describe("Cloudflare-native case mutation queue", () => {
     expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
     expect(current.caseStore.releaseRebuildLease).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalledOnce();
+  });
+
+  it("honours the configured quiet window and staleness bound", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    const message = { body: { kind: "case.reindex", case_id: "0123456789ab" }, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue({ messages: [message] }, {
+      IMMI_STORAGE_MODE: "cloudflare",
+      AGGREGATE_REBUILD_FALLBACK_SECONDS: "1800",
+      AGGREGATE_REBUILD_QUIET_SECONDS: "900",
+      AGGREGATE_REBUILD_MAX_STALENESS_SECONDS: "43200",
+    });
+
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({
+      minIntervalSeconds: 1800, quietSeconds: 900, maxStalenessSeconds: 43200,
+    });
   });
 
   it("coalesces many mutations in one batch into a single stale flag", async () => {

@@ -4,6 +4,19 @@ Updated: 2026-09-10 Australia/Melbourne
 
 ## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
 
+### Follow-up: quiet window (2026-09-11)
+- The interval alone still cost ~$28 per 153k-case import (one rebuild per
+  5-minute interval for four hours). The rebuild now waits for a quiet window:
+  `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300) of no mutations, so an import
+  collapses into **one rebuild (~$0.58)**; `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS`
+  (default 21600) bounds staleness when mutations never pause.
+- New bookkeeping keys `rebuild_last_mutation_at` (refreshed by every mutation)
+  and `rebuild_dirty_since` (armed only on the clean→dirty edge, reset by every
+  rebuild) support the window and the bound.
+- Validation: Worker Vitest 27 files / **388 tests**; real-SQLite harness
+  **24/24** (including "staleness clock arms on the first mutation only" and
+  "rebuild disarms the staleness clock"); bundle closure passes; gate unchanged.
+
 ### Symptom
 - `immi-catalog` D1 wrote 12,084,578,591 rows (99.77% of the account's analytical
   writes) across 2026-08-23 → 2026-09-01: 12.06B billable rows ≈ **$12,060** of

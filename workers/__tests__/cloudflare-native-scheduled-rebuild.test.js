@@ -32,7 +32,7 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
 
     const result = await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare" });
 
-    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 300 });
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 });
     expect(current.caseStore.claimRebuildLease).toHaveBeenCalledWith({ leaseSeconds: 900 });
     expect(current.caseStore.rebuildAggregates).toHaveBeenCalledWith({ lease: { token: "cron-lease", leaseSeconds: 900 } });
     expect(current.caseStore.releaseRebuildLease).toHaveBeenCalledWith({ token: "cron-lease" });
@@ -73,7 +73,7 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
 
     await worker.scheduled({}, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS: "600" });
 
-    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 600 });
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 600, quietSeconds: 300, maxStalenessSeconds: 21600 });
   });
 
   it("falls back to the default interval when the variable is missing or invalid", async () => {
@@ -81,7 +81,7 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
       const current = stores({ due: false, reason: "debounced" });
       mockCreateStores.mockReturnValue(current);
       await worker.scheduled({}, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS: value });
-      expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 300 });
+      expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 });
     }
   });
 
@@ -104,6 +104,31 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
 
     await expect(worker.scheduled({}, { IMMI_STORAGE_MODE: "cloudflare" })).rejects.toThrow(/D1 unavailable/);
     expect(current.caseStore.releaseRebuildLease).toHaveBeenCalledWith({ token: "cron-lease" });
+  });
+
+  it("reads the quiet window and staleness bound from the environment", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+
+    await worker.scheduled({}, {
+      IMMI_STORAGE_MODE: "cloudflare",
+      AGGREGATE_REBUILD_QUIET_SECONDS: "120",
+      AGGREGATE_REBUILD_MAX_STALENESS_SECONDS: "7200",
+    });
+
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({
+      minIntervalSeconds: 300, quietSeconds: 120, maxStalenessSeconds: 7200,
+    });
+  });
+
+  it("reports a quiet-window deferral instead of rebuilding", async () => {
+    const current = stores({ due: false, reason: "awaiting-quiet", seconds_until_quiet: 42 });
+    mockCreateStores.mockReturnValue(current);
+
+    const result = await worker.scheduled({}, { IMMI_STORAGE_MODE: "cloudflare" });
+
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ due: false, reason: "awaiting-quiet" });
   });
 
   it("surfaces a failed rebuild to the runtime so the cron is retried", async () => {

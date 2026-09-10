@@ -48,7 +48,7 @@ function env(options) {
 }
 
 /** Build the bookkeeping rows the decision query reads. */
-function state({ pending, applied, lastAt, attemptAt, leaseUntil, leaseToken } = {}) {
+function state({ pending, applied, lastAt, attemptAt, leaseUntil, leaseToken, mutationAt, dirtySince } = {}) {
   const rows = [];
   if (pending !== undefined) rows.push({ summary_key: "rebuild_generation", value_int: pending });
   if (applied !== undefined) rows.push({ summary_key: "rebuild_applied_generation", value_int: applied });
@@ -56,6 +56,8 @@ function state({ pending, applied, lastAt, attemptAt, leaseUntil, leaseToken } =
   if (attemptAt !== undefined) rows.push({ summary_key: "rebuild_last_attempt_at", value_int: attemptAt });
   if (leaseUntil !== undefined) rows.push({ summary_key: "rebuild_lease_until", value_int: leaseUntil });
   if (leaseToken !== undefined) rows.push({ summary_key: "rebuild_lease_token", value_int: leaseToken });
+  if (mutationAt !== undefined) rows.push({ summary_key: "rebuild_last_mutation_at", value_int: mutationAt });
+  if (dirtySince !== undefined) rows.push({ summary_key: "rebuild_dirty_since", value_int: dirtySince });
   return rows;
 }
 
@@ -68,12 +70,29 @@ describe("Catalog aggregate rebuild guard", () => {
 
     await stores.caseStore.markAggregatesDirty();
 
-    expect(catalog.prepared).toHaveLength(1);
+    // Three rows: the generation counter, the mutation timestamp and the
+    // staleness clock (which only arms when it is currently zero).
+    expect(catalog.prepared).toHaveLength(3);
     const statement = catalog.prepared[0];
     expect(statement.sql).toMatch(/INSERT INTO catalog_summary/);
     expect(statement.sql).toMatch(/rebuild_generation/);
     expect(statement.sql).toMatch(/ON CONFLICT\(summary_key\) DO UPDATE SET value_int = catalog_summary\.value_int \+ 1/);
     expect(statement.params).toHaveLength(1);
+  });
+
+  it("stamps the mutation time and arms the staleness clock", async () => {
+    const { catalog, value } = env();
+    const before = nowSeconds();
+
+    await createCloudflareStores(value).caseStore.markAggregatesDirty();
+
+    const mutation = catalog.prepared.find((s) => s.sql.includes("'rebuild_last_mutation_at'"));
+    const dirtySince = catalog.prepared.find((s) => s.sql.includes("'rebuild_dirty_since'"));
+    expect(mutation).toBeDefined();
+    expect(Number(mutation.params[0])).toBeGreaterThanOrEqual(before);
+    expect(dirtySince).toBeDefined();
+    // The staleness clock only arms when it is currently zero.
+    expect(dirtySince.sql).toMatch(/CASE WHEN catalog_summary\.value_int = 0/);
   });
 
   it("never iterates the corpus when marking dirty", async () => {
@@ -140,6 +159,45 @@ describe("Catalog aggregate rebuild guard", () => {
 
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe("debounced");
+  });
+
+  it("waits for a quiet window before rebuilding", async () => {
+    const { value } = env({ responder: () => state({ pending: 3, applied: 2, lastAt: nowSeconds() - 4000, mutationAt: nowSeconds() - 30, dirtySince: nowSeconds() - 600 }) });
+    const stores = createCloudflareStores(value);
+
+    const decision = await stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 });
+
+    expect(decision.due).toBe(false);
+    expect(decision.reason).toBe("awaiting-quiet");
+    expect(decision.seconds_until_quiet).toBeGreaterThan(0);
+    expect(decision.seconds_until_quiet).toBeLessThanOrEqual(270);
+  });
+
+  it("rebuilds once mutations have been quiet long enough", async () => {
+    const { value } = env({ responder: () => state({ pending: 3, applied: 2, lastAt: nowSeconds() - 4000, mutationAt: nowSeconds() - 400, dirtySince: nowSeconds() - 900 }) });
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 }))
+      .resolves.toMatchObject({ due: true, reason: "dirty" });
+  });
+
+  it("forces a rebuild when the staleness bound is exceeded even while mutations continue", async () => {
+    const { value } = env({ responder: () => state({ pending: 9, applied: 2, lastAt: nowSeconds() - 4000, mutationAt: nowSeconds() - 5, dirtySince: nowSeconds() - 25000 }) });
+    const stores = createCloudflareStores(value);
+
+    const decision = await stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 });
+
+    expect(decision.due).toBe(true);
+    expect(decision.reason).toBe("max-staleness");
+    expect(decision.seconds_since_first_pending).toBeGreaterThanOrEqual(21600);
+  });
+
+  it("keeps the legacy behaviour when no quiet window is configured", async () => {
+    const { value } = env({ responder: () => state({ pending: 3, applied: 2, lastAt: nowSeconds() - 400, mutationAt: nowSeconds() - 1 }) });
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300 }))
+      .resolves.toMatchObject({ due: true, reason: "dirty" });
   });
 
   it("claims the rebuild lease only when the previous lease has expired", async () => {
@@ -270,8 +328,8 @@ describe("Catalog aggregate rebuild guard", () => {
       .map((s) => s.sql.replace("DELETE FROM ", "").split(" ")[0]);
     expect(deleted.sort()).toEqual([...REBUILD_TABLES].sort());
     // 1 state read + 17 DELETEs + 17 INSERT ... SELECT + 7 filter_option inserts
-    // + 2 bookkeeping rows.
-    expect(catalog.prepared.length).toBe(1 + REBUILD_TABLES.length * 2 + 7 + 2);
+    // + 3 bookkeeping rows (applied generation, last rebuild, dirty_since reset).
+    expect(catalog.prepared.length).toBe(1 + REBUILD_TABLES.length * 2 + 7 + 3);
   });
 
   it("keeps the bookkeeping keys alive across the rebuild delete", async () => {
@@ -298,10 +356,14 @@ describe("Catalog aggregate rebuild guard", () => {
       .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_applied_generation'"));
     const stamp = catalog.prepared
       .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_last_at'"));
+    const resetDirtySince = catalog.prepared
+      .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_dirty_since'"));
     expect(applied.sql).toMatch(/INSERT OR REPLACE INTO catalog_summary/);
     expect(Number(applied.params[0])).toBe(7);
     expect(Number(stamp.params[0])).toBeGreaterThanOrEqual(before);
     expect(Number(stamp.params[0])).toBeLessThanOrEqual(after);
+    expect(resetDirtySince).toBeDefined();
+    expect(resetDirtySince.sql).toMatch(/SELECT 'rebuild_dirty_since', 0/);
     expect(catalog.prepared.some((s) => s.sql.includes("'rebuild_dirty'"))).toBe(false);
   });
 
