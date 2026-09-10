@@ -155,11 +155,21 @@ function positiveIntOr(value, fallback, floor = 1) {
 const MIN_INTERVAL_FLOOR_SECONDS = 60;
 const MIN_FALLBACK_FLOOR_SECONDS = 300;
 
+const MIN_QUIET_FLOOR_SECONDS = 30;
+const MIN_MAX_STALENESS_FLOOR_SECONDS = 300;
+
 function rebuildDecisionParams(env, minIntervalSeconds) {
   return {
     minIntervalSeconds,
-    quietSeconds: positiveIntOr(env?.AGGREGATE_REBUILD_QUIET_SECONDS, DEFAULT_QUIET_SECONDS),
-    maxStalenessSeconds: positiveIntOr(env?.AGGREGATE_REBUILD_MAX_STALENESS_SECONDS, DEFAULT_MAX_STALENESS_SECONDS),
+    // Floors: a mistyped value must not turn the quiet window into a per-minute
+    // rebuild loop (a max-staleness of "1" rebuilt 106x/hour in review).
+    quietSeconds: positiveIntOr(
+      env?.AGGREGATE_REBUILD_QUIET_SECONDS, DEFAULT_QUIET_SECONDS, MIN_QUIET_FLOOR_SECONDS,
+    ),
+    maxStalenessSeconds: positiveIntOr(
+      env?.AGGREGATE_REBUILD_MAX_STALENESS_SECONDS, DEFAULT_MAX_STALENESS_SECONDS,
+      MIN_MAX_STALENESS_FLOOR_SECONDS,
+    ),
   };
 }
 
@@ -169,7 +179,7 @@ function rebuildDecisionParams(env, minIntervalSeconds) {
  * The lease length is derived from the interval so it always outlives a rebuild
  * while still expiring on its own if this invocation dies mid-flight.
  */
-async function rebuildUnderLease(stores, env) {
+async function rebuildUnderLease(stores, env, minIntervalSeconds) {
   const leaseSeconds = positiveIntOr(env?.AGGREGATE_REBUILD_LEASE_SECONDS, DEFAULT_REBUILD_LEASE_SECONDS);
   const lease = await stores.caseStore.claimRebuildLease({ leaseSeconds });
   if (!lease) {
@@ -177,6 +187,20 @@ async function rebuildUnderLease(stores, env) {
     return { skipped: "lease_held" };
   }
   try {
+    // Re-validate with the lease held. A decision computed before another
+    // invocation finished its rebuild is stale, and without this check every
+    // in-flight queue batch could rebuild again back-to-back (measured: 20 extra
+    // rebuilds right after one cron rebuild).
+    // Re-validate with the lease held: a decision computed before another
+    // invocation finished its rebuild is stale, and without this check every
+    // in-flight queue batch could rebuild again back-to-back (measured: 20 extra
+    // rebuilds right after one cron rebuild). Only the pending question is asked
+    // here - the lease claim itself stamps the attempt time, which would make the
+    // full decision report "debounced".
+    const recheck = await stores.caseStore.aggregatesStillPending();
+    if (!recheck.pending) {
+      return { skipped: "not_due_under_lease", reason: "clean" };
+    }
     return await stores.caseStore.rebuildAggregates({ lease });
   } finally {
     try {
@@ -216,7 +240,7 @@ async function handleScheduledRebuild(env) {
   const startedAt = Date.now();
   let result;
   try {
-    result = await rebuildUnderLease(stores, env);
+    result = await rebuildUnderLease(stores, env, minIntervalSeconds);
   } catch (error) {
     // A structured failure event: without it, a failed rebuild is only visible
     // as the absence of a completion line, which reads exactly like a healthy
@@ -263,7 +287,7 @@ async function markStaleAndMaybeRebuild(stores, env) {
   if (!fallback?.due) return false;
   let result;
   try {
-    result = await rebuildUnderLease(stores, env);
+    result = await rebuildUnderLease(stores, env, minIntervalSeconds);
   } catch (error) {
     console.error(JSON.stringify({
       event: "cloudflare.aggregate_rebuild_failed",

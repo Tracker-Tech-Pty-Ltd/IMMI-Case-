@@ -4,6 +4,27 @@ Updated: 2026-09-10 Australia/Melbourne
 
 ## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
 
+### Second review round (2026-09-11) — three more mechanisms added
+
+The second reviewer's harness (real handlers + real SQLite + simulated clock, 15
+scenarios) surfaced three further ways the guard could leak, all now fixed and
+pinned by repo tests:
+
+- A rebuild that keeps FAILING never reached its end-of-run disarm, so the bound
+  retried on every queue batch: 2,025 failed attempts/day, each doing partial
+  writes. The clock is now disarmed when an attempt starts, and the interval
+  gates the bound as a backstop (3 attempts/day).
+- The bound could bypass the interval entirely, so the interval is now a hard
+  backstop on every path, with floors on the knobs (a max-staleness of "1"
+  rebuilt 106x/hour; now floored to 300 s -> 6/hour).
+- N in-flight queue decisions could each rebuild after one cron rebuild
+  (measured 20). The lease holder now re-checks that work is still pending
+  (`aggregatesStillPending()`) before rebuilding.
+
+Verified with the reviewer's own harness: all 15 scenarios pass, 24 h of
+continuous writes = 3 rebuilds (~$1.75), failing rebuild = 3 attempts, TOCTOU
+= 1 rebuild; plus 396/396 worker tests and 28/28 SQL harness checks.
+
 ### Independent subagent review (2026-09-11) — NOT-SAFE, then fixed
 
 An independent reviewer (not the Codex lane) loaded the real production functions,

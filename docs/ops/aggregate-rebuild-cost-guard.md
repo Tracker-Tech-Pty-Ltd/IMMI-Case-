@@ -94,8 +94,28 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 |---|---|---|
 | One queue batch | ~584k rows (~$0.58) | 3 control rows in one atomic batch |
 | 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window) + ~23k control rows ≈ $0.02 |
+| Continuous writes, 24 h, no quiet gap | same mechanism, per batch | **3 rebuilds ≈ $1.75** |
+| Continuous writes + a rebuild that keeps failing, 24 h | 2,025 failed attempts, each with partial writes | **3 attempts ≈ $1.75** |
+| Operator sets max-staleness = "1" | 106 rebuilds/hour | **6/hour** (floor raises it to 300 s) |
 | Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $2.30 at the 6 h default) |
 | Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s), and at most one rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (6 h) window while writes never pause |
+
+Four properties keep the rebuild frequency bounded, and an independent reviewer
+measured each one against the real handlers (see the table below):
+
+1. **The interval is the backstop.** Every trigger path - the queue fallback, the
+   cron, and the max-staleness bound - must respect `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS`,
+   so no path can retry on every queue batch (a persistently failing rebuild
+   retried 2,025x/day before this).
+2. **Every rebuild disarms the staleness clock twice**: once when the attempt
+   starts (so a rebuild that throws still ends the era instead of leaving the
+   bound armed) and once at the end of a successful run.
+3. **The lease holder re-checks the work is still pending** before rebuilding, so
+   N in-flight queue decisions cannot each rebuild after one cron rebuild
+   (measured: 20 extra rebuilds, now 0).
+4. **Floors on the knobs** (interval/fallback >= 60 s, quiet >= 30 s,
+   max-staleness >= 300 s) so a mistyped value cannot rebuild per minute
+   (a max-staleness of "1" rebuilt 106x/hour).
 
 The staleness bound is only safe because **every rebuild disarms the staleness
 clock** (`rebuild_dirty_since`): the clock measures how long the current era of

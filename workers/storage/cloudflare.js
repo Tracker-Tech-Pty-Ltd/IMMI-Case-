@@ -50,6 +50,11 @@ function rows(result) {
 // catalog_summary doubles as the aggregate-rebuild control table. Its
 // bookkeeping keys must survive a rebuild's DELETE so a mutation landing
 // mid-rebuild still leaves a pending generation behind.
+// Floors for the rebuild knobs: a mistyped small value must not turn the cost
+// guard into a per-minute rebuild loop (a max-staleness of "1" rebuilt 106x/hour).
+const MIN_QUIET_SECONDS = 30;
+const MIN_MAX_STALENESS_SECONDS = 300;
+
 const AGGREGATE_BOOKKEEPING_KEYS = [
   "rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
   "rebuild_last_attempt_at", "rebuild_lease_until",
@@ -1013,6 +1018,13 @@ export class CloudflareCaseStore {
    * $12,060 in D1 write charges.
    */
   async rebuildAggregates({ lease } = {}) {
+    // End the staleness era as soon as an attempt starts. The end-of-run disarm
+    // below normally does this, but a rebuild that throws never gets there - and
+    // a persistently failing rebuild would then leave the era armed, so the bound
+    // would retry on every queue batch (measured: 2,025 failed attempts/day, each
+    // doing partial writes). Pending work is still recorded by the generation.
+    await this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+      SELECT 'rebuild_dirty_since', 0, ?`).bind(utcNow()).run();
     const now = utcNow();
     // Snapshot the pending generation before scanning: anything that arrives
     // while this rebuild runs must stay pending, not be marked applied.
@@ -1184,11 +1196,27 @@ export class CloudflareCaseStore {
    * This is the only guard preventing a bulk import from rewriting the whole
    * summary set thousands of times.
    */
+  /**
+   * Narrow re-check for an invocation that already holds the lease.
+   *
+   * The full decision cannot be re-used here: claiming the lease stamps
+   * `rebuild_last_attempt_at`, so the interval - and with it the whole decision -
+   * reads as "debounced" the moment we own the lease. This asks the only question
+   * that matters after the claim: is work still pending (did another invocation
+   * already apply it)?
+   */
+  async aggregatesStillPending() {
+    const state = await this.readAggregateState();
+    const pending = state.get("rebuild_generation") || 0;
+    const applied = state.get("rebuild_applied_generation") || 0;
+    return { pending_generation: pending, applied_generation: applied, pending: pending > applied };
+  }
+
   async aggregatesNeedRebuild({ minIntervalSeconds = 300, quietSeconds = 0, maxStalenessSeconds = 0 } = {}) {
     const interval = Number.isFinite(minIntervalSeconds) && minIntervalSeconds > 0
       ? Math.floor(minIntervalSeconds) : 300;
-    const quiet = Number.isFinite(quietSeconds) && quietSeconds > 0 ? Math.floor(quietSeconds) : 0;
-    const maxStaleness = Number.isFinite(maxStalenessSeconds) && maxStalenessSeconds > 0
+    const quiet = Number.isFinite(quietSeconds) && quietSeconds >= MIN_QUIET_SECONDS ? Math.floor(quietSeconds) : 0;
+    const maxStaleness = Number.isFinite(maxStalenessSeconds) && maxStalenessSeconds >= MIN_MAX_STALENESS_SECONDS
       ? Math.floor(maxStalenessSeconds) : 0;
     const state = await this.readAggregateState();
     const pending = state.get("rebuild_generation") || 0;
@@ -1212,9 +1240,11 @@ export class CloudflareCaseStore {
     };
 
     // Hard bound: however busy the queue is, analytics may not stay stale longer
-    // than this, so a bulk import costs one rebuild per window instead of one
-    // per interval.
-    if (maxStaleness > 0 && staleness >= maxStaleness) {
+    // than this, so a bulk import costs one rebuild per window instead of one per
+    // interval. The interval is still honoured here: it is the backstop that stops
+    // any path - including a persistently failing rebuild - from retrying on every
+    // queue batch.
+    if (maxStaleness > 0 && staleness >= maxStaleness && elapsedSeconds >= interval) {
       return { due: true, reason: "max-staleness", seconds_since_first_pending: staleness, ...base };
     }
 

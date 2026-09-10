@@ -175,15 +175,20 @@ describe("Catalog aggregate rebuild guard", () => {
     expect(decision.reason).toBe("debounced");
   });
 
-  it("lets the staleness bound win over a just-stamped attempt", async () => {
-    // A failed rebuild stamps an attempt; the interval must not postpone work
-    // that has already exceeded the staleness bound.
-    const { value } = env({ responder: () => state({ pending: 9, applied: 2, lastAt: nowSeconds() - 4000,
+  it("honours the interval before the staleness bound, and fires once it has elapsed", async () => {
+    // The interval is the backstop: a persistently failing rebuild would
+    // otherwise retry on every queue batch (measured 2,025 attempts/day).
+    const recent = env({ responder: () => state({ pending: 9, applied: 2, lastAt: nowSeconds() - 4000,
       attemptAt: nowSeconds() - 10, mutationAt: nowSeconds() - 5, dirtySince: nowSeconds() - 25000 }) });
-    const stores = createCloudflareStores(value);
+    await expect(createCloudflareStores(recent.value).caseStore.aggregatesNeedRebuild(
+      { minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 },
+    )).resolves.toMatchObject({ due: false, reason: "debounced" });
 
-    await expect(stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 }))
-      .resolves.toMatchObject({ due: true, reason: "max-staleness" });
+    const waited = env({ responder: () => state({ pending: 9, applied: 2, lastAt: nowSeconds() - 4000,
+      attemptAt: nowSeconds() - 400, mutationAt: nowSeconds() - 5, dirtySince: nowSeconds() - 25000 }) });
+    await expect(createCloudflareStores(waited.value).caseStore.aggregatesNeedRebuild(
+      { minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 },
+    )).resolves.toMatchObject({ due: true, reason: "max-staleness" });
   });
 
   it("waits for a quiet window before rebuilding", async () => {
@@ -355,10 +360,10 @@ describe("Catalog aggregate rebuild guard", () => {
       .filter((s) => /^DELETE FROM /.test(s.sql))
       .map((s) => s.sql.replace("DELETE FROM ", "").split(" ")[0]);
     expect(deleted.sort()).toEqual([...REBUILD_TABLES].sort());
-    // 1 state read + 17 DELETEs + 17 INSERT ... SELECT + 7 filter_option inserts
-    // + 3 bookkeeping statements (applied generation, last rebuild, conditional
-    // dirty_since disarm).
-    expect(catalog.prepared.length).toBe(1 + REBUILD_TABLES.length * 2 + 7 + 3);
+    // attempt-start disarm + 1 state read + 17 DELETEs + 17 INSERT ... SELECT
+    // + 7 filter_option inserts + 3 end-of-run bookkeeping statements (applied
+    // generation, last rebuild, dirty_since disarm).
+    expect(catalog.prepared.length).toBe(1 + 1 + REBUILD_TABLES.length * 2 + 7 + 3);
   });
 
   it("keeps the bookkeeping keys alive across the rebuild delete", async () => {
@@ -472,6 +477,52 @@ describe("Catalog aggregate rebuild guard", () => {
     } finally {
       Date.now = realNow;
     }
+  });
+
+  it("disarms the staleness clock when an attempt starts, so a failing rebuild cannot retry per batch", async () => {
+    // A rebuild that throws never reaches its end-of-run statements. Measured
+    // before this guard: 2,025 failed attempts/day, each doing partial writes.
+    const { catalog, value } = env();
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.rebuildAggregates({ lease: { token: "t", leaseSeconds: 900 } }))
+      .resolves.toBeDefined();
+
+    const first = catalog.prepared[0];
+    expect(first.sql).toMatch(/INSERT OR REPLACE INTO catalog_summary/);
+    expect(first.sql).toMatch(/SELECT 'rebuild_dirty_since', 0/);
+  });
+
+  it("keeps the interval in front of the staleness bound", async () => {
+    // The interval is the backstop: without it a persistently failing rebuild
+    // retried on every queue batch (measured 2,025 attempts/day).
+    const { value } = env({ responder: () => state({ pending: 9, applied: 1, lastAt: nowSeconds() - 30,
+      attemptAt: nowSeconds() - 10, mutationAt: nowSeconds() - 5, dirtySince: nowSeconds() - 25000 }) });
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 }))
+      .resolves.toMatchObject({ due: false, reason: "debounced" });
+  });
+
+  it("ignores knob values below the floors instead of rebuilding per minute", async () => {
+    // "max-staleness = 1" rebuilt 106x/hour before the floors.
+    const { value } = env({ responder: () => state({ pending: 9, applied: 1, lastAt: nowSeconds() - 3600,
+      attemptAt: 0, mutationAt: nowSeconds() - 3600, dirtySince: nowSeconds() - 2 }) });
+    const stores = createCloudflareStores(value);
+
+    // maxStalenessSeconds below 300 is dropped, so the 2s-old clock cannot fire.
+    const decision = await stores.caseStore.aggregatesNeedRebuild({
+      minIntervalSeconds: 300, quietSeconds: 5, maxStalenessSeconds: 1,
+    });
+    expect(decision.reason).not.toBe("max-staleness");
+  });
+
+  it("reports pending work for the post-lease re-check", async () => {
+    const { value } = env({ responder: () => state({ pending: 8, applied: 5 }) });
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.aggregatesStillPending())
+      .resolves.toEqual({ pending_generation: 8, applied_generation: 5, pending: true });
   });
 
   it("batches the rebuild statements in bounded chunks", async () => {

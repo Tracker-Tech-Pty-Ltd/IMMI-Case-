@@ -10,6 +10,7 @@ control.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -139,26 +140,28 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
     crons = _get(config, "triggers.crons")
     if not isinstance(crons, list) or "*/5 * * * *" not in crons:
         errors.append(f"triggers.crons must include '*/5 * * * *' (got {crons!r})")
-    for key, default in (
-        ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300),
-        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600),
-        ("AGGREGATE_REBUILD_LEASE_SECONDS", 900),
-        ("AGGREGATE_REBUILD_QUIET_SECONDS", 300),
-        ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600),
+    # (key, expected default, floor): the floors mirror the Worker's own so a
+    # config that would rebuild far too often cannot ship.
+    for key, default, floor in (
+        ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300, 60),
+        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600, 60),
+        ("AGGREGATE_REBUILD_LEASE_SECONDS", 900, 60),
+        ("AGGREGATE_REBUILD_QUIET_SECONDS", 300, 30),
+        ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600, 300),
     ):
         value = _get(config, f"vars.{key}")
         if value is None:
             errors.append(f"vars.{key} is missing (expected {default} or an explicit operator value)")
             continue
-        try:
-            parsed = int(str(value), 10)
-        except (TypeError, ValueError):
-            errors.append(f"vars.{key} must be an integer number of seconds (got {value!r})")
+        # Digits only: Python would accept "21_600" while the Worker's
+        # Number.parseInt stops at the underscore and reads 21.
+        text = str(value).strip()
+        if not re.fullmatch(r"\d+", text):
+            errors.append(f"vars.{key} must be a plain integer number of seconds (got {value!r})")
             continue
-        if parsed <= 0:
-            errors.append(f"vars.{key} must be positive (got {parsed})")
-        if key in ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", "AGGREGATE_REBUILD_FALLBACK_SECONDS") and parsed < 60:
-            errors.append(f"vars.{key} below 60s would rebuild after nearly every queue batch (got {parsed})")
+        parsed = int(text, 10)
+        if parsed < floor:
+            errors.append(f"vars.{key} must be at least {floor}s or the guard rebuilds far too often (got {parsed})")
 
 
 def _validate_main(path: Path, errors: list[str]) -> None:

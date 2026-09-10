@@ -20,6 +20,9 @@ function stores(decision = { due: true, reason: "dirty" }) {
   return {
     caseStore: {
       aggregatesNeedRebuild: vi.fn(async () => decision),
+      // The post-lease re-check: default to "work still pending" so the usual
+      // tests exercise the rebuild; the TOCTOU test overrides it.
+      aggregatesStillPending: vi.fn(async () => ({ pending_generation: 1, applied_generation: 0, pending: true })),
       rebuildAggregates: vi.fn(async () => ({ rebuilt_at: "2026-09-10T00:00:00.000Z" })),
       markAggregatesDirty: vi.fn(async () => true),
       claimRebuildLease: vi.fn(async () => ({ token: "cron-lease", leaseSeconds: 900 })),
@@ -142,5 +145,25 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
     mockCreateStores.mockReturnValue(current);
 
     await expect(worker.scheduled({}, { IMMI_STORAGE_MODE: "cloudflare" })).rejects.toThrow(/D1 unavailable/);
+  });
+
+  it("skips the rebuild when another invocation already applied the work", async () => {
+    // The TOCTOU case: a decision computed before another invocation finished is
+    // stale, and 20 in-flight queue batches each rebuilt (measured) without this.
+    mockCreateStores.mockReturnValue({
+      caseStore: {
+        aggregatesNeedRebuild: vi.fn(async () => ({ due: true, reason: "dirty" })),
+        aggregatesStillPending: vi.fn(async () => ({ pending_generation: 4, applied_generation: 4, pending: false })),
+        rebuildAggregates: vi.fn(async () => ({ rebuilt_at: "2026-09-10T00:00:00.000Z" })),
+        claimRebuildLease: vi.fn(async () => ({ token: "cron-lease", leaseSeconds: 900 })),
+        releaseRebuildLease: vi.fn(async () => true),
+      },
+    });
+
+    await worker.scheduled({ scheduledTime: 1, cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare" });
+
+    const store = mockCreateStores.mock.results.at(-1).value.caseStore;
+    expect(store.rebuildAggregates).not.toHaveBeenCalled();
+    expect(store.releaseRebuildLease).toHaveBeenCalled();
   });
 });
