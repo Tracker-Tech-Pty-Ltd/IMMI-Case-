@@ -187,10 +187,6 @@ async function rebuildUnderLease(stores, env, minIntervalSeconds) {
     return { skipped: "lease_held" };
   }
   try {
-    // Re-validate with the lease held. A decision computed before another
-    // invocation finished its rebuild is stale, and without this check every
-    // in-flight queue batch could rebuild again back-to-back (measured: 20 extra
-    // rebuilds right after one cron rebuild).
     // Re-validate with the lease held: a decision computed before another
     // invocation finished its rebuild is stale, and without this check every
     // in-flight queue batch could rebuild again back-to-back (measured: 20 extra

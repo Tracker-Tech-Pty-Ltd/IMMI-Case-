@@ -90,6 +90,7 @@ Run workflow → `confirm_native_deploy: I_UNDERSTAND`.
 | One rebuild per burst | Worker logs (Observability) | `cloudflare.aggregate_rebuild_completed` with `reason: "dirty"` after a quiet period; **`reason: "awaiting-quiet"` while an import is running is correct** |
 | Cadence under a long import | Worker logs, or D1 insights | At most one `reason: "max-staleness"` rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` window; **never one per queue batch** (the regression test in `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` pins this) |
 | No per-batch rebuilds | `npx wrangler d1 insights immi-catalog --sort-by writes --time-period 1d` | The three `INSERT ... SELECT` statements appear a handful of times per day, not thousands; **alert yourself if rows written/day exceeds ~5M** |
+| Rebuilds per day match the write cadence | Worker logs: count `cloudflare.aggregate_rebuild_completed` per day | One rebuild per quiet period, so ~$0.58 each. A steady trickle of writes with >5-minute gaps means one rebuild per burst: if this exceeds ~50/day (~$30/day), raise `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (e.g. to 900) - analytics freshness is not worth hundreds a month |
 | Fallback not looping | Worker logs | No repeated `cloudflare.aggregate_rebuild_fallback` entries |
 | Mutations var after deploy | `npx wrangler deployments status` / dashboard var view | Every deploy re-asserts the config's `IMMI_CASE_MUTATIONS_ENABLED` (currently `"false"`); re-apply §6 if the write API should be live |
 
