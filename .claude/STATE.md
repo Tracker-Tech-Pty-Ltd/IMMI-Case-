@@ -46,13 +46,24 @@ Updated: 2026-09-10 Australia/Melbourne
   flag, that the rebuild statement set is exactly 17 tables + bookkeeping, that
   a mutation arriving after the applied generation stays pending, and that a
   second lease claim loses while the first holds.
+- Review evidence (untracked by repo policy): `work/codex-review.md`,
+  `codex-rereview.md`, `codex-review3.md`, `codex-review4.md` + prompts.
 - Real-SQLite harness (`work/verify-rebuild-sql.py`): executes the captured
   rebuild/dirty/decision/lease SQL against `migrations/d1/catalog/0001_catalog.sql`
   (30 tables) — 14/14 checks, including a deterministic replay of the
   mid-rebuild mutation race (generation 6 vs applied 5 → still pending).
-- Codex second-model review (read-only) returned CHANGES-REQUIRED with three
-  HIGH findings — unconditional `dirty = 0` race, missing rebuild lease, unsafe
-  documented rollback — all three are fixed above and re-verified.
+- Codex second-model review, four read-only passes (final pass: **VERDICT:
+  APPROVE** at `work/codex-review4.md`, which confirms all four invariants and
+  closes every earlier finding). Disposition across passes:
+  1. unconditional `dirty = 0` discarded a mid-rebuild mutation → monotonic
+     generation; 2. no mutual exclusion → lease; 3. unsafe documented rollback →
+     docs forbid it; 4. lease without fencing / torn claim → token in the lease
+     row's `updated_at`, single-statement claim, token-conditional renew/release,
+     abort on lost lease; 5. failed rebuilds retried unthrottled → attempt stamp.
+  Reviewer-named acceptable residual risks: a first-deploy mutation may trigger
+  one lease-protected fallback rebuild; a single D1 batch outliving the lease
+  aborts that run and converges on the next; a missing cron in the operator
+  config degrades to hourly fallback instead of the per-batch cost curve.
 - Native bundle closure passed (`scripts/check_cloudflare_native_bundle.mjs`).
 - `scripts/check_cloudflare_native_target.py` output is unchanged from
   `origin/main` (placeholder-ID gate only).

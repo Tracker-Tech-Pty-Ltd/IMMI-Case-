@@ -124,12 +124,33 @@ materialises the operator-supplied configs from
 3. Run `make test-workers` and `node scripts/check_cloudflare_native_bundle.mjs`
    before the deploy (both pass as of this change).
 
+## Review record
+
+Four read-only Codex passes reviewed this change. The first three returned
+CHANGES-REQUIRED and produced five findings, all fixed and re-verified; the
+fourth confirmed all four invariants (coalescing, no lost staleness, mutual
+exclusion, bounded recovery) and returned **APPROVE** with no ship blocker.
+The reviewer's named acceptable residual risks:
+
+- On first deploy (no rebuild timestamp yet) the first queue mutation may perform
+  one fallback rebuild — one-off and lease-protected.
+- A single D1 batch that outlives the lease makes that run abort on its next
+  renewal; the following rebuild converges the data.
+- If the operator config ships without the cron, cost does not return to the
+  per-batch curve, but freshness degrades to the hourly fallback.
+
+Review evidence lives in `work/` and is intentionally not committed (this repo
+keeps agent scratch dirs untracked).
+
 ## Verification checklist
 
 - [ ] Cron trigger present and firing every 5 minutes.
 - [ ] After a mutation, `d1 insights immi-catalog --sort-by writes --time-period 1d`
       shows the rebuild statements running a handful of times per hour, not per batch.
 - [ ] `/api/v1/...` dashboard totals update within ~5 minutes of a mutation.
+- [ ] After the first mutation following deploy, `rebuild_applied_generation`
+      catches up with `rebuild_generation` within one cron period (proves the
+      trigger is wired, not just present).
 - [ ] D1 rows written per day returns to a low baseline (monitor with the local
       `d1_usage_watchdog.py` job or the `d1AnalyticsAdaptiveGroups` API).
 - [ ] No `cloudflare.aggregate_rebuild_fallback` entries in Worker logs — their
