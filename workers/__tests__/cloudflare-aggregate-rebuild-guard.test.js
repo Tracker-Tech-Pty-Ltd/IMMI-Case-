@@ -9,7 +9,7 @@ const REBUILD_TABLES = [
   "aggregate_judge_outcome", "aggregate_judge_year", "aggregate_judge_visa", "filter_options",
 ];
 const BOOKKEEPING_KEYS = ["rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
-  "rebuild_last_mutation_at", "rebuild_dirty_since", "rebuild_lease_until"];
+  "rebuild_last_attempt_at", "rebuild_lease_until", "rebuild_last_mutation_at", "rebuild_dirty_since"];
 
 function d1({ responder = () => [], changes = 1, changesFor } = {}) {
   const prepared = [];

@@ -24,11 +24,11 @@ Updated: 2026-09-10 Australia/Melbourne
   `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300) of no mutations, so an import
   collapses into **one rebuild (~$0.58)**; `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS`
   (default 21600) bounds staleness when mutations never pause.
-- New bookkeeping keys `rebuild_last_mutation_at` (refreshed by every mutation)
-  and `rebuild_dirty_since` (armed only on the clean→dirty edge, reset by every
+  and `rebuild_dirty_since` (armed only on the clean→dirty edge, disarmed only by a
+  rebuild that applied the generation it observed) support the window and the bound.
   rebuild) support the window and the bound.
-- Validation: Worker Vitest 27 files / **388 tests**; real-SQLite harness
-  **24/24** (including "staleness clock arms on the first mutation only" and
+- Validation: Worker Vitest 27 files / **390 tests**; real-SQLite harness **27/27** (including "a mid-scan mutation keeps the staleness clock armed" and
+  "rebuild with nothing new disarms the staleness clock"); bundle closure passes; gate unchanged.
   "rebuild disarms the staleness clock"); bundle closure passes; gate unchanged.
 
 ### Symptom
@@ -46,14 +46,14 @@ Updated: 2026-09-10 Australia/Melbourne
   6.68B written rows across ~24,000 executions.
 
 ### Fix
-- The queue path now records staleness (`markAggregatesDirty()`, one row); the
+- The queue path now records staleness (`markAggregatesDirty()`, three control rows in one atomic batch); the
   new `scheduled()` handler rebuilds at most once per
   `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (default 300 s) driven by the
   `[triggers]` cron `*/5 * * * *`, under a conditional-upsert D1 lease so
   overlapping invocations cannot rewrite the 17 tables at once.
 - Bookkeeping lives in `catalog_summary` under `rebuild_generation` /
   `rebuild_applied_generation` / `rebuild_last_at` / `rebuild_last_attempt_at` /
-  `rebuild_lease_until` / `rebuild_lease_token` (no D1 migration; `getStats()`
+  `rebuild_lease_until` / `rebuild_last_mutation_at` / `rebuild_dirty_since` (no D1 migration; `getStats()`
   still reads only `total_cases`/`with_full_text`).
   "Dirty" is `generation > applied_generation`, so a mutation that lands while a
   rebuild is running stays pending instead of being wiped by the rebuild's own

@@ -36,7 +36,7 @@ bound the bill — the number of rebuild passes does.
 
 ### Bookkeeping model (why generations, not a boolean)
 
-State lives in `catalog_summary` (`summary_key` is the primary key) under four
+State lives in `catalog_summary` (`summary_key` is the primary key) under seven
 internal keys, none of which reach API responses (`getStats()` reads only
 `total_cases` / `with_full_text`). No D1 migration is required.
 
@@ -48,7 +48,6 @@ internal keys, none of which reach API responses (`getStats()` reads only
 | `rebuild_last_attempt_at` | `claimRebuildLease()` | Epoch seconds of the last attempt — throttles retries of a *failed* rebuild, which never stamps `rebuild_last_at` |
 | `rebuild_last_mutation_at` | `markAggregatesDirty()` | Epoch seconds of the most recent queue mutation — the quiet window is measured from here |
 | `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the current pending work first appeared — armed only on the clean→dirty edge, disarmed only by a rebuild that applied the generation it observed (so continuous writes can never reset the staleness bound) |
-| `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the *current* batch of pending work first appeared; armed only on the clean→dirty edge and reset by every rebuild, so it bounds total staleness |
 | `rebuild_lease_until` | `claimRebuildLease()` | Epoch seconds until which one invocation owns the rebuild; its **`updated_at` column holds the owner's fencing token** (a UUID-style string) rather than a timestamp |
 
 "Dirty" is `rebuild_generation > rebuild_applied_generation`. A boolean flag
@@ -91,7 +90,7 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 | One queue batch | ~584k rows (~$0.58) | 3 control rows in one atomic batch |
 | 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window) + ~23k control rows ≈ $0.02; a run longer than the staleness bound adds one rebuild per window |
 | Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $2.30 at the 6 h default) |
-| Dashboard freshness | per batch | ≤ 5 minutes stale |
+| Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s); a sustained multi-hour import may lag up to the staleness bound (6 h) |
 | Cron missing / failing (fallback path only) | n/a | ≤ 1 rebuild/hour ≈ 14M rows/day ≈ **$14/day** |
 
 ### Quiet window (why an import costs cents, not dollars)
