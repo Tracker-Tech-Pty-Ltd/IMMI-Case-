@@ -24,12 +24,12 @@ Updated: 2026-09-10 Australia/Melbourne
   `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300) of no mutations, so an import
   collapses into **one rebuild (~$0.58)**; `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS`
   (default 21600) bounds staleness when mutations never pause.
+- New bookkeeping keys `rebuild_last_mutation_at` (refreshed by every mutation)
   and `rebuild_dirty_since` (armed only on the clean→dirty edge, disarmed only by a
   rebuild that applied the generation it observed) support the window and the bound.
-  rebuild) support the window and the bound.
-- Validation: Worker Vitest 27 files / **390 tests**; real-SQLite harness **27/27** (including "a mid-scan mutation keeps the staleness clock armed" and
-  "rebuild with nothing new disarms the staleness clock"); bundle closure passes; gate unchanged.
-  "rebuild disarms the staleness clock"); bundle closure passes; gate unchanged.
+- Validation: Worker Vitest 27 files / **390 tests**; real-SQLite harness **27/27**
+  (including "a mid-scan mutation keeps the staleness clock armed" and "rebuild
+  with nothing new disarms the staleness clock"); bundle closure passes; gate unchanged.
 
 ### Symptom
 - `immi-catalog` D1 wrote 12,084,578,591 rows (99.77% of the account's analytical

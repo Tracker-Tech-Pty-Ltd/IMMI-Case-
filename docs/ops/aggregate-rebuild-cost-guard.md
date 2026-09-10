@@ -110,7 +110,7 @@ hours): if mutations never pause, analytics are still refreshed on that cadence
 instead of drifting indefinitely. Lower it if continuous-write periods must stay
 fresher; raise it to make very long imports even cheaper.
 
-Four operator-side knobs:
+5 operator-side knobs:
 
 - `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (default 300) — the cron's own
   debounce. Raising it to 900 cuts a full import to about $10.
