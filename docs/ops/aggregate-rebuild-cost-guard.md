@@ -133,6 +133,9 @@ rebuild back into the queue consumer restores the old cost curve.
 
 ## Deploy requirements (operator action)
 
+Step-by-step instructions, exact config block and post-deploy verification live in
+[operator-deploy-checklist.md](operator-deploy-checklist.md).
+
 The production deploy does **not** read this repository's `wrangler.toml`; it
 materialises the operator-supplied configs from
 `IMMI_NATIVE_MAIN_WRANGLER_TOML_B64`. After merging:
