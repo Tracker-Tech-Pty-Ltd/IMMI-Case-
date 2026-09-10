@@ -22,7 +22,7 @@ import { handleAdminPipelineRuns } from "./admin/cloudflare_handlers.js";
 import { getCsrfToken } from "./auth/csrf.js";
 import { dispatchCloudflareCaseAction } from "./case-api/cloudflare_actions.js";
 import { dispatchCloudflareCaseMutation } from "./case-api/cloudflare_mutations.js";
-import { createCloudflareStores } from "./storage/cloudflare.js";
+import { createCloudflareCaseStore, createCloudflareStores } from "./storage/cloudflare.js";
 import { sha256Hex, VECTOR_DIMENSIONS, StorageBoundaryError } from "./storage/contracts.js";
 import { coordinateExtractedCase } from "./storage/pipeline_coordinator.js";
 import { handleJobStatus, handlePipelineStatus } from "./pipeline/cloudflare_handlers.js";
@@ -142,10 +142,18 @@ const DEFAULT_QUIET_SECONDS = 300;
 // this often. Only reachable while mutations never pause.
 const DEFAULT_MAX_STALENESS_SECONDS = 21600;
 
-function positiveIntOr(value, fallback) {
+function positiveIntOr(value, fallback, floor = 1) {
   const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  // A mistyped "1" would otherwise mean "rebuild after every queue batch",
+  // which is the cost curve this guard exists to prevent.
+  return parsed < floor ? floor : parsed;
 }
+
+// Every knob has a floor: the interval is the coarsest throttle, the others
+// bound how quickly work can pile up behind it.
+const MIN_INTERVAL_FLOOR_SECONDS = 60;
+const MIN_FALLBACK_FLOOR_SECONDS = 300;
 
 function rebuildDecisionParams(env, minIntervalSeconds) {
   return {
@@ -191,10 +199,14 @@ async function rebuildUnderLease(stores, env) {
  * interval instead of N full rewrites of 17 tables.
  */
 async function handleScheduledRebuild(env) {
-  const stores = createCloudflareStores(env);
+  // Only the catalog D1 is needed here. Building the full store set would make
+  // this cron fail whenever R2, Vectorize or AI is unavailable - a silent stall
+  // of the mechanism the whole cost guard depends on.
+  const stores = { caseStore: createCloudflareCaseStore(env) };
   const minIntervalSeconds = positiveIntOr(
     env?.AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS,
     DEFAULT_REBUILD_INTERVAL_SECONDS,
+    MIN_INTERVAL_FLOOR_SECONDS,
   );
   const decision = await stores.caseStore.aggregatesNeedRebuild(rebuildDecisionParams(env, minIntervalSeconds));
   if (!decision.due) {
@@ -245,6 +257,7 @@ async function markStaleAndMaybeRebuild(stores, env) {
   const minIntervalSeconds = positiveIntOr(
     env?.AGGREGATE_REBUILD_FALLBACK_SECONDS,
     DEFAULT_FALLBACK_INTERVAL_SECONDS,
+    MIN_FALLBACK_FLOOR_SECONDS,
   );
   const fallback = await stores.caseStore.aggregatesNeedRebuild(rebuildDecisionParams(env, minIntervalSeconds));
   if (!fallback?.due) return false;

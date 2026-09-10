@@ -56,7 +56,6 @@ function state({ pending, applied, lastAt, attemptAt, leaseUntil, leaseToken, mu
   if (lastAt !== undefined) rows.push({ summary_key: "rebuild_last_at", value_int: lastAt });
   if (attemptAt !== undefined) rows.push({ summary_key: "rebuild_last_attempt_at", value_int: attemptAt });
   if (leaseUntil !== undefined) rows.push({ summary_key: "rebuild_lease_until", value_int: leaseUntil });
-  if (leaseToken !== undefined) rows.push({ summary_key: "rebuild_lease_token", value_int: leaseToken });
   if (mutationAt !== undefined) rows.push({ summary_key: "rebuild_last_mutation_at", value_int: mutationAt });
   if (dirtySince !== undefined) rows.push({ summary_key: "rebuild_dirty_since", value_int: dirtySince });
   return rows;
@@ -387,18 +386,92 @@ describe("Catalog aggregate rebuild guard", () => {
     const stamp = catalog.prepared
       .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_last_at'"));
     const resetDirtySince = catalog.prepared
-      .find((s) => s.sql.startsWith("UPDATE catalog_summary SET value_int = 0"));
+      .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_dirty_since'"));
     expect(applied.sql).toMatch(/INSERT OR REPLACE INTO catalog_summary/);
     expect(Number(applied.params[0])).toBe(7);
     expect(Number(stamp.params[0])).toBeGreaterThanOrEqual(before);
     expect(Number(stamp.params[0])).toBeLessThanOrEqual(after);
-    // The disarm is conditional on no mutation arriving mid-scan, so continuous
-    // writes can never reset the staleness clock on every rebuild.
+    // The disarm must be UNCONDITIONAL: an armed clock makes the max-staleness
+    // bound fire on every queue batch (measured $631-$1,262/day), so the rebuild
+    // has to reset it even when mutations arrived mid-scan. Pending work is
+    // tracked by the generation, never by this clock.
     expect(resetDirtySince).toBeDefined();
-    expect(resetDirtySince.sql).toMatch(/WHERE summary_key = 'rebuild_dirty_since'/);
-    expect(resetDirtySince.sql).toMatch(/COALESCE\(\(SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_generation'\), 0\) <= \?/);
-    expect(Number(resetDirtySince.params[1])).toBe(7);
+    expect(resetDirtySince.sql).toMatch(/SELECT 'rebuild_dirty_since', 0, \?/);
+    expect(resetDirtySince.sql).not.toMatch(/WHERE/);
     expect(catalog.prepared.some((s) => s.sql.includes("'rebuild_dirty'"))).toBe(false);
+  });
+
+  it("does not degenerate into one rebuild per queue batch during a long import", async () => {
+    // Regression guard for the 2026-08 incident curve: the staleness clock is the
+    // only throttle on the max-staleness bound, so the rebuild must disarm it even
+    // when mutations arrive mid-scan. This test reads the actual disarm statement
+    // the store issues and models its consequence - it is not testing a copy of
+    // the logic. A conditional disarm leaves the clock armed here (a mutation
+    // always lands mid-scan in this simulation) and the rebuild count explodes to
+    // one per tick, i.e. hundreds per day instead of a handful.
+    const realNow = Date.now;
+    const clock = { seconds: 1789000000 };
+    Date.now = () => clock.seconds * 1000;
+    try {
+      const bookkeeping = {
+        generation: 0, applied: 0, lastAt: clock.seconds - 86400,
+        attemptAt: 0, mutationAt: clock.seconds, dirtySince: clock.seconds,
+      };
+      const responder = (sql) => {
+        if (!sql.includes("catalog_summary")) return [];
+        return [
+          { summary_key: "rebuild_generation", value_int: bookkeeping.generation },
+          { summary_key: "rebuild_applied_generation", value_int: bookkeeping.applied },
+          { summary_key: "rebuild_last_at", value_int: bookkeeping.lastAt },
+          { summary_key: "rebuild_last_attempt_at", value_int: bookkeeping.attemptAt },
+          { summary_key: "rebuild_last_mutation_at", value_int: bookkeeping.mutationAt },
+          { summary_key: "rebuild_dirty_since", value_int: bookkeeping.dirtySince },
+        ];
+      };
+      const { catalog, value } = env({ responder });
+      const stores = createCloudflareStores(value);
+      const lease = { token: "sim-lease", leaseSeconds: 900 };
+
+      let rebuilds = 0;
+      const ticks = (24 * 60) / 5; // a cron tick every 5 minutes for 24 hours
+      for (let tick = 0; tick < ticks; tick += 1) {
+        // Two queue batches land between ticks: the writes never go quiet.
+        bookkeeping.generation += 2;
+        bookkeeping.mutationAt = clock.seconds;
+        if (bookkeeping.dirtySince === 0) bookkeeping.dirtySince = clock.seconds;
+
+        const decision = await stores.caseStore.aggregatesNeedRebuild({
+          minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600,
+        });
+        if (!decision.due) {
+          clock.seconds += 300;
+          continue;
+        }
+
+        rebuilds += 1;
+        const issuedFrom = catalog.prepared.length;
+        await stores.caseStore.rebuildAggregates({ lease });
+        // Find the statement that WRITES the clock (the state read mentions the key
+        // too, so match on the write verbs).
+        const clockWrite = catalog.prepared
+          .slice(issuedFrom)
+          .find((s) => s.sql.includes("'rebuild_dirty_since'")
+            && (s.sql.startsWith("INSERT OR REPLACE") || s.sql.startsWith("UPDATE")));
+        // Only an unconditional write actually resets the clock.
+        if (clockWrite && !clockWrite.sql.includes("WHERE")) {
+          bookkeeping.dirtySince = 0;
+        }
+        bookkeeping.applied = bookkeeping.generation;
+        bookkeeping.lastAt = clock.seconds;
+        clock.seconds += 300;
+      }
+
+      // One rebuild per staleness window (~4/day), never one per batch (~2000/day).
+      expect(rebuilds).toBeGreaterThanOrEqual(3);
+      expect(rebuilds).toBeLessThanOrEqual(5);
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it("batches the rebuild statements in bounded chunks", async () => {

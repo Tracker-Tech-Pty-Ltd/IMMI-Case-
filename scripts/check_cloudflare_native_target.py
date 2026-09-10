@@ -128,6 +128,39 @@ def _is_placeholder(value: Any) -> bool:
     )
 
 
+def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], role: str) -> None:
+    """Fail closed when the aggregate-rebuild cost guard cannot run.
+
+    The guard only holds if the deployed config carries the cron trigger and the
+    four knobs. Without them the Worker silently falls back to the queue-side
+    path, which was the 2026-08 incident's cost curve - and nothing else in the
+    pipeline would notice a missing `[triggers]` block.
+    """
+    crons = _get(config, "triggers.crons")
+    if not isinstance(crons, list) or "*/5 * * * *" not in crons:
+        errors.append(f"triggers.crons must include '*/5 * * * *' (got {crons!r})")
+    for key, default in (
+        ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300),
+        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600),
+        ("AGGREGATE_REBUILD_LEASE_SECONDS", 900),
+        ("AGGREGATE_REBUILD_QUIET_SECONDS", 300),
+        ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600),
+    ):
+        value = _get(config, f"vars.{key}")
+        if value is None:
+            errors.append(f"vars.{key} is missing (expected {default} or an explicit operator value)")
+            continue
+        try:
+            parsed = int(str(value), 10)
+        except (TypeError, ValueError):
+            errors.append(f"vars.{key} must be an integer number of seconds (got {value!r})")
+            continue
+        if parsed <= 0:
+            errors.append(f"vars.{key} must be positive (got {parsed})")
+        if key in ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", "AGGREGATE_REBUILD_FALLBACK_SECONDS") and parsed < 60:
+            errors.append(f"vars.{key} below 60s would rebuild after nearly every queue batch (got {parsed})")
+
+
 def _validate_main(path: Path, errors: list[str]) -> None:
     config, error = _read_config(path)
     if error:
@@ -155,6 +188,7 @@ def _validate_main(path: Path, errors: list[str]) -> None:
     _require_binding(errors, config, "queues.producers", "PIPELINE_CONTROL_QUEUE", "main")
     _require_queue(errors, config, "immi-case-mutation-queue", "main")
     _require_dlq_consumer(errors, config, "immi-case-mutation-dlq", "main")
+    _check_aggregate_rebuild_guard(errors, config, "main")
     _check_no_legacy_keys(errors, config, "main")
 
 

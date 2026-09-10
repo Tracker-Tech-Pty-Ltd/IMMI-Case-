@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 
 const mockCreateStores = vi.fn();
-vi.mock("../storage/cloudflare.js", () => ({ createCloudflareStores: (...args) => mockCreateStores(...args) }));
+vi.mock("../storage/cloudflare.js", () => ({
+  createCloudflareStores: (...args) => mockCreateStores(...args),
+  // The scheduled handler deliberately uses the D1-only factory so the cron
+  // cannot fail because R2/Vectorize/AI are unavailable.
+  createCloudflareCaseStore: () => mockCreateStores().caseStore,
+}));
 vi.mock("../storage/pipeline_coordinator.js", () => ({
   coordinateExtractedCase: vi.fn(async () => ({ status: "completed" })),
   splitFtsChunks: (text) => [text],

@@ -1105,13 +1105,17 @@ export class CloudflareCaseStore {
         SELECT 'rebuild_applied_generation', ?, ?`).bind(appliedGeneration, now),
       this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
         SELECT 'rebuild_last_at', ?, ?`).bind(Math.floor(Date.now() / 1000), now),
-      // Only disarm the staleness clock when nothing arrived while this rebuild
-      // was scanning: a mutation that landed mid-scan keeps its clock armed, so
-      // the staleness bound stays reachable under continuous writes.
-      this.db.prepare(`UPDATE catalog_summary SET value_int = 0, updated_at = ?
-         WHERE summary_key = 'rebuild_dirty_since'
-           AND COALESCE((SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_generation'), 0) <= ?`)
-        .bind(now, appliedGeneration),
+      // Disarm the staleness clock unconditionally. The clock measures how long
+      // the CURRENT era of pending work has gone unrebuilt, and it is the only
+      // throttle on the max-staleness bound: if a rebuild left it armed (say
+      // because a mutation landed mid-scan), the bound would fire again on the
+      // very next queue batch - measured at $631-$1,262/day, i.e. the 2026-08
+      // incident's cost curve. Pending work is never lost by disarming: the
+      // generation counter (see rebuild_applied_generation above) is what
+      // records what the rebuild covered. The next mutation re-arms the clock,
+      // so the bound stays reachable after this era ends.
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_dirty_since', 0, ?`).bind(now),
     );
     for (let offset = 0; offset < statements.length; offset += 20) {
       // While we still own the lease, extend it before each chunk; if another

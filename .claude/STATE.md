@@ -4,6 +4,35 @@ Updated: 2026-09-10 Australia/Melbourne
 
 ## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
 
+### Independent subagent review (2026-09-11) — NOT-SAFE, then fixed
+
+An independent reviewer (not the Codex lane) loaded the real production functions,
+replayed the captured SQL against real SQLite with a simulated clock, and measured
+a 24 h continuous-write scenario. It found what eight Codex passes missed:
+
+- HIGH: the max-staleness branch bypassed the interval debounce while
+  `rebuild_dirty_since` stayed armed forever under continuous writes, so past the
+  6 h bound **every queue batch rebuilt all 17 tables** - measured 2,161 rebuilds /
+  24 h ~= $1,262/day, i.e. the incident's cost curve, while the operator cost model
+  claimed ~$2.30/day. Fix: every rebuild disarms the staleness clock
+  unconditionally (pending work is tracked by the generation, never by the clock),
+  and a 24 h cadence regression test now fails if the disarm ever becomes
+  conditional again (verified: reintroducing the conditional form fails the test
+  with 216 rebuilds).
+- MED: the deploy gate ignored `[triggers]` and the five knobs, so the guard could
+  ship absent with the pipeline fully green. The gate now fails closed on both
+  (plus a regression test), and both configs carry the missing lease var.
+- MED: the cron handler built the full store set (R2 + Vectorize + AI) although the
+  rebuild only needs the catalog D1 - a missing binding would have stalled the
+  rebuild silently. It now uses the lightweight case-store factory.
+- MED: the checklist's gate command could not run as written (missing
+  `--pipeline-config`, macOS `python3` 3.9 has no `tomllib`), and its unwind order
+  (writes before resuming the queue) risked losing enqueued mutations after the
+  four-day retention.
+- LOW: interval/fallback floors so a mistyped value cannot restore per-batch
+  rebuilds; `transform_immi_snapshot.py` no longer deletes the guard's bookkeeping
+  rows; docs corrected (cost model, 391 tests, seven keys, `updated_at` overload).
+
 ### Review 5 fixes (2026-09-11)
 
 - HIGH: the rebuild disarmed `rebuild_dirty_since` unconditionally, so a mutation

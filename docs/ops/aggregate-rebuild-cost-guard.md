@@ -50,6 +50,11 @@ internal keys, none of which reach API responses (`getStats()` reads only
 | `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the current pending work first appeared — armed only on the clean→dirty edge, disarmed only by a rebuild that applied the generation it observed (so continuous writes can never reset the staleness bound) |
 | `rebuild_lease_until` | `claimRebuildLease()` | Epoch seconds until which one invocation owns the rebuild; its **`updated_at` column holds the owner's fencing token** (a UUID-style string) rather than a timestamp |
 
+Note the deliberate overload: `catalog_summary.updated_at` holds a timestamp for
+every key **except** `rebuild_lease_until`, where it carries the owner's fencing
+token. Any future analytics or maintenance query that treats that column as a
+time must exclude the lease row.
+
 "Dirty" is `rebuild_generation > rebuild_applied_generation`. A boolean flag
 would be wrong: a rebuild that starts at generation 5 and takes a minute can be
 interleaved with a mutation, and a plain `dirty = 0` write at the end would
@@ -88,9 +93,22 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 | Scenario | Before | After (300 s interval) |
 |---|---|---|
 | One queue batch | ~584k rows (~$0.58) | 3 control rows in one atomic batch |
-| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window) + ~23k control rows ≈ $0.02; a run longer than the staleness bound adds one rebuild per window |
+| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window) + ~23k control rows ≈ $0.02 |
 | Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $2.30 at the 6 h default) |
-| Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s); a sustained multi-hour import may lag up to the staleness bound (6 h) |
+| Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s), and at most one rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (6 h) window while writes never pause |
+
+The staleness bound is only safe because **every rebuild disarms the staleness
+clock** (`rebuild_dirty_since`): the clock measures how long the current era of
+pending work has gone unrebuilt, and it is the bound's only throttle. If a
+rebuild ever leaves it armed — for example because a mutation landed mid-scan —
+the bound fires again on the next queue batch and the bill returns to the
+incident curve. An independent review measured that regression at **216 rebuilds
+in 24 h ≈ $126/day** (versus 4/day with the disarm);
+`workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` pins both the
+statement shape and the 24-hour cadence, so a future change cannot reintroduce it
+quietly. Pending work is never lost by disarming: the generation counter records
+what the rebuild covered.
+
 | Cron missing / failing (fallback path only) | n/a | ≤ 1 rebuild/hour ≈ 14M rows/day ≈ **$14/day** |
 
 ### Quiet window (why an import costs cents, not dollars)
