@@ -202,7 +202,24 @@ async function handleScheduledRebuild(env) {
     return decision;
   }
   const startedAt = Date.now();
-  const result = await rebuildUnderLease(stores, env);
+  let result;
+  try {
+    result = await rebuildUnderLease(stores, env);
+  } catch (error) {
+    // A structured failure event: without it, a failed rebuild is only visible
+    // as the absence of a completion line, which reads exactly like a healthy
+    // debounce.
+    console.error(JSON.stringify({
+      event: "cloudflare.aggregate_rebuild_failed",
+      reason: decision.reason,
+      pending_generation: decision.pending_generation ?? null,
+      applied_generation: decision.applied_generation ?? null,
+      seconds_since_first_pending: decision.seconds_since_first_pending ?? null,
+      duration_ms: Date.now() - startedAt,
+      error: error?.message ?? String(error),
+    }));
+    throw error;
+  }
   if (result?.skipped) return { ...decision, ...result };
   console.log(JSON.stringify({
     event: "cloudflare.aggregate_rebuild_completed",
@@ -231,7 +248,20 @@ async function markStaleAndMaybeRebuild(stores, env) {
   );
   const fallback = await stores.caseStore.aggregatesNeedRebuild(rebuildDecisionParams(env, minIntervalSeconds));
   if (!fallback?.due) return false;
-  const result = await rebuildUnderLease(stores, env);
+  let result;
+  try {
+    result = await rebuildUnderLease(stores, env);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "cloudflare.aggregate_rebuild_failed",
+      path: "queue-fallback",
+      reason: fallback.reason,
+      pending_generation: fallback.pending_generation ?? null,
+      seconds_since_first_pending: fallback.seconds_since_first_pending ?? null,
+      error: error?.message ?? String(error),
+    }));
+    throw error;
+  }
   if (result?.skipped) return false;
   console.log(JSON.stringify({ event: "cloudflare.aggregate_rebuild_fallback", reason: fallback.reason }));
   return true;

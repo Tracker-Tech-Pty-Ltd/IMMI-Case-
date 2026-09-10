@@ -4,6 +4,20 @@ Updated: 2026-09-10 Australia/Melbourne
 
 ## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
 
+### Review 5 fixes (2026-09-11)
+
+- HIGH: the rebuild disarmed `rebuild_dirty_since` unconditionally, so a mutation
+  landing mid-scan reset the clock and the staleness bound became unreachable
+  under continuous writes. The disarm is now a conditional UPDATE that only
+  fires when the rebuild applied the generation it observed.
+- MED: `markAggregatesDirty()` writes its three control rows in one atomic
+  `db.batch()`, and the mutation timestamp is monotonic (`MAX`), so isolates
+  with skewed clocks cannot rewind the quiet window.
+- MED: the staleness bound is evaluated before the interval debounce, so a
+  freshly stamped failed attempt cannot postpone overdue work.
+- LOW: failures emit a structured `cloudflare.aggregate_rebuild_failed` event.
+- LOW: docs state the real control-row counts and per-import cost.
+
 ### Follow-up: quiet window (2026-09-11)
 - The interval alone still cost ~$28 per 153k-case import (one rebuild per
   5-minute interval for four hours). The rebuild now waits for a quiet window:

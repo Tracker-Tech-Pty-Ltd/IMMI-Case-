@@ -8,7 +8,8 @@ const REBUILD_TABLES = [
   "aggregate_court_nature_outcome", "aggregate_concept_scope", "aggregate_concept_pair",
   "aggregate_judge_outcome", "aggregate_judge_year", "aggregate_judge_visa", "filter_options",
 ];
-const BOOKKEEPING_KEYS = ["rebuild_generation", "rebuild_applied_generation", "rebuild_last_at", "rebuild_lease_until"];
+const BOOKKEEPING_KEYS = ["rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
+  "rebuild_last_mutation_at", "rebuild_dirty_since", "rebuild_lease_until"];
 
 function d1({ responder = () => [], changes = 1, changesFor } = {}) {
   const prepared = [];
@@ -70,9 +71,11 @@ describe("Catalog aggregate rebuild guard", () => {
 
     await stores.caseStore.markAggregatesDirty();
 
-    // Three rows: the generation counter, the mutation timestamp and the
-    // staleness clock (which only arms when it is currently zero).
+    // Three control rows committed as one transaction: the generation counter,
+    // the mutation timestamp and the staleness clock (armed only when zero).
     expect(catalog.prepared).toHaveLength(3);
+    expect(catalog.batch).toHaveBeenCalledTimes(1);
+    expect(catalog.batch.mock.calls[0][0]).toHaveLength(3);
     const statement = catalog.prepared[0];
     expect(statement.sql).toMatch(/INSERT INTO catalog_summary/);
     expect(statement.sql).toMatch(/rebuild_generation/);
@@ -101,8 +104,20 @@ describe("Catalog aggregate rebuild guard", () => {
 
     await stores.caseStore.markAggregatesDirty();
 
-    expect(catalog.batch).not.toHaveBeenCalled();
+    // The only batch is the three control rows - no aggregate DELETE/INSERT.
+    const batched = catalog.batch.mock.calls.flatMap((call) => call[0]);
+    expect(batched).toHaveLength(3);
+    expect(batched.every((s) => s.sql.includes("catalog_summary"))).toBe(true);
     expect(catalog.prepared.some((s) => /DELETE FROM|INSERT INTO aggregate_/i.test(s.sql))).toBe(false);
+  });
+
+  it("updates the mutation timestamp monotonically so clocks cannot rewind the quiet window", async () => {
+    const { catalog, value } = env();
+
+    await createCloudflareStores(value).caseStore.markAggregatesDirty();
+
+    const mutation = catalog.prepared.find((s) => s.sql.includes("'rebuild_last_mutation_at'"));
+    expect(mutation.sql).toMatch(/value_int = MAX\(catalog_summary\.value_int, excluded\.value_int\)/);
   });
 
   it("reports clean when nothing is pending", async () => {
@@ -159,6 +174,17 @@ describe("Catalog aggregate rebuild guard", () => {
 
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe("debounced");
+  });
+
+  it("lets the staleness bound win over a just-stamped attempt", async () => {
+    // A failed rebuild stamps an attempt; the interval must not postpone work
+    // that has already exceeded the staleness bound.
+    const { value } = env({ responder: () => state({ pending: 9, applied: 2, lastAt: nowSeconds() - 4000,
+      attemptAt: nowSeconds() - 10, mutationAt: nowSeconds() - 5, dirtySince: nowSeconds() - 25000 }) });
+    const stores = createCloudflareStores(value);
+
+    await expect(stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds: 300, quietSeconds: 300, maxStalenessSeconds: 21600 }))
+      .resolves.toMatchObject({ due: true, reason: "max-staleness" });
   });
 
   it("waits for a quiet window before rebuilding", async () => {
@@ -302,7 +328,10 @@ describe("Catalog aggregate rebuild guard", () => {
 
     await stores.caseStore.rebuildAggregates();
 
-    expect(catalog.prepared.some((s) => s.sql.startsWith("UPDATE catalog_summary SET value_int"))).toBe(false);
+    // The only UPDATE is the conditional dirty_since disarm, never a lease renewal.
+    const updates = catalog.prepared.filter((s) => s.sql.startsWith("UPDATE catalog_summary SET value_int"));
+    expect(updates.every((s) => s.sql.includes("'rebuild_dirty_since'"))).toBe(true);
+    expect(updates.some((s) => s.sql.includes("'rebuild_lease_until'"))).toBe(false);
   });
 
   it("throttles a retry after a failed rebuild", async () => {
@@ -328,7 +357,8 @@ describe("Catalog aggregate rebuild guard", () => {
       .map((s) => s.sql.replace("DELETE FROM ", "").split(" ")[0]);
     expect(deleted.sort()).toEqual([...REBUILD_TABLES].sort());
     // 1 state read + 17 DELETEs + 17 INSERT ... SELECT + 7 filter_option inserts
-    // + 3 bookkeeping rows (applied generation, last rebuild, dirty_since reset).
+    // + 3 bookkeeping statements (applied generation, last rebuild, conditional
+    // dirty_since disarm).
     expect(catalog.prepared.length).toBe(1 + REBUILD_TABLES.length * 2 + 7 + 3);
   });
 
@@ -357,13 +387,17 @@ describe("Catalog aggregate rebuild guard", () => {
     const stamp = catalog.prepared
       .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_last_at'"));
     const resetDirtySince = catalog.prepared
-      .find((s) => s.sql.startsWith("INSERT OR REPLACE") && s.sql.includes("'rebuild_dirty_since'"));
+      .find((s) => s.sql.startsWith("UPDATE catalog_summary SET value_int = 0"));
     expect(applied.sql).toMatch(/INSERT OR REPLACE INTO catalog_summary/);
     expect(Number(applied.params[0])).toBe(7);
     expect(Number(stamp.params[0])).toBeGreaterThanOrEqual(before);
     expect(Number(stamp.params[0])).toBeLessThanOrEqual(after);
+    // The disarm is conditional on no mutation arriving mid-scan, so continuous
+    // writes can never reset the staleness clock on every rebuild.
     expect(resetDirtySince).toBeDefined();
-    expect(resetDirtySince.sql).toMatch(/SELECT 'rebuild_dirty_since', 0/);
+    expect(resetDirtySince.sql).toMatch(/WHERE summary_key = 'rebuild_dirty_since'/);
+    expect(resetDirtySince.sql).toMatch(/COALESCE\(\(SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_generation'\), 0\) <= \?/);
+    expect(Number(resetDirtySince.params[1])).toBe(7);
     expect(catalog.prepared.some((s) => s.sql.includes("'rebuild_dirty'"))).toBe(false);
   });
 

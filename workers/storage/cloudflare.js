@@ -1105,8 +1105,13 @@ export class CloudflareCaseStore {
         SELECT 'rebuild_applied_generation', ?, ?`).bind(appliedGeneration, now),
       this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
         SELECT 'rebuild_last_at', ?, ?`).bind(Math.floor(Date.now() / 1000), now),
-      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
-        SELECT 'rebuild_dirty_since', 0, ?`).bind(now),
+      // Only disarm the staleness clock when nothing arrived while this rebuild
+      // was scanning: a mutation that landed mid-scan keeps its clock armed, so
+      // the staleness bound stays reachable under continuous writes.
+      this.db.prepare(`UPDATE catalog_summary SET value_int = 0, updated_at = ?
+         WHERE summary_key = 'rebuild_dirty_since'
+           AND COALESCE((SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_generation'), 0) <= ?`)
+        .bind(now, appliedGeneration),
     );
     for (let offset = 0; offset < statements.length; offset += 20) {
       // While we still own the lease, extend it before each chunk; if another
@@ -1133,24 +1138,29 @@ export class CloudflareCaseStore {
   async markAggregatesDirty() {
     const now = Math.floor(Date.now() / 1000);
     const stamp = utcNow();
-    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
-        VALUES ('rebuild_generation', 1, ?)
-      ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at`)
-      .bind(stamp).run();
-    // When the last mutation happened: the scheduled rebuild waits for a quiet
-    // window so a long bulk import costs one rebuild, not one per interval.
-    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
-        VALUES ('rebuild_last_mutation_at', ?, ?)
-      ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int, updated_at = excluded.updated_at`)
-      .bind(now, stamp).run();
-    // When the pending work first appeared: bounds how stale analytics may get
-    // while mutations keep arriving without a quiet gap.
-    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
-        VALUES ('rebuild_dirty_since', ?, ?)
-      ON CONFLICT(summary_key) DO UPDATE SET
-        value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,
-        updated_at = excluded.updated_at`)
-      .bind(now, stamp).run();
+    // One batch = one transaction, so two isolates cannot interleave these rows.
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_generation', 1, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at`)
+        .bind(stamp),
+      // When the last mutation happened: the scheduled rebuild waits for a quiet
+      // window so a long bulk import costs one rebuild, not one per interval.
+      // MAX() keeps it monotonic when isolates with skewed clocks interleave.
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_last_mutation_at', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = MAX(catalog_summary.value_int, excluded.value_int), updated_at = excluded.updated_at`)
+        .bind(now, stamp),
+      // When the pending work first appeared: bounds how stale analytics may get
+      // while mutations keep arriving without a quiet gap.
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_dirty_since', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,
+          updated_at = excluded.updated_at`)
+        .bind(now, stamp),
+    ]);
     return true;
   }
 
@@ -1189,10 +1199,6 @@ export class CloudflareCaseStore {
     const lastAt = Math.max(lastSuccessAt, lastAttemptAt);
     const nowSeconds = Math.floor(Date.now() / 1000);
     const elapsedSeconds = lastAt > 0 ? nowSeconds - lastAt : interval;
-    if (elapsedSeconds < interval) {
-      return { due: false, reason: "debounced", seconds_until_due: interval - elapsedSeconds };
-    }
-
     const dirtySince = state.get("rebuild_dirty_since") || 0;
     const staleness = dirtySince > 0 ? nowSeconds - dirtySince : 0;
     const base = {
@@ -1206,6 +1212,10 @@ export class CloudflareCaseStore {
     // per interval.
     if (maxStaleness > 0 && staleness >= maxStaleness) {
       return { due: true, reason: "max-staleness", seconds_since_first_pending: staleness, ...base };
+    }
+
+    if (elapsedSeconds < interval) {
+      return { due: false, reason: "debounced", seconds_until_due: interval - elapsedSeconds };
     }
 
     // Quiet window: wait for mutations to stop, so a multi-hour import collapses
