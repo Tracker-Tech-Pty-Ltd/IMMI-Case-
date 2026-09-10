@@ -1,6 +1,67 @@
 # IMMI-Case Worktree Closeout State
 
-Updated: 2026-08-21 Australia/Melbourne
+Updated: 2026-09-10 Australia/Melbourne
+
+## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
+
+### Symptom
+- `immi-catalog` D1 wrote 12,084,578,591 rows (99.77% of the account's analytical
+  writes) across 2026-08-23 → 2026-09-01: 12.06B billable rows ≈ **$12,060** of
+  D1 rows-written charges. The budget-alert email fired once (2026-08-25 23:55
+  local, quoting $5,190.94) and further spend produced no new notice.
+
+### Root cause
+- `handleCaseMutationQueue()` rebuilt aggregates **once per queue batch**; one
+  rebuild clears and rewrites 17 summary/filter tables (~584k written rows,
+  ~$0.58 at $1/million). With `max_batch_size = 20`, a 153k-case import is
+  ~7,700 batches ≈ 4.5B written rows, and the corpus was re-pushed several times.
+- Query insights: the top three `INSERT ... SELECT` statements alone account for
+  6.68B written rows across ~24,000 executions.
+
+### Fix
+- The queue path now records staleness (`markAggregatesDirty()`, one row); the
+  new `scheduled()` handler rebuilds at most once per
+  `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (default 300 s) driven by the
+  `[triggers]` cron `*/5 * * * *`, under a conditional-upsert D1 lease so
+  overlapping invocations cannot rewrite the 17 tables at once.
+- Bookkeeping lives in `catalog_summary` under `rebuild_generation` /
+  `rebuild_applied_generation` / `rebuild_last_at` / `rebuild_last_attempt_at` /
+  `rebuild_lease_until` / `rebuild_lease_token` (no D1 migration; `getStats()`
+  still reads only `total_cases`/`with_full_text`).
+  "Dirty" is `generation > applied_generation`, so a mutation that lands while a
+  rebuild is running stays pending instead of being wiped by the rebuild's own
+  bookkeeping write (the boolean-flag race a Codex review flagged as HIGH).
+- A queue-side fallback (`AGGREGATE_REBUILD_FALLBACK_SECONDS`, default 3600)
+  keeps aggregates fresh if the cron trigger is missing or failing.
+- Lease fencing (second review pass): the winner records a random token, renewal
+  and release are token-conditional, and the rebuild renews per 20-statement
+  chunk and aborts (`rebuild_lease_lost`) if it lost the lease — so an expired
+  holder can neither clobber the new owner nor keep writing. Failed rebuilds are
+  throttled via `rebuild_last_attempt_at` (240 tests-worth of behaviour; see
+  validation below).
+
+### Validation
+- Full Worker Vitest: **27 files / 378 tests passed**, including new assertions
+  that the queue path never rebuilds, that 20 mutations coalesce into one stale
+  flag, that the rebuild statement set is exactly 17 tables + bookkeeping, that
+  a mutation arriving after the applied generation stays pending, and that a
+  second lease claim loses while the first holds.
+- Real-SQLite harness (`work/verify-rebuild-sql.py`): executes the captured
+  rebuild/dirty/decision/lease SQL against `migrations/d1/catalog/0001_catalog.sql`
+  (30 tables) — 14/14 checks, including a deterministic replay of the
+  mid-rebuild mutation race (generation 6 vs applied 5 → still pending).
+- Codex second-model review (read-only) returned CHANGES-REQUIRED with three
+  HIGH findings — unconditional `dirty = 0` race, missing rebuild lease, unsafe
+  documented rollback — all three are fixed above and re-verified.
+- Native bundle closure passed (`scripts/check_cloudflare_native_bundle.mjs`).
+- `scripts/check_cloudflare_native_target.py` output is unchanged from
+  `origin/main` (placeholder-ID gate only).
+
+### Operator follow-up
+- Regenerate `IMMI_NATIVE_MAIN_WRANGLER_TOML_B64` so the deployed config carries
+  the new `[triggers]` block and `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` var;
+  without it the cron never fires and aggregates stop updating.
+- Full notes, cost envelope and rollback: `docs/ops/aggregate-rebuild-cost-guard.md`.
 
 ## 2026-08-21 D1 Capacity Migration + Supabase Status — COMPLETE ✓
 

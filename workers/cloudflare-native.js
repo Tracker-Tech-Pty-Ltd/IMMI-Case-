@@ -117,7 +117,10 @@ async function handleCaseMutationQueue(batch, env) {
         changed = true;
       }
     }
-    if (changed) await stores.caseStore.rebuildAggregates();
+    // Never rebuild on the happy path: one rebuild clears and rewrites 17
+    // tables (~584k written rows), and per-batch rebuilds cost ~$12,060 in
+    // Aug 2026. Record staleness instead; the cron trigger coalesces it.
+    if (changed) await markStaleAndMaybeRebuild(stores, env);
     for (const message of messages) if (typeof message?.ack === "function") message.ack();
   } catch (error) {
     console.error(JSON.stringify({ event: "cloudflare.case_reindex_error", error: error?.message }));
@@ -126,6 +129,97 @@ async function handleCaseMutationQueue(batch, env) {
       else throw error;
     }
   }
+}
+
+const DEFAULT_REBUILD_INTERVAL_SECONDS = 300;
+const DEFAULT_FALLBACK_INTERVAL_SECONDS = 3600;
+const DEFAULT_REBUILD_LEASE_SECONDS = 900;
+
+function positiveIntOr(value, fallback) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Run a rebuild under the D1 lease so overlapping scheduled invocations — or a
+ * cron racing the queue fallback — cannot rewrite the same 17 tables at once.
+ * The lease length is derived from the interval so it always outlives a rebuild
+ * while still expiring on its own if this invocation dies mid-flight.
+ */
+async function rebuildUnderLease(stores, env) {
+  const leaseSeconds = positiveIntOr(env?.AGGREGATE_REBUILD_LEASE_SECONDS, DEFAULT_REBUILD_LEASE_SECONDS);
+  const lease = await stores.caseStore.claimRebuildLease({ leaseSeconds });
+  if (!lease) {
+    console.log(JSON.stringify({ event: "cloudflare.aggregate_rebuild_lease_held" }));
+    return { skipped: "lease_held" };
+  }
+  try {
+    return await stores.caseStore.rebuildAggregates({ lease });
+  } finally {
+    try {
+      // Token-conditional: if this run outlived its lease, the new owner's
+      // lease is left untouched.
+      await stores.caseStore.releaseRebuildLease({ token: lease.token });
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "cloudflare.aggregate_rebuild_lease_release_error", error: error?.message,
+      }));
+    }
+  }
+}
+
+/**
+ * Coalesced analytics rebuild.
+ *
+ * Queue batches only mark the aggregates dirty; this scheduled handler decides
+ * when to pay for the rebuild, so N queue batches cost at most one rebuild per
+ * interval instead of N full rewrites of 17 tables.
+ */
+async function handleScheduledRebuild(env) {
+  const stores = createCloudflareStores(env);
+  const minIntervalSeconds = positiveIntOr(
+    env?.AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS,
+    DEFAULT_REBUILD_INTERVAL_SECONDS,
+  );
+  const decision = await stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds });
+  if (!decision.due) {
+    console.log(JSON.stringify({ event: "cloudflare.aggregate_rebuild_skipped", ...decision }));
+    return decision;
+  }
+  const startedAt = Date.now();
+  const result = await rebuildUnderLease(stores, env);
+  if (result?.skipped) return { ...decision, ...result };
+  console.log(JSON.stringify({
+    event: "cloudflare.aggregate_rebuild_completed",
+    reason: decision.reason,
+    min_interval_seconds: minIntervalSeconds,
+    duration_ms: Date.now() - startedAt,
+    rebuilt_at: result?.rebuilt_at ?? null,
+  }));
+  return { ...decision, ...result };
+}
+
+/**
+ * Safety valve for the coalesced rebuild.
+ *
+ * The cron trigger normally performs every rebuild, so the queue path only
+ * records staleness. If that trigger is missing or failing, the flag would
+ * never be drained and every dashboard would freeze silently — so the queue
+ * path still refreshes, at most once per fallback window. With a working cron
+ * the last rebuild is never older than the cron period, and this never fires.
+ */
+async function markStaleAndMaybeRebuild(stores, env) {
+  await stores.caseStore.markAggregatesDirty();
+  const minIntervalSeconds = positiveIntOr(
+    env?.AGGREGATE_REBUILD_FALLBACK_SECONDS,
+    DEFAULT_FALLBACK_INTERVAL_SECONDS,
+  );
+  const fallback = await stores.caseStore.aggregatesNeedRebuild({ minIntervalSeconds });
+  if (!fallback?.due) return false;
+  const result = await rebuildUnderLease(stores, env);
+  if (result?.skipped) return false;
+  console.log(JSON.stringify({ event: "cloudflare.aggregate_rebuild_fallback", reason: fallback.reason }));
+  return true;
 }
 
 async function handleDeadLetterQueue(batch, env) {
@@ -195,6 +289,9 @@ export default {
       return;
     }
     await handleCaseMutationQueue(batch, env);
+  },
+  async scheduled(event, env) {
+    return handleScheduledRebuild(env);
   },
   async fetch(request, env, ctx) {
     let mode;

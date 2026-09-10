@@ -47,6 +47,24 @@ function rows(result) {
   return Array.isArray(result?.results) ? result.results : [];
 }
 
+// catalog_summary doubles as the aggregate-rebuild control table. Its
+// bookkeeping keys must survive a rebuild's DELETE so a mutation landing
+// mid-rebuild still leaves a pending generation behind.
+const AGGREGATE_BOOKKEEPING_KEYS = [
+  "rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
+  "rebuild_last_attempt_at", "rebuild_lease_until",
+];
+
+// The rebuild lease keeps its fencing token in the `updated_at` column of the
+// SAME row that holds the expiry, so claiming, renewing and releasing are each
+// a single atomic statement: a token captured in one column and an expiry in
+// another could otherwise be read in a torn state by an expiring holder.
+function leaseToken() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function changeCount(result) {
   return Number(result?.meta?.changes || 0);
 }
@@ -983,12 +1001,23 @@ export class CloudflareCaseStore {
   }
 
   /**
-   * Rebuild queue-maintained analytics outside the request path. A mutation
-   * queue batch calls this once after its D1/R2/Vectorize work, so dashboard
-   * reads remain aggregate-only and never scan the corpus.
+   * Rebuild queue-maintained analytics outside the request path.
+   *
+   * Cost contract: this clears and rewrites 17 summary/filter tables and scans
+   * the whole `cases` table, so it must never run once per queue batch. Queue
+   * work only marks the aggregates dirty (markAggregatesDirty) and the
+   * scheduled handler coalesces those marks into at most one rebuild per
+   * interval (aggregatesNeedRebuild). A per-batch rebuild here wrote ~584k rows
+   * each; one catalog import in Aug 2026 produced 12.1B written rows and about
+   * $12,060 in D1 write charges.
    */
-  async rebuildAggregates() {
+  async rebuildAggregates({ lease } = {}) {
     const now = utcNow();
+    // Snapshot the pending generation before scanning: anything that arrives
+    // while this rebuild runs must stay pending, not be marked applied.
+    const state = await this.readAggregateState();
+    const appliedGeneration = state.get("rebuild_generation") || 0;
+    const keepKeys = AGGREGATE_BOOKKEEPING_KEYS.map((key) => `'${key}'`).join(", ");
     const statements = [];
     for (const table of [
       "aggregate_court_year_outcome", "aggregate_visa", "aggregate_country",
@@ -996,7 +1025,11 @@ export class CloudflareCaseStore {
       "aggregate_source", "catalog_summary", "aggregate_concept", "aggregate_scope",
       "aggregate_court_nature_outcome", "aggregate_concept_scope", "aggregate_concept_pair",
       "aggregate_judge_outcome", "aggregate_judge_year", "aggregate_judge_visa", "filter_options",
-    ]) statements.push(this.db.prepare(`DELETE FROM ${table}`));
+    ]) {
+      statements.push(table === "catalog_summary"
+        ? this.db.prepare(`DELETE FROM catalog_summary WHERE summary_key NOT IN (${keepKeys})`)
+        : this.db.prepare(`DELETE FROM ${table}`));
+    }
     statements.push(
       this.db.prepare(`INSERT INTO aggregate_court_year_outcome (court_code,year,outcome,case_count,updated_at)
         SELECT court_code, year, outcome, COUNT(*), ? FROM cases GROUP BY court_code, year, outcome`).bind(now),
@@ -1062,8 +1095,131 @@ export class CloudflareCaseStore {
         SELECT ?, CAST(${column} AS TEXT), ROW_NUMBER() OVER (ORDER BY ${column}) - 1
         FROM (SELECT DISTINCT ${column} FROM cases WHERE ${column} IS NOT NULL AND ${column} <> '')`).bind(filterName));
     }
-    for (let offset = 0; offset < statements.length; offset += 20) await this.db.batch(statements.slice(offset, offset + 20));
-    return { rebuilt_at: now };
+    // Bookkeeping lives in catalog_summary itself (getStats reads only
+    // total_cases/with_full_text, so these keys stay internal). Recording the
+    // generation observed at the start — not a bare dirty=0 — is what keeps a
+    // mid-rebuild mutation pending.
+    statements.push(
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_applied_generation', ?, ?`).bind(appliedGeneration, now),
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_last_at', ?, ?`).bind(Math.floor(Date.now() / 1000), now),
+    );
+    for (let offset = 0; offset < statements.length; offset += 20) {
+      // While we still own the lease, extend it before each chunk; if another
+      // invocation took over (this run outlived its lease), abort instead of
+      // interleaving DELETEs with it. At most one chunk can overlap.
+      if (lease && !(await this.renewRebuildLease({ token: lease.token, leaseSeconds: lease.leaseSeconds }))) {
+        throw new StorageBoundaryError("Aggregate rebuild lease lost mid-run", {
+          code: "rebuild_lease_lost", status: 503,
+        });
+      }
+      await this.db.batch(statements.slice(offset, offset + 20));
+    }
+    return { rebuilt_at: now, applied_generation: appliedGeneration };
+  }
+
+  /**
+   * Mark analytics as stale without paying for a rebuild: one row written per
+   * queue batch instead of clearing and rewriting 17 tables.
+   *
+   * A monotonic generation, not a boolean: a rebuild applies the generation it
+   * observed when it started, so a mutation landing mid-rebuild stays pending
+   * instead of being wiped by the rebuild's own bookkeeping write.
+   */
+  async markAggregatesDirty() {
+    await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_generation', 1, ?)
+      ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at`)
+      .bind(utcNow()).run();
+    return true;
+  }
+
+  async readAggregateState() {
+    const current = rows(await this.db.prepare(
+      `SELECT summary_key, value_int FROM catalog_summary
+        WHERE summary_key IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at',
+                              'rebuild_last_attempt_at', 'rebuild_lease_until')`,
+    ).all());
+    return new Map(current.map((row) => [row.summary_key, Number(row.value_int || 0)]));
+  }
+
+  /**
+   * Rate-limit decision for the scheduled handler: rebuild only when a
+   * generation is pending and the last rebuild is older than the interval.
+   * This is the only guard preventing a bulk import from rewriting the whole
+   * summary set thousands of times.
+   */
+  async aggregatesNeedRebuild({ minIntervalSeconds = 300 } = {}) {
+    const interval = Number.isFinite(minIntervalSeconds) && minIntervalSeconds > 0
+      ? Math.floor(minIntervalSeconds) : 300;
+    const state = await this.readAggregateState();
+    const pending = state.get("rebuild_generation") || 0;
+    const applied = state.get("rebuild_applied_generation") || 0;
+    if (pending <= applied) return { due: false, reason: "clean" };
+    // Throttle on the last *attempt*, not only the last success: a rebuild that
+    // throws releases its lease without stamping `rebuild_last_at`, and the
+    // 30-second queue retry must not therefore rebuild on every retry.
+    const lastSuccessAt = state.get("rebuild_last_at") || 0;
+    const lastAttemptAt = state.get("rebuild_last_attempt_at") || 0;
+    const lastAt = Math.max(lastSuccessAt, lastAttemptAt);
+    const elapsedSeconds = lastAt > 0 ? Math.floor(Date.now() / 1000) - lastAt : interval;
+    if (elapsedSeconds < interval) {
+      return { due: false, reason: "debounced", seconds_until_due: interval - elapsedSeconds };
+    }
+    return {
+      due: true,
+      reason: "dirty",
+      pending_generation: pending,
+      applied_generation: applied,
+      seconds_since_last_rebuild: lastSuccessAt > 0 ? elapsedSeconds : null,
+    };
+  }
+
+  /**
+   * Atomically claim the rebuild lease. Two overlapping cron invocations (or a
+   * cron racing the queue fallback) would otherwise both rewrite 17 tables and
+   * interleave their DELETEs. The conditional upsert only writes when the held
+   * lease has expired, so `changes === 1` means this caller won.
+   */
+  async claimRebuildLease({ leaseSeconds = 900 } = {}) {
+    const now = Math.floor(Date.now() / 1000);
+    const lease = Math.max(60, Math.floor(leaseSeconds));
+    const token = leaseToken();
+    // One statement takes the lease, writes its expiry and rotates the token:
+    // a winner cannot be confused with the previous holder, and an expired
+    // holder's token stops matching the moment a new claim lands.
+    const result = await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_lease_until', ?, ?)
+      ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int, updated_at = excluded.updated_at
+      WHERE catalog_summary.value_int < ?`)
+      .bind(now + lease, token, now).run();
+    if (changeCount(result) === 0) return null;
+    // Throttles retries of a rebuild that failed (a failure never stamps
+    // rebuild_last_at). Losing this write only costs one extra rebuild.
+    await this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_last_attempt_at', ?, ?)`).bind(now, utcNow()).run();
+    return { token, leaseSeconds: lease };
+  }
+
+  /** Extend the lease, but only while this caller still owns it. */
+  async renewRebuildLease({ token, leaseSeconds = 900 } = {}) {
+    if (typeof token !== "string" || !token) return false;
+    const lease = Math.max(60, Math.floor(leaseSeconds));
+    const result = await this.db.prepare(`UPDATE catalog_summary SET value_int = ?, updated_at = ?
+        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?`)
+      .bind(Math.floor(Date.now() / 1000) + lease, token, token).run();
+    return changeCount(result) > 0;
+  }
+
+  /** Release the lease — only the token holder can, so an expired run cannot
+   *  free (or extend) a lease that a newer invocation now owns. */
+  async releaseRebuildLease({ token } = {}) {
+    if (typeof token !== "string" || !token) return false;
+    const result = await this.db.prepare(`UPDATE catalog_summary SET value_int = 0, updated_at = ?
+        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?`)
+      .bind(utcNow(), token).run();
+    return changeCount(result) > 0;
   }
 
   async relatedCompat(caseId, { limit = 5 } = {}) {

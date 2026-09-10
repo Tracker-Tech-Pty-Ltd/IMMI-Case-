@@ -27,7 +27,11 @@ function stores() {
     caseStore: {
       getCase: vi.fn(async () => ({ case_id: "0123456789ab", title: "Example", citation: "[2026] FCA 1", court_code: "FCA", year: 2026, source: "austlii", visa_subclass: "482" })),
       markSemanticReady: vi.fn(async () => undefined),
-      rebuildAggregates: vi.fn(async () => undefined),
+      markAggregatesDirty: vi.fn(async () => true),
+      aggregatesNeedRebuild: vi.fn(async () => ({ due: false, reason: "debounced" })),
+      claimRebuildLease: vi.fn(async () => ({ token: "queue-lease", leaseSeconds: 900 })),
+      releaseRebuildLease: vi.fn(async () => true),
+      rebuildAggregates: vi.fn(async () => ({ rebuilt_at: "2026-09-10T00:00:00.000Z" })),
     },
     semanticIndex: {
       embed: vi.fn(async () => Array(1024).fill(0)),
@@ -79,7 +83,9 @@ describe("Cloudflare-native case mutation queue", () => {
     expect(current.objectStore.getVerifiedText).toHaveBeenCalledWith(expect.objectContaining({ contentType: "text/plain; charset=utf-8" }));
     expect(current.semanticIndex.upsertCase).toHaveBeenCalledWith("0123456789ab", expect.any(Array), expect.objectContaining({ court_code: "FCA", year: 2026 }));
     expect(current.caseStore.markSemanticReady).toHaveBeenCalledWith("0123456789ab", "mutation-1");
-    expect(current.caseStore.rebuildAggregates).toHaveBeenCalledOnce();
+    // A queue batch must never pay for a full rebuild; it only flags staleness.
+    expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalledOnce();
     expect(message.retry).not.toHaveBeenCalled();
   });
@@ -113,11 +119,12 @@ describe("Cloudflare-native case mutation queue", () => {
     await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
     expect(current.objectStore.getVerifiedJson).toHaveBeenCalledWith(expect.objectContaining({ key: message.body.payload_key }), expect.objectContaining({ prefix: "pipeline" }));
     expect(mockCoordinate).toHaveBeenCalledWith(expect.objectContaining({ eventId: message.body.event_id, runId: "run", canonicalText: "canonical text" }));
-    expect(current.caseStore.rebuildAggregates).toHaveBeenCalledOnce();
+    expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalledOnce();
   });
 
-  it("rebuilds catalog aggregates for a mutation-triggered refresh event", async () => {
+  it("flags catalog aggregates as stale for a mutation-triggered refresh event", async () => {
     const current = stores();
     mockCreateStores.mockReturnValue(current);
     const message = {
@@ -126,9 +133,65 @@ describe("Cloudflare-native case mutation queue", () => {
       retry: vi.fn(),
     };
     await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
-    expect(current.caseStore.rebuildAggregates).toHaveBeenCalledOnce();
+    expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalledOnce();
     expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  it("uses the fallback rebuild only when the cron path has gone quiet", async () => {
+    const current = stores();
+    current.caseStore.aggregatesNeedRebuild.mockResolvedValue({ due: true, reason: "dirty" });
+    mockCreateStores.mockReturnValue(current);
+    const message = { body: { kind: "case.reindex", case_id: "0123456789ab" }, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_FALLBACK_SECONDS: "1800" });
+
+    expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 1800 });
+    expect(current.caseStore.claimRebuildLease).toHaveBeenCalledWith({ leaseSeconds: 900 });
+    expect(current.caseStore.rebuildAggregates).toHaveBeenCalledWith({ lease: { token: "queue-lease", leaseSeconds: 900 } });
+    expect(current.caseStore.releaseRebuildLease).toHaveBeenCalledWith({ token: "queue-lease" });
+  });
+
+  it("defaults the fallback window to an hour when unset", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    const message = { body: { kind: "case.reindex", case_id: "0123456789ab" }, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+
+    expect(current.caseStore.aggregatesNeedRebuild).toHaveBeenCalledWith({ minIntervalSeconds: 3600 });
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+  });
+
+  it("does not rebuild from the queue path when another invocation holds the lease", async () => {
+    const current = stores();
+    current.caseStore.aggregatesNeedRebuild.mockResolvedValue({ due: true, reason: "dirty" });
+    current.caseStore.claimRebuildLease.mockResolvedValue(null);
+    mockCreateStores.mockReturnValue(current);
+    const message = { body: { kind: "case.reindex", case_id: "0123456789ab" }, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
+
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    expect(current.caseStore.releaseRebuildLease).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalledOnce();
+  });
+
+  it("coalesces many mutations in one batch into a single stale flag", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    const messages = Array.from({ length: 20 }, (_, index) => ({
+      body: { kind: "case.reindex", case_id: "0123456789ab", event_id: `case.reindex:${index}` },
+      ack: vi.fn(),
+      retry: vi.fn(),
+    }));
+    await worker.queue({ messages }, { IMMI_STORAGE_MODE: "cloudflare" });
+    // 20 mutations used to mean one 584k-row rebuild; now they mean one row.
+    expect(current.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(1);
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    for (const message of messages) expect(message.ack).toHaveBeenCalledOnce();
   });
 
   it("deletes a case source only through its validated R2 pointer", async () => {

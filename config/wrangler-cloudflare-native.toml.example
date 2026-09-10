@@ -52,6 +52,20 @@ new_sqlite_classes = ["AuthNonce", "CouncilSessionDO"]
 AUTH_ENABLED = "true"
 IMMI_STORAGE_MODE = "cloudflare"
 IMMI_CASE_MUTATIONS_ENABLED = "false"
+# Minimum seconds between coalesced analytics rebuilds (see [triggers]).
+AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS = "300"
+# Safety valve: if the cron trigger is missing or failing, the queue path still
+# refreshes aggregates, at most once per this window (never leaves the
+# dashboard frozen forever).
+AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
+
+# Coalesced analytics rebuild: the mutation queue only marks aggregates dirty,
+# and this cron performs at most one full rebuild per
+# AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS. Never trigger the rebuild from the
+# queue consumer again — one rebuild clears and rewrites 17 summary tables
+# (~584k written rows), and per-batch rebuilds produced a ~$12k D1 bill.
+[triggers]
+crons = ["*/5 * * * *"]
 
 [[queues.producers]]
 binding = "CASE_MUTATION_QUEUE"
