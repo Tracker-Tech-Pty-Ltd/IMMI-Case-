@@ -23,6 +23,11 @@ main = "workers/cloudflare-native.js"
 [vars]
 IMMI_STORAGE_MODE = "cloudflare"
 IMMI_CASE_MUTATIONS_ENABLED = "false"
+AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS = "300"
+AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
+AGGREGATE_REBUILD_LEASE_SECONDS = "900"
+AGGREGATE_REBUILD_QUIET_SECONDS = "300"
+AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
 [[d1_databases]]
 binding = "IMMI_CATALOG_DB"
 database_id = "catalog-id"
@@ -57,6 +62,8 @@ queue = "immi-case-mutation-queue"
 dead_letter_queue = "immi-case-mutation-dlq"
 [[queues.consumers]]
 queue = "immi-case-mutation-dlq"
+[triggers]
+crons = ["*/5 * * * *"]
 '''
 
 
@@ -111,6 +118,24 @@ queue = "immi-extract-dlq"
 binding = "EXTRACTION_BACKEND"
 entrypoint = "ExtractionBackend"
 '''
+
+
+def test_gate_fails_closed_when_the_cost_guard_block_is_missing(tmp_path: Path) -> None:
+    """The gate must refuse a config that cannot run the rebuild guard.
+
+    Such a config still deploys a working Worker, so nothing else would notice -
+    the queue path would silently return to the cost curve this guard prevents.
+    """
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    stripped = _valid_main()
+    for line in list(stripped.splitlines()):
+        if "AGGREGATE_REBUILD_" in line or "crons =" in line or line.strip() == "[triggers]":
+            stripped = stripped.replace(line + "\n", "")
+    main.write_text(stripped, encoding="utf-8")
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+
+    assert MODULE.main(["--main-config", str(main), "--pipeline-config", str(pipeline)]) == 1
 
 
 def test_checked_in_examples_fail_closed_on_placeholders() -> None:

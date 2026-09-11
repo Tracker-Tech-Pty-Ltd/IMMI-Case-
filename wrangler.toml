@@ -91,6 +91,29 @@ AUTH_ENABLED = "true"
 IMMI_STORAGE_MODE = "cloudflare"
 IMMI_CASE_MUTATIONS_ENABLED = "false"
 CUTOVER_WRITE_FREEZE = "false"
+# Minimum seconds between coalesced analytics rebuilds (see [triggers]).
+AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS = "300"
+# Safety valve: if the cron trigger is missing or failing, the queue path still
+# refreshes aggregates, at most once per this window (never leaves the
+# dashboard frozen forever).
+AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
+# Quiet window: rebuild only after mutations have stopped for this long, so a
+# bulk import costs one rebuild instead of one per interval (~$28 -> ~$0.58).
+AGGREGATE_REBUILD_QUIET_SECONDS = "300"
+# Hard bound on staleness while mutations never pause (default 6 hours).
+AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
+# How long one invocation owns the rebuild before another may take over. It is
+# renewed every 20 statements while the owner is alive, so this only matters if
+# an invocation dies mid-rebuild.
+AGGREGATE_REBUILD_LEASE_SECONDS = "900"
+
+# Coalesced analytics rebuild: the mutation queue only marks aggregates dirty,
+# and this cron performs at most one full rebuild per
+# AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS. Never trigger the rebuild from the
+# queue consumer again — one rebuild clears and rewrites 17 summary tables
+# (~584k written rows), and per-batch rebuilds produced a ~$12k D1 bill.
+[triggers]
+crons = ["*/5 * * * *"]
 
 # Operator-set secrets only; values never belong in this file:
 # CSRF_SECRET, JWT_SECRET_CURRENT, JWT_SECRET_PREVIOUS, JWT_KID_CURRENT,

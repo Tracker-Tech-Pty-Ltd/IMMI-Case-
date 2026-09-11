@@ -322,7 +322,16 @@ def rebuild_catalog_aggregates(output: Output) -> None:
     catalog.execute("DELETE FROM aggregate_judge_court")
     catalog.execute("DELETE FROM aggregate_nature_outcome")
     catalog.execute("DELETE FROM aggregate_source")
-    catalog.execute("DELETE FROM catalog_summary")
+    # Preserve the aggregate-rebuild cost guard's bookkeeping rows: deleting them
+    # would clear the generation/applied/lease state, aborting any in-flight
+    # rebuild and losing the "pending work" record. Mirrors the rebuild's own
+    # DELETE in workers/storage/cloudflare.js.
+    catalog.execute(
+        "DELETE FROM catalog_summary WHERE summary_key NOT IN ("
+        "'rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at', "
+        "'rebuild_last_attempt_at', 'rebuild_lease_until', "
+        "'rebuild_last_mutation_at', 'rebuild_dirty_since')"
+    )
     catalog.execute("DELETE FROM aggregate_concept")
     catalog.execute("DELETE FROM aggregate_scope")
     catalog.execute("DELETE FROM aggregate_court_nature_outcome")

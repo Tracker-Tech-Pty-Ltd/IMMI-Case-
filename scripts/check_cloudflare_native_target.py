@@ -10,6 +10,7 @@ control.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -128,6 +129,41 @@ def _is_placeholder(value: Any) -> bool:
     )
 
 
+def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], role: str) -> None:
+    """Fail closed when the aggregate-rebuild cost guard cannot run.
+
+    The guard only holds if the deployed config carries the cron trigger and the
+    four knobs. Without them the Worker silently falls back to the queue-side
+    path, which was the 2026-08 incident's cost curve - and nothing else in the
+    pipeline would notice a missing `[triggers]` block.
+    """
+    crons = _get(config, "triggers.crons")
+    if not isinstance(crons, list) or "*/5 * * * *" not in crons:
+        errors.append(f"triggers.crons must include '*/5 * * * *' (got {crons!r})")
+    # (key, expected default, floor): the floors mirror the Worker's own so a
+    # config that would rebuild far too often cannot ship.
+    for key, default, floor in (
+        ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300, 60),
+        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600, 60),
+        ("AGGREGATE_REBUILD_LEASE_SECONDS", 900, 60),
+        ("AGGREGATE_REBUILD_QUIET_SECONDS", 300, 30),
+        ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600, 300),
+    ):
+        value = _get(config, f"vars.{key}")
+        if value is None:
+            errors.append(f"vars.{key} is missing (expected {default} or an explicit operator value)")
+            continue
+        # Digits only: Python would accept "21_600" while the Worker's
+        # Number.parseInt stops at the underscore and reads 21.
+        text = str(value).strip()
+        if not re.fullmatch(r"\d+", text):
+            errors.append(f"vars.{key} must be a plain integer number of seconds (got {value!r})")
+            continue
+        parsed = int(text, 10)
+        if parsed < floor:
+            errors.append(f"vars.{key} must be at least {floor}s or the guard rebuilds far too often (got {parsed})")
+
+
 def _validate_main(path: Path, errors: list[str]) -> None:
     config, error = _read_config(path)
     if error:
@@ -155,6 +191,7 @@ def _validate_main(path: Path, errors: list[str]) -> None:
     _require_binding(errors, config, "queues.producers", "PIPELINE_CONTROL_QUEUE", "main")
     _require_queue(errors, config, "immi-case-mutation-queue", "main")
     _require_dlq_consumer(errors, config, "immi-case-mutation-dlq", "main")
+    _check_aggregate_rebuild_guard(errors, config, "main")
     _check_no_legacy_keys(errors, config, "main")
 
 
