@@ -93,6 +93,12 @@ jobs:
       - name: Run Cloudflare Worker tests
         run: npm run test:workers
 
+      # Captures the Worker's real SQL from the CURRENT source and replays it against
+      # the real D1 schema in SQLite. Must run capture+verify in one step: a stale
+      # capture would let a keep-list regression pass.
+      - name: Run the SQL harness (capture + replay)
+        run: npm run test:sql
+
       - name: Install native pipeline dependencies
         run: npm ci --ignore-scripts
         working-directory: workers/austlii-scraper

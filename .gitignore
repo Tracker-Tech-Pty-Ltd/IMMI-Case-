@@ -92,3 +92,5 @@ dashboard.png
 logs/security/
 web-server.log
 web-server.pid
+# Agent scratch: review logs + the SQL harness (repo convention)
+work/

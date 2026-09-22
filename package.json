@@ -2,7 +2,8 @@
   "name": "immi-case",
   "type": "module",
   "scripts": {
-    "test:workers": "vitest run --config workers/vitest.config.js"
+    "test:workers": "vitest run --config workers/vitest.config.js",
+    "test:sql": "node work/capture-statements.mjs >/dev/null && python3 work/verify-rebuild-sql.py"
   },
   "devDependencies": {
     "vitest": "^2.0.0",
