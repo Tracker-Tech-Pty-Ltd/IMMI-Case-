@@ -2,6 +2,9 @@
 // they can be executed against a real SQLite database with the real schema.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createCloudflareStores } from "../../workers/storage/cloudflare.js";
 
 const recorded = [];
@@ -57,8 +60,12 @@ const out = recorded.map((statement) => ({
   sql: statement.sql,
   params: statement.params.map((p) => (typeof p === "number" ? p : String(p))),
 }));
+// Default to a TEMP file: the harness must run from a fresh checkout where the
+// (gitignored) work/ scratch directory does not exist. Pass CAPTURE_OUT to keep
+// the artifact somewhere specific.
 const target = process.env.CAPTURE_OUT
-  || fileURLToPath(new URL("../../work/rebuild-statements.json", import.meta.url));
+  || join(tmpdir(), `rebuild-statements-${process.pid}.json`);
+mkdirSync(join(target, ".."), { recursive: true });
 const payload = { captured_at: Math.floor(Date.now() / 1000), statements: out };
 writeFileSync(target, JSON.stringify(payload, null, 1));
 console.log(JSON.stringify({ statements: out.length, captured_at: payload.captured_at, out: target }));

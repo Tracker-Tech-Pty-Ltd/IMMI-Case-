@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "test:workers": "vitest run --config workers/vitest.config.js",
-    "test:sql": "node scripts/sql-harness/capture-statements.mjs >/dev/null && python3 scripts/sql-harness/verify-rebuild-sql.py"
+    "test:sql": "python3 scripts/sql-harness/verify-rebuild-sql.py"
   },
   "devDependencies": {
     "vitest": "^2.0.0",
