@@ -28,6 +28,7 @@ AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
 AGGREGATE_REBUILD_LEASE_SECONDS = "900"
 AGGREGATE_REBUILD_QUIET_SECONDS = "300"
 AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
+AGGREGATE_REBUILD_DAILY_BUDGET = "48"
 [[d1_databases]]
 binding = "IMMI_CATALOG_DB"
 database_id = "catalog-id"
@@ -208,3 +209,13 @@ def test_operator_gate_requires_explicit_dlq_consumers(tmp_path: Path) -> None:
     MODULE._validate_pipeline(pipeline, errors)
     assert any("dead-letter queue immi-case-mutation-dlq" in error for error in errors)
     assert any("dead-letter queue immi-extract-dlq" in error for error in errors)
+
+def test_missing_daily_budget_blocks_the_deploy(tmp_path, monkeypatch) -> None:
+    """The daily budget is the one bound that is not a knob - its absence must fail closed."""
+    main = tmp_path / "main.toml"
+    pipeline = tmp_path / "pipeline.toml"
+    main.write_text(_valid_main().replace('AGGREGATE_REBUILD_DAILY_BUDGET = "48"\n', ""), encoding="utf-8")
+    pipeline.write_text(_valid_pipeline(), encoding="utf-8")
+    monkeypatch.setattr(MODULE, "DEFAULT_MAIN", main)
+    monkeypatch.setattr(MODULE, "DEFAULT_PIPELINE", pipeline)
+    assert MODULE.main([]) == 1

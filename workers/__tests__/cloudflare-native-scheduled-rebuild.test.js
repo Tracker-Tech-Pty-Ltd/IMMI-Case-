@@ -23,6 +23,7 @@ function stores(decision = { due: true, reason: "dirty" }) {
       // The post-lease re-check: default to "work still pending" so the usual
       // tests exercise the rebuild; the TOCTOU test overrides it.
       aggregatesStillPending: vi.fn(async () => ({ pending_generation: 1, applied_generation: 0, pending: true })),
+      consumeRebuildBudget: vi.fn(async () => ({ allowed: true, used: 1, budget: 48, day: 20260922 })),
       rebuildAggregates: vi.fn(async () => ({ rebuilt_at: "2026-09-10T00:00:00.000Z" })),
       markAggregatesDirty: vi.fn(async () => true),
       claimRebuildLease: vi.fn(async () => ({ token: "cron-lease", leaseSeconds: 900 })),
@@ -165,5 +166,31 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
     const store = mockCreateStores.mock.results.at(-1).value.caseStore;
     expect(store.rebuildAggregates).not.toHaveBeenCalled();
     expect(store.releaseRebuildLease).toHaveBeenCalled();
+  });
+
+  it("refuses to rebuild once the daily budget is exhausted, and still releases the lease", async () => {
+    const current = stores();
+    current.caseStore.consumeRebuildBudget.mockResolvedValue({ allowed: false, used: 49, budget: 48, day: 20260922 });
+    mockCreateStores.mockReturnValue(current);
+
+    const result = await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_DAILY_BUDGET: "48" });
+
+    expect(result.skipped).toBe("daily_budget_exhausted");
+    expect(current.caseStore.consumeRebuildBudget).toHaveBeenCalledWith({ dailyBudget: 48 });
+    expect(current.caseStore.rebuildAggregates).not.toHaveBeenCalled();
+    // the finally block must still run: a refused attempt cannot leave the lease held
+    expect(current.caseStore.releaseRebuildLease).toHaveBeenCalledWith({ token: "cron-lease" });
+  });
+
+  it("reads the daily budget from the environment (and falls back, never 0, on a nonsense value)", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_DAILY_BUDGET: "12" });
+    expect(current.caseStore.consumeRebuildBudget).toHaveBeenCalledWith({ dailyBudget: 12 });
+
+    const second = stores();
+    mockCreateStores.mockReturnValue(second);
+    await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_DAILY_BUDGET: "0" });
+    expect(second.caseStore.consumeRebuildBudget).toHaveBeenCalledWith({ dailyBudget: 48 });
   });
 });

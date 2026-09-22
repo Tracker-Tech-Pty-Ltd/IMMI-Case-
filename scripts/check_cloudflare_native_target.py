@@ -151,6 +151,9 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
         ("AGGREGATE_REBUILD_LEASE_SECONDS", 900, 60),
         ("AGGREGATE_REBUILD_QUIET_SECONDS", 300, 30),
         ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600, 300),
+        # The only bound that is not operator-settable at runtime: it caps the
+        # daily rebuild count outright, so it must be present and sane.
+        ("AGGREGATE_REBUILD_DAILY_BUDGET", 48, 1),
     ):
         value = _get(config, f"vars.{key}")
         if value is None:

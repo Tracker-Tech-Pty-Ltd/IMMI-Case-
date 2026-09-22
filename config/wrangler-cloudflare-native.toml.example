@@ -68,6 +68,12 @@ AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
 # an invocation dies mid-rebuild.
 AGGREGATE_REBUILD_LEASE_SECONDS = "900"
 
+# Absolute daily rebuild budget. This is the only cost bound that is not a knob
+# an operator or a dashboard edit can mis-set: once the day's count is spent, the
+# rebuild is refused before it touches the 17 aggregate tables. At the measured
+# ~1.46M rows per rebuild, 48/day caps this Worker at ~70M rows/day (~$70/day).
+AGGREGATE_REBUILD_DAILY_BUDGET = "48"
+
 # Coalesced analytics rebuild: the mutation queue only marks aggregates dirty,
 # and this cron performs at most one full rebuild per
 # AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS. Never trigger the rebuild from the

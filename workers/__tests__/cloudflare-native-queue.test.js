@@ -30,6 +30,7 @@ function stores() {
       markAggregatesDirty: vi.fn(async () => true),
       aggregatesNeedRebuild: vi.fn(async () => ({ due: false, reason: "debounced" })),
       aggregatesStillPending: vi.fn(async () => ({ pending_generation: 1, applied_generation: 0, pending: true })),
+      consumeRebuildBudget: vi.fn(async () => ({ allowed: true, used: 1, budget: 48, day: 20260922 })),
       claimRebuildLease: vi.fn(async () => ({ token: "queue-lease", leaseSeconds: 900 })),
       releaseRebuildLease: vi.fn(async () => true),
       rebuildAggregates: vi.fn(async () => ({ rebuilt_at: "2026-09-10T00:00:00.000Z" })),

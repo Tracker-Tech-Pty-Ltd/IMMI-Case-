@@ -534,4 +534,45 @@ describe("Catalog aggregate rebuild guard", () => {
     for (const call of catalog.batch.mock.calls) expect(call[0].length).toBeLessThanOrEqual(20);
     expect(catalog.batch.mock.calls.length).toBeGreaterThan(1);
   });
+
+  it("hard-caps the daily rebuild count and resets on a new UTC day", async () => {
+    let storedDay = 20260922;
+    let count = 0;
+    const { catalog, value } = env();
+    // Stateful emulation of the two bookkeeping rows the counter touches.
+    catalog.prepare = (sql) => ({
+      sql,
+      params: [],
+      bind(...params) { this.params = params; return this; },
+      all: async () => ({ results: [] }),
+      first: async () => (sql.includes("'rebuild_count_today'") && sql.trim().startsWith("SELECT")
+        ? { value_int: count } : null),
+      run: async function run() {
+        if (sql.includes("'rebuild_count_today'")) {
+          count = this.params[1] === storedDay ? count + 1 : 1;
+        } else if (sql.includes("'rebuild_day'")) {
+          storedDay = this.params[0];
+        }
+        return { meta: { changes: 1 } };
+      },
+    });
+    catalog.batch = async (statements) => {
+      for (const statement of statements) await statement.run();
+      return statements.map(() => ({ meta: { changes: 1 } }));
+    };
+    const store = createCloudflareStores(value).caseStore;
+
+    for (let i = 1; i <= 48; i += 1) {
+      const budget = await store.consumeRebuildBudget({ dailyBudget: 48 });
+      expect(budget.allowed).toBe(true);
+      expect(budget.used).toBe(i);
+    }
+    // The 49th attempt of the same UTC day is refused, and no knob can change
+    // that: this is the bound that survives a mistyped var, an extra cron entry
+    // or a dashboard edit.
+    expect((await store.consumeRebuildBudget({ dailyBudget: 48 })).allowed).toBe(false);
+    // A new UTC day starts a fresh budget.
+    storedDay = 20260923;
+    expect(await store.consumeRebuildBudget({ dailyBudget: 48 })).toMatchObject({ allowed: true, used: 1 });
+  });
 });

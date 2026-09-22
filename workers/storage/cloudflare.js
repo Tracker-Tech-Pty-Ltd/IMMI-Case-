@@ -1297,6 +1297,42 @@ export class CloudflareCaseStore {
     return { token, leaseSeconds: lease };
   }
 
+  /**
+   * Absolute daily rebuild budget - the only cost bound that is NOT an operator
+   * variable. Every rebuild attempt (cron or queue fallback) consumes one unit;
+   * past the cap the attempt is refused before it touches the 17 aggregate
+   * tables. A wrong knob, an extra cron entry, a dashboard edit, a lease race or
+   * clock skew can all be survived once the daily count is hard-capped.
+   *
+   * Returns { allowed, used, budget, day }. `used` counts the attempt that just
+   * consumed a unit, so `used === budget` is the last allowed attempt.
+   */
+  async consumeRebuildBudget({ dailyBudget = 48 } = {}) {
+    const budget = Math.max(1, Math.floor(Number(dailyBudget) || 48));
+    const day = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ""));
+    const stamp = utcNow();
+    // Batch order matters: the counter statement must read the PREVIOUS
+    // rebuild_day value, so it runs before the day stamp is overwritten.
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_count_today', 1, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = CASE
+            WHEN (SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_day') = ?
+            THEN catalog_summary.value_int + 1
+            ELSE 1 END,
+          updated_at = excluded.updated_at`).bind(stamp, day),
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_day', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int,
+          updated_at = excluded.updated_at`).bind(day, stamp),
+    ]);
+    const row = await this.db.prepare(
+      `SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_count_today'`).first();
+    const used = Number(row?.value_int || 0);
+    return { allowed: used <= budget, used, budget, day };
+  }
+
   /** Extend the lease, but only while this caller still owns it. */
   async renewRebuildLease({ token, leaseSeconds = 900 } = {}) {
     if (typeof token !== "string" || !token) return false;

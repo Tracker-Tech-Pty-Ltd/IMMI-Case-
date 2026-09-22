@@ -12,16 +12,34 @@ The cause was in this Worker, not in the database or the queue configuration:
   for **every queue batch** that changed anything.
 - `rebuildAggregates()` clears and rewrites **17** summary/filter tables
   (`aggregate_*`, `catalog_summary`, `filter_options`) by scanning the whole
-  `cases` table — **1,514,592 written rows** (and ~2.5M rows read) per call,
+  `cases` table — **~1.46M written rows** (measured, see below; and ~2.5M rows read) per call,
   about **$1.51** at the published $1.00/million-rows rate.
 
-  > Measured 2026-09-22 from the primary evidence (`evidence/query-insights-30d.json`,
-  > D1 Query Insights, 41 rebuild statements): `sum(avgRowsWritten) = 1,514,592`;
-  > cross-check `12,084,578,591 ÷ 8,197 (median numberOfTimesRun) = 1,474,268`, i.e.
-  > ~7,979 rebuilds. An earlier revision of this document said 584,000 rows / $0.58,
-  > which understated the per-rebuild cost by **2.59×** (that figure came from a
-  > synthetic replay, not from Query Insights). Every dollar figure below is
-  > corrected accordingly; the incident total itself was always right.
+  > **How this number is derived (reproducible, 2026-09-22).** From the primary
+  > evidence `evidence/query-insights-30d.json` (D1 Query Insights, 30-day window):
+  >
+  > 1. Take the 41 statements that belong to the rebuild (everything touching
+  >    `aggregate_*`, `catalog_summary`, `filter_options`) and sum their
+  >    `totalRowsWritten` = **12,218,579,618**.
+  > 2. Count the rebuilds with a statement that provably runs **exactly once per
+  >    rebuild**: `DELETE FROM catalog_summary` -> `numberOfTimesRun = 8,373`
+  >    (the median across all 41 statements is 8,197; using either changes the
+  >    answer by <3%).
+  > 3. `12,218,579,618 / 8,373 = ` **1,459,283 rows per rebuild** (1.49M by the
+  >    median, 1.51M if you (invalidly) sum the per-statement averages - all
+  >    agree at ~1.45-1.51M).
+  >
+  > **Why the old 584,000 figure is impossible, not merely imprecise.** It came
+  > from dividing a day's rows by that day's *requests*. Check the burst days:
+  > at 584k rows/rebuild, 2026-08-24 needs 8,913 rebuilds for 8,915 requests
+  > (100%), 2026-08-25 needs 2,700 for 2,380 requests (**113%**), 2026-09-01
+  > needs 5,713 for 5,311 (**108%**) - more rebuilds than requests. At the
+  > measured 1.45M the same days give 3,567 / 1,080 / 1,330 / 2,286 rebuilds
+  > against 8,915 / 2,380 / 3,322 / 5,311 requests, i.e. **40-45% of batches
+  > changed something** - which is what the `if (changed)` guard in
+  > `handleCaseMutationQueue()` predicts. Every dollar figure below follows from
+  > the measured number; the incident total (12.08B rows / $12,060) was always
+  > right and needs no correction.
 - With `max_batch_size = 20`, a catalog import of 153,438 cases produced ~7,700
   batches, i.e. ~7,700 full rewrites ≈ **11.7 billion written rows** per import
   (the observed incident total was 12.08 billion).
@@ -140,6 +158,17 @@ measured each one against the real handlers (see the table below):
 3. **The lease holder re-checks the work is still pending** before rebuilding, so
    N in-flight queue decisions cannot each rebuild after one cron rebuild
    (measured: 20 extra rebuilds, now 0).
+5. **An absolute daily budget** (`AGGREGATE_REBUILD_DAILY_BUDGET`, default **48**,
+   floor 1): consumed in `rebuildUnderLease()` only when there is pending work, so
+   once the day's count is spent the attempt is refused *before* the 17 aggregate
+   tables are touched - and it is refused by code, not by a knob. This is the one
+   bound that survives a mistyped variable, an extra cron entry, a dashboard edit,
+   a lease race or clock skew. At the measured ~1.46M rows per rebuild it caps the
+   Worker at ~70M rows/day (~$70/day) whatever the other variables say, which turns
+   "the worst case is $436-2,181/day" into "the worst case is 48 x rows-per-rebuild".
+   `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` proves the 49th
+   attempt of a UTC day is refused and that a new day resets the budget.
+
 4. **Floors on the knobs** (interval/fallback >= 60 s, quiet >= 30 s,
    max-staleness >= 300 s) so a mistyped value cannot rebuild per minute
    (a max-staleness of "1" rebuilt 106x/hour).
