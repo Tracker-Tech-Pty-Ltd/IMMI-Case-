@@ -12,10 +12,19 @@ The cause was in this Worker, not in the database or the queue configuration:
   for **every queue batch** that changed anything.
 - `rebuildAggregates()` clears and rewrites **17** summary/filter tables
   (`aggregate_*`, `catalog_summary`, `filter_options`) by scanning the whole
-  `cases` table — roughly **584,000 written rows** (and ~2.5M rows read) per
-  call, about **$0.58** at the published $1.00/million-rows rate.
+  `cases` table — **1,514,592 written rows** (and ~2.5M rows read) per call,
+  about **$1.51** at the published $1.00/million-rows rate.
+
+  > Measured 2026-09-22 from the primary evidence (`evidence/query-insights-30d.json`,
+  > D1 Query Insights, 41 rebuild statements): `sum(avgRowsWritten) = 1,514,592`;
+  > cross-check `12,084,578,591 ÷ 8,197 (median numberOfTimesRun) = 1,474,268`, i.e.
+  > ~7,979 rebuilds. An earlier revision of this document said 584,000 rows / $0.58,
+  > which understated the per-rebuild cost by **2.59×** (that figure came from a
+  > synthetic replay, not from Query Insights). Every dollar figure below is
+  > corrected accordingly; the incident total itself was always right.
 - With `max_batch_size = 20`, a catalog import of 153,438 cases produced ~7,700
-  batches, i.e. ~7,700 full rewrites ≈ **4.5 billion written rows** per import.
+  batches, i.e. ~7,700 full rewrites ≈ **11.7 billion written rows** per import
+  (the observed incident total was 12.08 billion).
   Query insights confirmed the pattern: the top three `INSERT ... SELECT`
   statements alone accounted for 6.68B written rows over ~24,000 executions.
 
@@ -47,7 +56,7 @@ internal keys, none of which reach API responses (`getStats()` reads only
 | `rebuild_last_at` | `rebuildAggregates()` | Epoch seconds of the last **successful** rebuild |
 | `rebuild_last_attempt_at` | `claimRebuildLease()` | Epoch seconds of the last attempt — throttles retries of a *failed* rebuild, which never stamps `rebuild_last_at` |
 | `rebuild_last_mutation_at` | `markAggregatesDirty()` | Epoch seconds of the most recent queue mutation — the quiet window is measured from here |
-| `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the current pending work first appeared — armed only on the clean→dirty edge, disarmed only by a rebuild that applied the generation it observed (so continuous writes can never reset the staleness bound) |
+| `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the current pending work first appeared — armed only on the clean→dirty edge, and **disarmed unconditionally at the start of every rebuild attempt** plus again on success, so continuous writes can never keep the staleness bound armed |
 | `rebuild_lease_until` | `claimRebuildLease()` | Epoch seconds until which one invocation owns the rebuild; its **`updated_at` column holds the owner's fencing token** (a UUID-style string) rather than a timestamp |
 
 Note the deliberate overload: `catalog_summary.updated_at` holds a timestamp for
@@ -92,12 +101,12 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 
 | Scenario | Before | After (300 s interval) |
 |---|---|---|
-| One queue batch | ~584k rows (~$0.58) | 3 control rows in one atomic batch |
-| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 4.5B rows ≈ **$4,500** | **1 rebuild ≈ 584k rows ≈ $0.58** (quiet window) + ~23k control rows ≈ $0.02 |
-| Continuous writes, 24 h, no quiet gap | same mechanism, per batch | **3 rebuilds ≈ $1.75** |
-| Continuous writes + a rebuild that keeps failing, 24 h | 2,025 failed attempts, each with partial writes | **3 attempts ≈ $1.75** |
+| One queue batch | ~1.51M rows (~$1.51) | 3 control rows in one atomic batch |
+| 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 11.7B rows ≈ **$11,700** | **1 rebuild ≈ 1.51M rows ≈ $1.51** (quiet window) + ~23k control rows ≈ $0.02 |
+| Continuous writes, 24 h, no quiet gap | same mechanism, per batch | **3 rebuilds ≈ $4.53** |
+| Continuous writes + a rebuild that keeps failing, 24 h | 2,025 failed attempts, each with partial writes | **3 attempts ≈ $4.53** |
 | Operator sets max-staleness = "1" | 106 rebuilds/hour | **6/hour** (floor raises it to 300 s) |
-| Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $2.30 at the 6 h default) |
+| Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $6.04 at the 6 h default) |
 | Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s), and at most one rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (6 h) window while writes never pause |
 
 Four properties keep the rebuild frequency bounded, and an independent reviewer
@@ -123,22 +132,22 @@ pending work has gone unrebuilt, and it is the bound's only throttle. If a
 rebuild ever leaves it armed — for example because a mutation landed mid-scan —
 the bound fires again on the next queue batch and the bill returns to the
 incident curve. An independent review measured that regression at **216 rebuilds
-in 24 h ≈ $126/day** (versus 4/day with the disarm);
+in 24 h ≈ $326/day** (versus 4/day with the disarm);
 `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` pins both the
 statement shape and the 24-hour cadence, so a future change cannot reintroduce it
 quietly. Pending work is never lost by disarming: the generation counter records
 what the rebuild covered.
 
-| Cron missing / failing (fallback path only) | n/a | ≤ 1 rebuild/hour ≈ 14M rows/day ≈ **$14/day** |
+| Cron missing / failing (fallback path only) | n/a | ≤ 1 rebuild/hour ≈ 36M rows/day ≈ **$36/day** |
 
 ### Quiet window (why an import costs cents, not dollars)
 
 The interval alone only bounds *how often* a rebuild may run; during a four-hour
 bulk import it still fires every interval, which is how a fixed version could
-still spend ~$28 on one import. The rebuild therefore waits for a **quiet
+still spend ~$73 on one import. The rebuild therefore waits for a **quiet
 window**: it will not run until mutations have been silent for
 `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300). A 153k-case import now costs
-**one rebuild (~$0.58)** because the pending work accumulates while the import
+**one rebuild (~$1.51)** because the pending work accumulates while the import
 runs and is rebuilt once afterwards. A dashboard read during an import therefore
 sees figures from before the import — acceptable, since nobody is reading
 aggregates while bulk data is still landing.
