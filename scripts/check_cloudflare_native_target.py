@@ -144,7 +144,10 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
     # config that would rebuild far too often cannot ship.
     for key, default, floor in (
         ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300, 60),
-        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600, 60),
+        # Floor matches the Worker's MIN_FALLBACK_FLOOR_SECONDS: the queue-side
+        # fallback is the path that can still rebuild without the cron, so a
+        # value the Worker would clamp anyway must not pass the gate.
+        ("AGGREGATE_REBUILD_FALLBACK_SECONDS", 3600, 300),
         ("AGGREGATE_REBUILD_LEASE_SECONDS", 900, 60),
         ("AGGREGATE_REBUILD_QUIET_SECONDS", 300, 30),
         ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600, 300),

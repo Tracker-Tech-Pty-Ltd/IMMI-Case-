@@ -103,11 +103,29 @@ success alone would let a retry storm rebuild on every 30-second queue retry.
 |---|---|---|
 | One queue batch | ~1.51M rows (~$1.51) | 3 control rows in one atomic batch |
 | 153k-case import (7,700 batches, ~4 h) | ~7,700 rebuilds ≈ 11.7B rows ≈ **$11,700** | **1 rebuild ≈ 1.51M rows ≈ $1.51** (quiet window) + ~23k control rows ≈ $0.02 |
-| Continuous writes, 24 h, no quiet gap | same mechanism, per batch | **3 rebuilds ≈ $4.53** |
+| Continuous writes, 24 h, no quiet gap (6 h staleness bound) | same mechanism, per batch | **3-5 rebuilds ≈ $4.53-7.55** (04:00/10:00/16:00/22:00 boundaries) |
 | Continuous writes + a rebuild that keeps failing, 24 h | 2,025 failed attempts, each with partial writes | **3 attempts ≈ $4.53** |
-| Operator sets max-staleness = "1" | 106 rebuilds/hour | **6/hour** (floor raises it to 300 s) |
-| Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (≤ 4 rebuilds/day ≈ $6.04 at the 6 h default) |
+| Operator sets max-staleness = "1" | 106 rebuilds/hour | **12/hour** (floor raises it to 300 s; with the `*/5` cron that is 288/day ≈ $436/day - the row below) |
+| Steady traffic (a few mutations/min, never quiet for 5 min) | — | bounded by `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (3-5 rebuilds/day ≈ $4.53-7.55 at the 6 h default) |
+| **Intermittent bursts: every burst followed by > QUIET_SECONDS of silence** | same mechanism, per batch | **up to one rebuild per elapsed interval - 288/day ≈ $436/day** with the shipped defaults (no misconfiguration required) |
+| Gate-permitted misconfiguration: an extra `* * * * *` cron (the gate only requires `*/5` to be *included*) + `MIN_INTERVAL=60` (its floor) + `QUIET=30` + `MAX_STALENESS=300` | — | **1,440/day ≈ $2,181/day** - 5.4x the original incident |
 | Dashboard freshness | per batch | a few minutes after the last queued mutation (quiet window 300 s), and at most one rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` (6 h) window while writes never pause |
+
+### The true ceiling (know this before changing any knob)
+
+There is **no rows-written budget, no rebuild counter and no spend-keyed kill
+switch** in this design. Every frequency bound is a *variable*: the cron list
+(gate-constrained only by inclusion), `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS`,
+`AGGREGATE_REBUILD_FALLBACK_SECONDS`, `AGGREGATE_REBUILD_QUIET_SECONDS` and
+`AGGREGATE_REBUILD_MAX_STALENESS_SECONDS`. The code-enforced invariants are the
+knob **floors** and "one rebuild at a time per lease" (and that lease is keyed to
+each isolate's own `Date.now()`, so clock skew can double it).
+
+- With the shipped defaults and a correct deploy: **≤ 288 rebuilds/day ≈ $436/day**
+  (the intermittent-burst shape).
+- Worst case that still passes the deploy gate: **≈ $2,181/day**.
+- Recommended production setting: `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS = "1800"`
+  and exactly one `*/5` cron entry, which pulls the burst shape down to ≤ 48/day ≈ $73/day.
 
 Four properties keep the rebuild frequency bounded, and an independent reviewer
 measured each one against the real handlers (see the table below):
@@ -189,8 +207,11 @@ materialises the operator-supplied configs from
 
 1. Regenerate that config secret from `config/wrangler-cloudflare-native.toml.example`
    (or add the `[triggers]` block plus the two `AGGREGATE_REBUILD_*` vars to the
-   stored copy) — without the cron the aggregates fall back to hourly refreshes
-   (≈$14/day) instead of every 5 minutes, and the incident's cost guarantee is
+   stored copy) — without the cron the aggregates fall back to the queue-side
+   interval path: **24-288 rebuilds/day ≈ $36-436/day** depending on traffic shape
+   (`MIN_FALLBACK_FLOOR_SECONDS = 300` in the Worker caps the frequency, so the
+   fallback alone can never return to the incident curve), and
+   the incident's cost guarantee is
    weakened even though dashboards keep working.
 2. Confirm the deployed Worker has the cron trigger:
    `npx wrangler deployments status` / dashboard → Workers → immi-case-standalone
