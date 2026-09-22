@@ -169,7 +169,7 @@ measured each one against the real handlers (see the table below):
    "the worst case is $436-2,181/day" into "the worst case is 48 x rows-per-rebuild".
    `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` proves the 49th
    attempt of a UTC day is refused and that a new day resets the budget; the SQL
-   harness (`work/verify-rebuild-sql.py`) proves the counter **survives the
+   harness (`scripts/sql-harness/verify-rebuild-sql.py`) proves the counter **survives the
    rebuild's own `DELETE FROM catalog_summary`** - both keys must stay in
    `AGGREGATE_BOOKKEEPING_KEYS` (and in the mirror list in
    `scripts/transform_immi_snapshot.py`), otherwise every completed rebuild wipes
