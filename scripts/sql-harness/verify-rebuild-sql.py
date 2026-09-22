@@ -21,19 +21,14 @@ REPO = Path(__file__).resolve().parents[2]
 # regression pass: remove the two budget keys from the live keep-list, leave the
 # old JSON in place, and the verifier would replay the old good SQL. So: capture
 # fresh into a temp file unless an explicit path is given.
-if "--statements" in sys.argv:
-    capture_path = Path(sys.argv[sys.argv.index("--statements") + 1])
-    cleanup = False
-else:
-    handle, name = tempfile.mkstemp(suffix="-rebuild-statements.json")
-    os.close(handle)
-    capture_path = Path(name)
-    cleanup = True
-
-if cleanup or not capture_path.exists():
-    env = dict(os.environ, CAPTURE_OUT=str(capture_path))
-    subprocess.run(["node", "scripts/sql-harness/capture-statements.mjs"], cwd=REPO, env=env, check=True,
-                   stdout=subprocess.DEVNULL)
+# Always capture from the live source: an option to replay a pre-existing capture
+# file would let a keep-list regression pass (delta-3 review). There is no escape.
+handle, name = tempfile.mkstemp(suffix="-rebuild-statements.json")
+os.close(handle)
+capture_path = Path(name)
+env = dict(os.environ, CAPTURE_OUT=str(capture_path))
+subprocess.run(["node", "scripts/sql-harness/capture-statements.mjs"], cwd=REPO, env=env, check=True,
+               stdout=subprocess.DEVNULL)
 
 captured = json.loads(capture_path.read_text())
 if isinstance(captured, dict):
@@ -132,7 +127,7 @@ connection.commit()
 state = summary()
 check("rebuild writes total_cases", state.get("total_cases") == 3, state)
 check("rebuild writes with_full_text", state.get("with_full_text") == 2, state)
-check("rebuild stamps last rebuild time", abs(state.get("rebuild_last_at", 0) - captured_at) < 600, state)
+check("rebuild stamps last rebuild time", abs(state.get("rebuild_last_at", 0) - captured_at) < 120, state)
 check("rebuild applies the generation it observed",
       state.get("rebuild_applied_generation") == state.get("rebuild_generation", 0), state)
 
@@ -255,7 +250,7 @@ connection.execute(mutation_write["sql"], mutation_write["params"])
 second_arm = connection.execute("SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_dirty_since'").fetchone()[0]
 check("staleness clock arms on the first mutation only", first_arm == second_arm and first_arm > 0, (first_arm, second_arm))
 last_mutation = connection.execute("SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_last_mutation_at'").fetchone()[0]
-check("mutation timestamp is refreshed", abs(last_mutation - captured_at) < 600,
+check("mutation timestamp is refreshed", abs(last_mutation - captured_at) < 120,
       (last_mutation, captured_at))
 # The disarm is unconditional (statement captured from rebuildAggregates():
 # `UPDATE catalog_summary SET value_int = 0 ... WHERE summary_key =

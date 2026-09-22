@@ -63,7 +63,7 @@ bound the bill — the number of rebuild passes does.
 
 ### Bookkeeping model (why generations, not a boolean)
 
-State lives in `catalog_summary` (`summary_key` is the primary key) under seven
+State lives in `catalog_summary` (`summary_key` is the primary key) under nine
 internal keys, none of which reach API responses (`getStats()` reads only
 `total_cases` / `with_full_text`). No D1 migration is required.
 
