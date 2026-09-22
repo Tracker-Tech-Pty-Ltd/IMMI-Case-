@@ -575,4 +575,5 @@ describe("Catalog aggregate rebuild guard", () => {
     storedDay = 20260923;
     expect(await store.consumeRebuildBudget({ dailyBudget: 48 })).toMatchObject({ allowed: true, used: 1 });
   });
+
 });

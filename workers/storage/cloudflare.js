@@ -59,6 +59,12 @@ const AGGREGATE_BOOKKEEPING_KEYS = [
   "rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
   "rebuild_last_attempt_at", "rebuild_lease_until",
   "rebuild_last_mutation_at", "rebuild_dirty_since",
+  // The daily budget counter MUST be preserved by the rebuild's own
+  // `DELETE FROM catalog_summary` (this list feeds its NOT IN clause).
+  // Without these two keys a completed rebuild erases the counter, the next
+  // attempt starts again at 1, and the "absolute" cap is defeated by the very
+  // mechanism it exists to bound (caught by the 2026-09-22 delta review).
+  "rebuild_day", "rebuild_count_today",
 ];
 
 // The rebuild lease keeps its fencing token in the `updated_at` column of the

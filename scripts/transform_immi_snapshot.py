@@ -324,13 +324,15 @@ def rebuild_catalog_aggregates(output: Output) -> None:
     catalog.execute("DELETE FROM aggregate_source")
     # Preserve the aggregate-rebuild cost guard's bookkeeping rows: deleting them
     # would clear the generation/applied/lease state, aborting any in-flight
-    # rebuild and losing the "pending work" record. Mirrors the rebuild's own
+    # rebuild and losing the "pending work" record, and the DAILY BUDGET counter
+    # (erasing it would restart the day's budget). Mirrors the rebuild's own
     # DELETE in workers/storage/cloudflare.js.
     catalog.execute(
         "DELETE FROM catalog_summary WHERE summary_key NOT IN ("
         "'rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at', "
         "'rebuild_last_attempt_at', 'rebuild_lease_until', "
-        "'rebuild_last_mutation_at', 'rebuild_dirty_since')"
+        "'rebuild_last_mutation_at', 'rebuild_dirty_since', "
+        "'rebuild_day', 'rebuild_count_today')"
     )
     catalog.execute("DELETE FROM aggregate_concept")
     catalog.execute("DELETE FROM aggregate_scope")

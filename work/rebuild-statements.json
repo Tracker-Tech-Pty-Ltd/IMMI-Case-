@@ -1,0 +1,397 @@
+[
+ {
+  "phase": "init",
+  "sql": "INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)\n      SELECT 'rebuild_dirty_since', 0, ?",
+  "params": [
+   "2026-09-22T04:11:58.196Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "SELECT summary_key, value_int FROM catalog_summary\n        WHERE summary_key IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at',\n                              'rebuild_last_attempt_at', 'rebuild_lease_until',\n                              'rebuild_last_mutation_at', 'rebuild_dirty_since')",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_court_year_outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_visa",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_country",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_judge",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_judge_court",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_nature_outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_source",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM catalog_summary WHERE summary_key NOT IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at', 'rebuild_last_attempt_at', 'rebuild_lease_until', 'rebuild_last_mutation_at', 'rebuild_dirty_since', 'rebuild_day', 'rebuild_count_today')",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_concept",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_scope",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_court_nature_outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_concept_scope",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_concept_pair",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_judge_outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_judge_year",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM aggregate_judge_visa",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "DELETE FROM filter_options",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_court_year_outcome (court_code,year,outcome,case_count,updated_at)\n        SELECT court_code, year, outcome, COUNT(*), ? FROM cases GROUP BY court_code, year, outcome",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_source (source,case_count,updated_at)\n        SELECT source, COUNT(*), ? FROM cases WHERE source <> '' GROUP BY source",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO catalog_summary (summary_key,value_int,updated_at)\n        SELECT 'total_cases', COUNT(*), ? FROM cases",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO catalog_summary (summary_key,value_int,updated_at)\n        SELECT 'with_full_text', COUNT(*), ? FROM cases WHERE content_key <> ''",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_judge_court (judge_id,court_code,case_count)\n        SELECT cj.judge_id, c.court_code, COUNT(DISTINCT cj.case_id)\n        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id\n        WHERE c.court_code <> '' GROUP BY cj.judge_id, c.court_code",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_nature_outcome (case_nature,outcome,case_count)\n        SELECT case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> '' GROUP BY case_nature, outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_concept (concept_id,label,case_count)\n        SELECT cc.concept_id, c.label, COUNT(DISTINCT cc.case_id)\n        FROM case_concepts cc JOIN concepts c ON c.concept_id = cc.concept_id GROUP BY cc.concept_id, c.label",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_country (country,case_count,updated_at)\n        SELECT country_of_origin, COUNT(*), ? FROM cases WHERE country_of_origin <> '' GROUP BY country_of_origin",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_judge (judge_id,canonical_name,case_count,updated_at)\n        SELECT j.judge_id, j.canonical_name, COUNT(DISTINCT cj.case_id), ?\n        FROM judges j JOIN case_judges cj ON cj.judge_id = j.judge_id GROUP BY j.judge_id, j.canonical_name",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_visa (visa_subclass,court_code,outcome,case_count,updated_at)\n        SELECT visa_subclass, court_code, outcome, COUNT(*), ? FROM cases\n        WHERE visa_subclass <> '' GROUP BY visa_subclass, court_code, outcome",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_scope\n        (court_code,year,outcome,visa_subclass,visa_type,source,case_nature,country_of_origin,has_full_text,case_count)\n        SELECT COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),\n               COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),\n               CASE WHEN content_key <> '' THEN 1 ELSE 0 END, COUNT(*)\n        FROM cases GROUP BY COALESCE(court_code,''), COALESCE(year,0), COALESCE(outcome,''), COALESCE(visa_subclass,''),\n          COALESCE(visa_type,''), COALESCE(source,''), COALESCE(case_nature,''), COALESCE(country_of_origin,''),\n          CASE WHEN content_key <> '' THEN 1 ELSE 0 END",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_court_nature_outcome (court_code,case_nature,outcome,case_count)\n        SELECT court_code, case_nature, outcome, COUNT(*) FROM cases WHERE case_nature <> ''\n        GROUP BY court_code, case_nature, outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_concept_scope (concept_id,court_code,year,outcome,case_count)\n        SELECT cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome, COUNT(DISTINCT cc.case_id)\n        FROM case_concepts cc JOIN cases c ON c.case_id = cc.case_id\n        GROUP BY cc.concept_id, c.court_code, COALESCE(c.year,0), c.outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_concept_pair\n        (concept_id_a,concept_id_b,court_code,outcome,case_count)\n        SELECT a.concept_id, b.concept_id, c.court_code, c.outcome, COUNT(DISTINCT a.case_id)\n        FROM case_concepts a JOIN case_concepts b ON b.case_id = a.case_id AND a.concept_id < b.concept_id\n        JOIN cases c ON c.case_id = a.case_id\n        GROUP BY a.concept_id, b.concept_id, c.court_code, c.outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_judge_outcome (judge_id,court_code,outcome,case_count)\n        SELECT cj.judge_id, c.court_code, c.outcome, COUNT(DISTINCT cj.case_id)\n        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id\n        GROUP BY cj.judge_id, c.court_code, c.outcome",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_judge_year (judge_id,year,case_count)\n        SELECT cj.judge_id, c.year, COUNT(DISTINCT cj.case_id)\n        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.year IS NOT NULL\n        GROUP BY cj.judge_id, c.year",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO aggregate_judge_visa (judge_id,visa_subclass,case_count)\n        SELECT cj.judge_id, c.visa_subclass, COUNT(DISTINCT cj.case_id)\n        FROM case_judges cj JOIN cases c ON c.case_id = cj.case_id WHERE c.visa_subclass <> ''\n        GROUP BY cj.judge_id, c.visa_subclass",
+  "params": []
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(court_code AS TEXT), ROW_NUMBER() OVER (ORDER BY court_code) - 1\n        FROM (SELECT DISTINCT court_code FROM cases WHERE court_code IS NOT NULL AND court_code <> '')",
+  "params": [
+   "court"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(year AS TEXT), ROW_NUMBER() OVER (ORDER BY year) - 1\n        FROM (SELECT DISTINCT year FROM cases WHERE year IS NOT NULL AND year <> '')",
+  "params": [
+   "year"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(outcome AS TEXT), ROW_NUMBER() OVER (ORDER BY outcome) - 1\n        FROM (SELECT DISTINCT outcome FROM cases WHERE outcome IS NOT NULL AND outcome <> '')",
+  "params": [
+   "outcome"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(visa_type AS TEXT), ROW_NUMBER() OVER (ORDER BY visa_type) - 1\n        FROM (SELECT DISTINCT visa_type FROM cases WHERE visa_type IS NOT NULL AND visa_type <> '')",
+  "params": [
+   "visa_type"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(visa_subclass AS TEXT), ROW_NUMBER() OVER (ORDER BY visa_subclass) - 1\n        FROM (SELECT DISTINCT visa_subclass FROM cases WHERE visa_subclass IS NOT NULL AND visa_subclass <> '')",
+  "params": [
+   "visa_subclass"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(source AS TEXT), ROW_NUMBER() OVER (ORDER BY source) - 1\n        FROM (SELECT DISTINCT source FROM cases WHERE source IS NOT NULL AND source <> '')",
+  "params": [
+   "source"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT INTO filter_options (filter_name, option_value, sort_order)\n        SELECT ?, CAST(case_nature AS TEXT), ROW_NUMBER() OVER (ORDER BY case_nature) - 1\n        FROM (SELECT DISTINCT case_nature FROM cases WHERE case_nature IS NOT NULL AND case_nature <> '')",
+  "params": [
+   "case_nature"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)\n        SELECT 'rebuild_applied_generation', ?, ?",
+  "params": [
+   0,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)\n        SELECT 'rebuild_last_at', ?, ?",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "init",
+  "sql": "INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)\n        SELECT 'rebuild_dirty_since', 0, ?",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_generation', 1, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_last_mutation_at', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = MAX(catalog_summary.value_int, excluded.value_int), updated_at = excluded.updated_at",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_dirty_since', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,\n          updated_at = excluded.updated_at",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_generation', 1, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at",
+  "params": [
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_last_mutation_at', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = MAX(catalog_summary.value_int, excluded.value_int), updated_at = excluded.updated_at",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "mark_dirty",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_dirty_since', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,\n          updated_at = excluded.updated_at",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_count_today', 1, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = CASE\n            WHEN (SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_day') = ?\n            THEN catalog_summary.value_int + 1\n            ELSE 1 END,\n          updated_at = excluded.updated_at",
+  "params": [
+   "2026-09-22T04:11:58.197Z",
+   20260922
+  ]
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_day', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int,\n          updated_at = excluded.updated_at",
+  "params": [
+   20260922,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_count_today'",
+  "params": []
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_count_today', 1, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET\n          value_int = CASE\n            WHEN (SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_day') = ?\n            THEN catalog_summary.value_int + 1\n            ELSE 1 END,\n          updated_at = excluded.updated_at",
+  "params": [
+   "2026-09-22T04:11:58.197Z",
+   20260922
+  ]
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n          VALUES ('rebuild_day', ?, ?)\n        ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int,\n          updated_at = excluded.updated_at",
+  "params": [
+   20260922,
+   "2026-09-22T04:11:58.197Z"
+  ]
+ },
+ {
+  "phase": "consume_budget",
+  "sql": "SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_count_today'",
+  "params": []
+ },
+ {
+  "phase": "decision",
+  "sql": "SELECT summary_key, value_int FROM catalog_summary\n        WHERE summary_key IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at',\n                              'rebuild_last_attempt_at', 'rebuild_lease_until',\n                              'rebuild_last_mutation_at', 'rebuild_dirty_since')",
+  "params": []
+ },
+ {
+  "phase": "lease_claim",
+  "sql": "INSERT INTO catalog_summary (summary_key, value_int, updated_at)\n        VALUES ('rebuild_lease_until', ?, ?)\n      ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int, updated_at = excluded.updated_at\n      WHERE catalog_summary.value_int < ?",
+  "params": [
+   1790050918,
+   "aa91ba42-6b9a-4ded-84ae-003c3773b6cd",
+   1790050318
+  ]
+ },
+ {
+  "phase": "lease_claim",
+  "sql": "INSERT OR REPLACE INTO catalog_summary (summary_key, value_int, updated_at)\n        VALUES ('rebuild_last_attempt_at', ?, ?)",
+  "params": [
+   1790050318,
+   "2026-09-22T04:11:58.199Z"
+  ]
+ },
+ {
+  "phase": "lease_renew",
+  "sql": "UPDATE catalog_summary SET value_int = ?, updated_at = ?\n        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?",
+  "params": [
+   1790050918,
+   "aa91ba42-6b9a-4ded-84ae-003c3773b6cd",
+   "aa91ba42-6b9a-4ded-84ae-003c3773b6cd"
+  ]
+ },
+ {
+  "phase": "lease_release",
+  "sql": "UPDATE catalog_summary SET value_int = 0, updated_at = ?\n        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?",
+  "params": [
+   "2026-09-22T04:11:58.199Z",
+   "aa91ba42-6b9a-4ded-84ae-003c3773b6cd"
+  ]
+ }
+]

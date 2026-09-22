@@ -146,6 +146,17 @@ const DEFAULT_MAX_STALENESS_SECONDS = 21600;
 // (~$70/day) no matter how the other variables are set or bypassed.
 const DEFAULT_DAILY_REBUILD_BUDGET = 48;
 const MIN_DAILY_BUDGET_FLOOR = 1;
+// The budget is a CEILING, not a suggestion: an operator (or a dashboard edit)
+// can lower it but never raise it past this value, so the value that bounds the
+// bill cannot be configured away.
+function dailyRebuildBudget(env) {
+  const requested = positiveIntOr(
+    env?.AGGREGATE_REBUILD_DAILY_BUDGET,
+    DEFAULT_DAILY_REBUILD_BUDGET,
+    MIN_DAILY_BUDGET_FLOOR,
+  );
+  return Math.min(requested, DEFAULT_DAILY_REBUILD_BUDGET);
+}
 
 function positiveIntOr(value, fallback, floor = 1) {
   const parsed = Number.parseInt(value ?? "", 10);
@@ -204,13 +215,14 @@ async function rebuildUnderLease(stores, env, minIntervalSeconds) {
     }
     // Hard daily budget, consumed only when there IS work to do (so a no-op tick
     // never burns a unit). This is the backstop that cannot be configured away.
-    const budget = await stores.caseStore.consumeRebuildBudget({
-      dailyBudget: positiveIntOr(
-        env?.AGGREGATE_REBUILD_DAILY_BUDGET,
-        DEFAULT_DAILY_REBUILD_BUDGET,
-        MIN_DAILY_BUDGET_FLOOR,
-      ),
-    });
+    const budget = await stores.caseStore.consumeRebuildBudget({ dailyBudget: dailyRebuildBudget(env) });
+    // Warn while there is still room, so exhaustion is never the first signal.
+    if (budget.allowed && budget.used * 4 >= budget.budget * 3) {
+      console.warn(JSON.stringify({
+        event: "cloudflare.aggregate_rebuild_budget_low",
+        used: budget.used, budget: budget.budget, day: budget.day,
+      }));
+    }
     if (!budget.allowed) {
       console.error(JSON.stringify({
         event: "cloudflare.aggregate_rebuild_budget_exhausted",

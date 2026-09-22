@@ -159,7 +159,8 @@ measured each one against the real handlers (see the table below):
    N in-flight queue decisions cannot each rebuild after one cron rebuild
    (measured: 20 extra rebuilds, now 0).
 5. **An absolute daily budget** (`AGGREGATE_REBUILD_DAILY_BUDGET`, default **48**,
-   floor 1): consumed in `rebuildUnderLease()` only when there is pending work, so
+   clamped to at most 48 at runtime - an operator can lower it, never raise it):
+   consumed in `rebuildUnderLease()` only when there is pending work, so
    once the day's count is spent the attempt is refused *before* the 17 aggregate
    tables are touched - and it is refused by code, not by a knob. This is the one
    bound that survives a mistyped variable, an extra cron entry, a dashboard edit,
@@ -167,7 +168,17 @@ measured each one against the real handlers (see the table below):
    Worker at ~70M rows/day (~$70/day) whatever the other variables say, which turns
    "the worst case is $436-2,181/day" into "the worst case is 48 x rows-per-rebuild".
    `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` proves the 49th
-   attempt of a UTC day is refused and that a new day resets the budget.
+   attempt of a UTC day is refused and that a new day resets the budget; the SQL
+   harness (`work/verify-rebuild-sql.py`) proves the counter **survives the
+   rebuild's own `DELETE FROM catalog_summary`** - both keys must stay in
+   `AGGREGATE_BOOKKEEPING_KEYS` (and in the mirror list in
+   `scripts/transform_immi_snapshot.py`), otherwise every completed rebuild wipes
+   the count and the cap restarts at 1. That regression is two-way proven: remove
+   the two keys and the harness fails with "consumption after a completed rebuild
+   increments to 2 (not restarting at 1) :: (1,)".
+   Exhaustion logs `cloudflare.aggregate_rebuild_budget_exhausted`, with
+   `cloudflare.aggregate_rebuild_budget_low` emitted at 75% so exhaustion is never
+   the first signal.
 
 4. **Floors on the knobs** (interval/fallback >= 60 s, quiet >= 30 s,
    max-staleness >= 300 s) so a mistyped value cannot rebuild per minute

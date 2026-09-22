@@ -193,4 +193,11 @@ describe("Cloudflare-native scheduled aggregate rebuild", () => {
     await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_DAILY_BUDGET: "0" });
     expect(second.caseStore.consumeRebuildBudget).toHaveBeenCalledWith({ dailyBudget: 48 });
   });
+
+  it("clamps the daily budget: an operator can lower it but never raise it past 48", async () => {
+    const current = stores();
+    mockCreateStores.mockReturnValue(current);
+    await worker.scheduled({ cron: "*/5 * * * *" }, { IMMI_STORAGE_MODE: "cloudflare", AGGREGATE_REBUILD_DAILY_BUDGET: "9999" });
+    expect(current.caseStore.consumeRebuildBudget).toHaveBeenCalledWith({ dailyBudget: 48 });
+  });
 });

@@ -20,6 +20,7 @@ AGGREGATE_REBUILD_FALLBACK_SECONDS = "3600"
 AGGREGATE_REBUILD_LEASE_SECONDS = "900"
 AGGREGATE_REBUILD_QUIET_SECONDS = "300"
 AGGREGATE_REBUILD_MAX_STALENESS_SECONDS = "21600"
+AGGREGATE_REBUILD_DAILY_BUDGET = "48"
 ```
 
 and add the trigger table **after** all `[vars]` keys (a new table header ends the
@@ -46,7 +47,7 @@ d = tomllib.load(open("/path/to/operator-main.toml", "rb"))
 assert d["triggers"]["crons"] == ["*/5 * * * *"], d.get("triggers")
 for key in ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", "AGGREGATE_REBUILD_FALLBACK_SECONDS",
             "AGGREGATE_REBUILD_LEASE_SECONDS", "AGGREGATE_REBUILD_QUIET_SECONDS",
-            "AGGREGATE_REBUILD_MAX_STALENESS_SECONDS"):
+            "AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", "AGGREGATE_REBUILD_DAILY_BUDGET"):
     assert key in d["vars"], key
 print("config ok:", {k: v for k, v in d["vars"].items() if k.startswith("AGGREGATE")})
 PY
@@ -90,8 +91,8 @@ Run workflow → `confirm_native_deploy: I_UNDERSTAND`.
 | One rebuild per burst | Worker logs (Observability) | `cloudflare.aggregate_rebuild_completed` with `reason: "dirty"` after a quiet period; **`reason: "awaiting-quiet"` while an import is running is correct** |
 | Cadence under a long import | Worker logs, or D1 insights | At most one `reason: "max-staleness"` rebuild per `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS` window; **never one per queue batch** (the regression test in `workers/__tests__/cloudflare-aggregate-rebuild-guard.test.js` pins this) |
 | No per-batch rebuilds | `npx wrangler d1 insights immi-catalog --sort-by writes --time-period 1d` | The three `INSERT ... SELECT` statements appear a handful of times per day, not thousands; **alert yourself if rows written/day exceeds ~5M** |
-| Rebuilds per day match the write cadence | Worker logs: count `cloudflare.aggregate_rebuild_completed` per day | One rebuild per quiet period, so ~$1.51 each (measured: 1.51M rows/rebuild). A steady trickle of writes with >5-minute gaps means one rebuild per burst: if this exceeds ~50/day (~$75/day), raise `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (e.g. to 900) - analytics freshness is not worth hundreds a month |
-| Daily budget present and reporting | Worker logs / `catalog_summary` | `AGGREGATE_REBUILD_DAILY_BUDGET` is set (default 48) and `rebuild_count_today` never exceeds it; a `cloudflare.aggregate_rebuild_budget_exhausted` line means the hard cap fired - aggregates stay stale until the next UTC day, which is the intended trade |
+| Rebuilds per day match the write cadence | Worker logs: count `cloudflare.aggregate_rebuild_completed` per day | One rebuild per quiet period, so ~$1.51 each (measured 1.46M rows/rebuild). A steady trickle of writes with >5-minute gaps means one rebuild per burst; the `AGGREGATE_REBUILD_DAILY_BUDGET` cap (48/day) is the hard stop, and above ~20/day raise `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (e.g. to 1800) - analytics freshness is not worth hundreds a month |
+| Daily budget present and reporting | Worker logs / `catalog_summary` | `AGGREGATE_REBUILD_DAILY_BUDGET` is set (default 48, clamped to at most 48 at runtime) and `rebuild_count_today` tracks the day's attempts (a refused attempt still increments, so treat `budget+1` as expected); `cloudflare.aggregate_rebuild_budget_low` fires at 75% and `cloudflare.aggregate_rebuild_budget_exhausted` means the hard cap fired - aggregates stay stale until the next UTC day, which is the intended trade |
 | Fallback not looping | Worker logs | No repeated `cloudflare.aggregate_rebuild_fallback` entries |
 | Mutations var after deploy | `npx wrangler deployments status` / dashboard var view | Every deploy re-asserts the config's `IMMI_CASE_MUTATIONS_ENABLED` (currently `"false"`); re-apply §6 if the write API should be live |
 

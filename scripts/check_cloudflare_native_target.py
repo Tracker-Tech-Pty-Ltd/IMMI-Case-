@@ -142,7 +142,7 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
         errors.append(f"triggers.crons must include '*/5 * * * *' (got {crons!r})")
     # (key, expected default, floor): the floors mirror the Worker's own so a
     # config that would rebuild far too often cannot ship.
-    for key, default, floor in (
+    for key, default, floor, *rest in (
         ("AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS", 300, 60),
         # Floor matches the Worker's MIN_FALLBACK_FLOOR_SECONDS: the queue-side
         # fallback is the path that can still rebuild without the cron, so a
@@ -151,9 +151,10 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
         ("AGGREGATE_REBUILD_LEASE_SECONDS", 900, 60),
         ("AGGREGATE_REBUILD_QUIET_SECONDS", 300, 30),
         ("AGGREGATE_REBUILD_MAX_STALENESS_SECONDS", 21600, 300),
-        # The only bound that is not operator-settable at runtime: it caps the
-        # daily rebuild count outright, so it must be present and sane.
-        ("AGGREGATE_REBUILD_DAILY_BUDGET", 48, 1),
+        # The only bound that is not operator-settable: it caps the daily
+        # rebuild count outright. The runtime clamps it to 48, so a config that
+        # asks for MORE must be rejected here rather than silently clamped.
+        ("AGGREGATE_REBUILD_DAILY_BUDGET", 48, 1, 48),
     ):
         value = _get(config, f"vars.{key}")
         if value is None:
@@ -168,6 +169,10 @@ def _check_aggregate_rebuild_guard(errors: list[str], config: dict[str, Any], ro
         parsed = int(text, 10)
         if parsed < floor:
             errors.append(f"vars.{key} must be at least {floor}s or the guard rebuilds far too often (got {parsed})")
+        ceiling = rest[0] if rest else None
+        if ceiling is not None and parsed > ceiling:
+            errors.append(f"vars.{key} must not exceed {ceiling} - it is the hard daily rebuild budget "
+                          f"and the runtime clamps it there anyway (got {parsed})")
 
 
 def _validate_main(path: Path, errors: list[str]) -> None:
