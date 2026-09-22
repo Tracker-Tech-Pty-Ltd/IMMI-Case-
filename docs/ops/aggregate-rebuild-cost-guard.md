@@ -76,6 +76,8 @@ internal keys, none of which reach API responses (`getStats()` reads only
 | `rebuild_last_mutation_at` | `markAggregatesDirty()` | Epoch seconds of the most recent queue mutation — the quiet window is measured from here |
 | `rebuild_dirty_since` | `markAggregatesDirty()` | Epoch seconds when the current pending work first appeared — armed only on the clean→dirty edge, and **disarmed unconditionally at the start of every rebuild attempt** plus again on success, so continuous writes can never keep the staleness bound armed |
 | `rebuild_lease_until` | `claimRebuildLease()` | Epoch seconds until which one invocation owns the rebuild; its **`updated_at` column holds the owner's fencing token** (a UUID-style string) rather than a timestamp |
+| `rebuild_day` | `consumeRebuildBudget()` | The UTC day (`YYYYMMDD` as an integer) the daily budget counter belongs to — a change of day resets the counter |
+| `rebuild_count_today` | `consumeRebuildBudget()` | Rebuild attempts consumed that UTC day — capped by `AGGREGATE_REBUILD_DAILY_BUDGET` (48). Must stay in this list: the rebuild's own `DELETE FROM catalog_summary` keeps only these keys, so dropping it would let every completed rebuild restart the day's budget |
 
 Note the deliberate overload: `catalog_summary.updated_at` holds a timestamp for
 every key **except** `rebuild_lease_until`, where it carries the owner's fencing
