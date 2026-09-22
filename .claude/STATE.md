@@ -1,6 +1,155 @@
 # IMMI-Case Worktree Closeout State
 
-Updated: 2026-08-21 Australia/Melbourne
+Updated: 2026-09-10 Australia/Melbourne
+
+## 2026-09-10 Aggregate Rebuild Cost Guard — DONE ✓
+
+### Second review round (2026-09-11) — three more mechanisms added
+
+The second reviewer's harness (real handlers + real SQLite + simulated clock, 15
+scenarios) surfaced three further ways the guard could leak, all now fixed and
+pinned by repo tests:
+
+- A rebuild that keeps FAILING never reached its end-of-run disarm, so the bound
+  retried on every queue batch: 2,025 failed attempts/day, each doing partial
+  writes. The clock is now disarmed when an attempt starts, and the interval
+  gates the bound as a backstop (3 attempts/day).
+- The bound could bypass the interval entirely, so the interval is now a hard
+  backstop on every path, with floors on the knobs (a max-staleness of "1"
+  rebuilt 106x/hour; now floored to 300 s -> 6/hour).
+- N in-flight queue decisions could each rebuild after one cron rebuild
+  (measured 20). The lease holder now re-checks that work is still pending
+  (`aggregatesStillPending()`) before rebuilding.
+
+Verified with the reviewer's own harness: all 15 scenarios pass, 24 h of
+continuous writes = 3 rebuilds (~$1.75), failing rebuild = 3 attempts, TOCTOU
+= 1 rebuild; plus 396/396 worker tests and 28/28 SQL harness checks.
+
+### Independent subagent review (2026-09-11) — NOT-SAFE, then fixed
+
+An independent reviewer (not the Codex lane) loaded the real production functions,
+replayed the captured SQL against real SQLite with a simulated clock, and measured
+a 24 h continuous-write scenario. It found what eight Codex passes missed:
+
+- HIGH: the max-staleness branch bypassed the interval debounce while
+  `rebuild_dirty_since` stayed armed forever under continuous writes, so past the
+  6 h bound **every queue batch rebuilt all 17 tables** - measured 2,161 rebuilds /
+  24 h ~= $1,262/day, i.e. the incident's cost curve, while the operator cost model
+  claimed ~$2.30/day. Fix: every rebuild disarms the staleness clock
+  unconditionally (pending work is tracked by the generation, never by the clock),
+  and a 24 h cadence regression test now fails if the disarm ever becomes
+  conditional again (verified: reintroducing the conditional form fails the test
+  with 216 rebuilds).
+- MED: the deploy gate ignored `[triggers]` and the five knobs, so the guard could
+  ship absent with the pipeline fully green. The gate now fails closed on both
+  (plus a regression test), and both configs carry the missing lease var.
+- MED: the cron handler built the full store set (R2 + Vectorize + AI) although the
+  rebuild only needs the catalog D1 - a missing binding would have stalled the
+  rebuild silently. It now uses the lightweight case-store factory.
+- MED: the checklist's gate command could not run as written (missing
+  `--pipeline-config`, macOS `python3` 3.9 has no `tomllib`), and its unwind order
+  (writes before resuming the queue) risked losing enqueued mutations after the
+  four-day retention.
+- LOW: interval/fallback floors so a mistyped value cannot restore per-batch
+  rebuilds; `transform_immi_snapshot.py` no longer deletes the guard's bookkeeping
+  rows; docs corrected (cost model, 391 tests, seven keys, `updated_at` overload).
+
+### Review 5 fixes (2026-09-11)
+
+- HIGH: the rebuild disarmed `rebuild_dirty_since` unconditionally, so a mutation
+  landing mid-scan reset the clock and the staleness bound became unreachable
+  under continuous writes. The disarm is now a conditional UPDATE that only
+  fires when the rebuild applied the generation it observed.
+- MED: `markAggregatesDirty()` writes its three control rows in one atomic
+  `db.batch()`, and the mutation timestamp is monotonic (`MAX`), so isolates
+  with skewed clocks cannot rewind the quiet window.
+- MED: the staleness bound is evaluated before the interval debounce, so a
+  freshly stamped failed attempt cannot postpone overdue work.
+- LOW: failures emit a structured `cloudflare.aggregate_rebuild_failed` event.
+- LOW: docs state the real control-row counts and per-import cost.
+
+### Follow-up: quiet window (2026-09-11)
+- The interval alone still cost ~$28 per 153k-case import (one rebuild per
+  5-minute interval for four hours). The rebuild now waits for a quiet window:
+  `AGGREGATE_REBUILD_QUIET_SECONDS` (default 300) of no mutations, so an import
+  collapses into **one rebuild (~$0.58)**; `AGGREGATE_REBUILD_MAX_STALENESS_SECONDS`
+  (default 21600) bounds staleness when mutations never pause.
+- New bookkeeping keys `rebuild_last_mutation_at` (refreshed by every mutation)
+  and `rebuild_dirty_since` (armed only on the clean→dirty edge, disarmed only by a
+  rebuild that applied the generation it observed) support the window and the bound.
+- Validation: Worker Vitest 27 files / **390 tests**; real-SQLite harness **27/27**
+  (including "a mid-scan mutation keeps the staleness clock armed" and "rebuild
+  with nothing new disarms the staleness clock"); bundle closure passes; gate unchanged.
+
+### Symptom
+- `immi-catalog` D1 wrote 12,084,578,591 rows (99.77% of the account's analytical
+  writes) across 2026-08-23 → 2026-09-01: 12.06B billable rows ≈ **$12,060** of
+  D1 rows-written charges. The budget-alert email fired once (2026-08-25 23:55
+  local, quoting $5,190.94) and further spend produced no new notice.
+
+### Root cause
+- `handleCaseMutationQueue()` rebuilt aggregates **once per queue batch**; one
+  rebuild clears and rewrites 17 summary/filter tables (~584k written rows,
+  ~$0.58 at $1/million). With `max_batch_size = 20`, a 153k-case import is
+  ~7,700 batches ≈ 4.5B written rows, and the corpus was re-pushed several times.
+- Query insights: the top three `INSERT ... SELECT` statements alone account for
+  6.68B written rows across ~24,000 executions.
+
+### Fix
+- The queue path now records staleness (`markAggregatesDirty()`, three control rows in one atomic batch); the
+  new `scheduled()` handler rebuilds at most once per
+  `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` (default 300 s) driven by the
+  `[triggers]` cron `*/5 * * * *`, under a conditional-upsert D1 lease so
+  overlapping invocations cannot rewrite the 17 tables at once.
+- Bookkeeping lives in `catalog_summary` under `rebuild_generation` /
+  `rebuild_applied_generation` / `rebuild_last_at` / `rebuild_last_attempt_at` /
+  `rebuild_lease_until` / `rebuild_last_mutation_at` / `rebuild_dirty_since` (no D1 migration; `getStats()`
+  still reads only `total_cases`/`with_full_text`).
+  "Dirty" is `generation > applied_generation`, so a mutation that lands while a
+  rebuild is running stays pending instead of being wiped by the rebuild's own
+  bookkeeping write (the boolean-flag race a Codex review flagged as HIGH).
+- A queue-side fallback (`AGGREGATE_REBUILD_FALLBACK_SECONDS`, default 3600)
+  keeps aggregates fresh if the cron trigger is missing or failing.
+- Lease fencing (second review pass): the winner records a random token, renewal
+  and release are token-conditional, and the rebuild renews per 20-statement
+  chunk and aborts (`rebuild_lease_lost`) if it lost the lease — so an expired
+  holder can neither clobber the new owner nor keep writing. Failed rebuilds are
+  throttled via `rebuild_last_attempt_at` (240 tests-worth of behaviour; see
+  validation below).
+
+### Validation
+- Full Worker Vitest: **27 files / 378 tests passed**, including new assertions
+  that the queue path never rebuilds, that 20 mutations coalesce into one stale
+  flag, that the rebuild statement set is exactly 17 tables + bookkeeping, that
+  a mutation arriving after the applied generation stays pending, and that a
+  second lease claim loses while the first holds.
+- Review evidence (untracked by repo policy): `work/codex-review.md`,
+  `codex-rereview.md`, `codex-review3.md`, `codex-review4.md` + prompts.
+- Real-SQLite harness (`work/verify-rebuild-sql.py`): executes the captured
+  rebuild/dirty/decision/lease SQL against `migrations/d1/catalog/0001_catalog.sql`
+  (30 tables) — 14/14 checks, including a deterministic replay of the
+  mid-rebuild mutation race (generation 6 vs applied 5 → still pending).
+- Codex second-model review, four read-only passes (final pass: **VERDICT:
+  APPROVE** at `work/codex-review4.md`, which confirms all four invariants and
+  closes every earlier finding). Disposition across passes:
+  1. unconditional `dirty = 0` discarded a mid-rebuild mutation → monotonic
+     generation; 2. no mutual exclusion → lease; 3. unsafe documented rollback →
+     docs forbid it; 4. lease without fencing / torn claim → token in the lease
+     row's `updated_at`, single-statement claim, token-conditional renew/release,
+     abort on lost lease; 5. failed rebuilds retried unthrottled → attempt stamp.
+  Reviewer-named acceptable residual risks: a first-deploy mutation may trigger
+  one lease-protected fallback rebuild; a single D1 batch outliving the lease
+  aborts that run and converges on the next; a missing cron in the operator
+  config degrades to hourly fallback instead of the per-batch cost curve.
+- Native bundle closure passed (`scripts/check_cloudflare_native_bundle.mjs`).
+- `scripts/check_cloudflare_native_target.py` output is unchanged from
+  `origin/main` (placeholder-ID gate only).
+
+### Operator follow-up
+- Regenerate `IMMI_NATIVE_MAIN_WRANGLER_TOML_B64` so the deployed config carries
+  the new `[triggers]` block and `AGGREGATE_REBUILD_MIN_INTERVAL_SECONDS` var;
+  without it the cron never fires and aggregates stop updating.
+- Full notes, cost envelope and rollback: `docs/ops/aggregate-rebuild-cost-guard.md`.
 
 ## 2026-08-21 D1 Capacity Migration + Supabase Status — COMPLETE ✓
 
