@@ -10,6 +10,7 @@ import sys
 import os
 import shutil
 import time
+from pathlib import Path
 import pandas as pd
 from datetime import datetime
 
@@ -118,20 +119,11 @@ def retry_recent_crawl(scraper, df_existing):
                 log(f"  {db_code} {year}: ERROR - {e}")
 
     if new_cases:
-        new_rows = [c.to_dict() for c in new_cases]
-        df_new = pd.DataFrame(new_rows)
-        df_merged = pd.concat([df_existing, df_new], ignore_index=True)
-        # Blank/NaN urls all compare equal to each other, so a plain
-        # drop_duplicates(subset="url") collapses every URL-less case into one
-        # surviving row. Fall back to case_id for those.
-        df_merged["_dedup_key"] = df_merged["url"].where(
-            df_merged["url"].notna() & (df_merged["url"].astype(str).str.strip() != ""),
-            "__noid__" + df_merged["case_id"].astype(str),
-        )
-        df_merged = df_merged.drop_duplicates(subset="_dedup_key", keep="first")
-        df_merged = df_merged.drop(columns=["_dedup_key"])
-        _write_csv_atomic(df_merged)
-        log(f"  Added {len(new_cases)} new cases. Total: {len(df_merged)}")
+        from immi_case_downloader.ingestion import append_discovered_cases
+        added = append_discovered_cases(new_cases, Path(CSV_PATH).parent)
+        df_merged = pd.read_csv(CSV_PATH, encoding="utf-8-sig",
+                                dtype={"visa_subclass": str, "visa_subclass_number": str}, low_memory=False)
+        log(f"  Added {added} new cases. Total: {len(df_merged)}")
         return df_merged
     else:
         log("  No new cases found")
@@ -145,11 +137,15 @@ def download_missing_fulltext(scraper, df):
     log("=" * 60)
 
     # Find cases needing download
-    mask = ~(
-        df["full_text_path"].notna()
-        & (df["full_text_path"].astype(str) != "")
-        & (df["full_text_path"].astype(str) != "nan")
-    )
+    from immi_case_downloader.csv_repository import CsvRepository
+    from immi_case_downloader.ingestion import persist_downloads, record_case_evidence
+    from immi_case_downloader.extraction.grounded import assess_case
+    base = str(Path(CSV_PATH).parent)
+    scraper.source_cache_dir = base
+    repo = CsvRepository(base)
+    originals = {str(row["case_id"]): ImmigrationCase.from_dict(row.to_dict()).to_dict() for _, row in df.iterrows()}
+    completed = []
+    mask = ~df["full_text_path"].apply(lambda value: isinstance(value, str) and bool(value.strip()) and os.path.isfile(value))
     indices = df.index[mask].tolist()
     total = len(indices)
     log(f"Cases needing full text download: {total}")
@@ -178,17 +174,28 @@ def download_missing_fulltext(scraper, df):
                 c if c.isalnum() or c in " -_[]" else "_" for c in case.citation
             )
             filename = filename.strip()[:100] + ".txt"
-            candidate = os.path.join("downloaded_cases/case_texts", filename)
+            candidate = os.path.join(base, "case_texts", filename)
             if os.path.exists(candidate):
-                df.at[idx, "full_text_path"] = candidate
-                skipped += 1
-                continue
+                raw = Path(candidate).read_text(encoding="utf-8-sig")
+                decision = assess_case(raw, citation=case.citation, title=case.title, url=case.url)
+                from immi_case_downloader.ingestion import reusable_source
+                if reusable_source(raw, decision):
+                    case.full_text_path = candidate
+                    record_case_evidence(case, base)
+                    df.at[idx, "full_text_path"] = candidate
+                    completed.append(case)
+                    skipped += 1
+                    if len(completed) >= SAVE_EVERY:
+                        persist_downloads(repo, completed, originals, base)
+                        completed.clear()
+                    continue
 
         try:
             text = scraper.download_case_detail(case)
 
             if text:
-                filepath = save_case_text(case, text)
+                filepath = save_case_text(case, text, base)
+                completed.append(case)
                 df.at[idx, "full_text_path"] = filepath
 
                 # Also update extracted metadata
@@ -222,11 +229,12 @@ def download_missing_fulltext(scraper, df):
 
         # Periodic save
         if (downloaded + failed) > 0 and (downloaded + failed) % SAVE_EVERY == 0:
-            _write_csv_atomic(df)
+            persist_downloads(repo, completed, originals, base)
+            completed.clear()
             log(f"  [Checkpoint saved at {downloaded + failed} downloads]")
 
     # Final save
-    _write_csv_atomic(df)
+    persist_downloads(repo, completed, originals, base)
 
     elapsed = time.time() - start_time
     log(f"\nDONE! Downloaded: {downloaded}, Failed: {failed}, Skipped: {skipped}")

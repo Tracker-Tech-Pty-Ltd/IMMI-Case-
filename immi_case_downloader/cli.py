@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import sys
 
 from .config import AUSTLII_DATABASES, START_YEAR, END_YEAR, OUTPUT_DIR
@@ -112,6 +113,9 @@ def cmd_download(args):
         return
 
     all_cases = [ImmigrationCase.from_dict(record) for record in case_records]
+    for case in all_cases:
+        case.ensure_id()
+    original_values = {case.case_id: case.to_dict() for case in all_cases}
 
     # Select subset to download
     targets = list(all_cases)
@@ -119,7 +123,6 @@ def cmd_download(args):
         targets = [c for c in targets if c.court_code in args.courts]
 
     # Skip cases that already have full text on disk
-    import os
     before_skip = len(targets)
     targets = [c for c in targets if not (c.full_text_path and os.path.exists(c.full_text_path))]
     skipped = before_skip - len(targets)
@@ -133,9 +136,12 @@ def cmd_download(args):
 
     austlii = AustLIIScraper(delay=args.delay)
     fedcourt = FederalCourtScraper(delay=args.delay)
+    austlii.source_cache_dir = args.output
+    fedcourt.source_cache_dir = args.output
 
     downloaded = 0
     failed = 0
+    completed = []
 
     for i, case in enumerate(targets):
         print(f"  [{i+1}/{len(targets)}] {case.citation or case.title[:60]}...", end=" ")
@@ -148,6 +154,7 @@ def cmd_download(args):
 
             if text:
                 save_case_text(case, text, args.output)
+                completed.append(case)
                 downloaded += 1
                 print("OK")
             else:
@@ -158,20 +165,9 @@ def cmd_download(args):
             print(f"FAILED ({e})")
             logger.exception(f"Failed to download {case.url}")
 
-    # Merge updated metadata from downloaded targets back into all_cases
-    target_map = {c.case_id: c for c in targets}
-    for c in all_cases:
-        if c.case_id in target_map:
-            t = target_map[c.case_id]
-            for field in ("date", "judges", "catchwords", "outcome",
-                          "visa_type", "legislation", "full_text_path"):
-                val = getattr(t, field, "")
-                if val:
-                    setattr(c, field, val)
-
-    # Save ALL cases (not just the downloaded subset)
-    save_cases_csv(all_cases, args.output)
-    save_cases_json(all_cases, args.output)
+    from .csv_repository import CsvRepository
+    from .ingestion import persist_downloads
+    persist_downloads(CsvRepository(args.output), completed, original_values, args.output)
 
     print(f"\nDownloaded: {downloaded}, Failed: {failed}")
 

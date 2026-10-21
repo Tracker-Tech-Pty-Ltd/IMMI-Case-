@@ -106,6 +106,14 @@ def save_case_text(
     Returns:
         Path to the saved text file.
     """
+    from .ingestion import preserve_source, record_case_evidence, reused_source_path
+
+    reused = reused_source_path(case, text, base_dir)
+    if reused:
+        case.full_text_path = reused
+        record_case_evidence(case, base_dir)
+        return reused
+
     text_dir = os.path.join(base_dir, TEXT_CASES_DIR)
     Path(text_dir).mkdir(parents=True, exist_ok=True)
 
@@ -118,14 +126,37 @@ def save_case_text(
         filename = f"case_{hash(case.url) % 100000}"
     filename = f"{filename}.txt"
 
+    contents = (f"Title: {case.title}\nCitation: {case.citation}\nCourt: {case.court}\n"
+                f"Date: {case.date}\nURL: {case.url}\n{'='*80}\n\n{text}")
     filepath = os.path.join(text_dir, filename)
+    if os.path.isfile(filepath):
+        if Path(filepath).read_text(encoding="utf-8") == contents:
+            case.full_text_path = filepath
+            record_case_evidence(case, base_dir)
+            return filepath
+        preserve_source(Path(filepath), base_dir)
+
+    # Different versions/cases never replace a file another catalogue row
+    # still references. A stable content suffix also makes retries no-ops.
+    import hashlib
+    version = hashlib.sha256(contents.encode("utf-8")).hexdigest()[:16]
+    filename = f"{Path(filename).stem[:80]}--{version}.txt"
+    filepath = os.path.join(text_dir, filename)
+    if os.path.isfile(filepath):
+        if Path(filepath).read_text(encoding="utf-8") != contents:
+            raise ValueError("case source version collision")
+        case.full_text_path = filepath
+        record_case_evidence(case, base_dir)
+        return filepath
 
     # Write to a sibling temp file and rename onto the final path. The bulk
     # downloader's resume treats "the .txt exists" as "this case is done" and
     # never re-fetches it, so a file written in place and interrupted part-way
     # becomes a permanently truncated case body that no later run repairs.
-    # The rename makes existence mean completeness.
-    tmp_path = f"{filepath}.{os.getpid()}.part"
+    # The rename prevents a partial local write. Source completeness is a
+    # separate evidence check; an HTTP excerpt is not a full judgment.
+    import uuid
+    tmp_path = f"{filepath}.{uuid.uuid4().hex}.part"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(f"Title: {case.title}\n")
@@ -146,6 +177,7 @@ def save_case_text(
         raise
 
     case.full_text_path = filepath
+    record_case_evidence(case, base_dir)
     return filepath
 
 

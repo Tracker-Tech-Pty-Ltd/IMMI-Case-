@@ -601,7 +601,8 @@ class SmartPipeline:
         from .sources.austlii import AustLIIScraper
 
         scraper = AustLIIScraper(delay=self.config.delay)
-        cases = load_all_cases(self.output_dir)
+        cases = load_all_cases(self.output_dir, use_cache=False)
+        scraper.source_cache_dir = self.output_dir
 
         # Filter to cases without full text
         targets = [
@@ -611,6 +612,7 @@ class SmartPipeline:
         if self.config.download_court_filter:
             targets = [c for c in targets if c.court_code == self.config.download_court_filter]
         targets = targets[:self.config.download_batch_size]
+        original_values = {case.case_id: case.to_dict() for case in targets}
 
         if not targets:
             self.log.add("download", "info", "no_targets", "No cases to download.")
@@ -630,7 +632,7 @@ class SmartPipeline:
                 # checkpoints only fire every 200, so up to 199 already-written
                 # .txt files would otherwise become orphans that the next run
                 # re-downloads.
-                self._save_download_progress(targets[:i])
+                self._save_download_progress(targets[:i], original_values)
                 return
 
             pct = 50 + int(((i + 1) / len(targets)) * 45)
@@ -677,7 +679,7 @@ class SmartPipeline:
 
             # Checkpoint save every 200
             if downloaded > 0 and downloaded % 200 == 0:
-                self._save_download_progress(targets[:i + 1])
+                self._save_download_progress(targets[:i + 1], original_values)
                 self.log.add("download", "info", "checkpoint", f"Checkpoint: {downloaded} downloaded")
 
         # Retry queue (one pass with longer delay)
@@ -703,7 +705,7 @@ class SmartPipeline:
                     pass
 
         # Final save
-        self._save_download_progress(targets)
+        self._save_download_progress(targets, original_values)
 
         failed = max(0, failed)
 
@@ -722,15 +724,15 @@ class SmartPipeline:
             f"Download complete: {downloaded + retried} downloaded, {failed} failed, {retried} retried.",
         )
 
-    def _save_download_progress(self, processed_targets):
-        """Persist full_text_path from processed targets back to main CSV."""
-        with csv_write_lock(os.path.join(self.output_dir, CASES_CSV)):
-            all_cases = load_all_cases(self.output_dir)
-            target_map = {c.case_id: c for c in processed_targets}
-            for c in all_cases:
-                if c.case_id in target_map and target_map[c.case_id].full_text_path:
-                    c.full_text_path = target_map[c.case_id].full_text_path
-            save_cases_csv(all_cases, self.output_dir)
+    def _save_download_progress(self, processed_targets, original_values=None):
+        """Merge completed downloads without overwriting another writer's edits."""
+        from .csv_repository import CsvRepository
+        from .ingestion import persist_downloads
+        repo = CsvRepository(self.output_dir)
+        if original_values is None:
+            original_values = {case.case_id: case.to_dict() for case in repo.load_all()}
+        completed = [case for case in processed_targets if case.full_text_path]
+        persist_downloads(repo, completed, original_values, self.output_dir)
 
     # ── Helpers ──────────────────────────────────────────────────────
 

@@ -203,11 +203,23 @@ class FederalCourtScraper(BaseScraper):
 
     def download_case_detail(self, case: ImmigrationCase) -> str | None:
         """Download full text of a Federal Court judgment."""
+        from ..config import OUTPUT_DIR
+        from ..ingestion import record_case_evidence, reuse_case_source
+        output = getattr(self, "source_cache_dir", OUTPUT_DIR)
+        cached = reuse_case_source(case, output)
+        if cached is not None:
+            self.last_error = None
+            self._extract_metadata(cached, case)
+            return cached
         if not case.url:
+            if hasattr(self, "source_cache_dir"):
+                record_case_evidence(case, output)
             return None
 
         response = self.fetch(case.url)
         if not response:
+            if hasattr(self, "source_cache_dir"):
+                record_case_evidence(case, output)
             return None
 
         soup = BeautifulSoup(response.text, "lxml")

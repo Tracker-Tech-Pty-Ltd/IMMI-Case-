@@ -189,6 +189,7 @@ def _run_download_job(court_filter, limit, output_dir=None, repo=None):
     if court_filter:
         targets = [c for c in targets if c.court_code == court_filter]
     targets = targets[:limit]
+    originals = {case.case_id: case.to_dict() for case in targets}
 
     _reset_job_status({
         "running": True,
@@ -207,6 +208,8 @@ def _run_download_job(court_filter, limit, output_dir=None, repo=None):
 
         austlii = AustLIIScraper(delay=1.0)
         fedcourt = FederalCourtScraper(delay=1.0)
+        austlii.source_cache_dir = out
+        fedcourt.source_cache_dir = out
 
         ok = 0
         updated = []
@@ -235,7 +238,8 @@ def _run_download_job(court_filter, limit, output_dir=None, repo=None):
 
         # Persist updated full_text_path via upsert
         if updated:
-            repo.save_many(updated)
+            from ..ingestion import persist_downloads
+            persist_downloads(repo, updated, originals, out)
             _notify_cache_invalidation()
 
         _set_job_fields(progress=f"Done! Downloaded {ok}/{len(targets)} cases.")
@@ -340,6 +344,7 @@ def _run_bulk_download_job(court_filter, limit, delay, output_dir, repo=None):
     if court_filter:
         targets = [c for c in targets if c.court_code == court_filter]
     targets = targets[:limit]
+    originals = {case.case_id: case.to_dict() for case in targets}
 
     _reset_job_status({
         "running": True,
@@ -353,6 +358,8 @@ def _run_bulk_download_job(court_filter, limit, delay, output_dir, repo=None):
 
     try:
         scraper = AustLIIScraper(delay=delay)
+        scraper.source_cache_dir = out
+        from ..ingestion import persist_downloads
         ok = 0
         fail = 0
         updated_batch = []
@@ -381,12 +388,12 @@ def _run_bulk_download_job(court_filter, limit, delay, output_dir, repo=None):
             # Checkpoint save every 200 successful downloads
             if ok > 0 and ok % 200 == 0 and updated_batch:
                 _append_result(f"Checkpoint: {ok} downloaded so far")
-                repo.save_many(updated_batch)
+                persist_downloads(repo, updated_batch, originals, out)
                 updated_batch.clear()
 
         # Final save
         if updated_batch:
-            repo.save_many(updated_batch)
+            persist_downloads(repo, updated_batch, originals, out)
 
         if ok > 0:
             _notify_cache_invalidation()

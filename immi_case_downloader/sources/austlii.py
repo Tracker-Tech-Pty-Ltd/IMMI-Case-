@@ -378,11 +378,23 @@ class AustLIIScraper(BaseScraper):
         Returns:
             Full text content of the case, or None on failure.
         """
+        from ..config import OUTPUT_DIR
+        from ..ingestion import record_case_evidence, reuse_case_source
+        output = getattr(self, "source_cache_dir", OUTPUT_DIR)
+        cached = reuse_case_source(case, output)
+        if cached is not None:
+            self.last_error = None
+            self._extract_metadata(BeautifulSoup(cached, "lxml"), case)
+            return cached
         if not case.url:
+            if hasattr(self, "source_cache_dir"):
+                record_case_evidence(case, output)
             return None
 
         response = self.fetch(case.url)
         if not response:
+            if hasattr(self, "source_cache_dir"):
+                record_case_evidence(case, output)
             return None
 
         soup = BeautifulSoup(response.text, "lxml")

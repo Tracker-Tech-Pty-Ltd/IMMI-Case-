@@ -204,7 +204,8 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                     proof = decision.values.get(field) if path else None
                     old = previous[field]
                     same_evidence = old.get("source_sha256") in {sha, legacy_sha}
-                    inherited_na = (old.get("status", "").startswith("不適用") and same_evidence)
+                    inherited_na = ((old.get("status", "").startswith("不適用") or
+                                     old.get("fact_status") == "not_applicable") and same_evidence)
                     na = decision.not_applicable.get(field) or (old.get("reason", "") if inherited_na else "")
                     # Previous identity/relationship holds cannot be undone by
                     # a more permissive expression on the very same evidence.

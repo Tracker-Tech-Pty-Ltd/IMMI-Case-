@@ -1,0 +1,68 @@
+{
+  "cases": 3786,
+  "fields": 3807,
+  "counts": {
+    "waiting_new_evidence": 3332,
+    "not_applicable": 475
+  },
+  "priority_jev_cache_matches": 617,
+  "repeat_skipped_cases": 3786,
+  "repeat_ledger_bytes_unchanged": true,
+  "source_reusable_cases": 3427,
+  "network_requests": 0,
+  "paid_model_calls": 0,
+  "new_provider_usd": 0,
+  "conservative_cumulative_usd": 15.866071526,
+  "budget_limit_usd": 20,
+  "actual_new_core_values": 0,
+  "scope_fields": [
+    "judges",
+    "outcome",
+    "visa_type"
+  ],
+  "pending_by_field": {
+    "visa_type": 3294,
+    "outcome": 18,
+    "judges": 20
+  },
+  "pending_reason_codes": {
+    "current_visa_not_stated": 3221,
+    "identity_conflict": 40,
+    "restricted_publication": 5,
+    "operative_orders_not_available": 12,
+    "identity_unverified": 26,
+    "evidence_review": 6,
+    "author_not_stated": 10,
+    "incomplete_publication": 12
+  },
+  "public_original_backlog": 11,
+  "separately_restricted_cases": 2,
+  "focused_tests_passed": 309,
+  "subtests_passed": 10,
+  "new_intake_tests": 31,
+  "stores": {
+    "database_rows": 152256,
+    "csv_rows": 152256,
+    "json_rows": 152263,
+    "verified_cells_each_store": 0,
+    "all_unapproved_data_preserved": true,
+    "export_sha256": {
+      "immigration_cases.csv": "18fc13039d40895850732b6e70fa761935d6176db06d1ddb2965cad12b09c15a",
+      "immigration_cases.json": "dba15af8270c2dd0d4b772609d1b646949ebec0fd701e252c5b3d04049fe0711"
+    },
+    "actual_new_core_values": 0
+  },
+  "provider_invoice_verified": false,
+  "reserve_included_usd": 0.4,
+  "public_index_search_queries": 11,
+  "backup_manifest": "downloaded_cases/updates/typesafe-ingestion-20261022/backup-manifest.json",
+  "review_ledger_backup": "downloaded_cases/updates/typesafe-ingestion-20261022/backup/case-field-review.sqlite3",
+  "new_core_database_backup": "downloaded_cases/updates/typesafe-ingestion-20261022/backup/cases.db",
+  "export_backups": "downloaded_cases/updates/typesafe-workflow-20261021/backup",
+  "source_reuse_policy": "Exact citation, URL and source SHA; substantive identity-checked reasons; multiple versions, altered bytes, excerpts or restricted text require new evidence. Reusable is a cache eligibility check, not independent proof of original completeness.",
+  "jev_policy": "Read-only existing advice; cannot authorize fills. No model client or paid fallback.",
+  "new_independent_manual_accuracy_test": false,
+  "windows_and_wsl_simultaneous_writer_lock": "Not tested; run writers on the same platform.",
+  "cloud_changed": false,
+  "pushed": false
+}
