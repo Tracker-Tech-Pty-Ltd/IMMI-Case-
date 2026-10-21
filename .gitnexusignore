@@ -1,0 +1,6 @@
+# Generated browser bundles are not source call graphs. Parsing minified
+# vendor code can time out repeatedly on Windows; index frontend/src instead.
+immi_case_downloader/static/react/
+frontend/playwright-report/
+frontend/test-results/
+downloaded_cases/

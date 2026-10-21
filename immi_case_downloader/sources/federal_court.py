@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 from .base import BaseScraper
 from .metadata_extractor import MetadataExtractor
+from ..extraction.grounded import verified_metadata
 from ..config import FEDERAL_COURT_SEARCH, START_YEAR, END_YEAR
 from ..models import ImmigrationCase
 
@@ -252,5 +253,8 @@ class FederalCourtScraper(BaseScraper):
         extracted = self._metadata_extractor.extract(
             text, citation=case.citation or ""
         )
+        extracted = verified_metadata(text, extracted, citation=case.citation or extracted.get("citation", ""),
+                                      title=case.title or "", url=case.url or "")
         for key, value in extracted.items():
-            setattr(case, key, value)
+            if not str(getattr(case, key, "") or "").strip():
+                setattr(case, key, value)

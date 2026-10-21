@@ -11,8 +11,9 @@ plans/027-fix-csv-data-integrity.md Step 9b.
 One protocol, two waiting policies
 ----------------------------------
 There is exactly one lock file (``<csv>.lock``) and exactly one exclusion
-primitive (``fcntl.flock``). Both entry points below open that same path and
-contend on that same ``flock``, so they exclude each other:
+primitive (``fcntl.flock`` on POSIX, a kernel byte-range lock on Windows).
+Both entry points below open that same path and use the same primitive, so
+they exclude each other on the host platform:
 
 * :func:`csv_write_lock` waits up to ``timeout`` then raises ``TimeoutError``.
   Used by the web/CLI writers, whose critical sections are short.
@@ -38,10 +39,14 @@ from __future__ import annotations
 
 import contextlib
 import errno
-import fcntl
 import os
 import time
 from collections.abc import Callable, Iterator
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 LOCK_TIMEOUT_SECONDS = 120.0
 _POLL_INTERVAL_SECONDS = 0.05
@@ -65,6 +70,10 @@ def read_lock_holder(csv_path: str | os.PathLike[str]) -> str:
     """
     try:
         with open(lock_path_for(csv_path), encoding="utf-8") as f:
+            if os.name == "nt":
+                # Byte zero is the lock, diagnostics start at byte one so a
+                # blocked Windows reader can still identify the holder.
+                f.seek(1)
             return f.read().strip()
     except OSError:
         return ""
@@ -79,7 +88,7 @@ def _stamp_holder(fd: int, job_name: str) -> None:
     try:
         os.ftruncate(fd, 0)
         os.lseek(fd, 0, os.SEEK_SET)
-        os.write(fd, stamp.encode("utf-8"))
+        os.write(fd, ((" " if os.name == "nt" else "") + stamp).encode("utf-8"))
     except OSError:
         # A lock we hold but could not annotate is still a valid lock.
         pass
@@ -105,10 +114,16 @@ def _hold_flock(
         os.makedirs(parent, exist_ok=True)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     deadline = time.monotonic() + max(timeout, 0.0)
+    acquired = False
     try:
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if os.name == "nt":
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
                 break
             except OSError as exc:
                 if exc.errno not in (errno.EACCES, errno.EAGAIN):
@@ -121,7 +136,12 @@ def _hold_flock(
     finally:
         # Release the lock but leave the file in place — see module docstring.
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            if acquired:
+                if os.name == "nt":
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
 

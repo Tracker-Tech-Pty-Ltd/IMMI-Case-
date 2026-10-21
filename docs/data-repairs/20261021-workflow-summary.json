@@ -1,0 +1,65 @@
+{
+  "run": "typesafe-workflow-20261021",
+  "starting_commit": "112e02908704c563246f8741b2e9ed0bf9f2b221",
+  "starting_pending_fields": 3334,
+  "ending_pending_fields": 3332,
+  "physical_empty_cells": 3807,
+  "not_applicable": 475,
+  "new_not_applicable": 2,
+  "actual_new_core_values": 0,
+  "pending_by_field": {
+    "visa_type": 3294,
+    "outcome": 18,
+    "judges": 20
+  },
+  "priority_visa_cases": 617,
+  "priority_source_bound_jev_cache_matches": 617,
+  "source_bound_cache_fields_total": 1083,
+  "public_originals_unavailable": 11,
+  "new_provider_usd": 0,
+  "conservative_cumulative_usd": 15.866071526,
+  "maximum_user_usd": 20,
+  "provider_invoice_verified": false,
+  "reserve_included_usd": 0.4,
+  "reviewed_empty_cells": 3807,
+  "repeat_skipped_unchanged_cells": 3807,
+  "repeat_network_requests": 0,
+  "repeat_paid_model_calls": 0,
+  "repeat_data_updates": 0,
+  "regression_cases": 200,
+  "regression_definition": "來源雜湊固定、與前輪已核對保留狀態的回歸一致性；非新的獨立人工正確率估計。",
+  "focused_tests_passed": 134,
+  "linux_wsl_tests": "未執行：WSL 0x80072747；未重啟使用者環境。",
+  "windows_and_wsl_simultaneous_writer_lock": "未驗證；同一批資料使用同一平台的寫入程序。",
+  "live_verification": {
+    "database_rows": 152256,
+    "csv_rows": 152256,
+    "json_rows": 152263,
+    "verified_cells_each_store": 0,
+    "all_unapproved_data_preserved": true,
+    "export_bytes_unchanged": {
+      "immigration_cases.csv": "18fc13039d40895850732b6e70fa761935d6176db06d1ddb2965cad12b09c15a",
+      "immigration_cases.json": "dba15af8270c2dd0d4b772609d1b646949ebec0fd701e252c5b3d04049fe0711"
+    },
+    "actual_new_core_values": 0
+  },
+  "new_na": [
+    {
+      "case_id": "84c687af5a8e",
+      "citation": "[2010] AATA 314",
+      "reason": "本案審理公民身分申請，簽證類別不適用",
+      "source_sha256": "4cbe730c5f0fbe9121ccdd38aba89bd641a8d203607edf5351bcfba8452df813",
+      "source_path": "downloaded_cases/case_texts/[2010] AATA 314.txt"
+    },
+    {
+      "case_id": "e2b2479cc7c1",
+      "citation": "[2004] FCA 571",
+      "reason": "本案是 Visa 信用卡公司的商業訴訟，簽證類別不適用",
+      "source_sha256": "5bc10bcba44557dd335a5ed3ca03da66c566e8186825d5d63b9f964acb505e32",
+      "source_path": "downloaded_cases/updates/typesafe-reliable-sources-20261018/sources/e2b2479cc7c1.txt"
+    }
+  ],
+  "backups": "D:\\Dev\\Projects\\IMMI-Case-\\downloaded_cases\\updates\\typesafe-workflow-20261021\\backup",
+  "review_ledger": "D:\\Dev\\Projects\\IMMI-Case-\\downloaded_cases\\.case-field-review.sqlite3",
+  "automation_scope": "下載時自動採用有原文根據的欄位並保留非空值；覆核入口跳過相同證據。沒有設定排程或付費／網路重試。"
+}

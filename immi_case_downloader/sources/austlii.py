@@ -15,6 +15,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 from .metadata_extractor import MetadataExtractor
+from ..extraction.grounded import verified_metadata
 
 from .base import BaseScraper
 from ..config import (
@@ -419,10 +420,14 @@ class AustLIIScraper(BaseScraper):
         Delegates to the shared MetadataExtractor, which consolidates all
         regex patterns previously duplicated across scrapers.
         """
-        text = soup.get_text()
+        content = (soup.find("div", id="cases_doc") or soup.find("div", class_="cases_doc")
+                   or soup.find("div", class_="document") or soup)
+        text = content.get_text(separator="\n", strip=True)
         extracted = self._metadata_extractor.extract(
             text, citation=case.citation or ""
         )
+        extracted = verified_metadata(text, extracted, citation=case.citation or extracted.get("citation", ""),
+                                      title=case.title or "", url=case.url or "")
         valid_fields = ImmigrationCase.__dataclass_fields__
         for key, value in extracted.items():
             if key not in valid_fields:
@@ -434,12 +439,20 @@ class AustLIIScraper(BaseScraper):
                     f"{case.url or case.citation or case.title}; dropping it"
                 )
                 continue
-            setattr(case, key, value)
+            if not str(getattr(case, key, "") or "").strip():
+                setattr(case, key, value)
 
     @staticmethod
     def _is_immigration_case(text: str, keywords: list[str]) -> bool:
         """Check if text suggests an immigration-related case."""
         text_lower = text.lower()
+        # Visa International is a payment-card brand. Its contract litigation
+        # must not enter the catalogue just because "visa" matches below.
+        if re.search(r"\bvisa\s+international\b", text_lower) and not re.search(
+            r"\b(?:immigration|migration|refugee|asylum|citizenship|home affairs|"
+            r"subclass|visa refusal|visa cancellation|protection visa)\b", text_lower
+        ):
+            return False
         immigration_indicators = [
             "minister for immigration",
             "minister for home affairs",

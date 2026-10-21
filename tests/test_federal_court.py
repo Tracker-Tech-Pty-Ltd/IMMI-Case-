@@ -126,7 +126,7 @@ class TestDownloadCaseDetail:
 
     @responses.activate
     def test_extracts_judges(self):
-        html = "<html><body><article><p>BEFORE: Justice Williams</p><p>Some text</p></article></body></html>"
+        html = "<html><body><article><h1>Example [2024] FCA 50</h1><p>BEFORE: Justice Williams</p><p>Some text</p></article></body></html>"
         case_url = "https://www.fedcourt.gov.au/judgments/2024/test"
         responses.add(responses.GET, case_url, body=html, status=200)
 

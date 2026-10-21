@@ -425,8 +425,10 @@ class TestExtractMetadataGuard:
             lambda *a, **k: {"judges": "Smith J", "not_a_field": "x"},
         )
 
-        case = ImmigrationCase(url="https://example.test/1")
-        scraper._extract_metadata(BeautifulSoup("<html></html>", "lxml"), case)
+        case = ImmigrationCase.from_dict({"url": "https://example.test/1", "citation": "[2024] FCA 12"})
+        scraper._extract_metadata(BeautifulSoup(
+            "<html><h1>Example [2024] FCA 12</h1><p>JUDGE: Smith J</p></html>", "lxml"
+        ), case)
 
         assert case.judges == "Smith J"
         assert not hasattr(case, "not_a_field")
