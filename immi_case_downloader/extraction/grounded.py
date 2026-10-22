@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261021-v3"
+RULE_VERSION = "grounded-local-20261022-v8"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -112,9 +112,18 @@ def _evidence(text: str, start: int, end: int, value: str, rule: str) -> Evidenc
 def _judge(text: str) -> Evidence | None:
     labels = re.compile(
         r"^(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBERS?|JUDGMENT OF|JUDGES?|"
-        r"BEFORE|CORAM|JUSTICE|TRIBUNAL)\s*:[ \t]*([^\n]*)(?:\n([^\n]+))?", re.I | re.M
+        r"BEFORE|CORAM|JUSTICE|TRIBUNAL)\s*:[ \t]*([^\n]*)"
+        r"(?:\n(?![ \t]*(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBERS?|"
+        r"JUDGMENT OF|JUDGES?|BEFORE|CORAM|JUSTICE|TRIBUNAL)\s*:)([^\n]+))?",
+        re.I | re.M,
     )
-    preamble = re.split(r"\bREASONS FOR (?:JUDGMENT|DECISION)\b|\bSTATEMENT OF DECISION", text, maxsplit=1, flags=re.I)[0][:10000]
+    preamble = re.split(
+        r"^[ \t]*(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"STATEMENT OF DECISION(?!\s+AND\s+REASONS))\b",
+        text,
+        maxsplit=1,
+        flags=re.I | re.M,
+    )[0][:10000]
     for match in labels.finditer(preamble):
         value = match[1].strip() or (match[2] or "").strip()
         value = _LABEL_END.split(value, maxsplit=1)[0].strip(" :;\t")
@@ -148,7 +157,13 @@ def _judge(text: str) -> Evidence | None:
 def _outcome(text: str) -> Evidence | None:
     # Only the publication's own operative table, before its reasons. Never
     # return a date, catchword, proposed order, or an isolated evidence finding.
-    preamble = re.split(r"\bREASONS FOR (?:JUDGMENT|DECISION)\b|\bSTATEMENT OF DECISION", text, maxsplit=1, flags=re.I)[0][:12000]
+    preamble = re.split(
+        r"^[ \t]*(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"STATEMENT OF DECISION(?!\s+AND\s+REASONS))\b",
+        text,
+        maxsplit=1,
+        flags=re.I | re.M,
+    )[0][:12000]
     for match in re.finditer(r"^(?:THE COURT ORDERS(?: THAT)?|ORDERS?|DECISION)(?:[ \t]*:[ \t]*|[ \t]*\n)", preamble, re.I | re.M):
         remainder = preamble[match.end():]
         stop = re.search(
@@ -193,10 +208,72 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
             rank = 0
         if re.search(r"\b(?:may|might|could|should|entitled to)\s+(?:apply|be granted|refuse)|application for (?:a |an )?visa.{0,80}\bmeans\b|which provides|provides that|have failed|did not appeal", context, re.I):
             rank = 0
+        # Some judgments identify the visa in one sentence and then state that
+        # the delegate made an adverse decision on "that application" in the
+        # same paragraph. Require both links so an unrelated historical visa
+        # or a separate decision cannot qualify the candidate.
+        current_application = re.search(
+            r"\b(?:applicant|appellant|he|she)\s+(?:lodged|made|filed)\s+"
+            r"an?\s+application\s+for\s+(?:a|an)\s*$",
+            before,
+            re.I,
+        )
+        linked_decision = re.search(
+            r"\b(?:delegate|tribunal|minister)\b[^.\n]{0,100}"
+            r"\b(?:adverse\s+)?decision\s+on\s+(?:that|the|this)\s+application\b",
+            text[match.end():line_end],
+            re.I,
+        )
+        if current_application and linked_decision:
+            rank = max(rank, 3)
         quote = _evidence(text, match.start(), match.end(), value, "direct_current_visa_statement")
         assessment.candidates.append({"value": value, "quote": quote.quote, "qualified": bool(rank), "rank": rank})
         if rank:
             results.append((rank, quote))
+
+    # Some published decisions put the applicant's exact class/subclass in an
+    # endnote. Use it only when the same numbered marker is attached to a
+    # sentence about the current applicant's visa and a decision, refusal,
+    # cancellation, or revocation. A free-standing historical footnote is not
+    # enough to identify the visa under review.
+    footnotes = list(re.finditer(r"^[ \t]*\[(\d{1,3})\][ \t]*\n", text, re.M))
+    current_visa_reference = re.compile(
+        r"(?is)(?:applicant[’']s\s+(?:refugee\s+|protection\s+)?visa|"
+        r"visa\s+(?:under\s+review|that\s+was\s+cancelled|was\s+cancelled|was\s+refused)|"
+        r"cancellation\s+of\s+(?:the\s+)?(?:applicant[’']s\s+)?visa|"
+        r"refusal\s+of\s+(?:the\s+)?visa)"
+    )
+    current_decision_context = re.compile(
+        r"(?i)\b(?:decision|refus\w*|cancel\w*|revok\w*|grant\w*)\b"
+    )
+    for index, footnote in enumerate(footnotes):
+        note_end = footnotes[index + 1].start() if index + 1 < len(footnotes) else min(len(text), footnote.end() + 900)
+        note = text[footnote.end():note_end]
+        # Only a directly stated class/subclass has a stable value. Generic
+        # footnote references to a visa family remain review candidates.
+        for visa_match in _VISA.finditer(note):
+            value = visa_match[0].strip()
+            if not re.search(r"\b(?:sub[- ]?class|class\s+[A-Z]{2})\b", value, re.I):
+                continue
+            marker = re.compile(r"\[" + re.escape(footnote[1]) + r"\]")
+            for reference in marker.finditer(text[:footnote.start()]):
+                context = text[max(0, reference.start() - 420):reference.start()]
+                if not current_visa_reference.search(context) or not current_decision_context.search(context):
+                    continue
+                start = footnote.end() + visa_match.start()
+                end = footnote.end() + visa_match.end()
+                proof = _evidence(text, start, end, value, "cross_referenced_current_visa_footnote")
+                linked_quote = _evidence(text, reference.start(), reference.end(), footnote[1],
+                                         "current_visa_footnote_reference")
+                assessment.candidates.append({
+                    "value": value,
+                    "quote": proof.quote,
+                    "reference_quote": linked_quote.quote,
+                    "qualified": True,
+                    "rank": 4,
+                })
+                results.append((4, proof))
+                break
     if not results:
         return None
     best = max(rank for rank, _ in results)
@@ -216,7 +293,59 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
     result = Assessment(expected, hashlib.sha256((text or "").encode("utf-8")).hexdigest(), hashlib.sha256(body.encode("utf-8")).hexdigest())
     result.reasons = {"judges": "author_not_stated", "outcome": "operative_orders_not_available", "visa_type": "current_visa_not_stated"}
     first = CITATION.search(body[:1800])
-    if not expected or not first or canonical_citation(first[0]) != expected:
+    formal_heading = re.search(
+        r"\b(?:DECISION\s+AND\s+REASONS\s+FOR\s+DECISION|"
+        r"STATEMENT\s+OF\s+DECISION\s+AND\s+REASONS)\b",
+        body[:6000], re.I,
+    )
+    if formal_heading:
+        # Tribunal decisions often list authorities before their own formal
+        # heading. The first formal decision heading wins even when an earlier
+        # catchword happens to cite the catalogue's expected number. Its first
+        # citation must immediately follow the heading; otherwise we fall back
+        # to the initial case caption, never to a citation inside catchwords.
+        heading_text = body[formal_heading.end():formal_heading.end() + 180]
+        heading_citation = CITATION.search(heading_text)
+        if heading_citation and not heading_text[:heading_citation.start()].strip():
+            identity_matches = bool(
+                expected and canonical_citation(heading_citation[0]) == expected
+            )
+        else:
+            identity_matches = False
+    else:
+        identity_matches = False
+
+    # Initial publication citation or dual-citation case caption. This fallback
+    # is allowed only before catchwords/reasons; it cannot override a conflicting
+    # citation printed immediately after the formal decision heading.
+    has_formal_heading_citation = bool(
+        formal_heading and heading_citation and not heading_text[:heading_citation.start()].strip()
+    )
+    if expected and not identity_matches and not has_formal_heading_citation:
+        section = re.search(
+            r"^[ \t]*(?:CATCHWORDS|BETWEEN|REASONS\s+FOR\s+(?:JUDGMENT|DECISION)|STATEMENT\s+OF\s+DECISION)\b",
+            body[:6000], re.I | re.M,
+        )
+        identity_matches = bool(
+            first and (not section or first.start() < section.start())
+            and canonical_citation(first[0]) == expected
+        )
+        if not identity_matches:
+            caption = re.split(
+                r"^[ \t]*(?:CATCHWORDS|BETWEEN|DECISION\s+AND\s+REASONS\s+FOR\s+DECISION|"
+                r"STATEMENT\s+OF\s+DECISION|REASONS\s+FOR\s+(?:JUDGMENT|DECISION))\b",
+                body,
+                maxsplit=1,
+                flags=re.I | re.M,
+            )[0]
+            for line in caption.splitlines()[:12]:
+                if not re.search(r"\bv\b", line, re.I):
+                    continue
+                if any(canonical_citation(match[0]) == expected for match in CITATION.finditer(line)):
+                    identity_matches = True
+                    break
+
+    if not expected or not identity_matches:
         result.source_status = "identity_unverified" if not first or not expected else "identity_conflict"
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
         return result
@@ -225,10 +354,76 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
         return result
     head = body[:2400]
+    catchwords = ""
+    catchwords_match = re.search(r"\bCATCHWORDS\b", body[:10000], re.I)
+    if catchwords_match:
+        catchwords = body[catchwords_match.end():catchwords_match.end() + 1600]
+        catchwords_end = re.search(
+            r"^[ \t]*(?:LEGISLATION|REPRESENTATION|APPEARANCES|REVIEW APPLICANT|"
+            r"VISA APPLICANT|PRESIDING MEMBER|TRIBUNAL MEMBER|TRIBUNAL:|DECISION RECORD|"
+            r"STATEMENT OF DECISION|APPLICATION FOR REVIEW)\b",
+            catchwords,
+            re.I | re.M,
+        )
+        if catchwords_end:
+            catchwords = catchwords[:catchwords_end.start()]
     if re.search(r"\b(?:TRADE PRACTICES|TRADE MARKS|CONTRACT|COSTS)\b", head) and re.search(r"Spotwire.{0,180}Visa International", head, re.I | re.S):
         result.not_applicable["visa_type"] = "payment_card_litigation_not_immigration"
     elif re.search(r"(?:Application for (?:resumption|the grant) of Australian citizenship|Application for resumption of citizenship|citizenship by conferral)", head, re.I):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
+    elif re.search(r"\bCATCHWORDS\s*(?:[-:–—]\s*)?(?:AUSTRALIAN\s+)?CITIZENSHIP\b", head, re.I):
+        result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
+    elif re.search(
+        r"\bCATCHWORDS\b.{0,500}\b(?:application for approval of (?:the )?nomination|"
+        r"approval of (?:the )?nomination|approval of nominated position|nomination refusal|"
+        r"application for approval as (?:a )?(?:business )?sponsor|"
+        r"decision (?:not to grant|to refuse|to approve) (?:an? )?(?:employment )?nomination)\b",
+        head,
+        re.I | re.S,
+    ):
+        result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
+    elif (
+        catchwords
+        and re.search(r"\b(?:nomination|sponsor(?:ship)?)\b", catchwords, re.I)
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+            r"review\s+of\s+(?:the\s+)?visa)\b",
+            catchwords,
+            re.I,
+        )
+    ):
+        result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
+    elif catchwords and not re.search(
+        r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+        r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+        r"review\s+of\s+(?:the\s+)?visa)\b",
+        catchwords,
+        re.I,
+    ):
+        if re.search(
+            r"\b(?:fair\s+work|industrial\s+law|industrial\s+relations|"
+            r"workers[’']?\s+compensation|Comcare)\b",
+            catchwords,
+            re.I,
+        ):
+            result.not_applicable["visa_type"] = "employment_case_not_a_personal_visa"
+        elif re.search(
+            r"\b(?:maritime\s+security\s+(?:identity|identification)\s+card|"
+            r"aviation\s+security\s+identification\s+card|"
+            r"application\s+for\s+an?\s+aviation\s+security\s+identification\s+card)\b",
+            catchwords,
+            re.I,
+        ):
+            result.not_applicable["visa_type"] = "security_card_case_not_a_personal_visa"
+        elif re.search(r"\b(?:freedom\s+of\s+information|FOI)\b", catchwords, re.I):
+            result.not_applicable["visa_type"] = "freedom_of_information_not_a_visa_decision"
+        elif re.search(
+            r"\bde[ -]?registration\s+of\s+(?:a\s+)?(?:corporation|company)\b",
+            catchwords,
+            re.I,
+        ):
+            result.not_applicable["visa_type"] = "corporate_deregistration_not_a_personal_visa"
     judge = _judge(body)
     outcome = _outcome(body)
     visa = None if "visa_type" in result.not_applicable else _visa(body, result)

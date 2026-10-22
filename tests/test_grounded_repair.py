@@ -41,12 +41,79 @@ class GroundedTests(unittest.TestCase):
         self.assertEqual(result.values["judges"].value, "Jane Smith")
         self.assertEqual(result.values["outcome"].value, "The Tribunal affirms the decision under review.")
 
+    def test_tribunal_label_does_not_swallow_following_member(self):
+        body = (
+            HEAD
+            + "TRIBUNAL: Migration Review Tribunal\n"
+            + "PRESIDING MEMBER:\nRicky Johnston\n"
+            + "DECISION: The Tribunal remits the application.\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["judges"].value, "Ricky Johnston")
+
     def test_no_guesses_from_title_and_cited_judge(self):
         result = self.assess(HEAD + "REASONS FOR JUDGMENT\nIn Another v Minister [2001] FCA 10, Judge Jones dismissed the application.")
         self.assertEqual(result.values, {})
 
     def test_conflicting_identity_blocks_every_field(self):
         result = assess_case(BODY, citation="[2024] FCA 13")
+        self.assertEqual(result.source_status, "identity_conflict")
+        self.assertEqual(result.values, {})
+
+    def test_exact_formal_heading_can_confirm_identity_after_cited_authorities(self):
+        body = (
+            "CATCHWORDS: see Another v Minister [1999] FCA 1\n"
+            "DECISION AND REASONS FOR DECISION [2024] FCA 12\n"
+            "PRESIDING MEMBER: Jane Smith\n"
+            "DECISION: The Tribunal affirms the decision under review.\n"
+            "REASONS FOR DECISION\n"
+            "The decision under review refused a protection visa.\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["judges"].value, "Jane Smith")
+        self.assertEqual(result.values["outcome"].value,
+                         "The Tribunal affirms the decision under review.")
+        self.assertEqual(result.values["visa_type"].value, "protection visa")
+
+    def test_dual_federal_court_caption_can_confirm_secondary_citation(self):
+        body = (
+            "Bakhtyar v Minister for Immigration & Multicultural Affairs "
+            "[2002] FCAFC 49; [2002] FCA 218\n"
+            "JUDGE: SMITH J\nREASONS FOR JUDGMENT\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 218")
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["judges"].value, "SMITH J")
+
+    def test_citation_in_reasons_does_not_confirm_primary_identity(self):
+        body = (
+            "Actual case [2024] FCA 13\n"
+            "REASONS FOR JUDGMENT\n"
+            "Another v Minister [2024] FCA 12 was decided differently.\n"
+        )
+        result = assess_case(body, citation="[2024] FCA 12")
+        self.assertEqual(result.source_status, "identity_conflict")
+        self.assertEqual(result.values, {})
+
+    def test_citation_in_catchwords_does_not_override_formal_heading(self):
+        body = (
+            "CATCHWORDS: Another v Minister [2024] FCA 12\n"
+            "DECISION AND REASONS FOR DECISION [2024] FCA 13\n"
+            "JUDGE: Jane Smith\n"
+        )
+        result = assess_case(body, citation="[2024] FCA 12")
+        self.assertEqual(result.source_status, "identity_conflict")
+        self.assertEqual(result.values, {})
+
+    def test_first_formal_heading_controls_identity(self):
+        body = (
+            "DECISION AND REASONS FOR DECISION [2024] FCA 13\n"
+            "REASONS FOR DECISION\n"
+            "DECISION AND REASONS FOR DECISION [2024] FCA 12\n"
+            "JUDGE: Jane Smith\n"
+        )
+        result = assess_case(body, citation="[2024] FCA 12")
         self.assertEqual(result.source_status, "identity_conflict")
         self.assertEqual(result.values, {})
 
@@ -82,6 +149,89 @@ class GroundedTests(unittest.TestCase):
         body = "Spotwire v Visa International [2024] FCA 12\nCATCHWORDS: TRADE PRACTICES and CONTRACT"
         self.assertIn("visa_type", self.assess(body).not_applicable)
 
+    def test_citizenship_catchword_marks_visa_type_not_applicable(self):
+        result = self.assess(HEAD + "CATCHWORDS – CITIZENSHIP – grant of citizenship – decision set aside")
+        self.assertEqual(result.not_applicable["visa_type"], "citizenship_review_not_a_visa_application")
+
+    def test_nomination_review_marks_personal_visa_not_applicable(self):
+        result = self.assess(
+            HEAD + "CATCHWORDS: MIGRATION – application for approval of nomination of position – Direct Entry"
+        )
+        self.assertEqual(result.not_applicable["visa_type"], "sponsorship_or_nomination_not_a_personal_visa")
+
+    def test_nomination_subject_in_catchwords_marks_personal_visa_not_applicable(self):
+        result = self.assess(HEAD + "CATCHWORDS: MIGRATION – nomination – Direct Entry stream")
+        self.assertEqual(result.not_applicable["visa_type"], "sponsorship_or_nomination_not_a_personal_visa")
+
+    def test_subclass_visa_refusal_for_sponsor_is_not_misclassified_as_nomination(self):
+        result = self.assess(HEAD + "CATCHWORDS: Visa refusal – subclass 457 – business sponsor")
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_non_immigration_employment_decisions_mark_visa_type_not_applicable(self):
+        for topic in (
+            "FAIR WORK – penalties under the Fair Work Act",
+            "INDUSTRIAL LAW – application for civil penalty",
+            "WORKERS' COMPENSATION – disease contributed to by employment",
+            "Comcare – application for review of psychological injury claim",
+        ):
+            with self.subTest(topic=topic):
+                result = self.assess(HEAD + "CATCHWORDS: " + topic)
+                self.assertEqual(result.not_applicable["visa_type"], "employment_case_not_a_personal_visa")
+
+    def test_transport_security_card_decisions_are_not_visa_decisions(self):
+        for topic in (
+            "Maritime Security Identification Card – decision to refuse issue",
+            "Aviation Security Identification Card – adverse criminal record",
+        ):
+            with self.subTest(topic=topic):
+                result = self.assess(HEAD + "CATCHWORDS: " + topic)
+                self.assertEqual(result.not_applicable["visa_type"], "security_card_case_not_a_personal_visa")
+
+    def test_foi_and_corporate_registry_cases_are_not_personal_visa_reviews(self):
+        foi = self.assess(HEAD + "CATCHWORDS: FREEDOM OF INFORMATION – request for department documents")
+        company = self.assess(HEAD + "CATCHWORDS: MIGRATION – de-registration of a corporation")
+        self.assertEqual(foi.not_applicable["visa_type"], "freedom_of_information_not_a_visa_decision")
+        self.assertEqual(company.not_applicable["visa_type"], "corporate_deregistration_not_a_personal_visa")
+
+    def test_non_visa_subject_rule_does_not_override_a_visa_refusal(self):
+        result = self.assess(HEAD + "CATCHWORDS: Review of visa refusal – subclass 457 – Fair Work evidence")
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_current_visa_subclass_can_be_resolved_through_its_numbered_footnote(self):
+        body = (
+            HEAD
+            + "The delegate declined to revoke the cancellation of the applicant’s visa, [2]\n"
+            + "The applicant has a substantial criminal record.\n"
+            + "[2]\nA Class XB subclass 200 – Refugee visa.\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["visa_type"].value, "subclass 200")
+        candidate = next(x for x in result.candidates if x["rank"] == 4)
+        self.assertIn("applicant’s visa, [2]", candidate["reference_quote"])
+
+    def test_visa_linked_to_adverse_decision_on_that_application(self):
+        body = (
+            HEAD
+            + "The appellant arrived on a visitor visa.\n"
+            + "He lodged an application for a protection (Class XA) visa on 12 January 2004. "
+            + "The Delegate’s adverse decision on that application was made on 19 January 2004.\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["visa_type"].value, "protection (Class XA) visa")
+
+    def test_application_visa_does_not_link_to_separate_decision_paragraph(self):
+        body = (
+            HEAD
+            + "The appellant lodged an application for a protection visa on 12 January 2004.\n"
+            + "The Delegate’s adverse decision concerned a different application.\n"
+        )
+        self.assertNotIn("visa_type", self.assess(body).values)
+
+    def test_unlinked_visa_footnote_does_not_fill_current_visa(self):
+        body = HEAD + "[2]\nA Class XB subclass 200 – Refugee visa.\n"
+        result = self.assess(body)
+        self.assertNotIn("visa_type", result.values)
+
     def test_visa_applicant_na_does_not_mean_visa_type_na(self):
         result = self.assess(HEAD + "VISA APPLICANT: N/A\nThe decision to refuse the visa was made on 23 December 2002.")
         self.assertNotIn("visa_type", result.not_applicable)
@@ -113,10 +263,10 @@ class WorkflowTests(unittest.TestCase):
         self.rows = [{"case_id": "a", "citation": "[2024] FCA 12", "title": "Example v Minister",
                       "url": "https://www.austlii.edu.au/au/cases/cth/FCA/2024/12.html",
                       "judges": "", "outcome": "", "visa_type": "", "user_notes": "Keep my notes",
-                      "full_text_path": "downloaded_cases/case.txt"},
+                      "full_text_path": "downloaded_cases/case.txt", "text_snippet": ""},
                      {"case_id": "b", "citation": "[2024] FCA 13", "title": "Other",
                       "url": "", "judges": "Correct J", "outcome": "Allowed", "visa_type": "Subclass 866",
-                      "user_notes": "", "full_text_path": ""}]
+                      "user_notes": "", "full_text_path": "", "text_snippet": ""}]
         db = sqlite3.connect(self.data / "cases.db")
         db.execute("CREATE TABLE cases (" + ",".join(f'{x} TEXT' for x in self.rows[0]) + ")")
         db.executemany("INSERT INTO cases VALUES (" + ",".join("?" for _ in self.rows[0]) + ")", [tuple(r.values()) for r in self.rows])
@@ -211,6 +361,110 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.review("after")["missing_cells"], 0)
         self.assertEqual(apply_approved(self.root, self.root / "noop", [])["applied"], 0)
 
+    def test_expected_current_replaces_wrong_value_and_source_metadata_safely(self):
+        source_text = (
+            HEAD
+            + "JUDGE: LINDGREN J\n"
+            + "ORDERS:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\n"
+            + "The appellant lodged an application for a protection (Class XA) visa on 12 January 2004. "
+            + "The Delegate’s adverse decision on that application was made on 19 January 2004.\n"
+        )
+        official = self.data / "official.txt"
+        with official.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(source_text)
+        source_ref = "downloaded_cases/official.txt"
+        old_path = "downloaded_cases/wrong.txt"
+        old_snippet = "Baxter wrong source"
+        self.rows[0].update(judges="OF THE", full_text_path=old_path, text_snippet=old_snippet)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET judges=?,full_text_path=?,text_snippet=? WHERE case_id='a'",
+                         ("OF THE", old_path, old_snippet))
+            conn.commit()
+        self.save_exports()
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        next(row for row in payload["cases"] if row["case_id"] == "a")["text_snippet"] = ""
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        source_hash = hashlib.sha256(official.read_bytes()).hexdigest()
+        assessment = assess_case(source_text, citation=self.rows[0]["citation"],
+                                 title=self.rows[0]["title"], url=self.rows[0]["url"])
+        approvals = []
+        for field in ("judges", "visa_type"):
+            approvals.append({
+                "case_id": "a", "field": field, "source_path": source_ref,
+                "source_sha256": source_hash, "evidence": assessment.values[field].to_dict(),
+                "reviewer": "manual-source-test", "review_note": "Exact source evidence checked",
+                **({"expected_current": "OF THE"} if field == "judges" else {}),
+            })
+        approvals.extend([
+            {"case_id": "a", "field": "full_text_path", "expected_current": old_path,
+             "source_path": source_ref, "source_sha256": source_hash,
+             "evidence": {"value": source_ref}, "reviewer": "manual-source-test",
+             "review_note": "Official text replaces mismatched source path"},
+            {"case_id": "a", "field": "text_snippet", "expected_current": old_snippet,
+             "expected_current_by_store": {"database": old_snippet, "csv": old_snippet, "json": ""},
+             "source_path": source_ref, "source_sha256": source_hash,
+             "evidence": {"value": source_text[:220]}, "reviewer": "manual-source-test",
+             "review_note": "Snippet is an exact prefix of the verified official text"},
+        ])
+        result = apply_approved(self.root, self.root / "compare-and-swap", approvals)
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 4)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            got = conn.execute("SELECT judges,visa_type,full_text_path,text_snippet FROM cases WHERE case_id='a'").fetchone()
+        self.assertEqual(got, ("LINDGREN J", "protection (Class XA) visa", source_ref, source_text[:220]))
+
+    def test_official_order_summary_repairs_only_divergent_exports(self):
+        self.rows[0]["outcome"] = "Dismissed"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET outcome='Dismissed' WHERE case_id='a'")
+            conn.commit()
+        self.save_exports()
+        csv_path = self.data / "immigration_cases.csv"
+        with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+            csv_rows = list(csv.DictReader(handle))
+            headers = list(csv_rows[0])
+        csv_rows[0]["outcome"] = ""
+        with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"] = "ORDER:\n\n12 AUGUST 2005"
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        assessment = assess_case(BODY, citation=self.rows[0]["citation"],
+                                 title=self.rows[0]["title"], url=self.rows[0]["url"])
+        proof = assessment.values["outcome"]
+        approval = {
+            "case_id": "a", "field": "outcome",
+            "expected_current_by_store": {
+                "database": "Dismissed", "csv": "", "json": "ORDER:\n\n12 AUGUST 2005",
+            },
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Dismissed", "source_value": proof.value,
+                "quote": "The application is dismissed.",
+                "method": "manual_operative_order_summary",
+            },
+            "reviewer": "manual-source-test",
+            "review_note": "The operative order says the application is dismissed; existing database summary is correct.",
+        }
+        result = apply_approved(self.root, self.root / "repair-outcome-export", [approval])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT outcome FROM cases WHERE case_id='a'").fetchone()[0], "Dismissed")
+        with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(next(r for r in csv.DictReader(handle) if r["case_id"] == "a")["outcome"], "Dismissed")
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Dismissed")
+
+    def test_expected_current_mismatch_refuses_overwrite(self):
+        approvals = self.approvals()
+        approvals[0]["expected_current"] = "stale value"
+        with self.assertRaisesRegex(ValueError, "Current value changed"):
+            apply_approved(self.root, self.root / "stale-compare", approvals)
+
     def test_no_change_verification_compares_every_store(self):
         import shutil
         backup = self.root / "backup"
@@ -218,6 +472,35 @@ class WorkflowTests(unittest.TestCase):
         for name in ("cases.db", "immigration_cases.csv", "immigration_cases.json"):
             shutil.copy2(self.data / name, backup / name)
         self.assertEqual(verify_stores(self.root, backup, [])["verified_cells_each_store"], 0)
+
+    def test_verify_counts_same_field_once_for_each_approved_case(self):
+        import shutil
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET visa_type='' WHERE case_id='b'")
+            conn.commit()
+        self.rows[1]["visa_type"] = ""
+        self.save_exports()
+        backup = self.root / "same-field-backup"
+        backup.mkdir()
+        for name in ("cases.db", "immigration_cases.csv", "immigration_cases.json"):
+            shutil.copy2(self.data / name, backup / name)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET visa_type='protection visa'")
+            conn.commit()
+        for row in self.rows:
+            row["visa_type"] = "protection visa"
+        self.save_exports()
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        payload["cases"][-1]["visa_type"] = ""
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        changes = [
+            {"case_id": case_id, "field": "visa_type", "evidence": {"value": "protection visa"}}
+            for case_id in ("a", "b")
+        ]
+        result = verify_stores(self.root, backup, changes)
+        self.assertEqual(result["verified_cells_each_store"], 2)
+        self.assertTrue(result["all_unapproved_data_preserved"])
 
     def test_export_conflict_is_not_overwritten(self):
         approvals = self.approvals()

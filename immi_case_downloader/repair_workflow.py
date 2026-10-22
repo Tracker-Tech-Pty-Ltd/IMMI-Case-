@@ -11,6 +11,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 from collections import Counter
@@ -19,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from .extraction.grounded import CORE_FIELDS, RULE_VERSION, assess_case, canonical_citation, citation_from_url
+
+REPAIR_FIELDS = CORE_FIELDS + ("full_text_path", "text_snippet")
 
 REASONS = {
     "author_not_stated": "可核對原文沒有明列裁決者，不從案件名稱或其他案件推斷",
@@ -33,7 +36,12 @@ REASONS = {
     "evidence_review": "找到候選，須核對原文與簽證關係後才能核准寫入",
     "export_conflict": "不同本機資料檔已有非空值，保留原值並等待核對",
     "payment_card_litigation_not_immigration": "本案是 Visa 信用卡公司的商業訴訟，簽證類別不適用",
+    "employment_case_not_a_personal_visa": "原文摘要顯示本案審理勞資、工業法或職災賠償事項，不是個人簽證審查；簽證類別不適用",
+    "security_card_case_not_a_personal_visa": "原文摘要顯示本案審理航空或海事保安識別卡，不是個人簽證審查；簽證類別不適用",
+    "freedom_of_information_not_a_visa_decision": "原文摘要顯示本案審理資訊公開或文件披露，不是簽證決定；簽證類別不適用",
+    "corporate_deregistration_not_a_personal_visa": "原文摘要顯示本案審理公司註銷或登記，不是個人簽證審查；簽證類別不適用",
     "citizenship_review_not_a_visa_application": "本案審理公民身分申請，簽證類別不適用",
+    "sponsorship_or_nomination_not_a_personal_visa": "本案審理雇主提名、職位或擔保人核准，並非個人簽證申請；簽證類別不適用",
     "publication_explicitly_marks_visa_applicant_not_applicable": "裁決原文明列簽證申請人不適用；保留為不適用",
 }
 
@@ -259,27 +267,63 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
 
 
 def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
-    """Approval is source-pinned, literal, current, and limited to missing cells."""
+    """Approval is source-pinned and literal; replacements require exact compare-and-swap."""
     seen = set()
     with contextlib.closing(sqlite3.connect(root / "downloaded_cases/cases.db")) as conn:
         conn.row_factory = sqlite3.Row
         for change in approvals:
             key = (change["case_id"], change["field"])
-            if key in seen or change["field"] not in CORE_FIELDS:
+            field = change["field"]
+            if key in seen or field not in REPAIR_FIELDS:
                 raise ValueError("Duplicate or unsupported cell")
             seen.add(key)
             row = conn.execute("SELECT * FROM cases WHERE case_id=?", (change["case_id"],)).fetchone()
-            if not row or not blank(row[change["field"]]):
+            if not row:
+                raise ValueError("Approved case is missing")
+            current = row[field]
+            expected_by_store = change.get("expected_current_by_store")
+            if expected_by_store is not None:
+                if not isinstance(expected_by_store, dict) or "database" not in expected_by_store:
+                    raise ValueError("Per-store current values must include the database")
+                if current != expected_by_store["database"]:
+                    raise ValueError("Current database value changed since approval")
+            elif "expected_current" in change:
+                if current != change["expected_current"]:
+                    raise ValueError("Current value changed since approval")
+            elif not blank(current):
                 raise ValueError("Existing non-empty value is protected")
-            path = source_path(root, row["full_text_path"])
+            source_ref = change.get("source_path") or row["full_text_path"]
+            path = source_path(root, source_ref)
             raw = path.read_bytes() if path else b""
             if not path or hashlib.sha256(raw).hexdigest() != change["source_sha256"]:
                 raise ValueError("Source changed since approval")
-            assessment = assess_case(raw.decode("utf-8-sig"), citation=row["citation"],
-                                     title=row["title"], url=row["url"])
-            proof = assessment.values.get(change["field"])
-            if not proof or proof.to_dict() != change["evidence"]:
-                raise ValueError("Approval no longer matches grounded evidence")
+            source_text = raw.decode("utf-8-sig")
+            evidence = change["evidence"]
+            if field in CORE_FIELDS:
+                assessment = assess_case(source_text, citation=row["citation"],
+                                         title=row["title"], url=row["url"])
+                proof = assessment.values.get(field)
+                if not proof:
+                    raise ValueError("Approval no longer matches grounded evidence")
+                if proof.to_dict() != evidence:
+                    quote = evidence.get("quote", "")
+                    normalized_dismissal = (
+                        field == "outcome"
+                        and evidence.get("method") == "manual_operative_order_summary"
+                        and evidence.get("source_value") == proof.value
+                        and evidence.get("value") == "Dismissed"
+                        and quote in source_text
+                        and bool(re.search(r"\b(?:appeal|application)\s+(?:be|is|was)\s+dismissed\b", quote, re.I))
+                    )
+                    if not normalized_dismissal:
+                        raise ValueError("Approval no longer matches grounded evidence")
+            elif field == "full_text_path":
+                if evidence.get("value") != source_ref:
+                    raise ValueError("Replacement text path must match the verified source path")
+            else:  # text_snippet
+                snippet = evidence.get("value", "")
+                if not snippet or len(snippet) > 1200 or not source_text.startswith(snippet):
+                    raise ValueError("Replacement snippet must be a short exact source prefix")
             if not change.get("reviewer") or not change.get("review_note"):
                 raise ValueError("Independent evidence review is required")
 
@@ -309,11 +353,17 @@ def prepare_exports(csv_path: Path, json_path: Path, changes: list[dict]) -> tup
             raise ValueError("Approved case missing from export")
         maps.append(mapping)
     for change in changes:
-        for mapping in maps:
+        for label, mapping in zip(("csv", "json"), maps):
             row = mapping[change["case_id"]]
             existing = row.get(change["field"])
             value = change["evidence"]["value"]
-            if not blank(existing) and existing != value:
+            expected_by_store = change.get("expected_current_by_store")
+            if expected_by_store is not None:
+                if label not in expected_by_store or existing != expected_by_store[label]:
+                    raise ValueError(f"Export changed since approval: {change['case_id']} {change['field']}")
+            elif "expected_current" in change and existing != change["expected_current"]:
+                raise ValueError(f"Export changed since approval: {change['case_id']} {change['field']}")
+            if expected_by_store is None and "expected_current" not in change and not blank(existing) and existing != value:
                 raise ValueError(f"Export conflict: {change['case_id']} {change['field']}")
             row[change["field"]] = value
     csv_next, json_next = csv_path.with_suffix(".csv.repair-next"), json_path.with_suffix(".json.repair-next")
@@ -368,10 +418,9 @@ def verify_stores(root: Path, backup: Path, changes: list[dict]) -> dict:
             raise ValueError("Export row count changed")
         for old, new in zip(old_list, new_list):
             want = dict(old)
-            for field in CORE_FIELDS:
-                key = (old["case_id"], field)
-                if key in expected:
-                    want[field] = expected[key]
+            for (case_id, field), value in expected.items():
+                if case_id == old["case_id"]:
+                    want[field] = value
                     observed[label] += 1
             if want != new:
                 raise ValueError(f"Unexpected {label} mutation: {old['case_id']}")
@@ -388,7 +437,7 @@ def apply_approved(root: Path, output: Path, approvals: list[dict], *, fault: st
     """Journalled three-store write under the catalogue's shared process lock.
 
     An interrupted run blocks further writes until explicit recovery. Backups
-    include all stores; approvals never permit replacing a valid existing cell.
+    include all stores; non-empty values change only after an exact compare.
     """
     from .csv_write_lock import catalog_lock
     root, output = root.resolve(), output.resolve()
@@ -424,9 +473,17 @@ def apply_approved(root: Path, output: Path, approvals: list[dict], *, fault: st
                        "approvals": approvals}
             write_json(journal, receipt)
             for change in approvals:
-                field = change["field"]  # validated against CORE_FIELDS above
-                cursor = conn.execute(f'UPDATE cases SET "{field}"=? WHERE case_id=? AND ("{field}" IS NULL OR TRIM("{field}")=\'\')',
-                                      (change["evidence"]["value"], change["case_id"]))
+                field = change["field"]  # validated against REPAIR_FIELDS above
+                expected_by_store = change.get("expected_current_by_store")
+                if expected_by_store is not None:
+                    cursor = conn.execute(f'UPDATE cases SET "{field}"=? WHERE case_id=? AND "{field}"=?',
+                                          (change["evidence"]["value"], change["case_id"], expected_by_store["database"]))
+                elif "expected_current" in change:
+                    cursor = conn.execute(f'UPDATE cases SET "{field}"=? WHERE case_id=? AND "{field}"=?',
+                                          (change["evidence"]["value"], change["case_id"], change["expected_current"]))
+                else:
+                    cursor = conn.execute(f'UPDATE cases SET "{field}"=? WHERE case_id=? AND ("{field}" IS NULL OR TRIM("{field}")=\'\')',
+                                          (change["evidence"]["value"], change["case_id"]))
                 if cursor.rowcount != 1:
                     raise RuntimeError("Concurrent database change; refusing overwrite")
             os.replace(next_csv, csv_path)
