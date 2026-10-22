@@ -1468,6 +1468,133 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "matching official source identity"):
             validate_approvals(self.root, [approval])
 
+    def test_manual_official_docket_outcome_review_applies_exact_procedural_status(self):
+        source_url = "https://www.comcourts.gov.au/file/FEDERAL/P/NSD270/2013/order_list"
+        supporting_url = (
+            "https://www.judgments.fedcourt.gov.au/judgments/Judgments/fca/single/2013/2013fca0430"
+        )
+        file_number = "NSD270/2013"
+        quote = (
+            "23-May-2013 10:00 Administrative Listing Justice Perram "
+            "Finalised - Discontinued/Withdrawn"
+        )
+        source_text = (
+            "Title: Party name omitted [2013] FCA 430\n"
+            "Citation: [2013] FCA 430\n"
+            f"URL: {source_url}\n"
+            f"Supporting URL: {supporting_url}\n"
+            f"File number: {file_number}\n"
+            + "=" * 80 + "\n"
+            "Federal Law Search court event details\n"
+            f"{quote}\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0].update(
+            citation="[2013] FCA 430",
+            title="Party name omitted [2013] FCA 430",
+            url=source_url,
+        )
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute(
+                "UPDATE cases SET citation=?,title=?,url=? WHERE case_id='a'",
+                (self.rows[0]["citation"], self.rows[0]["title"], self.rows[0]["url"]),
+            )
+            conn.commit()
+        self.save_exports()
+        approval = {
+            "case_id": "a",
+            "field": "outcome",
+            "expected_current_by_store": {"database": "", "csv": "", "json": ""},
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Finalised - Discontinued/Withdrawn",
+                "quote": quote,
+                "method": "manual_official_docket_outcome_review",
+                "source_url": source_url,
+                "supporting_url": supporting_url,
+                "file_number": file_number,
+            },
+            "reviewer": "independent-test-review",
+            "review_note": (
+                "The official docket gives this exact procedural status; it is not presented as a merits judgment."
+            ),
+        }
+
+        result = apply_approved(self.root, self.root / "official-docket-outcome-apply", [approval])
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(
+                conn.execute("SELECT outcome FROM cases WHERE case_id='a'").fetchone()[0],
+                "Finalised - Discontinued/Withdrawn",
+            )
+        with (self.data / "immigration_cases.csv").open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(
+                next(row for row in csv.DictReader(handle) if row["case_id"] == "a")["outcome"],
+                "Finalised - Discontinued/Withdrawn",
+            )
+        payload = json.loads((self.data / "immigration_cases.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"],
+            "Finalised - Discontinued/Withdrawn",
+        )
+
+    def test_manual_official_docket_outcome_review_rejects_wrong_source_or_quote(self):
+        source_url = "https://www.comcourts.gov.au/file/FEDERAL/P/NSD270/2013/order_list"
+        supporting_url = (
+            "https://www.judgments.fedcourt.gov.au/judgments/Judgments/fca/single/2013/2013fca0430"
+        )
+        quote = "23-May-2013 10:00 Administrative Listing Justice Perram Finalised - Discontinued/Withdrawn"
+        source_text = (
+            "Title: Party name omitted [2013] FCA 430\n"
+            "Citation: [2013] FCA 430\n"
+            f"URL: {source_url}\n"
+            f"Supporting URL: {supporting_url}\n"
+            "File number: NSD270/2013\n"
+            + "=" * 80 + "\n"
+            f"{quote}\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0].update(
+            citation="[2013] FCA 430",
+            title="Party name omitted [2013] FCA 430",
+            url=source_url,
+        )
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute(
+                "UPDATE cases SET citation=?,title=?,url=? WHERE case_id='a'",
+                (self.rows[0]["citation"], self.rows[0]["title"], self.rows[0]["url"]),
+            )
+            conn.commit()
+        self.save_exports()
+        approval = {
+            "case_id": "a",
+            "field": "outcome",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Finalised - Discontinued/Withdrawn",
+                "quote": quote,
+                "method": "manual_official_docket_outcome_review",
+                "source_url": source_url,
+                "supporting_url": supporting_url,
+                "file_number": "NSD270/2013",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "Checked the exact official docket entry.",
+        }
+        invalid = {**approval, "evidence": {**approval["evidence"], "source_url": "https://example.com/order_list"}}
+        with self.assertRaisesRegex(ValueError, "matching official source identity"):
+            validate_approvals(self.root, [invalid])
+        invalid = {
+            **approval,
+            "evidence": {**approval["evidence"], "value": "Allowed"},
+        }
+        with self.assertRaisesRegex(ValueError, "exact source wording"):
+            validate_approvals(self.root, [invalid])
+
     def test_expected_current_replaces_wrong_value_and_source_metadata_safely(self):
         source_text = (
             HEAD

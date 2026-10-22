@@ -525,6 +525,10 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "judges"
                     and evidence.get("method") == "manual_official_source_judge_review"
                 )
+                manual_docket_outcome_review = (
+                    field == "outcome"
+                    and evidence.get("method") == "manual_official_docket_outcome_review"
+                )
                 if (field == "visa_type" and not proof
                         and assessment.source_status == "checked"
                         and not assessment.not_applicable.get(field)
@@ -616,6 +620,75 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         raise ValueError("Manual judge approval requires exact source wording")
                     if proof and proof.value.casefold() != value.casefold():
                         raise ValueError("Manual judge approval conflicts with grounded evidence")
+                elif manual_docket_outcome_review:
+                    metadata = {}
+                    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                    header_text = (
+                        source_text[:separator.start()]
+                        if separator else "\n".join(source_text.splitlines()[:20])
+                    )
+                    for line in header_text.splitlines():
+                        match = re.match(
+                            r"^(Title|Citation|URL|Supporting URL|File number):\s*(.*?)\s*$",
+                            line,
+                            re.IGNORECASE,
+                        )
+                        if match and match[2].strip():
+                            metadata.setdefault(match[1].casefold(), match[2].strip())
+                    quote = evidence.get("quote", "")
+                    value = evidence.get("value", "")
+                    source_url = evidence.get("source_url", "")
+                    supporting_url = evidence.get("supporting_url", "")
+                    file_number = evidence.get("file_number", "")
+                    official_hosts = ("comcourts.gov.au", "fedcourt.gov.au")
+
+                    def is_official_court_url(url: str) -> bool:
+                        parsed = urlparse(url)
+                        host = parsed.hostname or ""
+                        return (
+                            parsed.scheme == "https"
+                            and any(host == domain or host.endswith("." + domain)
+                                    for domain in official_hosts)
+                        )
+
+                    case_match = re.fullmatch(
+                        r"\[(\d{4})\]\s+([A-Z]+)\s+(\d+)", row["citation"], re.I
+                    )
+                    expected_support_path = ""
+                    if case_match:
+                        year, court, number = case_match.groups()
+                        expected_support_path = f"/{year}{court.casefold()}{number.zfill(4)}"
+                    parsed_source = urlparse(source_url)
+                    parsed_support = urlparse(supporting_url)
+                    expected_file_path = f"/{file_number}/order_list".casefold()
+                    if (
+                        metadata.get("citation") != row["citation"]
+                        or row["citation"] not in metadata.get("title", "")
+                        or metadata.get("url") != source_url
+                        or metadata.get("supporting url") != supporting_url
+                        or metadata.get("file number", "").casefold() != file_number.casefold()
+                        or not re.fullmatch(r"[A-Z]{2,4}\d+/\d{4}", file_number, re.I)
+                        or not is_official_court_url(source_url)
+                        or not is_official_court_url(supporting_url)
+                        or parsed_source.path.casefold().rstrip("/").endswith(expected_file_path) is False
+                        or not expected_support_path
+                        or not parsed_support.path.casefold().endswith(expected_support_path)
+                    ):
+                        raise ValueError("Manual docket outcome requires matching official source identity")
+                    body = source_text[separator.end():] if separator else ""
+                    normalized_quote = " ".join(quote.split())
+                    normalized_body = " ".join(body.split())
+                    normalized_value = " ".join(value.split())
+                    if (
+                        not separator
+                        or not quote
+                        or normalized_quote not in normalized_body
+                        or not value
+                        or not normalized_quote.endswith(normalized_value)
+                    ):
+                        raise ValueError("Manual docket outcome requires exact source wording")
+                    if proof and proof.value != value:
+                        raise ValueError("Manual docket outcome conflicts with grounded evidence")
                 else:
                     if not proof:
                         raise ValueError("Approval no longer matches grounded evidence")
