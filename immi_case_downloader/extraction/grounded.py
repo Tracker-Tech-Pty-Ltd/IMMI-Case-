@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261022-v8"
+RULE_VERSION = "grounded-local-20261022-v9"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -226,7 +226,35 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         )
         if current_application and linked_decision:
             rank = max(rank, 3)
-        quote = _evidence(text, match.start(), match.end(), value, "direct_current_visa_statement")
+
+        # Some judicial-review reasons identify the visa indirectly: the
+        # court says it was not open to the Minister to grant the applicant's
+        # visa application, identifies the missing condition precedent, then
+        # names the applicable subclass provision. Treat that as current-case
+        # evidence only when all three links name the same subclass.
+        subclass = re.match(r"(?:sub[- ]?class|sublcass)\s+(\d{3})", value, re.I)
+        application_provision = None
+        if subclass:
+            number = subclass[1]
+            application_provision = re.search(
+                r"(?is)\bnot\s+open\s+to\s+(?:the\s+)?(?:minister|delegate)\s+"
+                r"to\s+grant\s+the\s+(?:visa\s+)?applicant[’']s\s+visa\s+application\b"
+                r".{0,700}?\bcondition\s+precedent\b.{0,450}?"
+                rf"\b(?:relevant|applicable)\s+provision\s+is\s+sub[- ]?class\s+{number}\.\d+\b",
+                text,
+            )
+        if application_provision:
+            value = f"Subclass {subclass[1]} visa"
+            quote = Evidence(
+                value=value,
+                quote=text[application_provision.start():application_provision.end()],
+                start=match.start(),
+                end=match.end(),
+                rule="current_visa_application_subclass_provision",
+            )
+            rank = max(rank, 4)
+        else:
+            quote = _evidence(text, match.start(), match.end(), value, "direct_current_visa_statement")
         assessment.candidates.append({"value": value, "quote": quote.quote, "qualified": bool(rank), "rank": rank})
         if rank:
             results.append((rank, quote))

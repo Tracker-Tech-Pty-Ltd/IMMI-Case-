@@ -226,6 +226,24 @@ class GroundedTests(unittest.TestCase):
         result = self.assess(body)
         self.assertEqual(result.values["visa_type"].value, "protection (Class XA) visa")
 
+    def test_subclass_provision_linked_to_current_visa_application(self):
+        body = (
+            HEAD
+            + "It was not open to the Minister to grant the applicant's visa application "
+            + "because a condition precedent was that a nomination of the occupational training "
+            + "was not lodged. The relevant provision is subclass 442.22 of Schedule 2.\n"
+        )
+        result = self.assess(body)
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Subclass 442 visa")
+        self.assertEqual(proof.rule, "current_visa_application_subclass_provision")
+        self.assertIn("applicant's visa application", proof.quote)
+        self.assertIn("subclass 442.22", proof.quote)
+
+    def test_subclass_provision_without_current_application_link_is_held(self):
+        result = self.assess(HEAD + "The relevant provision is subclass 442.22 of Schedule 2.\n")
+        self.assertNotIn("visa_type", result.values)
+
     def test_application_visa_does_not_link_to_separate_decision_paragraph(self):
         body = (
             HEAD
