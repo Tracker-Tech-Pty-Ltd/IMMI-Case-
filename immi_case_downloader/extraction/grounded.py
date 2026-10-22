@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261022-v29"
+RULE_VERSION = "grounded-local-20261023-v30"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -23,6 +23,8 @@ _LABEL_END = re.compile(
 )
 _VISA = re.compile(
     r"(?:[Ss]ub[- ]?class|Sublcass)\s+\d{3}(?:\s*\([^\n.;]{1,75}?\))?(?:\s+visa[s]?)?"
+    r"|\b[Cc]lass\s+\d{3}(?:\s*\([^\n.;]{1,55}\))?(?:\s+[A-Za-z][A-Za-z0-9-]*){0,4}\s+(?i:visa[s]?)\b"
+    r"|\b(?:Five\s+Year\s+)?Resident\s+Return(?:\s*\(Class\s+BB\))?(?:\s*\(Subclass\s+155\))?\s+visa\b"
     r"|\b(?:Protection\s*\(Temporary\)\s*Entry Permit\s*\(After Entry\)"
     r"|(?:class\s+\d{3}|December\s+1989)\s*(?:\([^\n)]{1,45}\)\s*)?(?:special permanent\s+)?(?:entry\s+)?permit)\b"
     r"|\b(?:protection|student|visitor|tourist|bridging(?:\s+[A-E])?|"
@@ -110,6 +112,59 @@ def _evidence(text: str, start: int, end: int, value: str, rule: str) -> Evidenc
 
 
 def _judge(text: str) -> Evidence | None:
+    # Recent scans found several older tribunal publication layouts that the
+    # general label parser below does not recognize: a split "Tribunal / Member"
+    # label, a named tribunal member without a role, and a MEMBERS panel block.
+    # These rules are deliberately restricted to short, labelled header areas.
+    source_header = text[:12000]
+    name_exclusions = {
+        "the", "hon", "honourable", "mr", "mrs", "ms", "dr", "prof", "professor",
+        "member", "senior", "presidential", "deputy", "president", "cbe", "am",
+        "qc", "rfd", "sc", "kc", "ao", "psm", "ac", "oam", "and", "tribunal",
+        "review", "registrar", "clerk", "secretary", "presiding",
+    }
+
+    def has_person_name(value: str) -> bool:
+        cleaned = re.sub(r"\([^)]*\)", " ", value)
+        cleaned = re.sub(
+            r"\b(?:Deputy President|Presidential Member|Senior Member|Member)\b",
+            " ", cleaned, flags=re.I,
+        )
+        tokens = [
+            token for token in re.findall(r"[A-Za-zÀ-ž]+", cleaned)
+            if token.casefold() not in name_exclusions
+        ]
+        return (
+            2 <= len(tokens) <= 5
+            and any(len(token) > 1 for token in tokens)
+            and all(
+                token.isupper() or token.istitle() or token.startswith("Mc")
+                for token in tokens
+            )
+            and len(value) <= 110
+            and bool(re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/&]+", value.strip()))
+        )
+
+    member_role = re.compile(
+        r"\b(?:Deputy President|Presidential Member|Senior Member|Member)\b",
+        re.I,
+    )
+
+    def named_member_line(line: str) -> str | None:
+        value = " ".join(line.split()).strip(" \t,;:–—-")
+        roles = list(member_role.finditer(value))
+        if len(roles) != 1:
+            return None
+        role = roles[0]
+        person = (
+            value[role.end():].strip(" ,;:–—-")
+            if role.start() == 0
+            else value[:role.start()].strip(" ,;:–—-")
+        )
+        if has_person_name(person):
+            return value
+        return None
+
     labels = re.compile(
         r"^(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBERS?|JUDGMENT OF|JUDGES?|"
         r"BEFORE|CORAM|JUSTICE|TRIBUNAL)\s*:[ \t]*([^\n]*)"
@@ -718,6 +773,108 @@ def _judge(text: str) -> Evidence | None:
             ):
                 end = signature.end() + len(tail.splitlines()[0]) if tail.splitlines() else signature.end()
                 return _evidence(text, signature.start(), end, value, "signed_tribunal_member")
+    # Fallback for older publication layouts. Existing extraction rules above
+    # retain priority; these run only after they fail to identify a judge.
+    split_member = re.search(
+        r"(?im)^[ \t]*TRIBUNAL[ \t]*\r?\n[ \t]*MEMBER[ \t]*:[ \t]*(?P<name>[^\r\n]+)",
+        source_header,
+    )
+    if split_member and has_person_name(split_member["name"]):
+        name = " ".join(split_member["name"].split()).strip(" ,;:")
+        return _evidence(
+            text, split_member.start(), split_member.end(), name,
+            "split_tribunal_member_header",
+        )
+
+    # Some AAT/ART decision records explicitly list all panel members beneath
+    # a MEMBERS heading. Keep the complete panel, not only its presiding member.
+    for panel in re.finditer(r"(?i)\bMEMBERS[ \t]*:[ \t]*", source_header):
+        tail = source_header[panel.end():panel.end() + 700]
+        members: list[str] = []
+        end = panel.end()
+        for raw_line in tail.splitlines(keepends=True)[:8]:
+            line = raw_line.strip()
+            if not line:
+                end += len(raw_line)
+                continue
+            date_boundary = re.search(
+                r"\b(?:DATE(?:[ \t]+OF)?(?:[ \t]+(?:DECISION|CORRIGENDUM))?|"
+                r"PLACE[ \t]+OF[ \t]+DECISION)\b",
+                line, re.I,
+            )
+            if date_boundary:
+                line = line[:date_boundary.start()].strip()
+            member = named_member_line(line)
+            if member:
+                members.append(member)
+                end += len(raw_line)
+            elif date_boundary:
+                break
+            elif members:
+                break
+            else:
+                end += len(raw_line)
+            if date_boundary:
+                break
+        if len(members) >= 2:
+            return _evidence(
+                text, panel.start(), end, "; ".join(members),
+                "published_tribunal_panel",
+            )
+
+    # AAT cover sheets can name the Tribunal member without stating a role.
+    # Accept only a single person between the standalone TRIBUNAL and Date fields.
+    tribunal_name = re.search(
+        r"(?im)^[ \t]*TRIBUNAL[ \t]*\r?\n[ \t]*(?P<name>"
+        r"(?:(?:Mr|Mrs|Ms|Dr|Professor|Prof)\.?[ \t]+)?"
+        r"[A-Z][A-Za-zÀ-ž.'’ -]{1,75}(?:[ \t]+(?:AM|AO|QC|SC|RFD|CBE|PSM))?)"
+        r"[ \t]*\r?\n[ \t]*DATE\b",
+        source_header,
+    )
+    if (
+        tribunal_name
+        and has_person_name(tribunal_name["name"])
+        and not member_role.search(tribunal_name["name"])
+        and not re.search(r"\b(?:and|&)\b", tribunal_name["name"], re.I)
+    ):
+        name = " ".join(tribunal_name["name"].split()).strip(" ,;:")
+        return _evidence(
+            text, tribunal_name.start(), tribunal_name.end(), name,
+            "named_tribunal_header",
+        )
+
+    # AAT cover sheets sometimes put the member's name and role in the first
+    # few lines under DECISION or REASONS FOR DECISION. Only inspect the short
+    # front-matter block before catchwords or substantive reasons begin.
+    for heading in re.finditer(
+        r"(?im)^[ \t]*(?:DECISION(?:[ \t]+RECORD)?|REASONS FOR DECISION)"
+        r"(?P<inline>[^\r\n]*)",
+        source_header,
+    ):
+        block_start = heading.start("inline")
+        block = source_header[block_start:block_start + 1800]
+        boundary = re.search(
+            r"(?im)^[ \t]*(?:CATCHWORDS|BACKGROUND|INTRODUCTION|"
+            r"ISSUES? FOR DETERMINATION|LEGISLATION)\b",
+            block,
+        )
+        if boundary:
+            block = block[:boundary.start()]
+        lines = [heading["inline"], *block.splitlines()]
+        cursor = block_start
+        for line in lines[:16]:
+            member = named_member_line(line)
+            if member:
+                position = source_header.find(
+                    line.strip(), max(0, cursor - 120), cursor + len(block) + 2
+                )
+                if position >= 0:
+                    return _evidence(
+                        text, position, position + len(line.strip()), member,
+                        "aat_member_role_header",
+                    )
+            cursor += len(line) + 1
+
     return None
 
 
@@ -840,7 +997,133 @@ def _structured_visa_refusal_subclass(text: str, assessment: Assessment) -> Evid
 def _visa(text: str, assessment: Assessment) -> Evidence | None:
     # Paragraphs containing current-review language outrank an old application.
     # Boilerplate, other people's visas, and a bare program name never qualify.
+    catchwords_match = re.search(r"(?i)\bCATCHWORDS?\b", text[:8000])
+    catchwords = ""
+    catchwords_start = 0
+    if catchwords_match:
+        catchwords_start = catchwords_match.end()
+        catchwords = text[catchwords_start:catchwords_start + 2500]
+        catchwords_end = re.search(
+            r"(?im)^[ \t]*(?:LEGISLATION|CASES CITED|CASES|REPRESENTATION|SOLICITORS|"
+            r"ORDERS?|REASONS FOR (?:JUDGMENT|DECISION)|STATEMENT OF DECISION AND REASONS|"
+            r"DECISION RECORD|BETWEEN|APPLICANT)\b\s*:?",
+            catchwords,
+        )
+        if catchwords_end:
+            catchwords = catchwords[:catchwords_end.start()]
+
+    decision_record = re.search(
+        r"(?is)\bDECISION RECORD\b(?P<block>.{0,1800})",
+        text[:8000],
+    )
+    if decision_record:
+        decision_markers = re.finditer(
+            r"(?im)(?<!OF )\bDECISION[ \t]*:[ \t]*\r?\n?",
+            decision_record["block"],
+        )
+        for decision_marker in decision_markers:
+            decision_text_start = decision_marker.end()
+            decision_text = decision_record["block"][decision_text_start:decision_text_start + 700]
+            boundary = re.search(
+                r"(?im)^[ \t]*(?:STATEMENT MADE|STATEMENT OF DECISION|CATCHWORDS|"
+                r"LEGISLATION|REASONS FOR|REPRESENTATION)\b",
+                decision_text,
+            )
+            if boundary:
+                decision_text = decision_text[:boundary.start()]
+            if not re.search(
+                r"(?i)\b(?:affirm|remit|set aside|refus\w*|not to grant|grant|cancel\w*|revok\w*)\b",
+                decision_text,
+            ):
+                continue
+            decision_matches = list(_VISA.finditer(decision_text))
+            distinct_values = {" ".join(match[0].split()).casefold() for match in decision_matches}
+            if len(distinct_values) != 1 or not decision_matches:
+                continue
+            match = decision_matches[0]
+            value = " ".join(match[0].split())
+            start = decision_record.start("block") + decision_text_start + match.start()
+            end = decision_record.start("block") + decision_text_start + match.end()
+            proof = _evidence(text, start, end, value, "operative_decision_record_visa")
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualified": True,
+                "rank": 4,
+            })
+            return proof
+
+    resident_return_heading = re.search(
+        r"(?is)\b(?:refus\w*|cancel\w*|revok\w*|"
+        r"non[ -]revocation)\b.{0,180}?\b(?P<name>"
+        r"(?:Five\s+Year\s+)?Resident\s+Return(?:\s*\(Class\s+BB\))?"
+        r"(?:\s*\(Subclass\s+155\))?)\s+visa\b",
+        catchwords,
+    )
+    if resident_return_heading:
+        value = " ".join(resident_return_heading["name"].split()) + " visa"
+        proof = _evidence(
+            text, catchwords_start + resident_return_heading.start("name"),
+            catchwords_start + resident_return_heading.end(),
+            value, "current_resident_return_visa_catchwords",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualified": True,
+            "rank": 4,
+        })
+        return proof
+
+    if catchwords:
+        safe_haven_name = re.search(
+            r"(?i)\bSafe\s+Haven\s+Enterprise\s+visas?\b",
+            catchwords,
+        )
+        if safe_haven_name and re.search(
+            r"(?i)\b(?:application|review|decision|appeal)\b", catchwords,
+        ):
+            start = catchwords_start + safe_haven_name.start()
+            end = catchwords_start + safe_haven_name.end()
+            proof = _evidence(
+                text, start, end, "Safe Haven Enterprise visa",
+                "current_safe_haven_enterprise_visa_catchwords",
+            )
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualified": True,
+                "rank": 4,
+            })
+            return proof
+
     results: list[tuple[int, Evidence]] = []
+    class_visa_matches = [
+        match for match in _VISA.finditer(text)
+        if re.match(r"(?i)^class\s+\d{3}\b", match[0].strip())
+    ]
+    class_visa_values = {re.sub(r"\s+", " ", match[0]).casefold() for match in class_visa_matches}
+    class_holder_matches = [
+        match for match in class_visa_matches
+        if re.search(r"(?i)\bholder of\s+(?:a|an|the)\s*$", text[max(0, match.start() - 100):match.start()])
+    ]
+    cancellation_review_headnote = re.search(
+        r"(?is)\bjudicial review\b.{0,260}\b(?:cancellation of (?:the )?visa|visa cancellation)\b",
+        text[:6000],
+    )
+    cancellation_decision = re.search(
+        r"(?is)\b(?:minister(?:['’]s)?|department|respondent)\b.{0,240}?"
+        r"\b(?:decision\s+to\s+cancel|decided\s+to\s+cancel|"
+        r"considering\s+the\s+cancellation|intention\s+to\s+cancel|"
+        r"cancel(?:led|ed)?)\b.{0,160}?\bvisa\b",
+        text,
+    )
+    class_cancellation_review = bool(
+        len(class_visa_values) == 1
+        and class_holder_matches
+        and cancellation_review_headnote
+        and cancellation_decision
+    )
     for match in _VISA.finditer(text):
         line_start = text.rfind("\n", 0, match.start()) + 1
         sentence_end = text.rfind(". ", line_start, match.start())
@@ -850,11 +1133,30 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         before = text[max(sentence_start, match.start() - 240):match.start()]
         context = text[max(0, line_start - 140):min(len(text), line_end + 180)]
         value = match[0].strip()
+        if re.match(r"(?i)^class\s+\d{3}\b", value) and class_cancellation_review:
+            value = re.sub(r"(?i)^class\s+(\d{3})", r"Class \1", value, count=1)
+            value = re.sub(r"(?i)\bresident\b", "Resident", value)
+            value = re.sub(r"(?i)\bvisa\b", "visa", value)
+            quote = _evidence(text, match.start(), match.end(), value, "current_class_visa_cancellation_review")
+            assessment.candidates.append({
+                "value": value,
+                "quote": quote.quote,
+                "qualification_quote": cancellation_decision.group(0),
+                "qualified": True,
+                "rank": 4,
+            })
+            results.append((4, quote))
+            continue
         if value.lower().startswith("sublcass"):
             value = re.sub(r"^Sublcass\s+", "", value, flags=re.I)
         rank = 0
         if re.search(r"\b(?:decision (?:under review|to refuse|not to grant)|review of (?:the )?(?:refusal|visa refusal)|refus(?:e|ed|ing)\b.{0,140})", before, re.I):
             rank = 3
+        # Some ART/AAT catchwords state the live review as a non-revocation of
+        # cancellation of a Resident Return visa without repeating "visa
+        # cancellation" in the exact line immediately before the visa name.
+        # Require the action, visa family, and visa word in the publication's
+        # own short catchwords block so historical mentions do not qualify.
         if match.start() < 3000 and re.search(r"CATCHWORDS[^\n]*(?:visa refusal|visa cancellation|refusal of|cancellation of)", before, re.I):
             rank = 3
         if re.search(r"\b(?:section|subregulation|regulation|subclause|example|for instance|another case|not relevant|applicant submits|applicant claims)\b", before, re.I):
