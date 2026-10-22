@@ -306,6 +306,16 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
             prior = {(r["case_id"], r["field"]): r for r in csv.DictReader(handle)}
     records, proposals = [], []
     stats: Counter = Counter()
+    jev_field_markers = {
+        "visa_type": ("select the visa type currently in dispute",
+                      "select the explicit visa name whose refusal/cancellation/non-revocation"),
+        "judges": ("select the judge(s) or tribunal member(s) who issued this current judgment",
+                   "who issued this judgment?"),
+        "outcome": ("select the complete operative result of this current judgment",
+                    "select the complete operative orders/result of this current judgment"),
+        "case_nature": ("select the primary immigration subject of this dispute",
+                        "classify this current proceeding using the supplied category definitions"),
+    }
     with open_ledger(ledger) as settings:
         if jev_cache:
             settings.execute("INSERT OR REPLACE INTO settings VALUES ('jev_cache',?)", (str(jev_cache.resolve()),))
@@ -315,6 +325,9 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     rules_sha = digest(Path(__file__).with_name("extraction") / "grounded.py")
     workflow_sha = digest(Path(__file__))
     model_cache = load_jev_cache(jev_cache)
+    jev_cache_reader = (sqlite3.connect(jev_cache.resolve().as_uri() + "?mode=ro", uri=True)
+                        if jev_cache else None)
+    question_field_definitions: dict[str, str] = {}
     cache_sha = digest(jev_cache) if jev_cache else ""
     db = sqlite3.connect((root / "downloaded_cases/cases.db").as_uri() + "?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
@@ -352,6 +365,36 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
             }).encode()).hexdigest()
             decision = None
             for field in missing:
+                expected_markers = jev_field_markers.get(field, ())
+                field_cached_judgments = []
+                for advice in cached_judgments:
+                    if not advice.get("field_definition") and jev_cache_reader and advice.get("request_hash"):
+                        request_hash = advice["request_hash"]
+                        if request_hash not in question_field_definitions:
+                            payload_row = jev_cache_reader.execute(
+                                "SELECT payload FROM judgments WHERE request_hash=?", (request_hash,)
+                            ).fetchone()
+                            instruction = ""
+                            if payload_row:
+                                try:
+                                    questions = json.loads(payload_row[0]).get("questions", {})
+                                    instruction = questions.get("select", {}).get("instructions", "")
+                                except (AttributeError, TypeError, ValueError):
+                                    instruction = ""
+                            normalized_instruction = " ".join(str(instruction).casefold().split())
+                            if not any(normalized_instruction.startswith(marker)
+                                       for markers in jev_field_markers.values() for marker in markers):
+                                instruction = ""
+                            question_field_definitions[request_hash] = instruction
+                        if question_field_definitions[request_hash]:
+                            advice["field_definition"] = question_field_definitions[request_hash]
+                    definition = " ".join(str(advice.get("field_definition", "")).casefold().split())
+                    if not definition:
+                        stats["jev_untyped_advice_field_associations_skipped"] += 1
+                    elif expected_markers and any(definition.startswith(marker) for marker in expected_markers):
+                        field_cached_judgments.append(advice)
+                    else:
+                        stats["jev_other_field_advice_associations_skipped"] += 1
                 cached = cache.execute("SELECT record FROM reviews WHERE case_id=? AND field=? AND fingerprint=?",
                                        (row["case_id"], field, fingerprint)).fetchone()
                 if cached:
@@ -400,19 +443,22 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                               "fingerprint": fingerprint,
                               "evidence": proof.to_dict() if proof and not na else None,
                               "candidates": decision.candidates if field == "visa_type" else [],
-                              "jev_cached_advice": cached_judgments,
+                              "jev_cached_advice": field_cached_judgments,
                               "prior_reason": old.get("reason", "")}
                     cache.execute("INSERT OR REPLACE INTO reviews VALUES (?,?,?,?,?)",
                                   (row["case_id"], field, fingerprint, encode(record), utc_now()))
                     stats["reviewed"] += 1
                 records.append(record)
                 if record.get("jev_cached_advice"):
-                    stats["source_bound_cache_fields"] += 1
+                    stats["field_bound_cache_fields"] += 1
                 stats[record["fact_status"]] += 1
                 if record["fact_status"] == "candidate_review":
                     proposals.append(record)
     db.close()
-    summary = {"rule_version": RULE_VERSION, "created_utc": utc_now(),
+    if jev_cache_reader:
+        jev_cache_reader.close()
+    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v2",
+               "created_utc": utc_now(),
                "counts": dict(stats), "missing_cells": len(records),
                "network_requests": 0, "paid_model_calls": 0, "new_provider_usd": 0,
                "ledger": str(ledger.resolve())}

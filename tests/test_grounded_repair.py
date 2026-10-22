@@ -575,18 +575,29 @@ class WorkflowTests(unittest.TestCase):
         with closing(sqlite3.connect(cache)) as conn:
             conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
             payload = {"state": {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
-                       "public_source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest()}}
+                       "public_source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+                       "field_definition": "Select the judge(s) or tribunal member(s) who issued THIS current judgment. "
+                                           "Prefer the current Judge/Judgment of/Member/Before header or current signature. "
+                                           "Include the complete current panel if available. Exclude judges mentioned only "
+                                           "in cited or earlier decisions, lawyers and headings. Select none if the "
+                                           "candidates omit the supported answer or the evidence is insufficient."}}
             conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", ("cached", json.dumps(payload),
                          json.dumps({"answers": {"select": {"choice": "Invented Judge", "confidence": 1}}}), "jev-test"))
             conn.commit()
-        self.review(jev_cache=cache)
+        first_review = self.review(jev_cache=cache)
+        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v2")
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
+        self.assertEqual(len(advice_by_field["judges"]), 1)
+        self.assertEqual(advice_by_field["visa_type"], [])
+        self.assertEqual(advice_by_field["outcome"], [])
         proposals = json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
         self.assertEqual(next(x for x in proposals if x["field"] == "judges")["evidence"]["value"], "SMITH J")
         result = self.review("second")
-        self.assertEqual(result["counts"]["source_bound_cache_fields"], 3)
+        self.assertEqual(result["counts"]["field_bound_cache_fields"], 1)
         self.assertEqual(result["counts"]["unchanged_evidence_skipped"], 3)
         self.source.write_text(BODY + "source changed", encoding="utf-8")
-        self.assertNotIn("source_bound_cache_fields", self.review("third")["counts"])
+        self.assertNotIn("field_bound_cache_fields", self.review("third")["counts"])
 
     def test_cache_with_missing_catalogue_citation_requires_exact_canonical_url_and_source(self):
         cache = self.root / "jev.sqlite3"
@@ -599,11 +610,77 @@ class WorkflowTests(unittest.TestCase):
                      "public_source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest()}
             conn.execute("INSERT INTO judgments VALUES ('saved',?,?, 'jev-test')", (json.dumps({"state": state}), '{}'))
             conn.commit()
-        self.assertEqual(self.review(jev_cache=cache)["counts"]["source_bound_cache_fields"], 3)
+        result = self.review(jev_cache=cache)
+        self.assertNotIn("field_bound_cache_fields", result["counts"])
+        self.assertEqual(result["counts"]["jev_untyped_advice_field_associations_skipped"], 3)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        self.assertTrue(all(not row["jev_cached_advice"] for row in review))
         with closing(sqlite3.connect(self.data / "cases.db")) as conn:
             conn.execute("UPDATE cases SET url=? WHERE case_id='a'", (self.rows[0]["url"].replace('/12.html', '/13.html'),))
             conn.commit()
-        self.assertNotIn("source_bound_cache_fields", self.review("changed_url")["counts"])
+        self.assertNotIn("field_bound_cache_fields", self.review("changed_url")["counts"])
+
+    def test_cached_advice_is_attached_only_to_the_field_it_classified(self):
+        cache = self.root / "jev.sqlite3"
+        definitions = {
+            "judge": "Select the judge(s) or tribunal member(s) who issued THIS current judgment. "
+                     "Prefer the current Judge/Judgment of/Member/Before header or current signature. "
+                     "Include the complete current panel if available. Exclude judges mentioned only "
+                     "in cited or earlier decisions, lawyers and headings. Select none if the candidates "
+                     "omit the supported answer or the evidence is insufficient.",
+            "outcome": "Select the complete operative result of THIS current judgment, preferably its "
+                       "formal current DECISION/THE COURT ORDERS block. Exclude the earlier delegate/tribunal "
+                       "result, cited cases, proposed orders and grounds. Current procedural judgments and "
+                       "costs-only judgments have their own operative result: use that current result, not the "
+                       "earlier merits result.",
+        }
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        with closing(sqlite3.connect(cache)) as conn:
+            conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
+            for request_hash, definition in definitions.items():
+                payload = {"state": {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
+                                      "public_source_sha256": source_hash, "field_definition": definition}}
+                conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", (
+                    request_hash, json.dumps(payload), json.dumps({"answers": {"select": {"choice": "none"}}}),
+                    "jev-test",
+                ))
+            conn.commit()
+
+        result = self.review(jev_cache=cache)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
+        self.assertEqual([a["request_hash"] for a in advice_by_field["judges"]], ["judge"])
+        self.assertEqual([a["request_hash"] for a in advice_by_field["outcome"]], ["outcome"])
+        self.assertEqual(advice_by_field["visa_type"], [])
+        self.assertEqual(result["counts"]["field_bound_cache_fields"], 2)
+        self.assertEqual(result["counts"]["jev_other_field_advice_associations_skipped"], 4)
+
+    def test_legacy_question_prompt_recovers_missing_field_definition(self):
+        cache = self.root / "jev.sqlite3"
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        state = {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
+                 "public_source_sha256": source_hash}
+        questions = {"select": {"instructions": "Who issued THIS judgment? Select the complete current "
+                                                   "issuing judge/member or full panel from its current header "
+                                                   "or certification/signature. Exclude cited judges, lawyers, "
+                                                   "headings and partial panels. If the offered candidates omit "
+                                                   "the complete answer, select none."}}
+        with closing(sqlite3.connect(cache)) as conn:
+            conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
+            conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", (
+                "legacy-judge", json.dumps({"state": state, "questions": questions}),
+                json.dumps({"answers": {"select": {"choice": "none"}}}), "jev-test",
+            ))
+            conn.commit()
+
+        result = self.review(jev_cache=cache)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
+        self.assertEqual([a["request_hash"] for a in advice_by_field["judges"]], ["legacy-judge"])
+        self.assertEqual(advice_by_field["visa_type"], [])
+        self.assertEqual(advice_by_field["outcome"], [])
+        self.assertEqual(result["counts"]["field_bound_cache_fields"], 1)
+        self.assertEqual(result["counts"]["jev_other_field_advice_associations_skipped"], 2)
 
     def test_prior_not_applicable_is_preserved_on_matching_evidence(self):
         prior = self.root / "prior.csv"
