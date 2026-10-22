@@ -19,7 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .extraction.grounded import CORE_FIELDS, RULE_VERSION, assess_case, canonical_citation, citation_from_url
+from .extraction.grounded import (
+    CORE_FIELDS,
+    RULE_VERSION,
+    Evidence,
+    assess_case,
+    canonical_citation,
+    citation_from_url,
+)
 
 REPAIR_FIELDS = CORE_FIELDS + ("full_text_path", "text_snippet")
 
@@ -83,6 +90,151 @@ def source_path(root: Path, value: str) -> Path | None:
     if not path.is_relative_to(root.resolve()):
         return None
     return path if path.is_file() else None
+
+
+def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
+    """Use only explicit AustLII catchwords that name the visa in this case.
+
+    Catchwords are stored separately from the local decision text. This narrow
+    fallback covers direct case labels when the downloaded text omits that
+    header; generic mentions, bare visa refusals, and conflicted body evidence
+    remain unresolved.
+    """
+    from urllib.parse import urlparse
+
+    if str(case.get("source", "")).strip().casefold() != "austlii":
+        return None
+    if urlparse(str(case.get("url", ""))).hostname not in {"austlii.edu.au", "www.austlii.edu.au"}:
+        return None
+    catchwords = str(case.get("catchwords", "") or "")
+    if not catchwords:
+        return None
+
+    rules: list[tuple[str, str]] = [
+        (
+            r"\breview of visa refusal\s*[-–]\s*subclass\s+(\d{3})\s*[-–]\s*partner visa\b",
+            "partner_subclass",
+        ),
+        (
+            r"\baged dependent relative visa\b.{0,180}?\bvisa applicant meets the criteria for a subclass\s+(\d{3})\s+visa\b",
+            "aged_dependent_relative",
+        ),
+        (
+            r"\bcriteria for a (Partner \(Provisional\) \(Class UF\) visa)\b",
+            "partner_provisional_class_uf",
+        ),
+        (
+            r"\bcancellation of (class 104\s*\(preferential family\)\s*visa)\b",
+            "class_104_preferential_family",
+        ),
+        (r"\breview of a (Visitor visa) refusal\b", "visitor_visa_refusal"),
+        (r"\breview of visa refusal\s*[-–]\s*(Partner visa)\b", "partner_visa_refusal"),
+        # AustLII catchwords are official case metadata. Accept a visa family
+        # only when the catchwords explicitly tie it to this proceeding.
+        (r"\bMIGRATION\s*[–-]\s*Protection visa\b", "protection_visa_heading"),
+        (
+            r"\b(?:protection visa\b.{0,100}\b(?:application|refusal|decision|appeal|review|claim|cancellation)\b|"
+            r"(?:application|refusal|decision|appeal|review|claim|cancellation)\b.{0,100}\bprotection visa\b)",
+            "protection_visa_proceeding",
+        ),
+        (r"\b(cancellation of a tourist visa)\b", "tourist_visa_cancellation"),
+        (
+            r"\bElectronic Travel Authority\s*\(\s*(visitor)\s*\)\s*visa\b",
+            "visitor_eta_visa",
+        ),
+        (r"\bMIGRATION\s*[–-]\s*(Humanitarian visa)\b", "humanitarian_visa"),
+        (r"\b(skilled migration visa)\b", "skilled_migration_visa"),
+        (r"\bMIGRATION\s*[–-]\s*(Skilled visa)\b", "skilled_visa"),
+        (
+            r"\bMIGRATION\s*[–-]\s*(Skilled-Designated Area sponsored visa)\b",
+            "skilled_designated_area_visa",
+        ),
+        (r"\bMIGRATION\s*[–-]\s*(Business visa)\b", "business_visa"),
+        (
+            r"\b(transitional\s+\(permanent\)\s+BF visa)\b",
+            "transitional_permanent_bf_visa",
+        ),
+        (
+            r"\b(Employer Nomination visa)\b\s*[-–]\s*refusal\b",
+            "employer_nomination_visa_refusal",
+        ),
+    ]
+    for pattern, rule in rules:
+        match = re.search(pattern, catchwords, re.I | re.S)
+        if not match:
+            continue
+        if rule == "partner_subclass":
+            value = f"Partner visa (subclass {match[1]})"
+        elif rule == "aged_dependent_relative":
+            value = f"Aged Dependent Relative visa (subclass {match[1]})"
+        elif rule == "class_104_preferential_family":
+            value = "Class 104 (Preferential Family) visa"
+        elif rule.startswith("protection_visa"):
+            value = "Protection visa"
+        elif rule == "tourist_visa_cancellation":
+            value = "Tourist visa"
+        elif rule == "visitor_eta_visa":
+            value = "Visitor visa"
+        elif rule == "humanitarian_visa":
+            value = "Humanitarian visa"
+        elif rule == "skilled_migration_visa":
+            value = "Skilled migration visa"
+        elif rule == "skilled_visa":
+            value = "Skilled visa"
+        elif rule == "skilled_designated_area_visa":
+            value = "Skilled-Designated Area sponsored visa"
+        elif rule == "business_visa":
+            value = "Business visa"
+        elif rule == "transitional_permanent_bf_visa":
+            value = "Transitional (permanent) BF visa"
+        else:
+            value = match[1].strip()
+        return Evidence(
+            value=value,
+            quote=catchwords[max(0, match.start() - 140):min(len(catchwords), match.end() + 180)],
+            start=match.start(),
+            end=match.end(),
+            rule=f"austlii_catchwords_{rule}",
+        )
+
+    if str(case.get("case_nature", "")).strip().casefold() == "visa refusal":
+        match = re.search(r"\bapplication for permanent residence\b", catchwords, re.I)
+        if match:
+            return Evidence(
+                value="Permanent residence visa",
+                quote=catchwords[max(0, match.start() - 140):min(len(catchwords), match.end() + 180)],
+                start=match.start(),
+                end=match.end(),
+                rule="austlii_catchwords_permanent_residence_refusal",
+            )
+    return None
+
+
+def _austlii_catchwords_visa_not_applicable(case: dict[str, Any]) -> str | None:
+    """Mirror the source-text rule for official metadata-only catchwords.
+
+    A nomination or sponsorship review is not a personal visa decision when
+    the official catchwords do not identify any visa application, refusal,
+    cancellation, or review. Do not infer this from a secondary source.
+    """
+    from urllib.parse import urlparse
+
+    if str(case.get("source", "")).strip().casefold() != "austlii":
+        return None
+    if urlparse(str(case.get("url", ""))).hostname not in {"austlii.edu.au", "www.austlii.edu.au"}:
+        return None
+    catchwords = str(case.get("catchwords", "") or "")
+    if not re.search(r"\b(?:nomination|sponsor(?:ship)?)\b", catchwords, re.I):
+        return None
+    if re.search(
+        r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+        r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+        r"review\s+of\s+(?:the\s+)?visa)\b",
+        catchwords,
+        re.I,
+    ):
+        return None
+    return "sponsorship_or_nomination_not_a_personal_visa"
 
 
 @contextlib.contextmanager
@@ -195,7 +347,7 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
             fingerprint = hashlib.sha256(encode({
                 "rule": RULE_VERSION, "rules_sha": rules_sha, "workflow_sha": workflow_sha,
                 "source": sha, "cache_sha": cache_sha,
-                "identity": {k: row.get(k) for k in ("citation", "title", "url", "full_text_path")},
+                "identity": {k: row.get(k) for k in ("citation", "title", "url", "full_text_path", "catchwords")},
                 "prior": previous,
             }).encode()).hexdigest()
             decision = None
@@ -210,11 +362,18 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                         decision = assess_case(raw.decode("utf-8-sig", errors="replace"),
                                                citation=row["citation"], title=row["title"], url=row["url"])
                     proof = decision.values.get(field) if path else None
+                    catchword_na = None
+                    if (field == "visa_type" and path and not proof
+                            and decision.source_status == "checked"
+                            and not decision.not_applicable.get(field)
+                            and decision.reasons.get(field) == "current_visa_not_stated"):
+                        proof = _austlii_catchwords_visa_evidence(row)
+                        if not proof:
+                            catchword_na = _austlii_catchwords_visa_not_applicable(row)
                     old = previous[field]
                     same_evidence = old.get("source_sha256") in {sha, legacy_sha}
                     inherited_na = ((old.get("status", "").startswith("不適用") or
                                      old.get("fact_status") == "not_applicable") and same_evidence)
-                    na = decision.not_applicable.get(field) or (old.get("reason", "") if inherited_na else "")
                     # Previous identity/relationship holds cannot be undone by
                     # a more permissive expression on the very same evidence.
                     held = (same_evidence and not inherited_na and
@@ -222,6 +381,10 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                                 ("錯配", "不能直接核實", "無法明確對應", "無法可靠選定", "Detention challenge")))
                     if held:
                         proof = None
+                        catchword_na = None
+                    na = (decision.not_applicable.get(field)
+                          or (old.get("reason", "") if inherited_na else "")
+                          or catchword_na or "")
                     reason = "source_missing" if not path else decision.reasons.get(field, "evidence_review")
                     if na:
                         status, reason = "not_applicable", na
@@ -303,6 +466,11 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                 assessment = assess_case(source_text, citation=row["citation"],
                                          title=row["title"], url=row["url"])
                 proof = assessment.values.get(field)
+                if (field == "visa_type" and not proof
+                        and assessment.source_status == "checked"
+                        and not assessment.not_applicable.get(field)
+                        and assessment.reasons.get(field) == "current_visa_not_stated"):
+                    proof = _austlii_catchwords_visa_evidence(dict(row))
                 if not proof:
                     raise ValueError("Approval no longer matches grounded evidence")
                 if proof.to_dict() != evidence:

@@ -15,7 +15,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from immi_case_downloader.csv_write_lock import CatalogLockedError, catalog_lock, csv_write_lock
 from immi_case_downloader.extraction.grounded import assess_case, document_text, verified_metadata
-from immi_case_downloader.repair_workflow import apply_approved, recover, review_catalogue, verify_stores
+from immi_case_downloader.repair_workflow import (
+    _austlii_catchwords_visa_evidence,
+    _austlii_catchwords_visa_not_applicable,
+    apply_approved,
+    recover,
+    review_catalogue,
+    verify_stores,
+)
 
 HEAD = "Example v Minister [2024] FCA 12\n"
 BODY = HEAD + "JUDGE:\nSMITH J\nORDERS:\n1. The application is dismissed.\nREASONS FOR JUDGMENT\nThe decision under review was the decision to refuse a protection visa.\n"
@@ -304,6 +311,158 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reviewed", result["counts"])
         self.assertEqual(result["network_requests"], 0)
         self.assertEqual(result["new_provider_usd"], 0)
+
+    def test_explicit_austlii_catchwords_are_reviewed_and_revalidated_before_apply(self):
+        body = (
+            HEAD
+            + "JUDGE: SMITH J\nORDERS:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\nThe case concerns the applicant's relationship.\n"
+        )
+        self.source.write_text(body, encoding="utf-8")
+        catchwords = "Review of visa refusal - Subclass 820 - Partner visa - genuine relationship"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute("UPDATE cases SET catchwords=? WHERE case_id='a'", (catchwords,))
+            conn.execute("UPDATE cases SET source='AustLII' WHERE case_id='a'")
+            conn.commit()
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        self.review()
+        visa = next(
+            row for row in json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(visa["fact_status"], "candidate_review")
+        self.assertEqual(visa["evidence"]["value"], "Partner visa (subclass 820)")
+        self.assertIn("Subclass 820 - Partner visa", visa["evidence"]["quote"])
+        self.assertTrue(visa["evidence"]["rule"].startswith("austlii_catchwords_"))
+
+        approvals = json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
+        for row in approvals:
+            row.update(reviewer="independent-test-review", review_note="Exact official case and catchwords checked")
+        result = apply_approved(self.root, self.root / "catchwords-apply", approvals)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 3)
+        self.assertEqual(self.review("after-catchwords-apply")["missing_cells"], 0)
+
+    def test_generic_or_non_primary_catchwords_cannot_fill_visa_type(self):
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "case_nature": "Visa refusal",
+            "catchwords": "Review of visa refusal; protection visas are discussed in another decision.",
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "CaseNote",
+            "url": "https://casenote.au/cases/example",
+            "case_nature": "Visa refusal",
+            "catchwords": "Review of visa refusal - Subclass 820 - Partner visa",
+        }))
+
+    def test_explicit_austlii_catchword_visa_families(self):
+        cases = (
+            ("MIGRATION – Protection visa – credibility issue", "Protection visa"),
+            ("Judicial review of a protection visa refusal", "Protection visa"),
+            ("Cancellation of a tourist visa", "Tourist visa"),
+            ("Cancellation of an electronic travel authority (visitor) visa", "Visitor visa"),
+            ("MIGRATION – Humanitarian visa – decision affirmed", "Humanitarian visa"),
+            ("The application concerns a skilled migration visa", "Skilled migration visa"),
+            ("MIGRATION – Skilled visa – review withdrawn", "Skilled visa"),
+            (
+                "MIGRATION – Skilled-Designated Area sponsored visa – experience assessment",
+                "Skilled-Designated Area sponsored visa",
+            ),
+            ("MIGRATION – Business visa – review withdrawn", "Business visa"),
+            (
+                "IMMIGRATION – transitional (permanent) BF visa – cancellation review",
+                "Transitional (permanent) BF visa",
+            ),
+        )
+        for catchwords, expected in cases:
+            with self.subTest(catchwords=catchwords):
+                proof = _austlii_catchwords_visa_evidence({
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "case_nature": "Visa refusal",
+                    "catchwords": catchwords,
+                })
+                self.assertIsNotNone(proof)
+                self.assertEqual(proof.value, expected)
+
+    def test_austlii_protection_catchword_is_approved_against_source_and_stores(self):
+        self.source.write_text(
+            HEAD + "JUDGE: SMITH J\nORDERS:\n1. The appeal is dismissed.\n"
+            "REASONS FOR JUDGMENT\nThe published reasons identify this case.\n",
+            encoding="utf-8",
+        )
+        catchwords = "MIGRATION – Protection visa – appeal against refusal"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute("UPDATE cases SET catchwords=?,source='AustLII' WHERE case_id='a'", (catchwords,))
+            conn.commit()
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        self.review()
+        proposal = next(
+            row for row in json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(proposal["evidence"]["value"], "Protection visa")
+        proposal.update(reviewer="independent-test-review", review_note="Exact official catchword checked")
+        result = apply_approved(self.root, self.root / "protection-apply", [proposal])
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
+        self.assertEqual(self.review("after-protection")["missing_cells"], 2)
+
+    def test_austlii_nomination_catchword_marks_visa_type_not_applicable(self):
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable({
+                "source": "AustLII",
+                "url": self.rows[0]["url"],
+                "catchwords": "MIGRATION – Employer Nomination Scheme – Tribunal jurisdiction – application withdrawn",
+            }),
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": "Visa refusal - subclass 457 - business sponsorship not approved",
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "CaseNote",
+            "url": "https://casenote.au/cases/example",
+            "catchwords": "MIGRATION – Employer Nomination Scheme – Tribunal jurisdiction",
+        }))
+
+        self.source.write_text(
+            HEAD + "JUDGE: SMITH J\nORDERS:\n1. The appeal is dismissed.\n"
+            "REASONS FOR JUDGMENT\nThe published reasons identify this case.\n",
+            encoding="utf-8",
+        )
+        catchwords = "MIGRATION – Employer Nomination Scheme – Tribunal jurisdiction – application withdrawn"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute("UPDATE cases SET catchwords=?,source='AustLII' WHERE case_id='a'", (catchwords,))
+            conn.commit()
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        self.review()
+        visa = next(
+            row for row in json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(visa["fact_status"], "not_applicable")
+        self.assertEqual(visa["reason_code"], "sponsorship_or_nomination_not_a_personal_visa")
+        self.assertIsNone(visa["evidence"])
 
     def test_source_change_reopens_review(self):
         self.review()
