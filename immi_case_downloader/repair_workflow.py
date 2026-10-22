@@ -43,12 +43,16 @@ REASONS = {
     "evidence_review": "找到候選，須核對原文與簽證關係後才能核准寫入",
     "export_conflict": "不同本機資料檔已有非空值，保留原值並等待核對",
     "payment_card_litigation_not_immigration": "本案是 Visa 信用卡公司的商業訴訟，簽證類別不適用",
+    "non_immigration_commercial_dispute": "原文摘要顯示本案審理一般商業糾紛，並非移民或簽證審查；簽證類別不適用",
+    "no_current_visa_decision": "原文明確確認沒有任何簽證撤銷決定可供審查；簽證類別不適用並保留空白",
     "employment_case_not_a_personal_visa": "原文摘要顯示本案審理勞資、工業法或職災賠償事項，不是個人簽證審查；簽證類別不適用",
     "security_card_case_not_a_personal_visa": "原文摘要顯示本案審理航空或海事保安識別卡，不是個人簽證審查；簽證類別不適用",
     "freedom_of_information_not_a_visa_decision": "原文摘要顯示本案審理資訊公開或文件披露，不是簽證決定；簽證類別不適用",
     "corporate_deregistration_not_a_personal_visa": "原文摘要顯示本案審理公司註銷或登記，不是個人簽證審查；簽證類別不適用",
     "citizenship_review_not_a_visa_application": "本案審理公民身分申請，簽證類別不適用",
+    "migration_agent_registration_not_a_personal_visa": "本案審理移民代理人的註冊或紀律事項，並非個人簽證審查；簽證類別不適用",
     "sponsorship_or_nomination_not_a_personal_visa": "本案審理雇主提名、職位或擔保人核准，並非個人簽證申請；簽證類別不適用",
+    "ministerial_intervention_not_a_visa_review": "原文摘要顯示本案審查部長介入請求，沒有審查特定簽證決定；簽證類別不適用",
     "publication_explicitly_marks_visa_applicant_not_applicable": "裁決原文明列簽證申請人不適用；保留為不適用",
 }
 
@@ -512,25 +516,58 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                 assessment = assess_case(source_text, citation=row["citation"],
                                          title=row["title"], url=row["url"])
                 proof = assessment.values.get(field)
+                manual_visa_review = (
+                    field == "visa_type"
+                    and evidence.get("method") == "manual_source_bound_visa_review"
+                )
                 if (field == "visa_type" and not proof
                         and assessment.source_status == "checked"
                         and not assessment.not_applicable.get(field)
                         and assessment.reasons.get(field) == "current_visa_not_stated"):
                     proof = _austlii_catchwords_visa_evidence(dict(row))
-                if not proof:
-                    raise ValueError("Approval no longer matches grounded evidence")
-                if proof.to_dict() != evidence:
+                if manual_visa_review:
+                    metadata = {}
+                    for line in source_text.splitlines()[:20]:
+                        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+                        if match:
+                            metadata[match[1].casefold()] = match[2]
+                    separator = re.search(r"(?m)^={10,}\s*$", source_text)
                     quote = evidence.get("quote", "")
-                    normalized_dismissal = (
-                        field == "outcome"
-                        and evidence.get("method") == "manual_operative_order_summary"
-                        and evidence.get("source_value") == proof.value
-                        and evidence.get("value") == "Dismissed"
-                        and quote in source_text
-                        and bool(re.search(r"\b(?:appeal|application)\s+(?:be|is|was)\s+dismissed\b", quote, re.I))
-                    )
-                    if not normalized_dismissal:
+                    value = evidence.get("value", "")
+                    if (metadata.get("citation") != row["citation"]
+                            or metadata.get("url") != row["url"]
+                            or row["citation"] not in metadata.get("title", "")):
+                        raise ValueError("Manual visa approval requires matching source identity")
+                    if (not separator or not quote or quote not in source_text[separator.end():]
+                            or not value or value not in quote):
+                        raise ValueError("Manual visa approval requires exact source wording")
+                    if assessment.not_applicable.get(field):
+                        raise ValueError("Manual visa approval conflicts with not-applicable evidence")
+                    if proof and proof.value != value:
+                        raise ValueError("Manual visa approval conflicts with grounded evidence")
+                else:
+                    if not proof:
                         raise ValueError("Approval no longer matches grounded evidence")
+                    if proof.to_dict() != evidence:
+                        quote = evidence.get("quote", "")
+                        normalized_dismissal = (
+                            field == "outcome"
+                            and evidence.get("method") == "manual_operative_order_summary"
+                            and evidence.get("source_value") == proof.value
+                            and evidence.get("value") == "Dismissed"
+                            and quote in source_text
+                            and bool(re.search(r"\b(?:appeal|application)\s+(?:be|is|was)\s+dismissed\b", quote, re.I))
+                        )
+                        normalized_remittance = (
+                            field == "outcome"
+                            and evidence.get("method") == "manual_operative_order_summary"
+                            and evidence.get("source_value") == proof.value
+                            and evidence.get("value") == "Remitted"
+                            and quote in source_text
+                            and bool(re.search(r"\b(?:the\s+)?(?:tribunal|court)\s+remit(?:s|ted)\b", quote, re.I))
+                        )
+                        if not (normalized_dismissal or normalized_remittance):
+                            raise ValueError("Approval no longer matches grounded evidence")
             elif field == "full_text_path":
                 if evidence.get("value") != source_ref:
                     raise ValueError("Replacement text path must match the verified source path")

@@ -21,6 +21,7 @@ from immi_case_downloader.repair_workflow import (
     apply_approved,
     recover,
     review_catalogue,
+    validate_approvals,
     verify_stores,
 )
 
@@ -58,6 +59,388 @@ class GroundedTests(unittest.TestCase):
         result = self.assess(body)
         self.assertEqual(result.values["judges"].value, "Ricky Johnston")
 
+    def test_compact_aata_tribunal_header_extracts_member_before_date(self):
+        body = (
+            HEAD
+            + "DECISION\n"
+            + "Tribunal Ms A Poljak, Senior Member Date\n"
+            + "9 November 2016 Place Sydney\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["judges"].value, "Ms A Poljak, Senior Member")
+        self.assertEqual(result.values["judges"].rule, "compact_tribunal_member_header")
+
+    def test_compact_aata_header_supports_role_before_member_name(self):
+        body = (
+            HEAD
+            + "DECISION\n"
+            + "Tribunal Deputy President DP Breen, Presidential Member Date\n"
+            + "9 February 2000 Place Brisbane\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(
+            result.values["judges"].value,
+            "Deputy President DP Breen, Presidential Member",
+        )
+
+    def test_aata_table_header_keeps_member_separate_from_tribunal_label(self):
+        body = (
+            HEAD
+            + "DECISION\n"
+            + "Tribunal\nMr RG Kenny, Member\nDate 25 May 2004\nPlace Brisbane\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["judges"].value, "Mr RG Kenny, Member")
+        self.assertEqual(result.values["judges"].rule, "compact_tribunal_member_header")
+
+    def test_aata_table_header_supports_role_and_name_on_separate_rows(self):
+        body = (
+            HEAD
+            + "DECISION\n"
+            + "Tribunal\nDeputy President\nJ Block\nDate 6 August 2004\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.values["judges"].value, "Deputy President J Block")
+
+    def test_judgment_certificate_identifies_surname_without_j_suffix(self):
+        body = (
+            "Example v Minister [2001] FCA 665\n"
+            + "REASONS FOR JUDGMENT\nThe application is dismissed.\n"
+            + "I certify that the preceding two (2) numbered paragraphs are a true copy "
+            + "of the Reasons for Judgment herein of the Honourable Justice Wilcox.\n"
+        )
+        result = assess_case(body, citation="[2001] FCA 665")
+        self.assertEqual(result.values["judges"].value, "Justice Wilcox")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+        self.assertIn("true copy of the Reasons for Judgment", result.values["judges"].quote)
+
+    def test_federal_certificate_handles_split_words_and_long_appended_schedule(self):
+        body = (
+            "Example v Minister [2005] FMCA 965\nREASONS FOR JUDGMENT\n"
+            + ("Schedule entry retained after publication.\n" * 150)
+            + "I\ncertify that the preceding thirty paragraphs are a true copy of the "
+            + "reasons for judgment of Smith\nFM\n"
+            + ("Additional schedule entry retained after publication.\n" * 150)
+        )
+        result = assess_case(body, citation="[2005] FMCA 965")
+        self.assertEqual(result.values["judges"].value, "Smith FM")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+        self.assertIn("Smith\nFM", result.values["judges"].quote)
+
+    def test_federal_certificate_accepts_certifier_name_before_certify(self):
+        body = (
+            "Example v Minister [2005] FMCA 918\nREASONS FOR JUDGMENT\n"
+            "I, Paul O'Halloran, certify\nthat the preceding paragraphs are a true copy "
+            "of the reasons\nfor judgment of Walters\nFM\n"
+        )
+        result = assess_case(body, citation="[2005] FMCA 918")
+        self.assertEqual(result.values["judges"].value, "Walters FM")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+
+    def test_federal_certificate_keeps_all_justices_named_across_lines(self):
+        body = (
+            "Example v Minister [2002] FCA 208\nREASONS FOR JUDGMENT\n"
+            "I\ncertify that the preceding paragraphs are a true copy of the Reasons "
+            "for Judgment herein of the Honourable Justices\n"
+            "Heerey, Marshall and\nDowsett.\nAssociate:\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 208")
+        self.assertEqual(
+            result.values["judges"].value,
+            "Justices Heerey, Marshall and Dowsett",
+        )
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+
+    def test_federal_certificate_accepts_honourable_justice_split_across_lines(self):
+        body = (
+            "Example v Minister [2001] FCA 1297\nREASONS FOR JUDGMENT\n"
+            "I certify that the preceding paragraphs are a true copy of the Reasons "
+            "for Judgment herein\nof the Honourable\nJustice North.\nAssociate:\n"
+        )
+        result = assess_case(body, citation="[2001] FCA 1297")
+        self.assertEqual(result.values["judges"].value, "Justice North")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+
+    def test_aata_certificate_identifies_member_when_header_name_is_missing(self):
+        body = (
+            "Example v Minister [2003] AATA 1023\n"
+            + "DECISION\nTribunal\nDate 10 October 2003\n"
+            + "I certify that the preceding paragraphs are a true copy of the reasons "
+            + "for the decision herein of Ms N Bell, Member.\n"
+        )
+        result = assess_case(body, citation="[2003] AATA 1023")
+        self.assertEqual(result.values["judges"].value, "Ms N Bell, Member")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+
+    def test_aata_certificate_does_not_drop_other_members_from_panel(self):
+        body = (
+            "Example v Minister [2012] AATA 423\n"
+            + "DECISION\n"
+            + "Tribunal Honourable Dr B H McPherson, Deputy President and Mr P Wulf, Member\n"
+            + "Date 6 July 2012\n"
+            + "I certify that the preceding paragraphs are a true copy of the reasons "
+            + "for the decision herein of Honourable Dr B H McPherson, Deputy President.\n"
+        )
+        result = assess_case(body, citation="[2012] AATA 423")
+        self.assertEqual(
+            result.values["judges"].value,
+            "Honourable Dr B H McPherson, Deputy President and Mr P Wulf, Member",
+        )
+
+    def test_aata_panel_on_separate_header_rows_keeps_both_members(self):
+        body = (
+            "Example v Minister [2012] AATA 141\n"
+            "DECISION\n"
+            "Tribunal The Hon Brian Tamberlin QC, Deputy President\n"
+            "Ms J L Redfern, Senior Member Date 6 March 2012\n"
+            "Place Sydney\n"
+        )
+        result = assess_case(body, citation="[2012] AATA 141")
+        self.assertEqual(
+            result.values["judges"].value,
+            "The Hon Brian Tamberlin QC, Deputy President Ms J L Redfern, Senior Member",
+        )
+
+    def test_federal_court_judge_heading_accepts_surname_and_suffix_split_across_cells(self):
+        body = (
+            "WAHU v Minister for Immigration [2003] FCA 639\n"
+            + "JUDGE:\nRD\nNICHOLSON J\nDATE OF ORDER:\n10 June 2003\n"
+        )
+        result = assess_case(body, citation="[2003] FCA 639")
+        self.assertEqual(result.values["judges"].value, "RD NICHOLSON J")
+        self.assertEqual(result.values["judges"].rule, "published_judge_surname_heading")
+
+    def test_federal_court_judge_heading_accepts_literal_surname(self):
+        body = (
+            "Example v Minister [2000] FCA 77\n"
+            + "JUDGE:\nMANSFIELD\nJ\nDATE OF ORDER:\n10 February 2000\n"
+        )
+        result = assess_case(body, citation="[2000] FCA 77")
+        self.assertEqual(result.values["judges"].value, "MANSFIELD J")
+
+    def test_federal_court_judge_heading_rejects_date_and_place_labels(self):
+        for value in ("DATE", "MELBOURNE"):
+            with self.subTest(value=value):
+                body = (
+                    "Example v Minister [2000] FCA 77\n"
+                    + f"JUDGE:\n{value}\nDATE OF ORDER:\n10 February 2000\n"
+                )
+                result = assess_case(body, citation="[2000] FCA 77")
+                self.assertNotIn("judges", result.values)
+
+    def test_lowercase_reasons_phrase_in_catchwords_does_not_hide_judge_heading(self):
+        body = (
+            "WAAB v Minister for Immigration [2002] FCA 782\n"
+            "MIGRATION - Tribunal reasons for decision - no reviewable error\n"
+            "JUDGE:\nFRENCH\nJ\nDATE OF ORDER:\n19 June 2002\n"
+            "REASONS FOR JUDGMENT\nThe application is dismissed.\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 782")
+        self.assertEqual(result.values["judges"].value, "FRENCH J")
+
+    def test_federal_court_judge_heading_preserves_all_members_in_a_panel(self):
+        body = (
+            "Iyer v Minister for Immigration [2001] FCA 929\n"
+            "JUDGE:\nHEEREY,\nMANSFIELD AND GYLES JJ\nDATE:\n20 July 2001\n"
+        )
+        result = assess_case(body, citation="[2001] FCA 929")
+        self.assertEqual(
+            result.values["judges"].value,
+            "HEEREY, MANSFIELD AND GYLES JJ",
+        )
+
+    def test_tribunal_member_label_joins_names_split_across_lines(self):
+        body = (
+            "Example v Minister [2004] RRTA 270\n"
+            "Tribunal Member: Janet\nWood\nDate: 1 April 2004\n"
+        )
+        result = assess_case(body, citation="[2004] RRTA 270")
+        self.assertEqual(result.values["judges"].value, "Janet Wood")
+
+    def test_presiding_member_label_joins_title_and_name_split_across_lines(self):
+        body = (
+            "Example v Minister [2000] MRTA 1398\n"
+            "PRESIDING MEMBER:\nMs\nWendy Bodisson\nMRT FILE NUMBER:\nV99/00214\n"
+        )
+        result = assess_case(body, citation="[2000] MRTA 1398")
+        self.assertEqual(result.values["judges"].value, "Ms Wendy Bodisson")
+
+    def test_bare_tribunal_header_with_date_identifies_single_member(self):
+        body = (
+            "Example v Minister [2004] AATA 1268\n"
+            "DECISION\nTribunal\nMs Linda Savage Davis\n"
+            "Date 30 November 2004\nPlace Perth\n"
+        )
+        result = assess_case(body, citation="[2004] AATA 1268")
+        self.assertEqual(result.values["judges"].value, "Ms Linda Savage Davis")
+
+    def test_aata_compact_header_accepts_honorific_initials_and_credentials(self):
+        body = (
+            "Example v Minister [2004] AATA 648\n"
+            "DECISION\nTribunal\nThe Hon R N J Purvis Q.C., Deputy President\n"
+            "Date 24 June 2004\nPlace Sydney\n"
+        )
+        result = assess_case(body, citation="[2004] AATA 648")
+        self.assertEqual(
+            result.values["judges"].value,
+            "The Hon R N J Purvis Q.C., Deputy President",
+        )
+
+    def test_art_title_reasons_for_decision_does_not_hide_tribunal_member(self):
+        body = (
+            "Doan (Migration) [2025] ARTA 147\n"
+            "Decision and\nReasons for Decision\n"
+            "Tribunal Number:\n2313239\nTribunal:\nRosa Gagliardi\n"
+            "Place: Australian Capital Territory\nDate: 6 February 2025\n"
+        )
+        result = assess_case(body, citation="[2025] ARTA 147")
+        self.assertEqual(result.values["judges"].value, "Rosa Gagliardi")
+
+    def test_early_rrt_reasons_title_does_not_hide_later_member_label(self):
+        body = (
+            "N99/29807 [2000] RRTA 591 (29 May 2000)\n"
+            "REFUGEE REVIEW TRIBUNAL\nDECISION AND\nREASONS FOR DECISION\n"
+            "RRT Reference: N99/29807\nCountry of Reference: Indonesia\n"
+            "Tribunal Member: Roger GIBSON\nDate decision made: 29 May 2000\n"
+        )
+        result = assess_case(body, citation="[2000] RRTA 591")
+        self.assertEqual(result.values["judges"].value, "Roger GIBSON")
+
+    def test_member_label_joins_more_than_two_split_name_rows(self):
+        body = (
+            "Example v Minister [2000] RRTA 567\n"
+            "REFUGEE REVIEW TRIBUNAL\nDECISION AND\nREASONS FOR DECISION\n"
+            "Tribunal Member:\n\nMs\nPhilippa\nMcIntosh\nDate decision made:\n"
+            "23 May 2000\n"
+        )
+        result = assess_case(body, citation="[2000] RRTA 567")
+        self.assertEqual(result.values["judges"].value, "Ms Philippa McIntosh")
+
+    def test_compact_aata_header_keeps_both_members_without_and(self):
+        body = (
+            "Example v Minister [2012] AATA 534\n"
+            "DECISION AND REASONS FOR DECISION\n"
+            "Tribunal Deputy President S D Hotop Ms K Hogan, Member\n"
+            "Date 19 July 2012 Place Perth\n"
+        )
+        result = assess_case(body, citation="[2012] AATA 534")
+        self.assertEqual(
+            result.values["judges"].value,
+            "Deputy President S D Hotop Ms K Hogan, Member",
+        )
+
+    def test_compact_aata_header_accepts_semicolon_panel_separator(self):
+        body = (
+            "Example v Minister [2022] AATA 4306\n"
+            "DECISION\nTribunal:\n"
+            "Chris Puplick AM, Senior Member; Mr S Evans, Member\n"
+            "Date: 14 December 2022\n"
+        )
+        result = assess_case(body, citation="[2022] AATA 4306")
+        self.assertEqual(
+            result.values["judges"].value,
+            "Chris Puplick AM, Senior Member; Mr S Evans, Member",
+        )
+
+    def test_compact_aata_header_joins_hyphenated_member_role(self):
+        body = (
+            "Example v Minister [2003] AATA 10\n"
+            "DECISION\nTribunal Ms G Ettinger - Senior Member\n"
+            "Date 8 January 2003\n"
+        )
+        result = assess_case(body, citation="[2003] AATA 10")
+        self.assertEqual(result.values["judges"].value, "Ms G Ettinger - Senior Member")
+
+    def test_certification_without_herein_names_issuing_member(self):
+        body = (
+            "Example v Minister [2003] AATA 1093\n"
+            "DECISION\nTribunal\nDate 2 October 2003\n"
+            "I certify that the preceding paragraphs are a true copy of the reasons "
+            "for the decision of Michael Sassella\n"
+        )
+        result = assess_case(body, citation="[2003] AATA 1093")
+        self.assertEqual(result.values["judges"].value, "Michael Sassella")
+        self.assertEqual(result.values["judges"].rule, "own_judgment_certification")
+
+    def test_certification_accepts_role_before_name_and_full_judicial_suffix(self):
+        body = (
+            "Example v Minister [2005] FMCA 932\nREASONS FOR JUDGMENT\n"
+            "I certify that the preceding fourteen paragraphs are a true copy of the "
+            "reasons for judgment of Pascoe\nCFM\n"
+        )
+        result = assess_case(body, citation="[2005] FMCA 932")
+        self.assertEqual(result.values["judges"].value, "Pascoe CFM")
+        self.assertIn("true copy of the reasons for judgment of Pascoe\nCFM", result.values["judges"].quote)
+
+    def test_certification_without_true_copy_phrase_can_name_member(self):
+        body = (
+            "Example v Minister [2004] AATA 43\n"
+            "I certify that the 70 preceding paragraphs are\n"
+            "of Deputy President D.G. Jarvis\n"
+        )
+        result = assess_case(body, citation="[2004] AATA 43")
+        self.assertEqual(result.values["judges"].value, "Deputy President D.G. Jarvis")
+
+    def test_signed_member_can_be_inside_sgd_parentheses(self):
+        body = (
+            "Example v Minister [2004] AATA 285\nDECISION\n"
+            "Tribunal\nDate 1 July 2004\n"
+            ".........(sgd L Savage Davis)............\nMember\nCATCHWORDS\n"
+        )
+        result = assess_case(body, citation="[2004] AATA 285")
+        self.assertEqual(result.values["judges"].value, "L Savage Davis Member")
+
+    def test_signed_member_skips_dotted_signature_separator(self):
+        body = (
+            "Example v Minister [2022] AATA 1780\nDECISION\n"
+            "Tribunal\nDate 20 May 2022\n[SGD]\n"
+            "..............................................\n"
+            "The Hon. Matthew Groom, Senior Member\nCATCHWORDS\n"
+        )
+        result = assess_case(body, citation="[2022] AATA 1780")
+        self.assertEqual(
+            result.values["judges"].value,
+            "The Hon. Matthew Groom, Senior Member",
+        )
+
+    def test_corrupted_certified_name_is_not_written_as_judge(self):
+        body = (
+            "Example v Minister [2023] FCA 641\n"
+            "I certify that the preceding paragraphs are a true copy of the Reasons "
+            "for Judgment of the Honourable Justice O\ufffd\ufffdCallaghan .\n"
+        )
+        result = assess_case(body, citation="[2023] FCA 641")
+        self.assertNotIn("judges", result.values)
+
+    def test_single_signed_aata_member_is_recovered_from_explicit_signature(self):
+        body = (
+            "Example v Minister [2006] AATA 888\n"
+            "DECISION\nTribunal\nDate 19 October 2006\n"
+            "[sgd]......................\nMs. N. Isenberg, Senior Member\n"
+            "CATCHWORDS\nCitizenship application\n"
+        )
+        result = assess_case(body, citation="[2006] AATA 888")
+        self.assertEqual(
+            result.values["judges"].value,
+            "Ms. N. Isenberg, Senior Member",
+        )
+        self.assertEqual(result.values["judges"].rule, "signed_tribunal_member")
+
+    def test_compact_aata_header_does_not_guess_panel_or_registrar(self):
+        panel = self.assess(
+            HEAD
+            + "DECISION\n"
+            + "Tribunal Deputy President C Kendall Brigadier AG Warner, Member Date\n"
+            + "[Sgd] Deputy President Dr C Kendall\n"
+        )
+        registrar = self.assess(
+            HEAD
+            + "TRIBUNAL: Barry Johnson, Conference Registrar\n"
+            + "DATE: 4 May 2016\n"
+        )
+        self.assertNotIn("judges", panel.values)
+        self.assertNotIn("judges", registrar.values)
+
     def test_no_guesses_from_title_and_cited_judge(self):
         result = self.assess(HEAD + "REASONS FOR JUDGMENT\nIn Another v Minister [2001] FCA 10, Judge Jones dismissed the application.")
         self.assertEqual(result.values, {})
@@ -66,6 +449,24 @@ class GroundedTests(unittest.TestCase):
         result = assess_case(BODY, citation="[2024] FCA 13")
         self.assertEqual(result.source_status, "identity_conflict")
         self.assertEqual(result.values, {})
+
+    def test_written_direction_withholding_reasons_is_restricted_publication(self):
+        body = (
+            HEAD
+            + "PRESIDING MEMBER: James Ferguson\n"
+            + "A written direction has been made under section 378 of the Migration Act "
+            "to withhold the publication of the Tribunal's Statement of Reasons and Decision."
+        )
+        result = self.assess(body)
+        self.assertEqual(result.source_status, "restricted_publication")
+        self.assertEqual(
+            result.reasons,
+            {
+                "judges": "restricted_publication",
+                "outcome": "restricted_publication",
+                "visa_type": "restricted_publication",
+            },
+        )
 
     def test_exact_formal_heading_can_confirm_identity_after_cited_authorities(self):
         body = (
@@ -144,6 +545,53 @@ class GroundedTests(unittest.TestCase):
             with self.subTest(sentence=sentence):
                 self.assertNotIn("visa_type", self.assess(HEAD + sentence).values)
 
+    def structured_tribunal_visa_refusal(self, extra_clause=""):
+        return (
+            "[2000] MRTA 789\n"
+            "VISA APPLICANT: SAMPLE APPLICANT\n"
+            "DECISION: The Tribunal remits the application with a direction that the Visa Applicant has received a qualifying score in the points test.\n"
+            "CATCHWORDS: Usual occupation - sufficient points\n"
+            "APPLICATION FOR REVIEW:\n"
+            "Visa Applicant Details: SAMPLE APPLICANT\n"
+            "Decision Type: Visa refusal\n"
+            "Date of Primary Decision: 26 February 1999\n"
+            "JURISDICTION AND STANDING\n"
+            "LEGISLATION, VISA CRITERIA AND POLICY\n"
+            "Class AJ had Subclass 105 (Skilled - Australian Linked).\n"
+            "Clause 105.222 of Part 105 of Schedule 2 to the Migration Regulations requires that the applicant must have the qualifying score under the points test.\n"
+            + extra_clause
+            + "As the visa applicant lodged her application on 22 April 1998, the criteria apply.\n"
+        )
+
+    def test_structured_visa_refusal_links_the_unique_current_subclass_clause(self):
+        result = assess_case(self.structured_tribunal_visa_refusal(), citation="[2000] MRTA 789")
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["visa_type"].value, "Subclass 105 visa")
+        self.assertEqual(result.values["visa_type"].rule, "structured_visa_refusal_subclass_clause")
+        self.assertTrue(any("Decision Type: Visa refusal" in quote
+                            for quote in result.candidates[-1]["supporting_quotes"]))
+
+    def test_structured_visa_refusal_requires_unambiguous_current_evidence(self):
+        missing_date = self.structured_tribunal_visa_refusal().replace(
+            "As the visa applicant lodged her application on 22 April 1998, the criteria apply.\n", ""
+        )
+        self.assertNotIn(
+            "visa_type",
+            assess_case(missing_date, citation="[2000] MRTA 789").values,
+        )
+        two_subclasses = self.structured_tribunal_visa_refusal(
+            "Subclass 106 (Regional Linked). Clause 106.222 of Part 106 of Schedule 2 to the Migration Regulations requires that the applicant must have the qualifying score under the points test.\n"
+        )
+        self.assertNotIn(
+            "visa_type",
+            assess_case(two_subclasses, citation="[2000] MRTA 789").values,
+        )
+
+    def test_structured_visa_refusal_still_requires_matching_case_identity(self):
+        result = assess_case(self.structured_tribunal_visa_refusal(), citation="[2000] MRTA 790")
+        self.assertEqual(result.source_status, "identity_conflict")
+        self.assertNotIn("visa_type", result.values)
+
     def test_conflicting_visa_candidates_are_held(self):
         body = HEAD + "The decision under review was to refuse a student visa.\nThe decision under review was to refuse a protection visa."
         self.assertNotIn("visa_type", self.assess(body).values)
@@ -159,6 +607,138 @@ class GroundedTests(unittest.TestCase):
     def test_citizenship_catchword_marks_visa_type_not_applicable(self):
         result = self.assess(HEAD + "CATCHWORDS – CITIZENSHIP – grant of citizenship – decision set aside")
         self.assertEqual(result.not_applicable["visa_type"], "citizenship_review_not_a_visa_application")
+
+    def test_citizenship_cases_with_migration_prefix_are_not_visa_reviews(self):
+        for catchwords in (
+            "MIGRATION – CITIZENSHIP – citizenship by descent – decision affirmed",
+            "MIGRATION – Australian citizenship – appeal from the Administrative Appeals Tribunal",
+            "CITIZENSHIP – application for Australian citizenship – good character",
+        ):
+            with self.subTest(catchwords=catchwords):
+                result = self.assess(HEAD + "CATCHWORDS: " + catchwords)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "citizenship_review_not_a_visa_application",
+                )
+
+    def test_citizenship_application_without_catchwords_label_is_not_a_visa_review(self):
+        result = self.assess(
+            HEAD + "DECISION AND REASONS FOR DECISION\n"
+            "CITIZENSHIP - application for Australian citizenship - good character"
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_citizenship_registration_order_is_not_a_visa_review(self):
+        result = self.assess(
+            HEAD
+            + "THE COURT ORDERS THAT: The Minister be directed to register the applicant "
+            "as an Australian citizen pursuant to s 10C of the Australian Citizenship Act."
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_citizenship_does_not_override_an_explicit_visa_review(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: IMMIGRATION AND CITIZENSHIP – cancellation of applicant's visa – "
+            "whether citizenship status affects cancellation"
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_unspecified_cancellation_with_no_primary_decision_has_no_visa_type(self):
+        body = (
+            HEAD
+            + "DECISION RECORD\nAPPLICATION FOR REVIEW\n"
+            + "An application was made to the Tribunal on 30 May 2014 for review of an unspecified visa cancellation. "
+            + "At the time the review application was lodged, no relevant decision had been made. "
+            + "There was no evidence before the Tribunal that the Department had made a decision to cancel a visa issued to him. "
+            + "Information available to the Tribunal shows the applicant was issued with a Subclass 050 Bridging (General) visa after arrival. "
+            + "That visa ceased on 13 June 2013. There has been no primary decision made to cancel any visa.\n"
+            + "DECISION: The Tribunal does not have jurisdiction in this matter.\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.not_applicable["visa_type"], "no_current_visa_decision")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_withdrawn_review_of_an_actual_visa_decision_is_not_not_applicable(self):
+        body = (
+            HEAD
+            + "APPLICATION FOR REVIEW: review of the decision to cancel the applicant's Subclass 050 visa.\n"
+            + "The applicant withdrew the review application. There is no longer a valid application for review, "
+            + "and the Tribunal has no jurisdiction to conduct the review.\n"
+        )
+        result = self.assess(body)
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_migration_agent_registration_is_not_a_personal_visa_review(self):
+        cases = (
+            (
+                "Migration Agents' Registration Authority",
+                "MIGRATION AGENTS – Stay of decision refusing renewal of registration",
+            ),
+            (
+                "Migrations Agents Registration Authority",
+                "Regulated occupation – Migration agents – Automatic continuation of registration",
+            ),
+        )
+        for authority, catchwords in cases:
+            with self.subTest(authority=authority):
+                body = HEAD + authority + "\nCATCHWORDS: " + catchwords
+                result = assess_case(body, citation="[2024] FCA 12", title=authority)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "migration_agent_registration_not_a_personal_visa",
+                )
+
+    def test_migration_agent_registration_order_without_catchwords_is_not_a_visa_review(self):
+        body = (
+            HEAD
+            + "And: MIGRATION AGENTS’ REGISTRATION AUTHORITY Respondent\n"
+            + "Order: the decision refusing renewal of the applicant's registration as a "
+            "migration agent is stayed."
+        )
+        result = self.assess(body)
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "migration_agent_registration_not_a_personal_visa",
+        )
+
+    def test_migration_agent_mentioned_as_representative_is_not_enough_for_na(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION – visa refusal – applicant represented by a migration agent"
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_cited_migration_agents_authority_does_not_make_case_about_agent_registration(self):
+        body = (
+            HEAD
+            + "CATCHWORDS: INTERLOCUTORY APPLICATION – jurisdiction – whether the application "
+            "was lodged in time. Shi v Migration Agents Registration Authority [2008] HCA 31."
+        )
+        result = assess_case(
+            body,
+            citation="[2024] FCA 12",
+            title="Du and Minister for Immigration and Citizenship (Practice and procedure)",
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_non_immigration_commercial_domain_name_disputes_are_not_visa_cases(self):
+        for catchwords in (
+            "COMMERCIAL LAW – Acquisition and sale of generic internet domain name – breach of fiduciary duties",
+            "COMMERCIAL LAW – Misappropriation of generic internet domain name – costs ordered",
+        ):
+            with self.subTest(catchwords=catchwords):
+                result = self.assess(HEAD + "CATCHWORDS: " + catchwords)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "non_immigration_commercial_dispute",
+                )
 
     def test_nomination_review_marks_personal_visa_not_applicable(self):
         result = self.assess(
@@ -218,9 +798,31 @@ class GroundedTests(unittest.TestCase):
         result = assess_case(body, citation="[2026] FedCFamC2G 1639")
         self.assertEqual(
             result.not_applicable["visa_type"],
-            "ministerial_intervention_judicial_review_not_a_visa_review",
+            "ministerial_intervention_not_a_visa_review",
         )
         self.assertNotIn("visa_type", result.values)
+
+    def test_ministerial_intervention_decisions_are_not_visa_reviews(self):
+        catchwords_examples = (
+            "MIGRATION – Request for Ministerial Intervention – no decision engaging the Court's jurisdiction",
+            "MIGRATION – Application for review of a decision not to refer request for Ministerial Intervention",
+            "MIGRATION – where applicant made ministerial intervention request under ss 46A and 46B",
+            "MIGRATION – practice and procedure – application for interlocutory injunction about removal and the applicant's application for Ministerial\nintervention",
+        )
+        for index, catchwords in enumerate(catchwords_examples):
+            with self.subTest(catchwords=catchwords):
+                body = (
+                    HEAD
+                    + "CATCHWORDS: " + catchwords + "\n"
+                    + "REASONS FOR JUDGMENT\n"
+                    + "The applicant previously applied for a Safe Haven Enterprise (Subclass 790) visa.\n"
+                )
+                result = self.assess(body)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "ministerial_intervention_not_a_visa_review",
+                )
+                self.assertNotIn("visa_type", result.values)
 
     def test_intervention_case_with_explicit_visa_refusal_subject_is_not_na(self):
         body = (
@@ -698,6 +1300,68 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.review("after")["missing_cells"], 0)
         self.assertEqual(apply_approved(self.root, self.root / "noop", [])["applied"], 0)
 
+    def test_manual_source_bound_visa_review_applies_only_literal_identified_evidence(self):
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            "The delegate's decision to refuse a Subclass 050 (Bridging E) visa was without effect.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.save_exports()
+        quote = "a Subclass 050 (Bridging E) visa"
+        approval = {
+            "case_id": "a", "field": "visa_type",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Subclass 050 (Bridging E) visa",
+                "quote": quote,
+                "method": "manual_source_bound_visa_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The exact source wording identifies the visa whose refusal is addressed.",
+        }
+        result = apply_approved(self.root, self.root / "manual-visa-apply", [approval])
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0],
+                             "Subclass 050 (Bridging E) visa")
+
+    def test_manual_source_bound_visa_review_rejects_wrong_identity_or_unquoted_value(self):
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            "The decision concerns a Subclass 050 (Bridging E) visa.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        approval = {
+            "case_id": "a", "field": "visa_type",
+            "source_path": "downloaded_cases/case.txt", "source_sha256": source_hash,
+            "evidence": {
+                "value": "Subclass 866 Protection visa",
+                "quote": "a Subclass 050 (Bridging E) visa",
+                "method": "manual_source_bound_visa_review",
+            },
+            "reviewer": "independent-test-review", "review_note": "Checked source wording.",
+        }
+        with self.assertRaisesRegex(ValueError, "exact source wording"):
+            validate_approvals(self.root, [approval])
+        approval["evidence"]["value"] = "Subclass 050 (Bridging E) visa"
+        approval["source_sha256"] = source_hash
+        self.rows[0]["url"] = "https://www.austlii.edu.au/au/cases/cth/FCA/2024/99.html"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET url=? WHERE case_id='a'", (self.rows[0]["url"],))
+            conn.commit()
+        self.save_exports()
+        with self.assertRaisesRegex(ValueError, "matching source identity"):
+            validate_approvals(self.root, [approval])
+
     def test_expected_current_replaces_wrong_value_and_source_metadata_safely(self):
         source_text = (
             HEAD
@@ -795,6 +1459,54 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(next(r for r in csv.DictReader(handle) if r["case_id"] == "a")["outcome"], "Dismissed")
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Dismissed")
+
+    def test_remitted_order_summary_repairs_only_wrong_json_export(self):
+        source_text = (
+            "Example v Minister [2024] FCA 12\n"
+            "DECISION: The Tribunal remits the application for reconsideration.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0]["outcome"] = "Remitted"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET outcome='Remitted' WHERE case_id='a'")
+            conn.commit()
+        self.save_exports()
+
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        wrong_json_value = "DECISION:\\t5 April 2024"
+        next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"] = wrong_json_value
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assessment = assess_case(source_text, citation=self.rows[0]["citation"],
+                                 title=self.rows[0]["title"], url=self.rows[0]["url"])
+        proof = assessment.values["outcome"]
+        approval = {
+            "case_id": "a", "field": "outcome",
+            "expected_current_by_store": {
+                "database": "Remitted", "csv": "Remitted", "json": wrong_json_value,
+            },
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Remitted", "source_value": proof.value,
+                "quote": "The Tribunal remits the application for reconsideration.",
+                "method": "manual_operative_order_summary",
+            },
+            "reviewer": "manual-source-test",
+            "review_note": "The verified operative decision remits the application; only the wrong JSON export is replaced.",
+        }
+        invalid = {**approval, "evidence": {**approval["evidence"], "quote": "The Tribunal dismisses the application."}}
+        with self.assertRaisesRegex(ValueError, "Approval no longer matches grounded evidence"):
+            validate_approvals(self.root, [invalid])
+
+        result = apply_approved(self.root, self.root / "repair-remitted-json", [approval])
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT outcome FROM cases WHERE case_id='a'").fetchone()[0], "Remitted")
+        with (self.data / "immigration_cases.csv").open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(next(row for row in csv.DictReader(handle) if row["case_id"] == "a")["outcome"], "Remitted")
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Remitted")
 
     def test_expected_current_mismatch_refuses_overwrite(self):
         approvals = self.approvals()

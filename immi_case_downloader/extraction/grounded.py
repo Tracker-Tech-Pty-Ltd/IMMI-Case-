@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261022-v14"
+RULE_VERSION = "grounded-local-20261022-v29"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -117,19 +117,126 @@ def _judge(text: str) -> Evidence | None:
         r"JUDGMENT OF|JUDGES?|BEFORE|CORAM|JUSTICE|TRIBUNAL)\s*:)([^\n]+))?",
         re.I | re.M,
     )
-    preamble = re.split(
+    reasons_heading = re.compile(
         r"^[ \t]*(?:REASONS FOR (?:JUDGMENT|DECISION)|"
         r"STATEMENT OF DECISION(?!\s+AND\s+REASONS))\b",
-        text,
-        maxsplit=1,
-        flags=re.I | re.M,
-    )[0][:10000]
+        re.M,
+    )
+    preamble_end = len(text)
+    for heading in reasons_heading.finditer(text):
+        before = text[:heading.start()]
+        if re.search(
+            r"^[ \t]*(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBER|"
+            r"JUDGE|JUDGES|BEFORE|CORAM|JUSTICE)\s*:",
+            before,
+            re.M | re.I,
+        ):
+            preamble_end = heading.start()
+            break
+        next_heading = reasons_heading.search(text, heading.end())
+        cover_window = text[heading.end():min(
+            next_heading.start() if next_heading else len(text),
+            heading.end() + 1800,
+        )]
+        # Some publishers put a title such as "REASONS FOR DECISION" before
+        # the Tribunal Member/JUDGE/date fields. Treat that first occurrence
+        # as cover text only when structured case fields follow it.
+        if re.search(
+            r"^[ \t]*(?:TRIBUNAL(?:\s+MEMBER)?|PRESIDING MEMBER|"
+            r"CONSTITUTED MEMBER|RRT REFERENCE|MRT REFERENCE|COUNTRY OF REFERENCE|"
+            r"DATE(?: DECISION| OF DECISION)?|PLACE|DECISION)\s*:",
+            cover_window,
+            re.M | re.I,
+        ) or re.search(
+            r"^[ \t]*TRIBUNAL[ \t]*$",
+            cover_window,
+            re.M | re.I,
+        ):
+            continue
+        preamble_end = heading.start()
+        break
+    preamble = text[:preamble_end][:10000]
+    tribunal_headers: list[tuple[str, list[re.Match[str]]]] = []
+    tribunal_heading = re.compile(
+        r"^[ \t]*TRIBUNAL\b[ \t]*:?[ \t]*(?P<inline>[^\n]*)",
+        re.I | re.M,
+    )
+    for match in tribunal_heading.finditer(preamble):
+        tail_start = match.end()
+        tail = preamble[tail_start:tail_start + 500]
+        boundary = re.search(
+            r"\b(?:Date|Place|Decision|Catchwords|Reasons|MRT File|RRT File)\b",
+            tail,
+            re.I,
+        )
+        header_tail = tail[:boundary.start()] if boundary else tail
+        header_raw = (match["inline"] + " " + header_tail).strip(" :;\t")
+        header_value = " ".join(header_raw.split())
+        roles = list(re.finditer(
+            r"\b(?:Deputy President|Presidential Member|Senior Member|Member)\b",
+            header_value,
+            re.I,
+        ))
+        tribunal_headers.append((header_value, roles))
+        if len(roles) < 2:
+            continue
+        between_roles = header_value[roles[0].end():roles[1].start()]
+        separate_member_rows = sum(
+            bool(re.search(r"\b(?:Deputy President|Presidential Member|Senior Member|Member)\b", line, re.I))
+            for line in header_raw.splitlines()
+        ) > 1
+        first_role_follows_name = bool(re.search(
+            r"[A-Za-zÀ-ž][A-Za-zÀ-ž’'.-]{1,}[, \t]+$",
+            header_value[:roles[0].start()],
+        ))
+        title = r"(?:Mr|Mrs|Ms|Dr|Professor|Prof|Honourable|Hon)\.?"
+        second_member_title = bool(re.search(
+            rf"(?:^|[,;\s]){title}\b[ \t]+"
+            r"(?:[A-Z]\.?[ \t]+){0,3}[A-Z][A-Za-zÀ-ž’'.-]+"
+            r"(?=[,; \t]|$)",
+            between_roles,
+            re.I,
+        ))
+        second_member_title = second_member_title or (
+            first_role_follows_name and bool(
+                re.match(rf"\s*{title}\b", between_roles, re.I)
+                or re.search(rf"\b[A-Z][A-Za-zÀ-ž’'.-]{{2,}}[, \t]+{title}\b", between_roles, re.I)
+            )
+        )
+        explicit_panel = bool(re.search(r"\b(?:and)\b|&", header_value, re.I)) or separate_member_rows or second_member_title
+        non_name_words = {
+            "the", "hon", "honourable", "mr", "mrs", "ms", "dr", "prof", "professor",
+            "member", "senior", "presidential", "deputy", "president", "cbe", "am",
+            "qc", "rfd", "sc", "and", "tribunal", "review", "registrar", "clerk", "secretary",
+        }
+        names = [
+            token for token in re.findall(r"[A-Za-zÀ-ž]+", header_value)
+            if token.casefold() not in non_name_words
+        ]
+        if (
+            explicit_panel
+            and len(names) >= 3
+            and len(header_value) <= 300
+            and re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/&;]+", header_value)
+            and not re.search(r"\b(?:registrar|clerk|secretary|applicant|respondent)\b", header_value, re.I)
+        ):
+            value_start = match.start("inline")
+            value_end = tail_start + (boundary.start() if boundary else len(tail))
+            value = " ".join(header_value.split())
+            return _evidence(
+                text, value_start, value_end, value, "compact_tribunal_member_header"
+            )
     for match in labels.finditer(preamble):
         value = match[1].strip() or (match[2] or "").strip()
         value = _LABEL_END.split(value, maxsplit=1)[0].strip(" :;\t")
         if not value or len(value) > 100 or not re.search(r"[A-Za-z]{2}", value):
             continue
-        if re.search(r"\b(?:tribunal|court|applicant|respondent|decision|hearing|date|not|above|none|unknown)\b", value, re.I):
+        if re.search(
+            r"\b(?:tribunal|court|applicant|respondent|decision|hearing|date|not|above|none|unknown|"
+            r"registrar|clerk|secretary)\b",
+            value,
+            re.I,
+        ):
             continue
         if not re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/&]+", value):
             continue
@@ -141,16 +248,476 @@ def _judge(text: str) -> Evidence | None:
             continue
         pos = text.find(value, match.start())
         return _evidence(text, pos, pos + len(value), value, "published_author_label")
-    certified = re.search(
-        r"^I certify that[^\n]{0,180}(?:\n[^\n]{0,180}){0,2}?"
-        r"(?:reasons for (?:judgment|decision)|Reasons for Judgment)[^\n]{0,75}?\bof\s+"
-        r"(?:the Honourable (?:Justice|Judge)\s+)?([A-Z][A-Za-z’' .-]{1,65}?(?:\s+(?:FM|J|JJ)))\.?\s*(?:\n|$)",
-        text[-3500:], re.M | re.I,
+
+    # Some Federal Court cover sheets split the explicit JUDGE field over
+    # several table cells (including initials on separate lines). Preserve the
+    # whole printed name or panel only when the block ends in the judicial
+    # suffix J/JJ/CJ; this avoids interpreting a date or venue as a person.
+    judge_heading = re.compile(r"^[ \t]*JUDGE:[ \t]*\n", re.I | re.M)
+    for heading in judge_heading.finditer(preamble):
+        parts: list[str] = []
+        value_start = None
+        value_end = None
+        offset = heading.end()
+        for raw_line in preamble[offset:].splitlines(keepends=True)[:4]:
+            line = raw_line.rstrip("\r\n")
+            stripped = line.strip()
+            if not stripped or not re.fullmatch(r"[A-Z][A-Z .,'’&-]{0,100}", stripped):
+                break
+            if re.match(r"^(?:DATE|PLACE|TIME|WHERE|ORDER|REASONS)\b", stripped):
+                break
+            left = len(line) - len(line.lstrip())
+            right = len(line.rstrip())
+            if value_start is None:
+                value_start = offset + left
+            value_end = offset + right
+            parts.append(stripped)
+            value = " ".join(parts)
+            if not re.search(r"\b(?:JJ|CJ|J)\.?$", value):
+                offset += len(raw_line)
+                continue
+            name = re.sub(r"\b(?:JJ|CJ|J)\.?$", "", value).strip(" ,.")
+            if (
+                re.search(r"[A-Z]{3,}", name)
+                and not re.search(r"\b(?:DATE|PLACE|MELBOURNE|SYDNEY|PERTH|BRISBANE)\b", name)
+            ):
+                return _evidence(
+                    text, value_start, value_end, value,
+                    "published_judge_surname_heading",
+                )
+            break
+            offset += len(raw_line)
+
+    # Federal Court cover sheets often print only a judge's surname (and
+    # sometimes split initials, surname, and the judicial suffix across HTML
+    # table cells). The explicit JUDGE label makes a one-word surname useful;
+    # reject placeholders and locations rather than treating them as people.
+    judge_heading_initials = re.search(
+        r"^[ \t]*JUDGE:[ \t]*\n[ \t]*(?P<initials>[A-Z]{1,3})[ \t]*\n"
+        r"[ \t]*(?P<surname>[A-Z][A-Z’'-]{2,40})[ \t]+(?P<suffix>J|JJ|CJ)[ \t]*$",
+        preamble, re.M,
     )
-    if certified:
-        value = certified[1].strip()
-        pos = text.rfind(value)
-        return _evidence(text, pos, pos + len(value), value, "own_judgment_certification")
+    if judge_heading_initials:
+        value = " ".join(
+            judge_heading_initials[name]
+            for name in ("initials", "surname", "suffix")
+        )
+        start = judge_heading_initials.start("initials")
+        return _evidence(
+            text, start, judge_heading_initials.end("suffix"), value,
+            "published_judge_surname_heading",
+        )
+
+    judge_heading_particle = re.search(
+        r"^[ \t]*JUDGE:[ \t]*(?:\n[ \t]*)?(?P<particle>von|van|de|du)"
+        r"[ \t\r\n]+(?P<surname>[A-Z][A-Z’'-]{2,40})[ \t]+"
+        r"(?P<suffix>J|JJ|CJ)[ \t]*$",
+        preamble, re.M | re.I,
+    )
+    if judge_heading_particle:
+        value = " ".join(
+            judge_heading_particle[name]
+            for name in ("particle", "surname", "suffix")
+        )
+        start = judge_heading_particle.start("particle")
+        return _evidence(
+            text, start, judge_heading_particle.end("suffix"), value,
+            "published_judge_surname_heading",
+        )
+
+    judge_heading_surname = re.search(
+        r"^[ \t]*JUDGE:[ \t]*(?:\n[ \t]*)?"
+        r"(?P<surname>[A-Z][A-Za-zÀ-ž’'-]{1,40})"
+        r"(?:[ \t]*(?:\n[ \t]*)?(?P<suffix>J|JJ|CJ))?[ \t]*$",
+        preamble, re.M | re.I,
+    )
+    if judge_heading_surname:
+        surname = judge_heading_surname["surname"]
+        suffix = judge_heading_surname["suffix"] or ""
+        non_person_headings = {
+            "DATE", "PLACE", "TIME", "MELBOURNE", "SYDNEY", "PERTH",
+            "BRISBANE", "ADELAIDE", "CANBERRA", "DARWIN", "HOBART", "AUSTRALIA",
+        }
+        is_initials_only = bool(re.fullmatch(r"[A-Z]{1,3}", surname)) and not suffix
+        is_unlabelled_particle = not suffix and not (surname.isupper() or surname.istitle())
+        if surname.upper() not in non_person_headings and not is_initials_only and not is_unlabelled_particle:
+            value = " ".join(part for part in (surname, suffix) if part)
+            end = judge_heading_surname.end("suffix") if suffix else judge_heading_surname.end("surname")
+            return _evidence(
+                text, judge_heading_surname.start("surname"), end, value,
+                "published_judge_surname_heading",
+            )
+
+    # Older AAT decision headers put the member and date on one line/cell,
+    # without a colon after "Tribunal" (for example, "Tribunal Ms A Poljak,
+    # Senior Member Date 9 November 2016"). Preserve only a clearly labelled
+    # member role and a complete person name; never mistake a registrar for a
+    # tribunal member.
+    person = (
+        r"(?:(?:(?:The[ \t\r\n]+)?Hon(?:ourable)?|"
+        r"Mr|Mrs|Ms|Dr|Professor|Prof)\.?[ \t\r\n]+)?"
+        r"(?:[A-Z](?:[A-Za-zÀ-ž’'.-]*[A-Za-zÀ-ž])?\.?[ \t\r\n]+){1,3}"
+        r"[A-Z][A-Za-zÀ-ž’'.-]+"
+        r"(?:[ \t,]*(?:C\.?B\.?E\.?|A\.?M\.?|Q\.?C\.?|R\.?F\.?D\.?|S\.?C\.?))*"
+    )
+    tribunal_roles = (
+        r"Deputy[ \t\r\n]+President|President|Presidential[ \t\r\n]+Member|"
+        r"Senior[ \t\r\n]+Member|Member"
+    )
+    role_before_name = re.compile(
+        rf"^[ \t]*TRIBUNAL[ \t]*:?[ \t\r\n]+(?P<value>"
+        rf"(?:{tribunal_roles})[ \t\r\n]+{person}"
+        rf"(?:[., \t\r\n\-–—]+\(?(?:{tribunal_roles})\)?)?"
+        rf")(?=[ \t\r\n]+Date\b|[ \t]*$)",
+        re.I | re.M,
+    )
+    role_after_name = re.compile(
+        rf"^[ \t]*TRIBUNAL[ \t]*:?[ \t\r\n]+(?P<value>{person}"
+        rf"[., \t\r\n\-–—]+\(?(?:{tribunal_roles})\)?)(?=[ \t\r\n]+Date\b|[ \t]*$)",
+        re.I | re.M,
+    )
+    for pattern in (role_before_name, role_after_name):
+        match = pattern.search(preamble)
+        if not match:
+            continue
+        value = " ".join(match["value"].split()).strip(" ,:\t")
+        if (
+            not value
+            or len(value) > 100
+            or len(value.split()) < 2
+            or not re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/&]+", value)
+            or re.search(
+                r"\b(?:registrar|clerk|secretary|tribunal|court|applicant|respondent|"
+                r"decision|hearing|date|not|above|none|unknown)\b",
+                value,
+                re.I,
+            )
+        ):
+            continue
+        pos = text.find(match["value"], match.start())
+        return _evidence(
+            text, pos, pos + len(match["value"]), value, "compact_tribunal_member_header"
+        )
+
+    # Older RRT/MRT records put a single member's name below an explicit
+    # member label, sometimes split across two cells ("Ms" / "Wendy Bodisson").
+    member_label = re.compile(
+        r"^[ \t]*(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBER)"
+        r"[ \t]*:?[ \t]*(?P<inline>[^\n]*)",
+        re.I | re.M,
+    )
+    member_stops = re.compile(
+        r"^[ \t]*(?:DATE\b|PLACE\b|DECISION\b|CATCHWORDS\b|REASONS\b|"
+        r"MRT FILE\b|RRT FILE\b|DIMA FILE\b|FILE NUMBER\b|COUNTRY OF REFERENCE\b|"
+        r"PRESIDING MEMBER\b|CONSTITUTED MEMBER\b|TRIBUNAL MEMBER\b)",
+        re.I,
+    )
+    excluded_name_words = {
+        "the", "hon", "honourable", "mr", "mrs", "ms", "dr", "prof", "professor",
+        "member", "senior", "presidential", "deputy", "president", "cbe", "am",
+        "qc", "rfd", "sc", "tribunal", "review", "registrar", "clerk", "secretary",
+    }
+    for match in member_label.finditer(preamble):
+        parts = [match["inline"].strip()] if match["inline"].strip() else []
+        cursor = match.end()
+        end = match.end()
+        nonempty_lines = 0
+        for raw_line in preamble[cursor:].splitlines(keepends=True):
+            line = raw_line.rstrip("\r\n").strip()
+            if not line:
+                cursor += len(raw_line)
+                continue
+            if nonempty_lines >= 5:
+                break
+            nonempty_lines += 1
+            if member_stops.match(line):
+                break
+            if re.search(r"\b(?:Date|Place|Decision|Catchwords|Reasons|MRT File|RRT File)\b", line, re.I):
+                line = re.split(
+                    r"\b(?:Date|Place|Decision|Catchwords|Reasons|MRT File|RRT File)\b",
+                    line, maxsplit=1, flags=re.I,
+                )[0].strip(" :\t")
+                if line:
+                    parts.append(line)
+                break
+            parts.append(line)
+            end = cursor + len(raw_line.rstrip("\r\n"))
+            cursor += len(raw_line)
+        value = " ".join(" ".join(parts).split()).strip(" ,:;")
+        name_tokens = [
+            token for token in re.findall(r"[A-Za-zÀ-ž]+", value)
+            if token.casefold() not in excluded_name_words
+        ]
+        if (
+            len(name_tokens) >= 2
+            and len(name_tokens) <= 5
+            and len(value) <= 100
+            and not re.search(r"\b(?:and|&)\b", value, re.I)
+            and re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/]+", value)
+        ):
+            return _evidence(text, match.start(), end, value, "published_author_label")
+
+    # A single Tribunal name without a role is still explicit when it sits
+    # between the printed TRIBUNAL label and the date field. Do not use this
+    # form for panels or institution names.
+    for match in re.finditer(r"^[ \t]*TRIBUNAL[ \t]*:?[ \t]*$", preamble, re.I | re.M):
+        parts = []
+        cursor = match.end()
+        end = cursor
+        has_date = False
+        for raw_line in preamble[cursor:].splitlines(keepends=True)[:4]:
+            line = raw_line.rstrip("\r\n").strip()
+            if not line:
+                cursor += len(raw_line)
+                continue
+            date_boundary = re.search(r"\bDate\b", line, re.I)
+            if date_boundary:
+                before_date = line[:date_boundary.start()].strip(" :\t")
+                if before_date:
+                    parts.append(before_date)
+                has_date = True
+                break
+            if re.match(r"^(?:Place|Decision|Catchwords|Reasons|MRT File|RRT File)\b", line, re.I):
+                break
+            parts.append(line)
+            end = cursor + len(raw_line.rstrip("\r\n"))
+            cursor += len(raw_line)
+        value = " ".join(" ".join(parts).split()).strip(" ,:;")
+        tokens = re.findall(r"[A-Za-zÀ-ž]+", value)
+        name_tokens = [token for token in tokens if token.casefold() not in excluded_name_words]
+        looks_like_name = bool(re.search(r"(?:[A-Z][a-zÀ-ž’'-]{1,}|[A-Z]{3,})$", value))
+        if (
+            has_date
+            and 2 <= len(name_tokens) <= 5
+            and looks_like_name
+            and len(value) <= 100
+            and not re.search(r"\b(?:and|&)\b", value, re.I)
+            and not re.search(r"\b(?:tribunal|court|registrar|secretary)\b", value, re.I)
+            and re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/]+", value)
+        ):
+            return _evidence(text, match.start(), end, value, "compact_tribunal_member_header")
+
+    # Federal Court and Magistrates Court transcripts vary the certificate
+    # layout: "I certify", "I\ncertify", "I certify\nthat", or a named
+    # associate who certifies. Search the full source because some publications
+    # append a long schedule after the certificate. Keep the decision-maker
+    # only when the certificate itself says the preceding reasons are a true
+    # copy and names the author or authors.
+    federal_certificate_start = re.compile(
+        r"^[ \t]*I\b.{0,180}?\bcertify\b[ \t\r\n]*that\b",
+        re.M | re.I | re.S,
+    )
+    for certificate in federal_certificate_start.finditer(text):
+        certificate_text = text[certificate.end():certificate.end() + 1800]
+        if not re.search(r"\btrue copy\b", certificate_text, re.I):
+            continue
+
+        certified_panel = re.search(
+            r"true copy of\s+(?:the\s+)?Reasons\s+for\s+Judgment\s+herein\s+"
+            r"of\s+the\s+Honourable\s+Justices\s+"
+            r"(?P<names>[A-Z][A-Za-zÀ-ž’'-]{1,40}"
+            r"(?:[\s,]+(?:and\s+)?[A-Z][A-Za-zÀ-ž’'-]{1,40}){1,4})"
+            r"(?=\s*\.?\s*(?:Associate\b|Dated?\b|Date\b))",
+            certificate_text, re.I | re.S,
+        )
+        if certified_panel:
+            names = " ".join(certified_panel["names"].split()).strip(" ,.")
+            name_tokens = re.findall(r"[A-Za-zÀ-ž’'-]+", names)
+            if (
+                2 <= len(name_tokens) <= 5
+                and re.search(r",|\band\b", names, re.I)
+                and re.fullmatch(r"[A-Za-zÀ-ž .,'’\-]+", names)
+            ):
+                start = certificate.end() + certified_panel.start("names")
+                end = certificate.end() + certified_panel.end("names")
+                return _evidence(
+                    text, start, end, f"Justices {names}",
+                    "own_judgment_certification",
+                )
+
+        certified_justice = re.search(
+            r"true copy of\s+(?:the\s+)?Reasons\s+for\s+Judgment(?:\s+herein)?\s+"
+            r"of\s+the\s+Honourable\s+Justice\s+"
+            r"(?P<name>[A-Z][A-Za-z’'-]{1,40})\b",
+            certificate_text, re.I | re.S,
+        )
+        if certified_justice and "\ufffd" not in certified_justice["name"]:
+            start = certificate.end() + certified_justice.start("name")
+            end = certificate.end() + certified_justice.end("name")
+            return _evidence(
+                text, start, end, f"Justice {certified_justice['name']}",
+                "own_judgment_certification",
+            )
+
+        certified = re.search(
+            r"reasons\s+for\s+(?:judgment|decision)[\s\S]{0,100}?\bof\s+"
+            r"(?:the\s+Honourable\s+(?:Justice|Judge)\s+)?"
+            r"(?P<name>[A-Z][A-Za-zÀ-ž’' .-]{1,65}?\s+(?:CFM|FM|JJ|J))\b",
+            certificate_text, re.I,
+        )
+        if certified:
+            value = " ".join(certified["name"].split())
+            if "\ufffd" not in value and re.fullmatch(
+                r"[A-Za-zÀ-ž’' .-]+\s+(?:CFM|FM|JJ|J)", value
+            ):
+                start = certificate.end() + certified.start("name")
+                end = certificate.end() + certified.end("name")
+                return _evidence(
+                    text, start, end, value, "own_judgment_certification",
+                )
+
+    # Some AAT publications identify the issuing member only in the official
+    # certification that the preceding reasons are a true copy. The wording
+    # varies: the name can follow "herein of", follow the reason title directly,
+    # or be split over several lines. Keep the full stated panel when the
+    # Tribunal header independently names one.
+    certificate_window_start = max(0, len(text) - 12000)
+    certificate_window = text[certificate_window_start:]
+    member_role = re.compile(
+        r"\b(?:Deputy[ \t\r\n]+President|Presidential[ \t\r\n]+Member|"
+        r"Senior[ \t\r\n]+Member|Member)\b",
+        re.I,
+    )
+    certified_copy = re.search(
+        r"^I certify that(?P<block>.{0,800}?true copy.{0,400})",
+        certificate_window,
+        re.M | re.I | re.S,
+    )
+    author_tail = ""
+    author_start = 0
+    if certified_copy:
+        block = certified_copy["block"]
+        cues = list(re.finditer(
+            r"\b(?:herein[ \t\r\n]+of|(?:written[ \t\r\n]+)?reasons?"
+            r"[ \t\r\n]+for[ \t\r\n]+(?:the[ \t\r\n]+)?"
+            r"(?:decision|judgment)(?:[ \t\r\n]+herein)?[ \t\r\n]+of|"
+            r"(?:decision|judgment)[ \t\r\n]+of)\b",
+            block,
+            re.I,
+        ))
+        if cues:
+            cue = cues[-1]
+            author_start = certified_copy.start("block") + cue.end()
+            author_tail = block[cue.end():]
+    else:
+        # A few older AATA certificates omit the phrase "true copy" but state
+        # directly that the preceding paragraphs are the decision of a named
+        # member. Require that exact certification form.
+        direct_certificate = re.search(
+            r"^I certify that.{0,300}?preceding(?:[ \t\r\n]+\d+)?"
+            r"[ \t\r\n]+(?:numbered[ \t\r\n]+)?paragraphs[ \t\r\n]+are"
+            r"[ \t\r\n]+of[ \t\r\n]+(?P<author>.{1,180})",
+            certificate_window,
+            re.M | re.I | re.S,
+        )
+        if direct_certificate:
+            author_start = direct_certificate.start("author")
+            author_tail = direct_certificate["author"]
+
+    if author_tail:
+        boundary = re.search(
+            r"^[ \t]*(?:Signed|Date(?:/s)?|Place|CATCHWORDS|REASONS|"
+            r"Associate|\[\s*Sgd|\(\s*Sgd|\.{3,}|_{3,})[^\n]*",
+            author_tail,
+            re.M | re.I,
+        )
+        if boundary:
+            author_tail = author_tail[:boundary.start()]
+        author_parts = []
+        for line in author_tail.splitlines()[:8]:
+            cleaned = line.strip()
+            if not cleaned or re.fullmatch(r"[. _-]+", cleaned):
+                continue
+            if re.search(r"\b(?:Associate|Applicant|Respondent|Minister|Secretary|Solicitor|Counsel|Registrar)\b", cleaned, re.I):
+                break
+            cleaned = re.sub(r"\.{2,}|_{2,}", " ", cleaned)
+            author_parts.append(cleaned)
+        raw_value = " ".join(author_parts)
+        value = " ".join(raw_value.split()).strip(" ,.;:()")
+        value = re.sub(r",?\s*\(\s*(?=(?:Deputy President|Senior Member|Member)\b)", ", ", value, flags=re.I)
+        person_tokens = re.findall(r"[A-Za-zÀ-ž]+", member_role.sub(" ", value))
+        excluded_tokens = {
+            "the", "hon", "honourable", "mr", "mrs", "ms", "dr", "prof", "professor",
+            "associate", "emeritus", "qc", "am", "sc", "rfd", "cbe", "of", "and",
+        }
+        person_tokens = [token for token in person_tokens if token.casefold() not in excluded_tokens]
+        rejected_author = re.search(
+            r"\b(?:applicant|respondent|minister|secretary|solicitor|counsel|registrar)\b",
+            value, re.I,
+        )
+        header_names = []
+        for header_value, header_roles in tribunal_headers:
+            if not header_roles:
+                continue
+            header_tokens = re.findall(r"[A-Za-zÀ-ž]+", member_role.sub(" ", header_value))
+            header_tokens = [token for token in header_tokens if token.casefold() not in excluded_tokens]
+            if len(header_tokens) >= 2:
+                header_names.append(header_tokens)
+        consistent_header = not any(
+            person_tokens and header_tokens[-1].casefold() != person_tokens[-1].casefold()
+            for header_tokens in header_names
+        )
+        multiple_persons = bool(re.search(r"\band\b|&", value, re.I)) or len(person_tokens) >= 4
+        roles = list(member_role.finditer(value))
+        if (
+            2 <= len(person_tokens) <= 5
+            and len(value) <= 180
+            and not rejected_author
+            and not (multiple_persons and not header_names)
+            and consistent_header
+            and re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/&;]+", value)
+        ):
+            start = certificate_window_start + author_start
+            return _evidence(
+                text, start, start + len(raw_value), value,
+                "own_judgment_certification",
+            )
+
+    # AAT decisions often place an explicit [Sgd] marker directly beside the
+    # signing member's name and role. Accept a single signer only when the
+    # printed Tribunal header does not show a multi-member panel.
+    has_multi_role_header = any(len(roles) >= 2 for _value, roles in tribunal_headers)
+    if not has_multi_role_header:
+        signatures = re.finditer(
+            r"\[\s*Sgd\.?(?P<bracket>[^\]]*)\]|\(\s*Sgd\.?(?P<paren>[^)]*)\)",
+            text,
+            re.I,
+        )
+        for signature in signatures:
+            tail = text[signature.end():signature.end() + 360]
+            parts = []
+            inline_name = signature["bracket"] or signature["paren"] or ""
+            if inline_name.strip():
+                parts.append(inline_name.strip(" .\t"))
+            nonempty_lines = 0
+            for line in tail.splitlines():
+                cleaned = line.strip()
+                if not cleaned:
+                    continue
+                if re.fullmatch(r"[. _-]+", cleaned):
+                    continue
+                if re.match(r"^(?:Date|Place|Catchwords|Reasons|Associate)\b", cleaned, re.I):
+                    break
+                if nonempty_lines >= 5:
+                    break
+                nonempty_lines += 1
+                cleaned = re.sub(r"\.{2,}|_{2,}", " ", cleaned)
+                parts.append(cleaned.strip(" .\t"))
+            value = " ".join(" ".join(parts).split()).strip(" ,:;")
+            words = [token for token in re.findall(r"[A-Za-zÀ-ž]+", value)
+                     if token.casefold() not in excluded_name_words]
+            roles = list(re.finditer(
+                r"\b(?:Deputy President|Presidential Member|Senior Member|Member)\b",
+                value, re.I,
+            ))
+            if (
+                len(roles) == 1
+                and 2 <= len(words) <= 5
+                and not re.search(r"\b(?:and|&)\b", value, re.I)
+                and re.fullmatch(r"[A-Za-zÀ-ž .,'’()\-/]+", value)
+            ):
+                end = signature.end() + len(tail.splitlines()[0]) if tail.splitlines() else signature.end()
+                return _evidence(text, signature.start(), end, value, "signed_tribunal_member")
     return None
 
 
@@ -182,6 +749,92 @@ def _outcome(text: str) -> Evidence | None:
         value = " ".join(block.split())
         return _evidence(text, match.end(), match.end() + len(block), value, "published_operative_table")
     return None
+
+
+def _structured_visa_refusal_subclass(text: str, assessment: Assessment) -> Evidence | None:
+    """Resolve a visa subclass only from a linked, structured tribunal refusal.
+
+    Some MRTA publications identify the refusal and visa applicant in a
+    decision-record block, then identify the applicable visa through a
+    numbered Schedule 2 clause in the reasons. Require all three links so a
+    legislative example or an old visa mentioned elsewhere cannot qualify.
+    """
+    if assessment.source_status != "checked" or not assessment.citation:
+        return None
+
+    section = re.search(
+        r"(?is)\bAPPLICATION FOR REVIEW\s*:(.{0,1800}?)\bJURISDICTION AND STANDING\b",
+        text,
+    )
+    if not section:
+        return None
+    review_record = section.group(1)
+    applicant = re.search(r"(?im)^\s*Visa Applicant Details:\s*(?P<name>[^\n]+)", review_record)
+    decision_type = re.search(r"(?im)^\s*Decision Type:\s*Visa refusal\s*$", review_record)
+    primary_decision_date = re.search(r"(?im)^\s*Date of Primary Decision:\s*\S.+$", review_record)
+    if not (applicant and applicant["name"].strip() and decision_type and primary_decision_date):
+        return None
+
+    application_date = re.search(
+        r"(?i)\bvisa applicant\b.{0,120}?\blodged\s+(?:her|his|their)\s+"
+        r"application\s+on\s+\d{1,2}\s+[A-Z][a-z]+\s+(?:19|20)\d{2}\b",
+        text,
+    )
+    decision = re.search(
+        r"(?ims)^[ \t]*DECISION:[ \t]*(.{0,800}?)(?=^[ \t]*CATCHWORDS\b)",
+        text,
+    )
+    if not application_date or not decision:
+        return None
+    decision_text = decision.group(1)
+    if not re.search(
+        r"(?i)\bvisa applicant\b.{0,180}\b(?:qualifying score|points test)\b",
+        decision_text,
+    ):
+        return None
+
+    criteria = re.search(r"(?is)\bLEGISLATION, VISA CRITERIA AND POLICY\b(.*)", text)
+    if not criteria:
+        return None
+    criteria_text = criteria.group(1)
+    clause_pattern = re.compile(
+        r"(?is)\bClause\s+(?P<number>\d{3})\.\d{1,3}\s+of\s+Part\s+"
+        r"(?P=number)\s+of\s+Schedule\s+2\s+to\s+the\s+Migration\s+Regulations\b"
+        r".{0,300}?\brequires?\s+that\s+the\s+applicant\b"
+    )
+    clauses = []
+    for match in clause_pattern.finditer(criteria_text):
+        context = criteria_text[match.start():min(len(criteria_text), match.end() + 500)]
+        if not re.search(r"(?i)\b(?:qualifying score|points test)\b", context):
+            continue
+        number = match["number"]
+        if not re.search(rf"(?i)\bSubclass\s+{number}\b", criteria_text):
+            continue
+        clauses.append((number, match))
+
+    numbers = {number for number, _ in clauses}
+    if len(numbers) != 1:
+        return None
+
+    number, clause = clauses[0]
+    start = criteria.start(1) + clause.start()
+    end = criteria.start(1) + clause.end()
+    value = f"Subclass {number} visa"
+    proof = _evidence(text, start, end, value, "structured_visa_refusal_subclass_clause")
+    assessment.candidates.append({
+        "value": value,
+        "quote": proof.quote,
+        "qualified": True,
+        "rank": 4,
+        "supporting_quotes": [
+            applicant.group(0).strip(),
+            decision_type.group(0).strip(),
+            primary_decision_date.group(0).strip(),
+            application_date.group(0).strip(),
+            decision.group(0).strip(),
+        ],
+    })
+    return proof
 
 
 def _visa(text: str, assessment: Assessment) -> Evidence | None:
@@ -303,6 +956,9 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                 results.append((4, proof))
                 break
     if not results:
+        structured_refusal = _structured_visa_refusal_subclass(text, assessment)
+        if structured_refusal:
+            return structured_refusal
         # Part 7 s 411(1)(a)-(b) also covers certain RRT decisions made before
         # 1 September 1994, before the protection-visa regime. Therefore the
         # publication year of this court case cannot stand in for the date of
@@ -461,7 +1117,13 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.source_status = "identity_unverified" if not first or not expected else "identity_conflict"
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
         return result
-    if re.search(r"(?:reasons?|judgment).{0,70}(?:not (?:published|available|for publication)|restricted)|not permitted to publish", body[:4000], re.I):
+    if re.search(
+        r"(?:reasons?|judgment).{0,70}(?:not (?:published|available|for publication)|restricted)|"
+        r"not permitted to publish|written direction.{0,180}withhold the publication of the "
+        r"Tribunal(?:['’]s|s)?\s+Statement of Reasons and Decision",
+        body[:4000],
+        re.I | re.S,
+    ):
         result.source_status = "restricted_publication"
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
         return result
@@ -481,15 +1143,88 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             catchwords = catchwords[:catchwords_end.start()]
     if re.search(r"\b(?:TRADE PRACTICES|TRADE MARKS|CONTRACT|COSTS)\b", head) and re.search(r"Spotwire.{0,180}Visa International", head, re.I | re.S):
         result.not_applicable["visa_type"] = "payment_card_litigation_not_immigration"
-    elif re.search(r"(?:Application for (?:resumption|the grant) of Australian citizenship|Application for resumption of citizenship|citizenship by conferral)", head, re.I):
-        result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
-    elif re.search(r"\bCATCHWORDS\s*(?:[-:–—]\s*)?(?:AUSTRALIAN\s+)?CITIZENSHIP\b", head, re.I):
+    elif (
+        re.search(r"\bCOMMERCIAL\s+LAW\b", head + catchwords, re.I)
+        and re.search(r"\bgeneric\s+internet\s+domain\s+name\b", head + catchwords, re.I)
+        and re.search(r"\b(?:acquisition\s+and\s+sale|misappropriation)\b", head + catchwords, re.I)
+    ):
+        result.not_applicable["visa_type"] = "non_immigration_commercial_dispute"
+    elif (
+        re.search(
+            r"\bfor review of an unspecified\s+visa\s+cancellation\b",
+            body[:7000],
+            re.I,
+        )
+        and re.search(r"\bno relevant decision had been made\b", body[:7000], re.I)
+        and re.search(
+            r"\bno\s+evidence\s+before\s+the\s+Tribunal\b[\s\S]{0,500}?"
+            r"\bdecision\s+to\s+cancel\s+a\s+visa\s+issued\s+to\b",
+            body[:7000],
+            re.I,
+        )
+        and re.search(
+            r"\bno primary decision\s+(?:(?:had|has|was)\s+been\s+)?made\s+to\s+cancel\s+any\s+visa\b",
+            body[:7000],
+            re.I,
+        )
+    ):
+        result.not_applicable["visa_type"] = "no_current_visa_decision"
+    elif (
+        (
+            re.search(
+                r"\bcitizenship\s+by\s+(?:descent|conferral|adoption)\b|"
+                r"\bapplication\s+for\s+(?:(?:the\s+)?(?:grant|resumption|conferral)\s+of\s+)?"
+                r"(?:Australian\s+)?citizenship\b|"
+                r"\b(?:refusal\s+of\s+(?:Australian\s+)?citizenship\s+application|"
+                r"decision\s+not\s+to\s+grant\s+(?:Australian\s+)?citizenship|"
+                r"application\s+to\s+resume\s+(?:Australian\s+)?citizenship)\b|"
+                r"\b(?:Australian\s+)?citizenship\s*[-–—:]\s*"
+                r"(?:application|appeal\s+from\s+(?:the\s+)?(?:Administrative Appeals Tribunal|AAT)|"
+                r"refusal|review|resumption|grant)\b",
+                catchwords,
+                re.I | re.S,
+            )
+            or re.search(
+                r"^[ \t]*(?:AUSTRALIAN\s+)?CITIZENSHIP\s*[-:–—]\s*"
+                r"(?:application|appeal|refusal|review|resumption|grant|by\s+(?:descent|conferral))\b",
+                head,
+                re.I | re.M,
+            )
+            or re.search(
+                r"\b(?:refus\w*|decision\s+to\s+(?:refuse|cancel)|"
+                r"decision\s+not\s+to\s+grant|cancellation\s+of\s+(?:the\s+)?approval)\b"
+                r".{0,180}\b(?:(?:the|his|her|their|applicant['’]s)\s+)?application\s+for\s+"
+                r"(?:Australian\s+)?citizenship\b",
+                body[:5000],
+                re.I | re.S,
+            )
+            or re.search(
+                r"\b(?:directed|ordered|orders?)\b.{0,180}\bregister\s+(?:the\s+)?applicant\s+"
+                r"as\s+an?\s+Australian\s+citizen\b",
+                body[:5000],
+                re.I | re.S,
+            )
+        )
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|"
+            r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+            r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+            r"visa\s+(?:was\s+)?cancelled|review\s+of\s+.{0,40}\bvisa\b)\b",
+            head + catchwords,
+            re.I,
+        )
+    ):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
     elif (
         catchwords
-        and re.search(r"\bjudicial\s+review\b", catchwords, re.I)
-        and re.search(r"\brequest for ministerial intervention\b", catchwords, re.I)
-        and re.search(r"\b(?:interlocutory\s+)?injunction\b", catchwords, re.I)
+        and re.search(
+            r"\b(?:request\s+for\s+ministerial\s+intervention|"
+            r"application\s+for\s+ministerial\s+intervention|"
+            r"ministerial\s+intervention\s+request)\b",
+            catchwords,
+            re.I,
+        )
         and not re.search(
             r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
             r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
@@ -498,7 +1233,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             re.I,
         )
     ):
-        result.not_applicable["visa_type"] = "ministerial_intervention_judicial_review_not_a_visa_review"
+        result.not_applicable["visa_type"] = "ministerial_intervention_not_a_visa_review"
     elif re.search(
         r"\bCATCHWORDS\b.{0,500}\b(?:application for approval of (?:the )?nomination|"
         r"approval of (?:the )?nomination|approval of nominated position|nomination refusal|"
@@ -508,6 +1243,37 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         re.I | re.S,
     ):
         result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
+    elif (
+        re.search(r"\bmigration\s+agents?\b", (title or "") + head + catchwords, re.I)
+        and re.search(
+            r"\b(?:registration|renewal|misconduct|discipline|suspension|cancellation)\b",
+            head + catchwords,
+            re.I,
+        )
+        and (
+            re.search(
+                r"\bmigrations?\s+agents?['’]?\s+registration\s+authority\b",
+                title or "",
+                re.I,
+            )
+            or re.search(
+                r"\bmigrations?\s+agents?['’]?\s+registration\s+authority\b"
+                r".{0,100}\b(?:applicant|respondent)\b",
+                body[:1800],
+                re.I | re.S,
+            )
+        )
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|"
+            r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+            r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+            r"visa\s+(?:was\s+)?cancelled|review\s+of\s+.{0,40}\bvisa\b)\b",
+            head + catchwords,
+            re.I,
+        )
+    ):
+        result.not_applicable["visa_type"] = "migration_agent_registration_not_a_personal_visa"
     elif (
         catchwords
         and re.search(r"\b(?:nomination|sponsor(?:ship)?)\b", catchwords, re.I)
