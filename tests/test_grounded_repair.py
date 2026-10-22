@@ -1393,6 +1393,81 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "matching source identity"):
             validate_approvals(self.root, [approval])
 
+    def test_manual_official_source_judge_review_applies_cited_court_index_evidence(self):
+        source_url = "https://search.judgments.fedcourt.gov.au/s/search.html?meta_MNC=%5B2024%5D+FCA+12"
+        supporting_url = "https://www.judgments.fedcourt.gov.au/judgments/Judgments/fca/single/2024/2024fca0012"
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {source_url}\n"
+            f"Supporting URL: {supporting_url}\n"
+            + "=" * 80 + "\n"
+            "Federal Court of Australia judgment search result\n"
+            "Judge Perram J (1)\n"
+            "Example v Minister [2024] FCA 12\n"
+            "1 January 2024 PERRAM J\n"
+            "The Reasons for Judgment are not published.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0]["judges"] = "Not specified"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET judges='Not specified' WHERE case_id='a'")
+            conn.commit()
+        self.save_exports()
+        approval = {
+            "case_id": "a", "field": "judges",
+            "expected_current": "Not specified",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Perram J",
+                "quote": "1 January 2024 PERRAM J",
+                "method": "manual_official_source_judge_review",
+                "source_url": source_url,
+                "supporting_url": supporting_url,
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The Federal Court index names Perram J; its linked official page confirms reasons are unpublished.",
+        }
+        result = apply_approved(self.root, self.root / "official-judge-apply", [approval])
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT judges FROM cases WHERE case_id='a'").fetchone()[0], "Perram J")
+
+    def test_manual_official_source_judge_review_rejects_unofficial_source_or_unquoted_value(self):
+        source_url = "https://www.fedcourt.gov.au/digital-law-library/judgments/search"
+        supporting_url = "https://www.judgments.fedcourt.gov.au/judgments/Judgments/fca/single/2024/2024fca0012"
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {source_url}\n"
+            f"Supporting URL: {supporting_url}\n"
+            + "=" * 80 + "\n"
+            "1 January 2024 PERRAM J\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        approval = {
+            "case_id": "a", "field": "judges",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Other J",
+                "quote": "1 January 2024 PERRAM J",
+                "method": "manual_official_source_judge_review",
+                "source_url": source_url,
+                "supporting_url": supporting_url,
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "Checked the source wording.",
+        }
+        with self.assertRaisesRegex(ValueError, "exact source wording"):
+            validate_approvals(self.root, [approval])
+        approval["evidence"]["value"] = "Perram J"
+        approval["evidence"]["source_url"] = "https://example.com/search"
+        with self.assertRaisesRegex(ValueError, "matching official source identity"):
+            validate_approvals(self.root, [approval])
+
     def test_expected_current_replaces_wrong_value_and_source_metadata_safely(self):
         source_text = (
             HEAD

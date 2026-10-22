@@ -18,6 +18,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .extraction.grounded import (
     CORE_FIELDS,
@@ -520,6 +521,10 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "visa_type"
                     and evidence.get("method") == "manual_source_bound_visa_review"
                 )
+                manual_judge_review = (
+                    field == "judges"
+                    and evidence.get("method") == "manual_official_source_judge_review"
+                )
                 if (field == "visa_type" and not proof
                         and assessment.source_status == "checked"
                         and not assessment.not_applicable.get(field)
@@ -558,6 +563,59 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         raise ValueError("Manual visa approval conflicts with not-applicable evidence")
                     if proof and proof.value != value:
                         raise ValueError("Manual visa approval conflicts with grounded evidence")
+                elif manual_judge_review:
+                    metadata = {}
+                    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                    header_text = (
+                        source_text[:separator.start()]
+                        if separator else "\n".join(source_text.splitlines()[:20])
+                    )
+                    for line in header_text.splitlines():
+                        match = re.match(
+                            r"^(Title|Citation|URL|Supporting URL):\s*(.*?)\s*$",
+                            line,
+                        )
+                        if match and match[2].strip():
+                            metadata.setdefault(match[1].casefold(), match[2].strip())
+                    quote = evidence.get("quote", "")
+                    value = evidence.get("value", "")
+                    source_url = evidence.get("source_url", "")
+                    supporting_url = evidence.get("supporting_url", "")
+                    official_hosts = (
+                        "fedcourt.gov.au",
+                    )
+                    def is_official_court_url(url: str) -> bool:
+                        parsed = urlparse(url)
+                        host = parsed.hostname or ""
+                        return (
+                            parsed.scheme == "https"
+                            and any(host == domain or host.endswith("." + domain)
+                                    for domain in official_hosts)
+                        )
+
+                    if (
+                        metadata.get("citation") != row["citation"]
+                        or row["citation"] not in metadata.get("title", "")
+                        or metadata.get("url") != source_url
+                        or metadata.get("supporting url") != supporting_url
+                        or not is_official_court_url(source_url)
+                        or not is_official_court_url(supporting_url)
+                    ):
+                        raise ValueError("Manual judge approval requires matching official source identity")
+                    body = source_text[separator.end():] if separator else ""
+                    normalized_quote = " ".join(quote.split())
+                    normalized_body = " ".join(body.split())
+                    normalized_value = " ".join(value.split()).casefold()
+                    if (
+                        not separator
+                        or not quote
+                        or normalized_quote not in normalized_body
+                        or not value
+                        or normalized_value not in normalized_quote.casefold()
+                    ):
+                        raise ValueError("Manual judge approval requires exact source wording")
+                    if proof and proof.value.casefold() != value.casefold():
+                        raise ValueError("Manual judge approval conflicts with grounded evidence")
                 else:
                     if not proof:
                         raise ValueError("Approval no longer matches grounded evidence")
