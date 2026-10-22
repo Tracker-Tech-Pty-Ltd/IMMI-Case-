@@ -204,6 +204,34 @@ class GroundedTests(unittest.TestCase):
         result = self.assess(HEAD + "CATCHWORDS: Review of visa refusal – subclass 457 – Fair Work evidence")
         self.assertNotIn("visa_type", result.not_applicable)
 
+    def test_intervention_injunction_case_does_not_use_historical_protection_visa(self):
+        body = (
+            "MZAPC v Minister for Immigration and Citizenship [2026] FedCFamC2G 1639\n"
+            "Catchwords: MIGRATION – Judicial Review – Request for Ministerial Intervention "
+            "under s 48B pending determination – Whether serious question to be tried – "
+            "Whether interlocutory injunction should be granted to restrain removal – "
+            "Application dismissed with costs\n"
+            "Reasons for Judgment\n"
+            "On 5 November 2014, the Refugee Review Tribunal affirmed the delegate’s "
+            "decision to refuse the Protection (Subclass 866) visa application.\n"
+        )
+        result = assess_case(body, citation="[2026] FedCFamC2G 1639")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "ministerial_intervention_judicial_review_not_a_visa_review",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_intervention_case_with_explicit_visa_refusal_subject_is_not_na(self):
+        body = (
+            HEAD
+            + "CATCHWORDS: MIGRATION – Judicial Review of visa refusal – Subclass 866 – "
+            "Request for Ministerial Intervention – injunction application\n"
+        )
+        result = self.assess(body)
+        self.assertNotIn("visa_type", result.not_applicable)
+        self.assertIn("visa_type", result.values)
+
     def test_current_visa_subclass_can_be_resolved_through_its_numbered_footnote(self):
         body = (
             HEAD
@@ -242,6 +270,61 @@ class GroundedTests(unittest.TestCase):
 
     def test_subclass_provision_without_current_application_link_is_held(self):
         result = self.assess(HEAD + "The relevant provision is subclass 442.22 of Schedule 2.\n")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_verified_rrt_decision_headnote_identifies_protection_visa(self):
+        body = (
+            "Example v Minister [2004] FCA 12\n"
+            "MIGRATION – Review of decision by Refugee Review Tribunal – application dismissed.\n"
+            "Migration Act 1958 (Cth), s 477(1)\n"
+            "REASONS FOR JUDGMENT\nThe applicant sought review of an RRT decision made on 12 March 2001.\n"
+        )
+        result = assess_case(body, citation="[2004] FCA 12")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertEqual(proof.rule, "rrt_protection_visa_review_under_migration_act_s411")
+        self.assertIn("Review of decision by Refugee Review Tribunal", proof.quote)
+        self.assertIn("decision made on 12 March 2001", result.candidates[-1]["qualification_quote"])
+
+    def test_rrt_reference_and_minister_intervention_do_not_identify_visa_type(self):
+        body = (
+            "Example v Minister [2004] FCA 12\n"
+            "MIGRATION – review of the Minister's decision not to substitute a more favourable decision for an RRT decision.\n"
+            "Migration Act 1958 (Cth), s 417\n"
+            "REASONS FOR JUDGMENT\nThe RRT decision was made on 12 March 2001. The applicant sought ministerial intervention.\n"
+        )
+        result = assess_case(body, citation="[2004] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_old_rrt_decision_is_not_inferred_as_protection_visa_from_court_year(self):
+        body = (
+            "Example v Minister [2005] FCA 12\n"
+            "MIGRATION – Review of decision by Refugee Review Tribunal – application dismissed.\n"
+            "Migration Act 1958 (Cth), s 477(1)\n"
+            "REASONS FOR JUDGMENT\nThe RRT decision was made on 12 March 1993.\n"
+        )
+        result = assess_case(body, citation="[2005] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_rrt_headnote_without_original_decision_date_is_held(self):
+        body = (
+            "Example v Minister [2004] FCA 12\n"
+            "MIGRATION – Review of decision by Refugee Review Tribunal – application dismissed.\n"
+            "Migration Act 1958 (Cth), s 477(1)\n"
+            "REASONS FOR JUDGMENT\nThe application concerns an RRT decision.\n"
+        )
+        result = assess_case(body, citation="[2004] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_earlier_rrt_decision_date_does_not_qualify_current_review(self):
+        body = (
+            "Example v Minister [2004] FCA 12\n"
+            "MIGRATION – Review of a decision of the Refugee Review Tribunal – application dismissed.\n"
+            "Migration Act 1958 (Cth), s 477(1)\n"
+            "REASONS FOR JUDGMENT\nThe applicant previously challenged an earlier decision by the Tribunal made on 12 March 2001.\n"
+            "The date of the RRT decision now under review is not stated.\n"
+        )
+        result = assess_case(body, citation="[2004] FCA 12")
         self.assertNotIn("visa_type", result.values)
 
     def test_application_visa_does_not_link_to_separate_decision_paragraph(self):
@@ -497,7 +580,7 @@ class WorkflowTests(unittest.TestCase):
                          json.dumps({"answers": {"select": {"choice": "Invented Judge", "confidence": 1}}}), "jev-test"))
             conn.commit()
         self.review(jev_cache=cache)
-        proposals = json.loads((self.root / "review/proposals.json").read_text())
+        proposals = json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
         self.assertEqual(next(x for x in proposals if x["field"] == "judges")["evidence"]["value"], "SMITH J")
         result = self.review("second")
         self.assertEqual(result["counts"]["source_bound_cache_fields"], 3)

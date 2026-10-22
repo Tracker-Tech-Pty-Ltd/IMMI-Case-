@@ -14,7 +14,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261022-v9"
+RULE_VERSION = "grounded-local-20261022-v14"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -303,6 +303,90 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                 results.append((4, proof))
                 break
     if not results:
+        # Part 7 s 411(1)(a)-(b) also covers certain RRT decisions made before
+        # 1 September 1994, before the protection-visa regime. Therefore the
+        # publication year of this court case cannot stand in for the date of
+        # the RRT decision. Infer Protection visa only when this verified
+        # case's migration headnote identifies an RRT decision as the subject
+        # AND the source states that decision was made/handed down/dated in
+        # 1995 or later. (Migration Act 1958 (Cth), historical s 411(1)(c)-(d):
+        # https://www.legislation.gov.au/C1958A00062/1999-07-22/1999-07-22/text/original/epub/OEBPS/document_2/document_2.html)
+        if assessment.reasons.get("visa_type") != "conflicting_current_visa_candidates":
+            source_citation = CITATION.search(text[:1800])
+            if (
+                source_citation
+                and canonical_citation(source_citation[0]) == assessment.citation
+            ):
+                header = text[source_citation.end():source_citation.end() + 4000]
+                header_end = re.search(
+                    r"^[ \t]*(?:Migration Act\b|Federal Court Rules\b|Federal Magistrates Court Rules\b|"
+                    r"LEGISLATION\b|CASES CITED\b|APPLICANT\b|FIRST APPLICANT\b|FILE NUMBER\b|"
+                    r"JUDGE\b|JUDGMENT OF\b|DATE OF\b|REPRESENTATION\b|ORDERS\b|BETWEEN\b|"
+                    r"REASONS FOR JUDGMENT\b)",
+                    header,
+                    re.I | re.M,
+                )
+                headnote = header[:header_end.start() if header_end else min(len(header), 1200)]
+                migration = re.search(r"\bMIGRATION\b", headnote, re.I)
+                if migration:
+                    headnote = headnote[migration.start():]
+                    rrt_decision = re.search(
+                        r"\b(?:RRT|Refugee Review Tribunal)\s+decision\b"
+                        r"|\bdecision\s+(?:of|by)\s+(?:the\s+)?(?:RRT|Refugee Review Tribunal)\b"
+                        r"|\b(?:review|judicial review|application for review|application to review|appeal from)\b"
+                        r"[\s\S]{0,160}?\b(?:RRT|Refugee Review Tribunal)\b"
+                        r"[\s\S]{0,80}?\bdecision\b",
+                        headnote,
+                        re.I,
+                    )
+                    ministerial_subject = re.search(
+                        r"(?i)\b(?:Ministerial intervention|"
+                        r"(?:review of )?(?:the )?Minister(?:'s)? decision[^.]{0,160}(?:substitut|intervention)|"
+                        r"decision of (?:the )?Minister[^.]{0,160}(?:substitut|intervention)|"
+                        r"Minister[^.]{0,100}not to (?:consider substituting|substitute|intervene))\b",
+                        headnote,
+                    )
+                    decision_date_pattern = re.compile(
+                        r"(?i)(?:\b(?:RRT|Refugee Review Tribunal|Tribunal)\b[^.\n]{0,45}\bdecision\b|"
+                        r"\bdecision\b[^.\n]{0,55}\b(?:of|by)\s+(?:the\s+)?"
+                        r"(?:RRT|Refugee Review Tribunal|Tribunal)\b)"
+                        r"[^.\n]{0,75}\b(?:made|handed\s+down|dated|delivered|given)\b"
+                        r"[^.\n]{0,55}\b((?:19|20)\d{2})\b",
+                    )
+                    rrt_decision_date = next((match for match in decision_date_pattern.finditer(text)
+                                              if int(match[1]) >= 1995
+                                              and not re.search(
+                                                  r"(?i)\b(?:earlier|previous|prior|initial|former|first)\s+"
+                                                  r"(?:(?:RRT|Refugee Review Tribunal|Tribunal)\s+)?decision\b",
+                                                  text[max(0, match.start() - 90):match.start() + 30],
+                                              )), None)
+                    if (
+                        rrt_decision
+                        and not ministerial_subject
+                        and rrt_decision_date
+                    ):
+                        start = source_citation.end() + migration.start() + rrt_decision.start()
+                        proof = _evidence(
+                            text,
+                            start,
+                            start + len(rrt_decision[0]),
+                            "Protection visa",
+                            "rrt_protection_visa_review_under_migration_act_s411",
+                        )
+                        assessment.candidates.append({
+                            "value": proof.value,
+                            "quote": proof.quote,
+                            "qualification_quote": _evidence(
+                                text,
+                                rrt_decision_date.start(),
+                                rrt_decision_date.end(),
+                                "RRT decision date",
+                                "rrt_decision_date",
+                            ).quote,
+                            "qualified": True,
+                            "rank": 4,
+                        })
+                        return proof
         return None
     best = max(rank for rank, _ in results)
     winners = {re.sub(r"\s+", " ", e.value).casefold(): e for rank, e in results if rank == best}
@@ -389,7 +473,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         catchwords_end = re.search(
             r"^[ \t]*(?:LEGISLATION|REPRESENTATION|APPEARANCES|REVIEW APPLICANT|"
             r"VISA APPLICANT|PRESIDING MEMBER|TRIBUNAL MEMBER|TRIBUNAL:|DECISION RECORD|"
-            r"STATEMENT OF DECISION|APPLICATION FOR REVIEW)\b",
+            r"STATEMENT OF DECISION|APPLICATION FOR REVIEW|REASONS FOR (?:JUDGMENT|DECISION))\b",
             catchwords,
             re.I | re.M,
         )
@@ -401,6 +485,20 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
     elif re.search(r"\bCATCHWORDS\s*(?:[-:–—]\s*)?(?:AUSTRALIAN\s+)?CITIZENSHIP\b", head, re.I):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
+    elif (
+        catchwords
+        and re.search(r"\bjudicial\s+review\b", catchwords, re.I)
+        and re.search(r"\brequest for ministerial intervention\b", catchwords, re.I)
+        and re.search(r"\b(?:interlocutory\s+)?injunction\b", catchwords, re.I)
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+            r"review\s+of\s+(?:the\s+)?visa)\b",
+            catchwords,
+            re.I,
+        )
+    ):
+        result.not_applicable["visa_type"] = "ministerial_intervention_judicial_review_not_a_visa_review"
     elif re.search(
         r"\bCATCHWORDS\b.{0,500}\b(?:application for approval of (?:the )?nomination|"
         r"approval of (?:the )?nomination|approval of nominated position|nomination refusal|"
