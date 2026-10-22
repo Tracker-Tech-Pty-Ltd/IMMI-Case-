@@ -527,19 +527,32 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     proof = _austlii_catchwords_visa_evidence(dict(row))
                 if manual_visa_review:
                     metadata = {}
-                    for line in source_text.splitlines()[:20]:
-                        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
-                        if match:
-                            metadata[match[1].casefold()] = match[2]
                     separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                    # AustLII pages repeat empty UI labels such as "Citation:" near
+                    # the top of the page body. Parse only the source header so an
+                    # empty body label cannot erase the verified citation above.
+                    header_text = (
+                        source_text[:separator.start()]
+                        if separator else "\n".join(source_text.splitlines()[:20])
+                    )
+                    for line in header_text.splitlines():
+                        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+                        if match and match[2].strip():
+                            metadata.setdefault(match[1].casefold(), match[2].strip())
                     quote = evidence.get("quote", "")
                     value = evidence.get("value", "")
                     if (metadata.get("citation") != row["citation"]
                             or metadata.get("url") != row["url"]
                             or row["citation"] not in metadata.get("title", "")):
                         raise ValueError("Manual visa approval requires matching source identity")
-                    if (not separator or not quote or quote not in source_text[separator.end():]
-                            or not value or value not in quote):
+                    body = source_text[separator.end():] if separator else ""
+                    normalized_quote = " ".join(quote.split())
+                    normalized_body = " ".join(body.split())
+                    normalized_value = " ".join(value.split())
+                    if (not separator or not quote
+                            or normalized_quote not in normalized_body
+                            or not value
+                            or normalized_value not in normalized_quote):
                         raise ValueError("Manual visa approval requires exact source wording")
                     if assessment.not_applicable.get(field):
                         raise ValueError("Manual visa approval conflicts with not-applicable evidence")

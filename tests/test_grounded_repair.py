@@ -1306,6 +1306,8 @@ class WorkflowTests(unittest.TestCase):
             "Citation: [2024] FCA 12\n"
             f"URL: {self.rows[0]['url']}\n"
             + "=" * 80 + "\n"
+            "Citation:\n"
+            "URL:\n"
             "The delegate's decision to refuse a Subclass 050 (Bridging E) visa was without effect.\n"
         )
         self.source.write_text(source_text, encoding="utf-8")
@@ -1329,6 +1331,35 @@ class WorkflowTests(unittest.TestCase):
         with closing(sqlite3.connect(self.data / "cases.db")) as conn:
             self.assertEqual(conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0],
                              "Subclass 050 (Bridging E) visa")
+
+    def test_manual_source_bound_visa_review_normalizes_source_line_wrap(self):
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            "The delegate's decision concerned the Special Category (Temporary) "
+            "(Class TY, Subclass\n444) visa.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.save_exports()
+        quote = "The delegate's decision concerned the Special Category (Temporary) (Class TY, Subclass\n444) visa."
+        value = "Special Category (Temporary) (Class TY, Subclass 444) visa"
+        approval = {
+            "case_id": "a", "field": "visa_type",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": value,
+                "quote": quote,
+                "method": "manual_source_bound_visa_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The exact source wording identifies the visa under review.",
+        }
+        result = apply_approved(self.root, self.root / "manual-visa-line-wrap", [approval])
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
 
     def test_manual_source_bound_visa_review_rejects_wrong_identity_or_unquoted_value(self):
         source_text = (
