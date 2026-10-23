@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v60"
+RULE_VERSION = "grounded-local-20261024-v61"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -2547,6 +2547,31 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             re.I,
         )
     )
+    deportation_order_review = bool(
+        not current_visa_decision_heading
+        and re.search(
+            r"\bs\.?\s*200\s+of\s+the\s+Migration\s+Act\b",
+            catchwords,
+            re.I,
+        )
+        and re.search(r"\bdeportation\s+order\b", body[:6000], re.I)
+        and re.search(
+            r"\b(?:applied\s+to\s+(?:the\s+)?(?:Tribunal|Court)|"
+            r"lodged\s+an?\s+application)\b.{0,160}?\breview\b.{0,120}?"
+            r"\bthis\s+decision\b",
+            body[:6000],
+            re.I | re.S,
+        )
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|"
+            r"cancellation\s+of\s+(?:the\s+)?visa|"
+            r"decision\s+to\s+cancel\s+(?:the\s+)?visa|"
+            r"cancel(?:led|ed)\s+(?:the\s+)?visa)\b",
+            catchwords + "\n" + body[:3500],
+            re.I,
+        )
+    )
     citizenship_act_review = bool(
         re.search(r"\bAustralian Citizenship Act\s+(?:19|20)\d{2}\b", catchwords, re.I)
         and re.search(
@@ -2711,6 +2736,8 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         )
     ):
         result.not_applicable["visa_type"] = "no_current_visa_decision"
+    elif deportation_order_review:
+        result.not_applicable["visa_type"] = "deportation_order_review_not_a_visa_decision"
     elif (
         (
             citizenship_subject_heading

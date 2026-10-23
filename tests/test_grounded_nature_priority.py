@@ -58,3 +58,43 @@ DECISION: The application for review of the Standard Business Sponsorship refusa
 
     assert "visa_type" not in result.values
     assert result.not_applicable["visa_type"] == "sponsorship_review_has_no_personal_visa_applicant"
+
+
+def test_deportation_order_review_is_not_a_personal_visa_decision():
+    source = """Gupta and Minister for Immigration [2003] AATA 1298
+[2003] AATA 1298
+CATCHWORDS
+Immigration - Deportation order - s 200 of the Migration Act 1958 should not be exercised to deport the Applicant.
+REASONS FOR DECISION
+On 17 December 1999, a Deportation Order was made in respect of the Applicant.
+The Applicant lodged an application for a review of this decision by the Tribunal.
+The decision under review was whether the Applicant should be deported.
+"""
+
+    result = assess_case(
+        source,
+        citation="[2003] AATA 1298",
+        title="Gupta and Minister for Immigration",
+    )
+
+    assert "visa_type" not in result.values
+    assert result.not_applicable["visa_type"] == "deportation_order_review_not_a_visa_decision"
+
+
+def test_deportation_rule_does_not_override_current_visa_cancellation_review():
+    source = """Applicant v Minister for Immigration [2003] AATA 1298
+[2003] AATA 1298
+CATCHWORDS
+Visa cancellation - deportation order - s 200 of the Migration Act 1958.
+REASONS FOR DECISION
+The decision under review is the delegate's decision to cancel the Applicant's visa.
+The Applicant applied to the Tribunal for review of this decision.
+"""
+
+    result = assess_case(
+        source,
+        citation="[2003] AATA 1298",
+        title="Applicant v Minister for Immigration",
+    )
+
+    assert result.not_applicable.get("visa_type") != "deportation_order_review_not_a_visa_decision"
