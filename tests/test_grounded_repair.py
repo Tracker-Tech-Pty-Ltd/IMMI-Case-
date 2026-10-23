@@ -897,6 +897,55 @@ class GroundedTests(unittest.TestCase):
         )
         self.assertNotIn("visa_type", result.not_applicable)
 
+    def test_named_personal_visa_refusal_resolves_sponsorship_na(self):
+        categories = (
+            "Regional Employer Nomination (Permanent) (Class RN) visa",
+            "Regional Employer Nomination (Permanent) visa",
+            "Employer Nomination (Residence) (Class BW) visa",
+            "Child (Migrant) (Class AH) visas",
+            "Temporary Business Entry (Class UC) (Temporary Work) (Skilled) (Subclass 457) visa",
+        )
+        for category in categories:
+            with self.subTest(category=category):
+                body = (
+                    "Example v Minister [2024] FCA 1234\n"
+                    "CATCHWORDS: MIGRATION – employer nomination review\n"
+                    "REASONS FOR JUDGMENT\n"
+                    f"The delegate refused to grant the applicant a {category}.\n"
+                )
+                result = assess_case(
+                    body,
+                    citation="[2024] FCA 1234",
+                    title="Example v Minister",
+                )
+                expected = (
+                    "Subclass 457 visa"
+                    if "Subclass 457" in category
+                    else category.replace(" visas", " visa")
+                )
+                self.assertEqual(result.values["visa_type"].value, expected)
+                self.assertIn("refused to grant the applicant", result.values["visa_type"].quote)
+                self.assertNotIn("visa_type", result.not_applicable)
+
+        current_review = (
+            "Example v Minister [2017] AATA 86\n"
+            "CATCHWORDS: MIGRATION – Regional Employer Nomination (Permanent) "
+            "(Class RN) visa – visa was refused\n"
+            "REASONS FOR DECISION\n"
+            "The Tribunal reviews the decision to refuse the applicant's "
+            "Regional Employer Nomination (Permanent) (Class RN) visa.\n"
+        )
+        result = assess_case(
+            current_review,
+            citation="[2017] AATA 86",
+            title="Bhardwaj and Minister (Migration)",
+        )
+        self.assertEqual(
+            result.values["visa_type"].value,
+            "Regional Employer Nomination (Permanent) (Class RN) visa",
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
     def test_nomination_visa_refusal_supports_wrapped_class_and_visa_s_forms(self):
         body = (
             "Patel v Minister [2024] FedCFamC2G 1017\n"
@@ -978,6 +1027,46 @@ class GroundedTests(unittest.TestCase):
         )
         self.assertNotIn("visa_type", result.values)
 
+    def test_business_sponsorship_and_nomination_reviews_do_not_borrow_457_evidence(self):
+        cases = (
+            (
+                "[2003] MRTA 5359",
+                "Le Rene Hair Design [2003] MRTA 5359\n"
+                "CATCHWORDS: Review of business sponsorship rejection – temporary business entry scheme\n"
+                "DECISION: The Tribunal affirms the decision, finding that the review applicant does not meet "
+                "the criteria for approval as a standard business sponsor.\n"
+                "STATEMENT OF DECISION AND REASONS\n"
+                "The employment of the holder of a Subclass 457 (Business (Long Stay)) visa would contribute "
+                "to the sponsor's business. A separate application about a related visa refusal was withdrawn.\n",
+            ),
+            (
+                "[2003] MRTA 6603",
+                "The Cafe Curry [2003] MRTA 6603\n"
+                "CATCHWORDS: Review of business sponsorship rejection – temporary business entry scheme\n"
+                "DECISION: The Tribunal affirms the decision, finding that the review applicant does not meet "
+                "the criteria for approval as a standard business sponsor.\n"
+                "STATEMENT OF DECISION AND REASONS\n"
+                "A separate application for review relates to visa refusals for the business's cooks. "
+                "They held UC 457 visas which expired before this sponsorship review.\n",
+            ),
+            (
+                "[2003] MRTA 2133",
+                "Gt Plastering [2003] MRTA 2133\n"
+                "CATCHWORDS: Review of business sponsorship rejection – temporary business entry scheme\n"
+                "DECISION: The Tribunal sets aside the refusal of approval as a standard business sponsor.\n"
+                "STATEMENT OF DECISION AND REASONS\n"
+                "A separate application for review concerns the refusal of a visa for the proposed employee, "
+                "Mr Lukin, the 457 visa applicant.\n",
+            ),
+        )
+        for citation, body in cases:
+            with self.subTest(citation=citation):
+                self.assertIsNone(
+                    _direct_personal_nomination_visa(document_text(body), citation)
+                )
+                result = assess_case(body, citation=citation, title=citation)
+                self.assertNotIn("visa_type", result.values)
+
     def test_costs_only_registrar_review_does_not_inherit_historical_visa(self):
         body = (
             "Qiao v Minister [2025] FedCFamC2G 84\n"
@@ -988,6 +1077,62 @@ class GroundedTests(unittest.TestCase):
         )
         self.assertIsNone(
             _direct_personal_nomination_visa(document_text(body), "Qiao v Minister")
+        )
+
+    def test_costs_only_judgment_does_not_inherit_underlying_visa(self):
+        body = (
+            "Qiao v Minister (No 3) [2025] FedCFamC2G 132\n"
+            "CATCHWORDS: MIGRATION – Costs judgment.\n"
+            "INTRODUCTION\n"
+            "This judgment is in response to a request for written reasons in respect of the costs orders.\n"
+            "In the substantive matter, the delegate refused the applicant a Regional Employer Nomination "
+            "(Permanent) (Class RN) visa.\n"
+        )
+        self.assertIsNone(
+            _direct_personal_nomination_visa(document_text(body), "Qiao v Minister (No 3)")
+        )
+
+    def test_section_499_direction_is_not_a_subclass_499_visa(self):
+        body = (
+            "Yalniz v Minister [2007] FCA 426\n"
+            "CATCHWORDS: MIGRATION – Visa cancellation on character grounds\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Minister cancelled the applicant's visa under s 501. The applicant challenges that decision.\n"
+            "The Minister's Direction under section 499 – Visa Refusal and Cancellation under the Migration Act applies.\n"
+        )
+        result = assess_case(body, citation="[2007] FCA 426", title="Yalniz v Minister")
+        self.assertNotIn("visa_type", result.values)
+        self.assertIsNone(
+            _direct_personal_nomination_visa(document_text(body), "Yalniz v Minister")
+        )
+
+    def test_sponsorship_appeal_does_not_inherit_historical_subclass_visa(self):
+        body = (
+            "Sood v Minister [2008] FCA 1797\n"
+            "REASONS FOR JUDGMENT\n"
+            "1 This is an appeal against a decision to refuse the appellant's application for "
+            "Standard Business Sponsorship.\n"
+            "PROCEDURAL HISTORY\n"
+            "2 The appellant arrived in Australia on a business (short stay) 456 visa.\n"
+        )
+        self.assertIsNone(
+            _direct_personal_nomination_visa(document_text(body), "Sood v Minister")
+        )
+        result = assess_case(body, citation="[2008] FCA 1797", title="Sood v Minister")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_citizenship_refusal_does_not_inherit_old_temporary_visa(self):
+        body = (
+            "Zou and Minister [2016] AATA 160\n"
+            "CATCHWORDS: PRACTICE AND PROCEDURE – review of a decision to refuse Australian citizenship\n"
+            "FACTUAL BACKGROUND\n"
+            "The applicant seeks an extension of time to review the decision to refuse to grant him "
+            "Australian citizenship. He first arrived in Australia on a temporary TU-573 visa.\n"
+        )
+        result = assess_case(body, citation="[2016] AATA 160", title="Zou and Minister")
+        self.assertNotIn("visa_type", result.values)
+        self.assertIsNone(
+            _direct_personal_nomination_visa(document_text(body), "Zou and Minister")
         )
 
     def test_nomination_subject_in_catchwords_marks_personal_visa_not_applicable(self):

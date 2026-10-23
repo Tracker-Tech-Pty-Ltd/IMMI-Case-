@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261023-v46"
+RULE_VERSION = "grounded-local-20261023-v52"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -1014,6 +1014,15 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         if catchwords_end:
             catchwords = catchwords[:catchwords_end.start()]
 
+    # A tribunal review expressly framed as a business sponsorship rejection
+    # concerns the employer's sponsorship approval, even when its reasons quote
+    # a worker's visa or mention a separate visa-refusal proceeding.
+    if re.search(
+        r"(?i)\breview of (?:the )?business sponsorship rejection\b",
+        catchwords,
+    ):
+        return None
+
     decision_record = re.search(
         r"(?is)\bDECISION RECORD\b(?P<block>.{0,1800})",
         text[:8000],
@@ -1320,6 +1329,31 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         )
         if following_reference:
             decision_end = decision_heading.start() + following_reference.start()
+    primary_issue = ""
+    if decision_heading:
+        issue_start = decision_heading.end()
+        primary_issue = text[issue_start:decision_end]
+        background_start = re.search(
+            r"(?im)^[ \t]*(?:PROCEDURAL HISTORY|FACTUAL BACKGROUND|BACKGROUND)\b",
+            primary_issue,
+        )
+        if background_start:
+            primary_issue = primary_issue[:background_start.start()]
+        primary_issue = primary_issue[:2600]
+    primary_decision_summary = catchwords + "\n" + primary_issue
+    sponsorship_or_nomination_review_in_primary = bool(re.search(
+        r"(?i)\b(?:business\s+sponsorship|business\s+sponsor|"
+        r"review of (?:the )?nomination|application for approval of (?:the )?nomination|"
+        r"nomination application|approved as a standard business sponsor)\b",
+        primary_decision_summary,
+    ))
+    visa_disposition_in_primary_issue = bool(re.search(
+        r"(?is)(?:\b(?:refus\w*|not\s+to\s+grant|not\s+granted|cancel\w*|revok\w*)\b"
+        r".{0,180}\b(?:sub[- ]?class\s+\d{2,3}\s*)?visa\b|"
+        r"\b(?:sub[- ]?class\s+\d{2,3}\s*)?visa\b"
+        r".{0,180}\b(?:refus\w*|not\s+granted|cancel\w*|revok\w*)\b)",
+        primary_decision_summary,
+    ))
     catchwords_end = catchwords_start + len(catchwords)
     source_citations = list(CITATION.finditer(text))
     corporate_nomination = bool(
@@ -1335,6 +1369,8 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         text[:16000],
     ))
     for match in direct_numbered_visa.finditer(text):
+        if sponsorship_or_nomination_review_in_primary and not visa_disposition_in_primary_issue:
+            continue
         if any(
             span.start() <= match.start() < span.end()
             and re.search(r"(?i)\bvisa\b", span[0])
@@ -1712,11 +1748,18 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
     catchwords_match = re.search(r"(?i)\bCATCHWORDS?\b\s*:?", source[:9000])
     catchwords = source[catchwords_match.end():catchwords_match.end() + 2600] if catchwords_match else ""
     catchwords_end = re.search(
-        r"(?im)^[ \t]*(?:LEGISLATION|CASES CITED|REPRESENTATION|SOLICITORS|ORDERS?)\b",
+        r"(?im)^[ \t]*(?:LEGISLATION|CASES CITED|REPRESENTATION|SOLICITORS|ORDERS?|"
+        r"REASONS FOR (?:JUDGMENT|DECISION)|PROCEDURAL HISTORY|FACTUAL BACKGROUND|"
+        r"BACKGROUND|INTRODUCTION|DECISION RECORD|STATEMENT OF DECISION AND REASONS)\b",
         catchwords,
     )
     if catchwords_end:
         catchwords = catchwords[:catchwords_end.start()]
+    if re.search(
+        r"(?i)\breview of (?:the )?business sponsorship rejection\b",
+        catchwords,
+    ):
+        return None
     operative_decision = ""
     decision_label = re.search(
         r"(?im)^[ \t]*(?:DECISION|ORDERS?)\s*:\s*",
@@ -1764,26 +1807,68 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         catchwords,
     ):
         return None
+    costs_only_judgment = bool(
+        re.search(r"(?i)\bcosts(?:-only)? judgment\b", catchwords)
+        or re.search(
+            r"(?is)\bthis judgment is in response to a request\b"
+            r".{0,320}\b(?:written )?reasons?\b.{0,240}\bcosts? orders?\b",
+            source[:9000],
+        )
+    )
+    if costs_only_judgment:
+        return None
+    reasons_heading = re.search(
+        r"(?im)^[^\n]{0,240}?\b(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"STATEMENT OF DECISION AND REASONS|DECISION RECORD)\b",
+        source[:9000],
+    )
+    primary_issue = ""
+    if reasons_heading:
+        primary_issue = source[reasons_heading.end():]
+        background_start = re.search(
+            r"(?im)^[ \t]*(?:PROCEDURAL HISTORY|FACTUAL BACKGROUND|BACKGROUND)\b",
+            primary_issue,
+        )
+        if background_start:
+            primary_issue = primary_issue[:background_start.start()]
+        primary_issue = primary_issue[:2600]
+    sponsorship_refusal = bool(re.search(
+        r"(?is)\b(?:refus\w*|reject\w*)\b.{0,240}\bstandard\s+business\s+sponsorship\b",
+        primary_issue,
+    ))
+    summary_for_disposition = headnote + "\n" + primary_issue
     nomination_only_headnote = bool(re.search(
         r"(?i)\b(?:application for approval of (?:the )?nomination|"
-        r"review of business sponsorship rejection|nomination refusal)\b",
+        r"review of business sponsorship rejection|nomination refusal|"
+        r"standard business sponsorship)\b",
         headnote,
-    ))
+    ) or sponsorship_refusal)
     explicit_visa_disposition_headnote = bool(re.search(
         r"(?is)\bvisa\s+refusal\b|"
         r"\b(?:refus\w*\s+to\s+grant|not\s+to\s+grant|"
         r"decision\s+not\s+to\s+grant|decision\s+to\s+refuse\s+to\s+grant|"
         r"refusal\s+of\s+(?:the\s+)?[\w ()-]{0,180})\b.{0,280}?\bvisa\b|"
-        r"\bvisa\b.{0,280}?\b(?:was\s+)?(?:refus\w*|not\s+granted)\b",
-        headnote,
+        r"\bvisa\b.{0,280}?\b(?:was\s+)?(?:refus\w*|not\s+granted|cancel\w*)\b|"
+        r"\b(?:cancel\w*|refus\w*)\b.{0,280}?\bvisa\b",
+        summary_for_disposition,
     ))
+    sponsorship_or_nomination_issue = bool(re.search(
+        r"(?i)\b(?:business\s+sponsorship|business\s+sponsor|"
+        r"review of (?:the )?nomination|application for approval of (?:the )?nomination|"
+        r"nomination application|approved as a standard business sponsor)\b",
+        summary_for_disposition,
+    ))
+    if sponsorship_or_nomination_issue and not explicit_visa_disposition_headnote:
+        return None
+    current_citizenship_refusal = bool(re.search(
+        r"(?is)\brefus\w*\s+to\s+grant\b.{0,220}\b(?:Australian\s+)?citizenship\b|"
+        r"\b(?:Australian\s+)?citizenship\b.{0,180}\bapplication\s+was\s+refus\w*\b",
+        source[:9000],
+    ))
+    if current_citizenship_refusal and not explicit_visa_disposition_headnote:
+        return None
     if nomination_only_headnote and not explicit_visa_disposition_headnote:
         return None
-    reasons_heading = re.search(
-        r"(?im)^[^\n]{0,240}?\b(?:REASONS FOR (?:JUDGMENT|DECISION)|"
-        r"STATEMENT OF DECISION AND REASONS|DECISION RECORD)\b",
-        source,
-    )
     if reasons_heading:
         references = re.search(
             r"(?im)^[ \t]*(?:CASES CITED|SECONDARY MATERIALS|OTHER AUTHORITIES|REFERENCES)\b",
@@ -1794,11 +1879,26 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
 
     citation_spans = list(CITATION.finditer(source))
     numbered_visas: list[tuple[re.Match[str], str]] = []
+    named_nomination_visa_pattern = re.compile(
+        r"(?i)\b(?:Regional\s+Employer\s+Nomination\s*\(Permanent\)|"
+        r"Employer\s+Nomination\s*\(Residence\)|"
+        r"Child\s*\(Migrant\)|Temporary\s+Business\s+Entry)"
+        r"(?:\s*\([^\n)]{1,80}\)){0,4}\s+visa(?:s|\(s\))?\b"
+    )
+    named_nomination_visas = [
+        match for match in named_nomination_visa_pattern.finditer(source)
+        if not any(span.start() <= match.start() < span.end() for span in citation_spans)
+    ]
     for match in _VISA.finditer(source):
         subclass = re.search(r"(?i)\b(?:sub[- ]?class|sublcass|class)\s+(\d{3})\b", match[0])
+        section_reference = re.search(
+            r"(?i)\b(?:s|section)\s*\.?\s*$",
+            source[max(0, match.start() - 40):match.start()],
+        )
         if (
             not subclass
             or subclass[1] == "501"
+            or section_reference
             or any(span.start() <= match.start() < span.end() for span in citation_spans)
         ):
             continue
@@ -1810,7 +1910,11 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         r"(?i)\b(?P<number>\d{3})\s*\)?\s+visa(?:s|\(s\))?(?=\W|$)"
     )
     for match in bare_numbered_visa.finditer(source):
-        if match["number"] == "501" or any(
+        section_reference = re.search(
+            r"(?i)\b(?:s|section)\s*\.?\s*$",
+            source[max(0, match.start() - 40):match.start()],
+        )
+        if match["number"] == "501" or section_reference or any(
             span.start() <= match.start() < span.end() for span in citation_spans
         ):
             continue
@@ -1821,7 +1925,7 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         ):
             continue
         numbered_visas.append((match, match["number"]))
-    if not numbered_visas:
+    if not numbered_visas and not named_nomination_visas:
         return None
 
     refusal = (
@@ -1864,6 +1968,36 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
 
     all_codes = {code for _, code in numbered_visas}
     for action in action_spans:
+        local_named_visas = [
+            match for match in named_nomination_visas
+            if action.start() - 500 <= match.start() <= action.end() + 500
+        ]
+        named_values = {
+            re.sub(
+                r"\)\s*(?=\()", ") ",
+                re.sub(r"(?i)\bvisas?$", "visa", " ".join(match[0].split())),
+            ).casefold()
+            for match in local_named_visas
+        }
+        if len(named_values) == 1:
+            visa_match = min(
+                local_named_visas,
+                key=lambda match: abs(match.start() - action.start()),
+            )
+            if abs(visa_match.start() - action.start()) <= 5000:
+                value = re.sub(
+                    r"(?i)\bvisas?$", "visa", " ".join(visa_match[0].split())
+                )
+                value = re.sub(r"\)\s*(?=\()", ") ", value)
+                quote_start = max(0, min(visa_match.start(), action.start()) - 120)
+                quote_end = min(len(text), max(visa_match.end(), action.end()) + 180)
+                return Evidence(
+                    value=value,
+                    quote=text[quote_start:quote_end],
+                    start=visa_match.start(),
+                    end=visa_match.end(),
+                    rule="direct_current_personal_visa_refusal",
+                )
         local_matches = [
             (match, code) for match, code in numbered_visas
             if action.start() - 500 <= match.start() <= action.end() + 500
@@ -2002,6 +2136,10 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         )
         and re.search(r"\bs(?:ection)?\s+\d+(?:\([^)]*\))*", catchwords, re.I)
     )
+    direct_citizenship_refusal = bool(re.search(
+        r"(?is)\brefus\w*\s+to\s+grant\b.{0,180}\b(?:Australian\s+)?citizenship\b",
+        body[:5000],
+    ))
     company_nomination_review = bool(
         re.search(r"\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L)\b", title, re.I)
         and (
@@ -2115,6 +2253,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         (
             citizenship_subject_heading
             or citizenship_act_review
+            or direct_citizenship_refusal
             or re.search(
                 r"\bcitizenship\s+by\s+(?:descent|conferral|adoption)\b|"
                 r"\bapplication\s+for\s+(?:(?:the\s+)?(?:grant|resumption|conferral)\s+of\s+)?"
@@ -2314,6 +2453,15 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             visa = None
     else:
         visa = None if visa_not_applicable else _visa(body, result)
+        if visa is None and not visa_not_applicable:
+            visa = _direct_personal_nomination_visa(body, title)
+            if visa:
+                result.candidates.append({
+                    "value": visa.value,
+                    "quote": visa.quote,
+                    "qualified": True,
+                    "rank": 4,
+                })
     for name, proof in [("judges", judge), ("outcome", outcome), ("visa_type", visa)]:
         if proof:
             result.values[name] = proof
