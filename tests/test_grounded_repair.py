@@ -14,8 +14,17 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from immi_case_downloader.csv_write_lock import CatalogLockedError, catalog_lock, csv_write_lock
-from immi_case_downloader.extraction.grounded import assess_case, document_text, verified_metadata
+from immi_case_downloader.extraction.grounded import (
+    _direct_personal_nomination_visa,
+    assess_case,
+    document_text,
+    verified_metadata,
+)
 from immi_case_downloader.repair_workflow import (
+    REASONS,
+    _LEGACY_REASON_CODE_ALIASES,
+    _normalize_reason_code,
+    _source_limitation_reason,
     _austlii_catchwords_visa_evidence,
     _austlii_catchwords_visa_not_applicable,
     apply_approved,
@@ -621,6 +630,128 @@ class GroundedTests(unittest.TestCase):
                     "citizenship_review_not_a_visa_application",
                 )
 
+    def test_citizenship_refusal_in_appeal_catchwords_ignores_current_visa_background(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION – application for extension of time and leave to appeal "
+            + "from judicial review of an AAT decision – where the Tribunal upheld the decision "
+            + "to refuse the applicant’s citizenship application\n"
+            + "The applicant currently holds a Resident Return (Subclass 155) visa."
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_citizenship_refusal_does_not_hide_a_separate_current_visa_cancellation(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION – appeal from refusal of citizenship application – "
+            + "review of visa cancellation"
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_judicial_review_under_australian_citizenship_act_marks_visa_not_applicable(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION – application for judicial review of a delegate – "
+            + "misapplied s 5(3)(b) of the Australian Citizenship Act 1948 (Cth) – "
+            + "application dismissed"
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_corporate_nomination_case_no3_is_not_the_nominee_visa_review(self):
+        title = "Bharaj Construction Pty Ltd v Minister for Immigration (No.3) [2019] FCCA 31"
+        body = (
+            "Bharaj Construction Pty Ltd v Minister for Immigration (No.3) [2019] FCCA 31\n"
+            + "CATCHWORDS: MIGRATION – application for review of Administrative Appeals Tribunal decision – "
+            + "whether the Tribunal failed to consider the applicant’s certification – application dismissed\n"
+            + "REASONS FOR JUDGMENT\n"
+            + "Bharaj Construction Pty Ltd filed an application in this Court seeking review of the decision "
+            + "of the Tribunal to refuse Bharaj’s application for approval of a nomination for a carpenter.\n"
+            + "A separate proceeding sought review of the refusal of an Employer Nomination visa to Mr Sagoo.\n"
+        )
+        result = assess_case(body, citation="[2019] FCCA 31", title=title)
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_nominee_visa_review_remains_relevant_when_company_is_related_party(self):
+        title = "Sagoo v Minister for Immigration (No.4) [2019] FCCA 32"
+        body = (
+            "Sagoo v Minister for Immigration (No.4) [2019] FCCA 32\n"
+            + "CATCHWORDS: MIGRATION – visa refusal – review of an Employer Nomination (Migrant) visa\n"
+            + "REASONS FOR JUDGMENT\n"
+            + "The applicant seeks review of the refusal of his Employer Nomination (Migrant) visa.\n"
+        )
+        result = assess_case(body, citation="[2019] FCCA 32", title=title)
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_corporate_aata_nomination_review_is_not_a_personal_visa_case(self):
+        title = "Empire Bay Service Station Pty Ltd (Migration) [2017] AATA 1447"
+        body = (
+            title + "\n"
+            + "REASONS FOR DECISION\n"
+            + "This is an application for review of a decision made by a delegate to reject the applicant's "
+            + "application for approval of the nomination of a position in Australia under r.5.19 of the "
+            + "Migration Regulations 1994.\n"
+        )
+        result = assess_case(body, citation="[2017] AATA 1447", title=title)
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_legacy_split_citizenship_heading_marks_visa_not_applicable(self):
+        result = self.assess(
+            HEAD
+            + "DECISION Tribunal Mr John Handley, Senior Member "
+            + "CITIZENSHIP Australia – application for citizenship by conferral"
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_legacy_mojibake_citizenship_catchwords_mark_visa_not_applicable(self):
+        for heading in (
+            "Senior Member CITIZENSHIP \ufffdC application by spouse of an Australian citizen",
+            "Senior Member CATCHWORDS \ufffdC CITIZENSHIP \ufffdC cancellation of citizenship approval",
+            "CATCHWORDS\n\ufffdC CITIZENSHIP\n\n\ufffdC whether applicant of good character",
+        ):
+            with self.subTest(heading=heading):
+                result = self.assess(HEAD + heading)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "citizenship_review_not_a_visa_application",
+                )
+
+    def test_current_visa_cancellation_in_citizenship_heading_stays_relevant(self):
+        result = self.assess(
+            HEAD + "CATCHWORDS – CITIZENSHIP – review of visa cancellation – subclass 866"
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_historical_visa_cancellation_does_not_block_citizenship_not_applicable(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: CITIZENSHIP – application for citizenship by conferral – residence test\n"
+            + "LEGISLATION: Australian Citizenship Act 2007\n"
+            + "The applicant's previous subclass 457 visa was cancelled before the citizenship application."
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
     def test_citizenship_application_without_catchwords_label_is_not_a_visa_review(self):
         result = self.assess(
             HEAD + "DECISION AND REASONS FOR DECISION\n"
@@ -745,6 +876,119 @@ class GroundedTests(unittest.TestCase):
             HEAD + "CATCHWORDS: MIGRATION – application for approval of nomination of position – Direct Entry"
         )
         self.assertEqual(result.not_applicable["visa_type"], "sponsorship_or_nomination_not_a_personal_visa")
+
+    def test_personal_visa_refusal_resolves_sponsorship_na_when_subclass_is_unique(self):
+        body = (
+            "Nawsabreen v Minister [2021] FCCA 83\n"
+            "CATCHWORDS: MIGRATION – Regional Employer Nomination visa – no approved nomination\n"
+            "REASONS FOR JUDGMENT\n"
+            "The first applicant applied for a Regional Employer Nomination (subclass 187) visa.\n"
+            + ("The Court records a procedural filing. " * 18)
+            + "\nThe applicant's delegate later refused the visa application because the required "
+            "nomination was not approved.\n"
+        )
+        result = assess_case(body, citation="[2021] FCCA 83", title="Nawsabreen v Minister")
+        self.assertEqual(result.values["visa_type"].value, "Subclass 187 visa")
+        proof = _direct_personal_nomination_visa(document_text(body), "Nawsabreen v Minister")
+        self.assertIsNotNone(proof)
+        self.assertEqual(
+            proof.rule,
+            "direct_current_personal_visa_refusal",
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_nomination_visa_refusal_supports_wrapped_class_and_visa_s_forms(self):
+        body = (
+            "Patel v Minister [2024] FedCFamC2G 1017\n"
+            "CATCHWORDS: MIGRATION – Registrar's decision – sponsor employer deregistered\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Tribunal affirmed the decision of a delegate to refuse to grant the applicants' "
+            "Employer Nomination Scheme (Temporary Residence Transition) (subclass 186) visa(s) "
+            "under s 65 of the Migration Act.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2024] FedCFamC2G 1017",
+            title="Patel v Minister",
+        )
+        self.assertEqual(result.values["visa_type"].value, "Subclass 186 visa")
+        self.assertIn("visa(s)", result.values["visa_type"].quote)
+
+    def test_sponsorship_refusal_with_conflicting_subclasses_stays_unresolved(self):
+        body = (
+            "Example v Minister [2024] FCA 12\n"
+            "CATCHWORDS: MIGRATION – employer nomination review\n"
+            "REASONS FOR JUDGMENT\n"
+            "The applicant applied for a Subclass 187 visa. A cited matter concerned a "
+            "Subclass 482 visa. The delegate refused the applicant's visa application.\n"
+        )
+        result = assess_case(body, citation="[2024] FCA 12", title="Example v Minister")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_personal_visa_fallback_keeps_corporate_sponsor_case_not_applicable(self):
+        body = (
+            "Pirallo P/L (Migration) [2019] AATA 1967\n"
+            "CATCHWORDS: MIGRATION – review of employer nomination approval\n"
+            "REASONS FOR DECISION\n"
+            "The applicant company seeks review of a nomination decision. Its employee's "
+            "457 visa was refused in an earlier matter.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2019] AATA 1967",
+            title="Pirallo P/L (Migration)",
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_business_sponsorship_review_does_not_inherit_employee_visa(self):
+        body = (
+            "Title: Tang, Betty [2001] MRTA 5132 (2 November 2001)\n"
+            "Citation: [2001] MRTA 5132\n"
+            "Court: MRTA\n"
+            "Date: 2 November 2001\n"
+            "URL: https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2001/5132.html\n"
+            + "=" * 80 + "\n\n"
+            "[2001] MRTA 5132\n\n"
+            "CATCHWORDS:\tBusiness sponsorship - training - new technology - ability\n"
+            "to meet financial undertakings\n\n"
+            "BUSINESS SPONSOR:\tHarbour Inn Chinese Restaurant\n\n"
+            "REVIEW APPLICANT: \tBetty TANG\n\n"
+            "TRIBUNAL:\tMigration Review Tribunal\n\n"
+            "DECISION:\tThe Tribunal affirms the decision to refuse to approve the\n"
+            "Business Sponsor as a standard business sponsor or as a pre-qualified\n"
+            "business sponsor.\n\n"
+            "STATEMENT OF DECISION AND REASONS\n"
+            "The criteria immediately relevant to this review are in Schedule 2, Part 457.\n"
+            "The employment of the holder of a Subclass 457 (Business (Long Stay)) visa would\n"
+            "contribute to the creation or maintenance of employment for Australian residents.\n"
+        )
+        self.assertIsNone(_direct_personal_nomination_visa(document_text(body), "Tang, Betty"))
+        result = assess_case(body, citation="[2001] MRTA 5132", title="Tang, Betty [2001] MRTA 5132")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_costs_only_registrar_review_does_not_inherit_historical_visa(self):
+        body = (
+            "Qiao v Minister [2025] FedCFamC2G 84\n"
+            "CATCHWORDS: Application for review of a Judicial Registrar's decision to set aside "
+            "an order as to costs refused\n"
+            "The substantive application challenged a decision to refuse the applicant a "
+            "Regional Employer Nomination (Subclass 187) visa.\n"
+        )
+        self.assertIsNone(
+            _direct_personal_nomination_visa(document_text(body), "Qiao v Minister")
+        )
 
     def test_nomination_subject_in_catchwords_marks_personal_visa_not_applicable(self):
         result = self.assess(HEAD + "CATCHWORDS: MIGRATION – nomination – Direct Entry stream")
@@ -888,6 +1132,174 @@ class GroundedTests(unittest.TestCase):
         self.assertIn("Review of decision by Refugee Review Tribunal", proof.quote)
         self.assertIn("decision made on 12 March 2001", result.candidates[-1]["qualification_quote"])
 
+    def test_rrt_jurisdictional_error_headnote_with_dated_review_identifies_protection_visa(self):
+        body = (
+            "MZYGC & Ors v Minister [2010] FMCA 230\n"
+            "MIGRATION – Alleged jurisdictional error by RRT in dealing with evidence of applicant's wife – "
+            "jurisdictional error not disclosed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "The applicants seek review of a decision of the Refugee Review Tribunal\n"
+            "(\"Tribunal\") made on 30 July 2009.\n"
+        )
+        result = assess_case(body, citation="[2010] FMCA 230")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertEqual(proof.rule, "rrt_protection_visa_review_under_migration_act_s411")
+        self.assertIn("jurisdictional error by RRT", proof.quote)
+        self.assertIn("made on 30 July 2009", result.candidates[-1]["qualification_quote"])
+
+    def test_dated_rrt_subject_in_opening_reasons_identifies_protection_visa(self):
+        body = (
+            "Applicant S233 of 2003 v Minister [2006] FCA 415\n"
+            "MIGRATION – Application dismissed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "On 13 December 2005, the applicant filed a notice of motion seeking an order that "
+            "the decision of the Refugee Review Tribunal made on 1 December 2003 be set aside.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 415")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertEqual(proof.rule, "rrt_protection_visa_review_under_migration_act_s411")
+        self.assertIn("decision of the Refugee Review Tribunal", proof.quote)
+        self.assertIn("made on 1 December 2003", result.candidates[-1]["qualification_quote"])
+
+    def test_dated_rrt_subject_without_migration_catchwords_identifies_protection_visa(self):
+        body = (
+            "Applicant S233 of 2003 v Minister [2006] FCA 415\n"
+            "REASONS FOR JUDGMENT\n"
+            "On 13 December 2005, the applicant filed a notice of motion seeking an order that "
+            "the decision of the Refugee Review Tribunal made on 1 December 2003 be set aside.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 415")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertEqual(proof.rule, "rrt_protection_visa_review_under_migration_act_s411")
+
+    def test_no_catchwords_rrt_link_does_not_bypass_section_48b_context(self):
+        body = (
+            "Example v Minister [2006] FCA 12\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application is for review of a decision of the Refugee Review Tribunal made on 1 May 2003. "
+            "The applicant also challenges the Minister's decision under s 48B.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_distant_rrt_date_qualifies_only_when_the_source_has_one_clear_decision(self):
+        body = (
+            "Example v Minister [2006] FCA 12\n"
+            "MIGRATION – Application dismissed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application seeks judicial review of a decision of the Refugee Review Tribunal.\n"
+            + ("The applicant gave evidence about the history of this proceeding.\n" * 12)
+            + "The decision of the Tribunal was made on 1 December 2003.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 12")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertIn("decision of the Refugee Review Tribunal", proof.quote)
+        self.assertIn("made on 1 December 2003", result.candidates[-1]["qualification_quote"])
+
+    def test_distant_rrt_date_is_held_when_the_case_has_multiple_decision_dates(self):
+        body = (
+            "Example v Minister [2006] FCA 12\n"
+            "MIGRATION – Application dismissed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application seeks judicial review of a decision of the Refugee Review Tribunal.\n"
+            + ("The applicant gave evidence about the history of this proceeding.\n" * 12)
+            + "A decision of the Tribunal was made on 1 December 2003.\n"
+            + "A second decision of the Tribunal was made on 4 February 2004.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_distant_rrt_date_for_a_different_applicant_is_held(self):
+        body = (
+            "Example v Minister [2006] FCA 12\n"
+            "MIGRATION – Application dismissed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application seeks judicial review of a decision of the Refugee Review Tribunal.\n"
+            + ("The applicant gave evidence about the history of this proceeding.\n" * 12)
+            + "A decision of the Refugee Review Tribunal dated 1 December 2003 appears to refer to a different applicant.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_distant_rrt_date_parser_uses_the_decision_year_not_a_later_court_year(self):
+        body = (
+            "Example v Minister [2006] FCA 12\n"
+            "MIGRATION – Application dismissed.\n"
+            "Migration Act 1958 (Cth)\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application seeks judicial review of an adverse decision of the Refugee Review Tribunal.\n"
+            + ("The applicant gave evidence about the history of this proceeding.\n" * 12)
+            + "The Tribunal's decision was delivered in December 2001 and it was not until January 2005 that the applicant approached the Court.\n"
+        )
+        result = assess_case(body, citation="[2006] FCA 12")
+        self.assertEqual(result.values["visa_type"].value, "Protection visa")
+        self.assertIn("December 2001", result.candidates[-1]["qualification_quote"])
+        self.assertNotIn("January 2005", result.candidates[-1]["qualification_quote"])
+
+    def test_minister_decision_with_an_rrt_history_is_not_an_rrt_review_target(self):
+        body = (
+            "Example v Minister [2006] FMCA 12\n"
+            "REASONS FOR JUDGMENT\n"
+            "This is an application for judicial review of a decision of the Minister in a refugee case "
+            "whereby the applicant has been before the Refugee Review Tribunal.\n"
+            + ("The applicant filed material about the history of this proceeding.\n" * 12)
+            + "The Refugee Review Tribunal decision was handed down on 1 December 2003.\n"
+        )
+        result = assess_case(body, citation="[2006] FMCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_body_rrt_inference_does_not_bypass_ambiguous_section_417_target(self):
+        body = (
+            "Example v Minister [2005] FMCA 12\n"
+            "MIGRATION – Application for orders nisi in respect of a decision of the Refugee Review Tribunal.\n"
+            "Migration Act 1958 (Cth), s.417\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application on its face purports to challenge the decision of the Minister, which is the "
+            "Ministerial decision under s.417. The notice of motion also seeks an order that the decision of "
+            "the Refugee Review Tribunal made on 11 December 2001 be set aside.\n"
+        )
+        result = assess_case(body, citation="[2005] FMCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_reviewable_s36_2c_decision_and_complementary_protection_identify_protection_visa(self):
+        body = (
+            "WSZB and Minister for Immigration and Border Protection (Migration) [2019] AATA 163\n"
+            "CATCHWORDS\nMIGRATION – serious non-political crime – decision under review affirmed\n"
+            "LEGISLATION\nMigration Act 1958 (Cth), s 36\n"
+            "REASONS FOR DECISION\n"
+            "The reviewable decision made by the Minister's delegate was that within the meaning of "
+            "s.36 (2C)(a)(ii) of the Migration Act 1958 (Cth) there are serious reasons for considering "
+            "that the applicant committed a serious non-political crime. If so, complementary protection "
+            "obligations under s.36(2)(aa) of the Act are not owed in relation to the applicant.\n"
+        )
+        result = assess_case(body, citation="[2019] AATA 163")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Protection visa")
+        self.assertEqual(proof.rule, "protection_visa_s36_reviewable_decision")
+        self.assertIn("reviewable decision", proof.quote)
+        self.assertIn("complementary protection obligations under s.36(2)(aa)",
+                      result.candidates[-1]["qualification_quote"])
+
+    def test_incidental_s36_citation_does_not_identify_protection_visa(self):
+        body = (
+            "Example v Minister [2019] FCA 12\n"
+            "CATCHWORDS\nMIGRATION – judicial review dismissed\n"
+            "REASONS FOR JUDGMENT\n"
+            "Section 36(2C)(a)(ii) is discussed in a cited authority. The current decision under review "
+            "is not identified.\n"
+        )
+        result = assess_case(body, citation="[2019] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
     def test_rrt_reference_and_minister_intervention_do_not_identify_visa_type(self):
         body = (
             "Example v Minister [2004] FCA 12\n"
@@ -896,6 +1308,19 @@ class GroundedTests(unittest.TestCase):
             "REASONS FOR JUDGMENT\nThe RRT decision was made on 12 March 2001. The applicant sought ministerial intervention.\n"
         )
         result = assess_case(body, citation="[2004] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_ambiguous_rrt_or_section_417_target_is_not_inferred_as_protection_visa(self):
+        body = (
+            "Example v Minister [2005] FMCA 12\n"
+            "MIGRATION – Application for orders nisi in respect of a decision of the Refugee Review Tribunal.\n"
+            "Migration Act 1958 (Cth), s.417\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application on its face purports to challenge the decision of the Minister, which is the "
+            "Ministerial decision under s.417. If the applicant seeks to again challenge the decision of the "
+            "RRT made on 11 December 2001, the application faces insuperable problems.\n"
+        )
+        result = assess_case(body, citation="[2005] FMCA 12")
         self.assertNotIn("visa_type", result.values)
 
     def test_old_rrt_decision_is_not_inferred_as_protection_visa_from_court_year(self):
@@ -927,6 +1352,167 @@ class GroundedTests(unittest.TestCase):
             "The date of the RRT decision now under review is not stated.\n"
         )
         result = assess_case(body, citation="[2004] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_background_rrt_decision_does_not_turn_costs_application_into_visa_case(self):
+        body = (
+            "Minister for Immigration v Example [2006] FMCA 390\n"
+            "REASONS FOR JUDGMENT\n"
+            "1. The respondent Minister seeks a costs order against the applicant's former solicitors "
+            "for costs thrown away by the conduct of the substantive proceeding.\n"
+            "2. The application concerns the conduct of the former solicitors.\n"
+            "Background\n"
+            "3. On 16 September 2004 the applicant filed a judicial review application relating to a "
+            "decision of the Refugee Review Tribunal made on 1 February 2000.\n"
+        )
+        result = assess_case(body, citation="[2006] FMCA 390")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "ancillary_costs_dispute_no_current_visa_review",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_current_rrt_review_still_qualifies_when_costs_are_incidental(self):
+        body = (
+            "Example v Minister [2006] FMCA 12\n"
+            "MIGRATION – Review of decision by Refugee Review Tribunal – application dismissed.\n"
+            "REASONS FOR JUDGMENT\n"
+            "This is an application for judicial review of the decision of the Refugee Review Tribunal "
+            "made on 12 March 2001. The application is dismissed with costs.\n"
+        )
+        result = assess_case(body, citation="[2006] FMCA 12")
+        self.assertEqual(result.values["visa_type"].value, "Protection visa")
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_bare_numeric_visa_name_is_captured_when_current_refusal_is_linked(self):
+        body = (
+            "Ved v Minister [2018] FCCA 2827\n"
+            "CATCHWORDS: MIGRATION – review of Administrative Appeals Tribunal decision – "
+            "jurisdictional error not established\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Applicant applied to the Minister's department for a 457 visa. The delegate "
+            "refused to grant the 457 visa because there was no approved nomination. The "
+            "Applicant sought review of that decision before the Tribunal.\n"
+        )
+        result = assess_case(body, citation="[2018] FCCA 2827")
+        self.assertEqual(result.values["visa_type"].value, "Subclass 457 visa")
+        self.assertEqual(
+            result.values["visa_type"].rule,
+            "direct_current_numbered_visa_decision",
+        )
+
+    def test_inline_reasons_heading_exposes_current_numbered_visa_decision(self):
+        body = (
+            "Ved v Minister [2018] FCCA 2827\n"
+            "CATCHWORDS: MIGRATION - Review of Administrative Appeals Tribunal decision\n"
+            "ADMINISTRATIVE APPEALS TRIBUNAL\n"
+            "Second Respondent REASONS FOR JUDGMENT (Ex tempore) "
+            "The Applicant applied for a 457 visa. The delegate refused to grant that "
+            "457 visa and the Tribunal affirmed the refusal.\n"
+        )
+        result = assess_case(body, citation="[2018] FCCA 2827")
+        self.assertEqual(result.values["visa_type"].value, "Subclass 457 visa")
+
+    def test_ceased_visa_mention_does_not_borrow_distant_appeal_action(self):
+        body = (
+            "Singh v Minister [2026] FCA 1449\n"
+            "CATCHWORDS: MIGRATION - application for leave to appeal - failure to prosecute\n"
+            "REASONS FOR JUDGMENT\n"
+            "The applicant filed an application for leave to appeal in this Court. "
+            "The proceeding concerns compliance with court directions and the applicant "
+            "did not file submissions. "
+            "The records show that the applicant's WE-050 visa has ceased, and that he "
+            "does not currently hold an Australian visa.\n"
+        )
+        result = assess_case(body, citation="[2026] FCA 1449")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_legacy_class_codes_are_bound_to_the_current_visa_decision(self):
+        examples = (
+            (
+                "[2007] AATA 12",
+                "Example v Minister [2007] AATA 12\n"
+                "CATCHWORDS: MIGRATION – visa cancellation – character test\n"
+                "REASONS FOR DECISION\nThe decision was to cancel the applicant's TY 444 visa.\n",
+                "Subclass 444 visa",
+            ),
+            (
+                "[2010] MRTA 12",
+                "Example v Minister [2010] MRTA 12\n"
+                "CATCHWORDS: MIGRATION – review of visa cancellation\n"
+                "STATEMENT OF DECISION AND REASONS\n"
+                "The applicant was granted a student TU-572 visa. The visa was automatically "
+                "cancelled and the applicant applied for review of that cancellation.\n",
+                "Subclass 572 visa",
+            ),
+            (
+                "[2013] FCCA 12",
+                "Minister v Example [2013] FCCA 12\n"
+                "CATCHWORDS: MIGRATION – review application by Minister\n"
+                "REASONS FOR JUDGMENT\nThe Tribunal upheld the review of the delegate's "
+                "decision not to grant the first respondent a subclause 802 visa.\n",
+                "Subclass 802 visa",
+            ),
+            (
+                "[2023] FedCFamC2G 12",
+                "Example v Minister [2023] FedCFamC2G 12\n"
+                "CATCHWORDS: MIGRATION – 485 visa – application for review – applicant seeks "
+                "review of the registrar's order\nREASONS FOR JUDGMENT\n",
+                "Subclass 485 visa",
+            ),
+        )
+        for citation, body, expected in examples:
+            with self.subTest(expected=expected):
+                result = assess_case(body, citation=citation)
+                self.assertEqual(result.values["visa_type"].value, expected)
+
+    def test_visa_code_in_a_citation_or_for_another_applicant_is_not_current_evidence(self):
+        cited_case = (
+            "Example v Minister [2011] FCA 12\n"
+            "CATCHWORDS: MIGRATION – application about publication procedure\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Court mentions [2005] AATA 798 Visa Cancellation Applicant and Minister "
+            "for Immigration as a cited case. No visa category is identified for this appeal.\n"
+        )
+        wrong_applicant = (
+            "Example v Minister [2001] AATA 519\n"
+            "CATCHWORDS: MIGRATION – visa review\n"
+            "REASONS FOR DECISION\nMr Chen applied for a sub-class 129 visa for his employment. "
+            "The present applicant is not named in that application.\n"
+        )
+        for body, citation in ((cited_case, "[2011] FCA 12"), (wrong_applicant, "[2001] AATA 519")):
+            with self.subTest(citation=citation):
+                result = assess_case(body, citation=citation)
+                self.assertNotIn("visa_type", result.values)
+
+    def test_nomination_only_review_does_not_fill_personal_visa_type(self):
+        body = (
+            "TLC Foods Pty Ltd v Minister [2016] AATA 3979\n"
+            "CATCHWORDS: MIGRATION – review of refusal of nomination application\n"
+            "DECISION RECORD\nThe Tribunal affirms the decision under review to refuse the nomination.\n"
+            "REASONS FOR DECISION\nThe applicant company sought approval of a nomination for an "
+            "employee who held a Subclass 457 visa.\n"
+        )
+        result = assess_case(body, citation="[2016] AATA 3979", title="TLC Foods Pty Ltd")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_costs_only_discontinuance_does_not_inherit_old_visa_type(self):
+        body = (
+            "Prevendido v Minister [2014] FCCA 215\n"
+            "CATCHWORDS: PRACTICE AND PROCEDURE – Costs – where applicant seeks to file "
+            "notice of discontinuance – where respondent claims costs\n"
+            "REASONS FOR JUDGMENT\nThe applicant had applied for a Skilled (Provisional) "
+            "(Class VC) visa in the earlier proceeding. The present application concerns costs.\n"
+        )
+        result = assess_case(body, citation="[2014] FCCA 215")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "ancillary_costs_dispute_no_current_visa_review",
+        )
         self.assertNotIn("visa_type", result.values)
 
     def test_application_visa_does_not_link_to_separate_decision_paragraph(self):
@@ -1000,6 +1586,45 @@ class WorkflowTests(unittest.TestCase):
     def review(self, name="review", **kwargs):
         return review_catalogue(self.root, self.root / name, ledger=self.ledger, **kwargs)
 
+    def test_legacy_reason_labels_normalize_to_stable_codes(self):
+        for label, code in _LEGACY_REASON_CODE_ALIASES.items():
+            with self.subTest(label=label[:48]):
+                self.assertIn(code, REASONS)
+                self.assertEqual(_normalize_reason_code(label), code)
+        self.assertEqual(
+            _normalize_reason_code(REASONS["sponsorship_or_nomination_not_a_personal_visa"]),
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertEqual(_normalize_reason_code("future_unknown_reason"), "future_unknown_reason")
+
+    def test_source_limit_reasons_require_verified_identity_and_page_shell(self):
+        row = {
+            "citation": "[2007] MRTA 729",
+            "title": "071235250 [2007] MRTA 729 (12 December 2007)",
+            "url": "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2007/729.html",
+        }
+        shell = (
+            f"Title: {row['title']}\nCitation: {row['citation']}\nCourt: MRTA\n"
+            f"URL: {row['url']}\n{'=' * 80}\n"
+            "Specific Year\nAny\n2015\n1970\nApply\n-->\n"
+            "Print (pretty)\nPrint (eco-friendly)\nRTF format (107 KB)\n"
+            "Signed PDF/A format\nLawCite records\nNoteUp references\n"
+            "Tweet this page\nFollow @AustLII on Twitter\n-->\n"
+        )
+        self.assertEqual(_source_limitation_reason(row, shell), "incomplete_publication")
+        self.assertEqual(
+            _source_limitation_reason(row, shell + "DECISION: The application is dismissed.\n"),
+            "",
+        )
+        wrong_identity = dict(row, citation="[2007] MRTA 730")
+        self.assertEqual(_source_limitation_reason(wrong_identity, shell), "")
+
+        restricted = (
+            "[2003] MRTA 140\nDIRECTION TO RESTRICT PUBLICATION OF INFORMATION\n"
+            "(a) the whole of decision due to best interests of the children and health condition of the child"
+        )
+        self.assertEqual(_source_limitation_reason({}, restricted), "restricted_publication")
+
     def approvals(self):
         self.review()
         result = json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
@@ -1016,13 +1641,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["new_provider_usd"], 0)
 
     def test_explicit_austlii_catchwords_are_reviewed_and_revalidated_before_apply(self):
+        catchwords = "MIGRATION - Temporary Business Entry (Class UC) visas - application dismissed"
         body = (
             HEAD
+            + "CATCHWORDS: " + catchwords + "\n"
             + "JUDGE: SMITH J\nORDERS:\n1. The application is dismissed.\n"
             + "REASONS FOR JUDGMENT\nThe case concerns the applicant's relationship.\n"
         )
         self.source.write_text(body, encoding="utf-8")
-        catchwords = "Review of visa refusal - Subclass 820 - Partner visa - genuine relationship"
         with closing(sqlite3.connect(self.data / "cases.db")) as conn:
             conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
@@ -1039,8 +1665,8 @@ class WorkflowTests(unittest.TestCase):
             if row["case_id"] == "a" and row["field"] == "visa_type"
         )
         self.assertEqual(visa["fact_status"], "candidate_review")
-        self.assertEqual(visa["evidence"]["value"], "Partner visa (subclass 820)")
-        self.assertIn("Subclass 820 - Partner visa", visa["evidence"]["quote"])
+        self.assertEqual(visa["evidence"]["value"], "Temporary Business Entry (Class UC) visa")
+        self.assertIn("Temporary Business Entry (Class UC) visas", visa["evidence"]["quote"])
         self.assertTrue(visa["evidence"]["rule"].startswith("austlii_catchwords_"))
 
         approvals = json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
@@ -1050,6 +1676,137 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
         self.assertEqual(result["verification"]["verified_cells_each_store"], 3)
         self.assertEqual(self.review("after-catchwords-apply")["missing_cells"], 0)
+
+    def test_sponsorship_na_with_direct_visa_refusal_can_be_reviewed_and_applied(self):
+        catchwords = (
+            "MIGRATION - Employer Nomination (Permanent) (Class EN) visa - nomination decision"
+        )
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            "URL: https://www.austlii.edu.au/au/cases/cth/FCA/2024/12.html\n"
+            + "=" * 50 + "\n"
+            + "Example v Minister [2024] FCA 12\n"
+            + "CATCHWORDS: " + catchwords + "\n"
+            + "JUDGE: SMITH J\nORDERS:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\n"
+            + "The Employer Nomination (Permanent) (Class EN) visa was refused "
+            + "because the nomination was not approved.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "UPDATE cases SET catchwords=?,source='AustLII' WHERE case_id='a'",
+                (catchwords,),
+            )
+            conn.commit()
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        prior = self.root / "prior-sponsorship-na.csv"
+        with prior.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["case_id", "field", "fact_status", "reason_code", "reason", "source_sha256"],
+            )
+            writer.writeheader()
+            writer.writerow({
+                "case_id": "a",
+                "field": "visa_type",
+                "fact_status": "not_applicable",
+                "reason_code": "sponsorship_or_nomination_not_a_personal_visa",
+                "reason": "Earlier review classified this as employer nomination only.",
+                "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            })
+
+        self.review(prior_status=prior)
+        proposal = next(
+            row for row in json.loads((self.root / "review/proposals.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(proposal["fact_status"], "candidate_review")
+        self.assertEqual(proposal["evidence"]["value"], "Employer Nomination (Permanent) (Class EN) visa")
+        proposal.update(reviewer="independent-test-review", review_note="Direct visa refusal in judgment body")
+
+        result = apply_approved(self.root, self.root / "sponsorship-visa-apply", [proposal])
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(
+                conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0],
+                "Employer Nomination (Permanent) (Class EN) visa",
+            )
+
+    def test_sponsorship_nomination_without_personal_visa_decision_stays_blocked(self):
+        catchwords = "MIGRATION - Employer Nomination Scheme - approval of employer nomination"
+        quote = "Employer Nomination (Permanent) (Class EN) visa"
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            "URL: https://www.austlii.edu.au/au/cases/cth/FCA/2024/12.html\n"
+            + "=" * 50 + "\n"
+            + "Example v Minister [2024] FCA 12\n"
+            + "CATCHWORDS: " + catchwords + "\n"
+            + "REASONS FOR JUDGMENT\n"
+            + "The employer's " + quote + " nomination was approved.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "UPDATE cases SET catchwords=?,source='AustLII' WHERE case_id='a'",
+                (catchwords,),
+            )
+            conn.commit()
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        prior = self.root / "prior-sponsorship-na-localized.csv"
+        with prior.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["case_id", "field", "fact_status", "reason_code", "reason", "source_sha256"],
+            )
+            writer.writeheader()
+            writer.writerow({
+                "case_id": "a",
+                "field": "visa_type",
+                "fact_status": "not_applicable",
+                "reason_code": REASONS["sponsorship_or_nomination_not_a_personal_visa"],
+                "reason": REASONS["sponsorship_or_nomination_not_a_personal_visa"],
+                "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            })
+
+        self.review(prior_status=prior)
+        visa = next(
+            row for row in json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(visa["fact_status"], "not_applicable")
+        self.assertIsNone(visa["evidence"])
+        self.assertEqual(
+            visa["reason_code"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        approval = {
+            "case_id": "a",
+            "field": "visa_type",
+            "value": quote,
+            "expected_current": "",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "method": "manual_source_bound_visa_review",
+                "value": quote,
+                "quote": "The employer's " + quote + " nomination was approved.",
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "not-applicable evidence"):
+            validate_approvals(self.root, [approval])
 
     def test_generic_or_non_primary_catchwords_cannot_fill_visa_type(self):
         self.assertIsNone(_austlii_catchwords_visa_evidence({
@@ -1067,6 +1824,40 @@ class WorkflowTests(unittest.TestCase):
 
     def test_explicit_austlii_catchword_visa_families(self):
         cases = (
+            ("IMMIGRATION – Visas – skilled graduate\nvisa – appeal dismissed", "Skilled Graduate visa"),
+            ("MIGRATION – Medical Treatment\nvisas – application dismissed", "Medical Treatment visa"),
+            ("MIGRATION – Temporary Business Entry\n(Class UC) visas – application dismissed", "Temporary Business Entry (Class UC) visa"),
+            ("MIGRATION – Safe Haven Enterprise\nvisas – costs", "Safe Haven Enterprise visa"),
+            ("MIGRATION – Skilled\nMigrant visa – appeal dismissed", "Skilled Migrant visa"),
+            ("MIGRATION – Bridging visa – application for interlocutory relief regarding detention", "Bridging visa"),
+            ("Review of visa refusal - Subclass 428 - religious worker", "Subclass 428 visa"),
+            ("Review of visa refusals - Subclass 151", "Subclass 151 visa"),
+            ("Visa refusal - subclass 457 - Australian business", "Subclass 457 visa"),
+            ("MIGRATION – Skilled (Provisional) (Class VC) visa – application out of time", "Skilled (Provisional) (Class VC) visa"),
+            ("MIGRATION – Skilled (Residence) (Class VB) visa – no jurisdiction", "Skilled (Residence) (Class VB) visa"),
+            ("MIGRATION – Student (Temporary) (Class TU) visa – summary dismissal", "Student (Temporary) (Class TU) visa"),
+            ("MIGRATION – Partner (Temporary) (Class UK) visa – procedural fairness", "Partner (Temporary) (Class UK) visa"),
+            ("MIGRATION – Medical Treatment (Visitor) (Class UB) visa – application dismissed", "Medical Treatment (Visitor) (Class UB) visa"),
+            ("MIGRATION – Business Skills (Residence) (Class DF) visa – review dismissed", "Business Skills (Residence) (Class DF) visa"),
+            ("MIGRATION – Business Skills (Residence) (Class VF) visa – no jurisdictional error", "Business Skills (Residence) (Class VF) visa"),
+            ("MIGRATION – Temporary Business Entry (Class UC) visas – application dismissed", "Temporary Business Entry (Class UC) visa"),
+            ("MIGRATION – Partner (Residence) (Class BS) visa – review out of time", "Partner (Residence) (Class BS) visa"),
+            ("MIGRATION – Return (Residence) (Class BB) visa – no jurisdiction", "Return (Residence) (Class BB) visa"),
+            ("MIGRATION – Employer Nomination (Residence) (Class BW) visa – application dismissed", "Employer Nomination (Residence) (Class BW) visa"),
+            ("MIGRATION – Business Skills (Residence) Visa – ownership interest", "Business Skills (Residence) visa"),
+            ("Migration – Business Skills (Provisional) visas – applicants outside the migration zone", "Business Skills (Provisional) visa"),
+            ("MIGRATION – Temporary Business Entry visa – decision of the Tribunal", "Temporary Business Entry visa"),
+            ("MIGRATION – Temporary Work (Skilled) visa – application withdrawn", "Temporary Work (Skilled) visa"),
+            ("MIGRATION – Safe Haven Enterprise visas – costs", "Safe Haven Enterprise visa"),
+            ("MIGRATION – Medical Treatment (Support Person) visa – extension application dismissed", "Medical Treatment (Support Person) visa"),
+            ("MIGRATION – refusal of medical treatment visas – application dismissed", "Medical Treatment visa"),
+            ("IMMIGRATION – Visas – skilled graduate visa – appeal dismissed", "Skilled Graduate visa"),
+            ("MIGRATION – Skilled migrant visa – English language test", "Skilled Migrant visa"),
+            ("MIGRATION – skilled independent visa – jurisdictional error", "Skilled Independent visa"),
+            ("MIGRATION – judicial review – refusal of a skilled residence visa", "Skilled (Residence) visa"),
+            ("MIGRATION – visa refusal – skilled-nominated visa", "Skilled Nominated visa"),
+            ("MIGRATION – applicant's son applied offshore for a carer's visa – visa refused", "Carer visa"),
+            ("Application for extension of time to appeal a decision regarding a protection visa", "Protection visa"),
             ("MIGRATION – Protection visa – credibility issue", "Protection visa"),
             ("Judicial review of a protection visa refusal", "Protection visa"),
             ("Cancellation of a tourist visa", "Tourist visa"),
@@ -1095,13 +1886,48 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIsNotNone(proof)
                 self.assertEqual(proof.value, expected)
 
+    def test_austlii_catchwords_with_multiple_visa_classes_remain_unresolved(self):
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": (
+                "MIGRATION – Prospective Marriage (Temporary) (Class TO) visa – "
+                "Partner (Migrant) (Class BC) – Partner (Provisional) (Class UF) – decision remitted"
+            ),
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": (
+                "MIGRATION – refusal of employment visa – observations on adverse consequences "
+                "of abuse of the class 457 visa program"
+            ),
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": (
+                "MIGRATION – Regional Employer Nomination (Permanent) (Class RN) visas – "
+                "whether nomination for the position to which the visa application related was approved"
+            ),
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_evidence({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": (
+                "MIGRATION – Regional Employer Nomination (Permanent) (Class RN) visa – "
+                "application for review of a judicial Registrar's decision to set aside an order as to costs refused"
+            ),
+        }))
+
     def test_austlii_protection_catchword_is_approved_against_source_and_stores(self):
+        catchwords = "MIGRATION – Protection visa – appeal against refusal"
         self.source.write_text(
-            HEAD + "JUDGE: SMITH J\nORDERS:\n1. The appeal is dismissed.\n"
+            HEAD + "CATCHWORDS: " + catchwords + "\n"
+            + "JUDGE: SMITH J\nORDERS:\n1. The appeal is dismissed.\n"
             "REASONS FOR JUDGMENT\nThe published reasons identify this case.\n",
             encoding="utf-8",
         )
-        catchwords = "MIGRATION – Protection visa – appeal against refusal"
         with closing(sqlite3.connect(self.data / "cases.db")) as conn:
             conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
@@ -1142,6 +1968,73 @@ class WorkflowTests(unittest.TestCase):
             "url": "https://casenote.au/cases/example",
             "catchwords": "MIGRATION – Employer Nomination Scheme – Tribunal jurisdiction",
         }))
+
+    def test_austlii_citizenship_heading_marks_visa_type_not_applicable(self):
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable({
+                "source": "AustLII",
+                "url": self.rows[0]["url"],
+                "title": "Applicant and Minister (Citizenship) [2024] AATA 1",
+                "catchwords": "CITIZENSHIP – good character – decision affirmed",
+            }),
+            "citizenship_matter_not_a_visa_decision",
+        )
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable({
+                "source": "AustLII",
+                "url": self.rows[0]["url"],
+                "title": "Applicant and Minister (Citizenship) [2024] AATA 1",
+                "catchwords": "CITIZENSHIP – false documents in support of a past visa application",
+            }),
+            "citizenship_matter_not_a_visa_decision",
+        )
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "title": "Applicant and Minister (Citizenship) [2024] AATA 1",
+            "catchwords": "CITIZENSHIP – review of visa cancellation – subclass 202",
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "title": "Applicant and Minister (Migration) [2024] FCA 1",
+            "catchwords": "CITIZENSHIP AND MIGRATION – visa review application",
+        }))
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "title": "A v B [2024] AATA 1",
+            "catchwords": "CITIZENSHIP",
+        }))
+
+    def test_austlii_detention_catchword_marks_visa_type_not_applicable(self):
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable({
+                "source": "AustLII",
+                "url": self.rows[0]["url"],
+                "catchwords": "MIGRATION – application for release from immigration detention pending deportation",
+            }),
+            "detention_proceeding_not_a_visa_decision",
+        )
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "catchwords": "MIGRATION – detention – review of visa cancellation – subclass 202",
+        }))
+        for catchwords in (
+            "MIGRATION – detention – Bridging visa – interlocutory relief",
+            "MIGRATION – detention – visa grant disputed",
+            "MIGRATION – removal – applicant's visa had been cancelled under s 501(3A)",
+            "MIGRATION – detention – visa status disputed",
+            "MIGRATION – deportation – subclass 866 application refused",
+            "MIGRATION – detention – s 501(2) character decision",
+        ):
+            with self.subTest(catchwords=catchwords):
+                self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "catchwords": catchwords,
+                }))
 
         self.source.write_text(
             HEAD + "JUDGE: SMITH J\nORDERS:\n1. The appeal is dismissed.\n"
@@ -1299,6 +2192,74 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
         self.assertEqual(self.review("after")["missing_cells"], 0)
         self.assertEqual(apply_approved(self.root, self.root / "noop", [])["applied"], 0)
+
+    def _case_nature_approval(self):
+        catchwords = "CITIZENSHIP – application for Australian citizenship by conferral – refusal on character grounds"
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            + "CATCHWORDS: " + catchwords + "\n"
+            + "LEGISLATION\nAustralian Citizenship Act 2007\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN case_nature TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "UPDATE cases SET case_nature='Other',catchwords=? WHERE case_id='a'",
+                (catchwords,),
+            )
+            conn.execute("UPDATE cases SET case_nature='Other' WHERE case_id='b'")
+            conn.commit()
+        for row in self.rows:
+            row["case_nature"] = "Other"
+            row["catchwords"] = catchwords if row["case_id"] == "a" else ""
+        self.save_exports()
+        return {
+            "case_id": "a",
+            "field": "case_nature",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "expected_current_by_store": {"database": "Other", "csv": "Other", "json": "Other"},
+            "evidence": {
+                "value": "Citizenship",
+                "quote": catchwords,
+                "method": "manual_source_bound_case_nature_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "Official catchwords and source identity checked.",
+        }
+
+    def test_source_bound_case_nature_correction_updates_all_stores(self):
+        result = apply_approved(
+            self.root,
+            self.root / "case-nature-apply",
+            [self._case_nature_approval()],
+        )
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT case_nature FROM cases WHERE case_id='a'").fetchone()[0], "Citizenship")
+        with (self.data / "immigration_cases.csv").open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(next(csv.DictReader(handle))["case_nature"], "Citizenship")
+        json_rows = json.loads((self.data / "immigration_cases.json").read_text(encoding="utf-8"))["cases"]
+        self.assertEqual(json_rows[0]["case_nature"], "Citizenship")
+        self.assertEqual(json_rows[1]["case_nature"], "Other")
+
+    def test_source_bound_case_nature_rejects_nonliteral_or_wrong_classification(self):
+        approval = self._case_nature_approval()
+        approval["evidence"]["quote"] = "not present in source"
+        with self.assertRaisesRegex(ValueError, "literal source quote"):
+            validate_approvals(self.root, [approval])
+        approval["evidence"]["quote"] = (
+            "CITIZENSHIP – application for Australian citizenship by conferral – refusal on character grounds"
+        )
+        approval["evidence"]["value"] = "Protection visa"
+        with self.assertRaisesRegex(ValueError, "source-bound classification"):
+            validate_approvals(self.root, [approval])
 
     def test_manual_source_bound_visa_review_applies_only_literal_identified_evidence(self):
         source_text = (

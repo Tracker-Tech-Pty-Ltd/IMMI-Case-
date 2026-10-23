@@ -70,7 +70,7 @@ def extract_regex(text: str, base: dict[str, Any] | None = None) -> dict[str, Fi
         "representative": representative,
         "visa_outcome_reason": extract_visa_outcome_reason(text) if text else "",
         "legal_test_applied": extract_legal_test(text) if text else "",
-        "case_nature": _case_nature(text, _text(base.get("catchwords"))),
+        "case_nature": _case_nature(text, _text(base.get("catchwords")), title),
         "legal_concepts": "",
     }
 
@@ -139,7 +139,10 @@ def _fill_representative_from_text(
     return is_represented, representative
 
 
-def _case_nature(text: str, catchwords: str) -> str:
+def _case_nature(text: str, catchwords: str, title: str = "") -> str:
+    if _has_explicit_citizenship_subject(title, catchwords, text):
+        return "Citizenship"
+
     search = f"{catchwords}\n{text[:2500]}".lower()
     if "protection visa" in search or "refugee" in search:
         return "Protection visa"
@@ -149,9 +152,210 @@ def _case_nature(text: str, catchwords: str) -> str:
         return "Partner visa"
     if "character" in search or "s 501" in search or "s.501" in search:
         return "Character"
-    if "citizenship" in search:
-        return "Citizenship"
     return ""
+
+
+def _has_explicit_citizenship_subject(title: str, catchwords: str, text: str) -> bool:
+    """Recognize citizenship decisions from a title or the source's subject heading.
+
+    AustLII pages may place the heading on the same line as a member's name,
+    split it across lines, or retain a damaged en dash as ``\uFFFD C``. Only
+    the official catchwords block or an explicit legacy tribunal heading is
+    considered; mentions in the reasons do not change the case subject.
+    """
+    def normalize_heading(value: str) -> str:
+        value = (value or "").replace("\uFFFD", "-").replace("\x96", "-").replace("\x97", "-")
+        # Some older AustLII text files decode an en dash as "\uFFFD C".
+        value = re.sub(r"[-–—][ \t]*C(?=\s)", "-", value)
+        return re.sub(r"\s+", " ", value).strip()
+
+    def clauses(value: str) -> list[str]:
+        heading = normalize_heading(value)
+        heading = re.sub(r"^catchwords\b\s*", "", heading, flags=re.IGNORECASE)
+        heading = re.sub(r"^(?:[-–—:][ \t]*(?:C(?=[ \t]|$)[ \t]*)?)+", "", heading)
+        return [part.strip() for part in re.split(r"\s*[-–—:]+\s*", heading) if part.strip()]
+
+    def is_citizenship_issue(value: str) -> bool:
+        clause = normalize_heading(value)
+        if not clause:
+            return False
+        clause = re.sub(
+            r"\bDepartment\s+of\s+Immigration\s+(?:and|&)\s+Citizenship\b|"
+            r"\b(?:Assistant\s+)?Minister\s+for\s+Citizenship\s+and\s+Multicultural\s+Affairs\b|"
+            r"\bMinister\s+of\s+Immigration\s+(?:and|&)\s+Citizenship\b|"
+            r"\b(?:Assistant\s+)?Minister\s+for\s+Immigration(?:\s*,\s*|\s+(?:and|&)\s+)Citizenship"
+            r"(?:,\s*Migrant\s+Services\s+and\s+Multicultural\s+Affairs|\s+and\s+Multicultural\s+Affairs)?\b",
+            " ",
+            clause,
+            flags=re.I,
+        )
+        if re.match(r"^(?:Australian\s+)?citizenship\s+(?:and|&)\s+(?:migration|immigration)\b", clause, re.I):
+            return False
+        if re.match(r"^(?:Australian\s+)?citizenship\b", clause, re.I):
+            remainder = re.sub(r"^(?:Australian\s+)?citizenship\b", "", clause, flags=re.I).strip()
+            if re.match(r"^(?:migration|immigration|visa)\b", remainder, re.I):
+                return False
+            return bool(remainder)
+        return bool(re.search(
+            r"^(?:application|refusal|refused|revocation|revoking|cancellation|cancelled|"
+            r"decision|eligibility|appeal|review|judicial review|certificate|register|registration|"
+            r"extension of time)\b.{0,180}\b(?:Australian\s+)?citizenship\b|"
+            r"^(?:whether|where)\b.{0,180}\b(?:application|grant|refusal|conferral|registration|"
+            r"revocation)\b.{0,60}\b(?:Australian\s+)?citizenship\b",
+            clause,
+            re.I,
+        ))
+
+    def has_citizenship_issue(value: str) -> bool:
+        parts = clauses(value)
+        for index, part in enumerate(parts[:5]):
+            if is_citizenship_issue(part):
+                return True
+            if normalize_heading(part).casefold() in {"citizenship", "australian citizenship"}:
+                if index + 1 < len(parts) and is_citizenship_issue(
+                    f"citizenship {parts[index + 1]}"
+                ):
+                    return True
+        return False
+
+    def legacy_split_heading(subject: str, continuation: str) -> bool:
+        heading = normalize_heading(f"{subject} {continuation}")
+        return bool(re.match(
+            r"^(?:Australian\s+)?citizenship\s+Australia\s*[-–—:]\s*"
+            r"(?:application|cancellation|refusal|revocation|eligibility|decision|grant)\b",
+            heading,
+            re.I,
+        ))
+
+    def has_current_visa_dispute(value: str) -> bool:
+        parts = clauses(value)
+        early_heading = " ".join(parts[:4])
+        # A refugee/protection heading is the primary case type even when the
+        # catchwords later discuss the applicant's citizenship or nationality.
+        if parts and re.match(r"^(?:refugee|protection)\b", parts[0], re.I):
+            if re.search(r"\bprotection\s+visa\b", early_heading, re.I):
+                return True
+        if (
+            len(parts) >= 3
+            and re.match(r"^migration\b", parts[0], re.I)
+            and re.match(r"^protection\b", parts[1], re.I)
+            and re.search(r"\b(?:subclass\s+\d+\s+)?visa\b", " ".join(parts[:3]), re.I)
+        ):
+            return True
+        if (
+            parts
+            and re.match(r"^(?:migration|immigration)\b", parts[0], re.I)
+            and re.search(r"\bapplication\s+for\s+(?:a\s+)?protection\s+visa\b", early_heading, re.I)
+        ):
+            return True
+
+        action = re.compile(
+            r"\b(?:visa\s+(?:refusal|refused|cancellation|cancelled|decision)|"
+            r"application\s+for\s+(?:a\s+)?visa\s+(?:refused|rejected)|"
+            r"refusing\s+to\s+grant\b.{0,120}\bvisa\b|"
+            r"(?:refusal|refused|cancellation|cancelling|cancelled|decision\s+to\s+"
+            r"(?:refuse|cancel)|review\s+of)\b.{0,100}\bvisa\b)",
+            re.I,
+        )
+        for match in action.finditer(early_heading):
+            prior_context = early_heading[max(0, match.start() - 60):match.start()]
+            if re.search(r"\b(?:previous|prior|past|historical|former)\s+(?:\w+\s+){0,3}$", prior_context, re.I):
+                continue
+            return True
+        # In a mixed judgment, an application expressly seeking review or
+        # revocation of a visa cancellation can appear after the citizenship
+        # issue. Do not treat a merely historical visa cancellation as current.
+        all_heading = " ".join(parts)
+        return bool(re.search(
+            r"\bapplication\b.{0,120}\b(?:revocation\s+of\s+(?:the\s+)?visa\s+cancellation|"
+            r"(?:review|judicial\s+review)\s+of\s+(?:the\s+)?visa\s+cancellation)\b",
+            all_heading,
+            re.I,
+        ))
+
+    def has_migration_subject_override(value: str) -> bool:
+        parts = clauses(value)
+        return bool(
+            parts
+            and re.match(
+                r"^(?:Australian\s+)?citizenship\s+(?:and|&)\s+(?:migration|immigration)\b",
+                parts[0],
+                re.I,
+            )
+            and len(parts) > 1
+            and re.match(r"^(?:migration|immigration|refugee|protection|visa)\b", parts[1], re.I)
+        )
+
+    source = (text or "")[:12000]
+    marker = re.search(r"\bcatchwords\b", source, re.IGNORECASE)
+    section = ""
+    if marker is not None:
+        section = source[marker.end() :]
+        end = re.search(
+            r"(?im)^[ \t]*(?:legislation|cases(?:\s+cited)?|secondary materials|orders?|reasons for decision)\b",
+            section,
+        )
+        if end:
+            section = section[: end.start()]
+
+    combined_heading = " ".join((catchwords or "", section or ""))
+    if (
+        has_current_visa_dispute(combined_heading)
+        or has_migration_subject_override(section)
+        or has_migration_subject_override(combined_heading)
+    ):
+        return False
+
+    if re.search(r"\((?:Australian\s+)?citizenship\)", title or "", re.IGNORECASE):
+        return True
+
+    if catchwords and has_citizenship_issue(catchwords):
+        return True
+
+    if marker is not None and has_citizenship_issue(section):
+        return True
+
+    # Some older AAT files put the subject on a member's signature line, or
+    # split "CITIZENSHIP / Australia – application ..." across two lines.
+    # Do not search the body for the word: only inspect the initial heading.
+    heading_end = re.search(
+        r"(?im)^[ \t]*(?:legislation|cases(?:\s+cited)?|secondary materials|orders?|"
+        r"reasons for (?:judgment|decision))\b",
+        source[:5000],
+    )
+    source_lines = source[:heading_end.start() if heading_end else 5000].splitlines()
+    for index, line in enumerate(source_lines):
+        member_heading = re.search(
+            r"\b(?:(?:senior|presiding|deputy|principal)\s+)?member\s+"
+            r"(?=(?:Australian\s+)?citizenship\b)",
+            line,
+            re.IGNORECASE,
+        )
+        member_subject = line[member_heading.end():] if member_heading else ""
+        if member_heading and re.fullmatch(r"(?:Australian\s+)?citizenship", normalize_heading(member_subject), re.I):
+            continuation = " ".join(
+                source_lines[next_index]
+                for next_index in range(index + 1, min(index + 5, len(source_lines)))
+                if source_lines[next_index].strip()
+            )
+            if not legacy_split_heading(member_subject, continuation):
+                member_subject = ""
+            else:
+                member_subject = f"{member_subject} {continuation}"
+        if member_heading and has_current_visa_dispute(member_subject):
+            continue
+        if member_heading and has_citizenship_issue(member_subject):
+            return True
+        cleaned_line = normalize_heading(line)
+        if re.fullmatch(r"(?:Australian\s+)?citizenship", cleaned_line, re.I):
+            continuation = " ".join(
+                source_lines[next_index]
+                for next_index in range(index + 1, min(index + 5, len(source_lines)))
+                if source_lines[next_index].strip()
+            )
+            if legacy_split_heading(line, continuation) and has_citizenship_issue(f"{line} {continuation}"):
+                return True
+    return False
 
 
 def _clean_label_tail(value: str) -> str:

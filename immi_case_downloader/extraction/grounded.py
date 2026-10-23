@@ -14,7 +14,9 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-RULE_VERSION = "grounded-local-20261023-v30"
+from .regex import _has_explicit_citizenship_subject
+
+RULE_VERSION = "grounded-local-20261023-v46"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -1053,6 +1055,42 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
             })
             return proof
 
+    # Migration Act s 36(2C)(a)(ii) is a protection-visa criterion. Some AAT
+    # decisions identify the reviewable decision by this exact paragraph but
+    # never repeat the words "protection visa". Require the linked s 36(2)(aa)
+    # complementary-protection finding as a second, nearby indicator so a
+    # bare statutory citation elsewhere in the reasons cannot qualify.
+    s36_reviewable_decision = re.search(
+        r"(?is)\b(?:the\s+)?(?:reviewable\s+decision|decision\s+under\s+review)\b"
+        r".{0,320}?\bs\.?\s*36\s*\(\s*2c\s*\)\s*\(\s*a\s*\)\s*\(\s*ii\s*\)",
+        text[:12000],
+    )
+    s36_complementary_protection = re.search(
+        r"(?is)\bcomplementary\s+protection\s+obligations\s+under\s+"
+        r"s\.?\s*36\s*\(\s*2\s*\)\s*\(\s*aa\s*\)",
+        text[:12000],
+    )
+    if (
+        s36_reviewable_decision
+        and s36_complementary_protection
+        and abs(s36_complementary_protection.start() - s36_reviewable_decision.end()) <= 600
+    ):
+        proof = _evidence(
+            text,
+            s36_reviewable_decision.start(),
+            s36_reviewable_decision.end(),
+            "Protection visa",
+            "protection_visa_s36_reviewable_decision",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": s36_complementary_protection.group(0),
+            "qualified": True,
+            "rank": 4,
+        })
+        return proof
+
     resident_return_heading = re.search(
         r"(?is)\b(?:refus\w*|cancel\w*|revok\w*|"
         r"non[ -]revocation)\b.{0,180}?\b(?P<name>"
@@ -1257,10 +1295,178 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                 })
                 results.append((4, proof))
                 break
+
+    # Some older reasons use a bare numeric visa name ("457 visa"), or the
+    # class-prefixed form "TY 444 visa", without the word "subclass". Accept
+    # these only in the current catchwords or reasons, and only when the same
+    # passage ties the code to an applicant and a live application, review, or
+    # visa decision. This keeps section 501 and case citations from being
+    # mistaken for subclass numbers.
+    direct_numbered_visa = re.compile(
+        r"(?i)\b(?:(?:sub[- ]?class|subclause)\s+|(?:TY|TU)[- ]?)?"
+        r"(?P<number>\d{3})\s*\)?\s+visa\b"
+    )
+    existing_visa_spans = list(_VISA.finditer(text))
+    decision_heading = re.search(
+        r"(?im)^[^\n]{0,240}?\b(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"STATEMENT OF DECISION AND REASONS|DECISION RECORD|APPLICATION FOR REVIEW)\b",
+        text,
+    )
+    decision_end = len(text)
+    if decision_heading:
+        following_reference = re.search(
+            r"(?im)^[ \t]*(?:SECONDARY MATERIALS|CASES CITED|OTHER AUTHORITIES|REFERENCES)\b",
+            text[decision_heading.start():],
+        )
+        if following_reference:
+            decision_end = decision_heading.start() + following_reference.start()
+    catchwords_end = catchwords_start + len(catchwords)
+    source_citations = list(CITATION.finditer(text))
+    corporate_nomination = bool(
+        re.search(
+            r"(?is)\b(?:corporate applicant|applicant company|APPLICANT\s*:\s*"
+            r"[\w &.,'’/-]{1,120}\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L|Limited))\b",
+            text[:12000],
+        )
+        and re.search(r"(?is)\b(?:nomination|nominee)\b", text[:12000])
+    )
+    other_applicant_not_named = bool(re.search(
+        r"(?is)\b(?:present|current)\s+applicant\b.{0,180}?\bnot\s+(?:named|identified)\b",
+        text[:16000],
+    ))
+    for match in direct_numbered_visa.finditer(text):
+        if any(
+            span.start() <= match.start() < span.end()
+            and re.search(r"(?i)\bvisa\b", span[0])
+            for span in existing_visa_spans
+        ):
+            continue
+        if any(span.start() <= match.start() < span.end() for span in source_citations):
+            continue
+        number = match["number"]
+        if number == "501" or (number in {"457", "186", "482"} and re.search(
+            r"(?i)\bnominee\b.{0,160}\b" + re.escape(number) + r"\s+visa\b",
+            text[max(0, match.start() - 500):match.end() + 500],
+        )):
+            continue
+        if corporate_nomination or other_applicant_not_named:
+            continue
+        prefix = text[max(0, match.start() - 40):match.start()]
+        if re.search(r"(?i)(?:\bsection\s*$|(?:^|[\s,])s\.?\s*$)", prefix):
+            continue
+        in_catchwords = bool(catchwords and catchwords_start <= match.start() < catchwords_end)
+        in_reasons = bool(
+            decision_heading
+            and decision_heading.start() <= match.start() <= decision_end
+        )
+        if not in_catchwords and not in_reasons:
+            continue
+        context = text[max(0, match.start() - 500):min(len(text), match.end() + 500)]
+        if re.search(
+            r"(?i)\b(?:previous|earlier|historical|former)\b.{0,100}\b"
+            + re.escape(number) + r"\s+visa\b|\b(?:different|another)\s+applicant\b",
+            context,
+        ):
+            continue
+        subject = re.search(
+            r"(?i)\b(?:applicant|appellant|visa applicant|primary applicant|first respondent)\b",
+            context,
+        )
+        action = re.search(
+            r"(?i)\b(?:appl(?:y|ied|ication)|review|appeal|decision|refus\w*|"
+            r"grant\w*|cancel\w*|revok\w*)\b",
+            context,
+        )
+        numbered_visa_pattern = (
+            r"(?:(?:sub[- ]?class|subclause)\s+|(?:TY|TU)[- ]?)?"
+            + re.escape(number)
+            + r"\s*\)?\s+visa"
+        )
+        direct_action = re.search(
+            r"(?is)(?:\b(?:appl(?:y|ied|ication)|review|appeal|decision|refus\w*|"
+            r"grant\w*|cancel\w*|revok\w*)\b.{0,180}\b"
+            + numbered_visa_pattern
+            + r"\b|\b"
+            + numbered_visa_pattern
+            + r"\b.{0,180}\b(?:appl(?:y|ied|ication)|review|appeal|decision|"
+            r"refus\w*|grant\w*|cancel\w*|revok\w*)\b)",
+            context,
+        )
+        visa_status_only = re.search(
+            r"(?is)\bvisa\b.{0,140}\b(?:ceased|expired)\b.{0,140}\b"
+            r"(?:does not currently hold|does not hold|no longer holds)\b.{0,80}\bvisa\b",
+            context,
+        )
+        explicit_visa_disposition = re.search(
+            r"(?is)(?:\b(?:refus\w*|grant\w*|cancel\w*|revok\w*)\b.{0,120}\b"
+            + numbered_visa_pattern
+            + r"\b|\b"
+            + numbered_visa_pattern
+            + r"\b.{0,120}\b(?:refus\w*|grant\w*|cancel\w*|revok\w*)\b)",
+            context,
+        )
+        if visa_status_only and not explicit_visa_disposition:
+            continue
+        if not subject or not action or not direct_action:
+            continue
+        proof = _evidence(
+            text, match.start(), match.end(), f"Subclass {number} visa",
+            "direct_current_numbered_visa_decision",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualified": True,
+            "rank": 3,
+        })
+        results.append((3, proof))
     if not results:
         structured_refusal = _structured_visa_refusal_subclass(text, assessment)
         if structured_refusal:
             return structured_refusal
+
+        def unique_distant_rrt_decision_date(source: str) -> re.Match[str] | None:
+            """Allow a distant RRT date only when the source leaves one clear decision."""
+            month = (
+                r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+                r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+            )
+            date = (
+                r"(?P<date>(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:" + month + r")\s+|"
+                r"(?:" + month + r")\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+|"
+                r"(?:" + month + r")\s+|\d{1,2}[/-]\d{1,2}[/-])"
+                r"(?P<year>(?:19|20)\d{2}))\b"
+            )
+            pattern = re.compile(
+                r"(?is)(?:\b(?:RRT|Refugee\s+Review\s+Tribunal|Tribunal)\b[^.]{0,45}\bdecision\b|"
+                r"\bdecision\b[^.]{0,55}\b(?:of|by)\s+(?:the\s+)?"
+                r"(?:RRT|Refugee\s+Review\s+Tribunal|Tribunal)\b)"
+                r"[^.]{0,140}\b(?:made|handed\s+down|dated|delivered|given)\b\s+"
+                r"(?:(?:on|in)\s+)?" + date
+            )
+            prior = re.compile(
+                r"(?i)\b(?:earlier|previous|prior|initial|former|first)\s+"
+                r"(?:(?:RRT|Refugee Review Tribunal|Tribunal)\s+)?decision\b"
+            )
+            identity_mismatch = re.search(
+                r"(?is)(?:\b(?:RRT|Refugee\s+Review\s+Tribunal)\b[^.]{0,160}\bdecision\b|"
+                r"\bdecision\b[^.]{0,160}\b(?:RRT|Refugee\s+Review\s+Tribunal)\b)"
+                r"[^.]{0,200}\b(?:appears?|seems?|refers?)\b[^.]{0,120}\b"
+                r"(?:different|another)\s+(?:visa\s+)?applicant\b",
+                source,
+            )
+            if identity_mismatch:
+                return None
+            dated = [
+                match for match in pattern.finditer(source)
+                if int(match["year"]) >= 1995
+                and not prior.search(source[max(0, match.start() - 90):match.start() + 30])
+            ]
+            distinct_dates = {
+                " ".join(match["date"].casefold().split()) for match in dated
+            }
+            return dated[0] if dated and len(distinct_dates) == 1 else None
+
         # Part 7 s 411(1)(a)-(b) also covers certain RRT decisions made before
         # 1 September 1994, before the protection-visa regime. Therefore the
         # publication year of this court case cannot stand in for the date of
@@ -1291,6 +1497,7 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                     rrt_decision = re.search(
                         r"\b(?:RRT|Refugee Review Tribunal)\s+decision\b"
                         r"|\bdecision\s+(?:of|by)\s+(?:the\s+)?(?:RRT|Refugee Review Tribunal)\b"
+                        r"|\bjurisdictional\s+error\b[\s\S]{0,80}?\bby\s+(?:the\s+)?(?:RRT|Refugee Review Tribunal)\b"
                         r"|\b(?:review|judicial review|application for review|application to review|appeal from)\b"
                         r"[\s\S]{0,160}?\b(?:RRT|Refugee Review Tribunal)\b"
                         r"[\s\S]{0,80}?\bdecision\b",
@@ -1299,31 +1506,76 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                     )
                     ministerial_subject = re.search(
                         r"(?i)\b(?:Ministerial intervention|"
-                        r"(?:review of )?(?:the )?Minister(?:'s)? decision[^.]{0,160}(?:substitut|intervention)|"
-                        r"decision of (?:the )?Minister[^.]{0,160}(?:substitut|intervention)|"
-                        r"Minister[^.]{0,100}not to (?:consider substituting|substitute|intervene))\b",
+                        r"(?:review of )?(?:the )?Minister(?:'s)? decision[^.]{0,160}(?:substitut|intervention|s\.?\s*48b)|"
+                        r"decision of (?:the )?Minister[^.]{0,160}(?:substitut|intervention|s\.?\s*48b)|"
+                        r"Minister[^.]{0,100}not to (?:consider substituting|substitute|intervene)|"
+                        r"s\.?\s*48b[^.]{0,160}Minister(?:'s)? decision)\b",
                         headnote,
                     )
-                    decision_date_pattern = re.compile(
-                        r"(?i)(?:\b(?:RRT|Refugee Review Tribunal|Tribunal)\b[^.\n]{0,45}\bdecision\b|"
-                        r"\bdecision\b[^.\n]{0,55}\b(?:of|by)\s+(?:the\s+)?"
-                        r"(?:RRT|Refugee Review Tribunal|Tribunal)\b)"
-                        r"[^.\n]{0,75}\b(?:made|handed\s+down|dated|delivered|given)\b"
-                        r"[^.\n]{0,55}\b((?:19|20)\d{2})\b",
+                    ambiguous_ministerial_target = re.search(
+                        r"(?is)\bapplication\b.{0,160}?\b(?:purports?|appears?)\b.{0,100}?"
+                        r"\bchallenge\b.{0,180}?\b(?:decision\s+of\s+the\s+Minister|"
+                        r"Ministerial\s+decision)\b.{0,100}?\bs\.?\s*417\b",
+                        text[:12000],
                     )
-                    rrt_decision_date = next((match for match in decision_date_pattern.finditer(text)
-                                              if int(match[1]) >= 1995
-                                              and not re.search(
-                                                  r"(?i)\b(?:earlier|previous|prior|initial|former|first)\s+"
-                                                  r"(?:(?:RRT|Refugee Review Tribunal|Tribunal)\s+)?decision\b",
-                                                  text[max(0, match.start() - 90):match.start() + 30],
-                                              )), None)
+                    decision_date_pattern = re.compile(
+                        # AustLII's extracted judgments frequently wrap each
+                        # source line. Keep the sentence boundary, but allow
+                        # those line breaks while linking the RRT decision date.
+                        r"(?is)(?:\b(?:RRT|Refugee Review Tribunal|Tribunal)\b[^.]{0,45}\bdecision\b|"
+                        r"\bdecision\b[^.]{0,55}\b(?:of|by)\s+(?:the\s+)?"
+                        r"(?:RRT|Refugee Review Tribunal|Tribunal)\b)"
+                        r"[^.]{0,75}\b(?:made|handed\s+down|dated|delivered|given)\b"
+                        r"[^.]{0,55}\b((?:19|20)\d{2})\b",
+                    )
+                    dated_rrt_decisions = [
+                        match for match in decision_date_pattern.finditer(text)
+                        if int(match[1]) >= 1995
+                        and not re.search(
+                            r"(?i)\b(?:earlier|previous|prior|initial|former|first)\s+"
+                            r"(?:(?:RRT|Refugee Review Tribunal|Tribunal)\s+)?decision\b",
+                            text[max(0, match.start() - 90):match.start() + 30],
+                        )
+                    ]
+                    rrt_decision_date = dated_rrt_decisions[0] if dated_rrt_decisions else None
+                    rrt_decision_start = None
+                    distant_link = False
+                    if rrt_decision:
+                        rrt_decision_start = source_citation.end() + migration.start() + rrt_decision.start()
+                    elif not ministerial_subject and not ambiguous_ministerial_target:
+                        # Some Federal Court reasons omit the RRT link from the
+                        # catchwords but state it plainly in the opening account
+                        # of the current proceeding. Require a dated RRT
+                        # decision within 300 characters of that link so a
+                        # historical citation cannot supply the visa type.
+                        body_rrt_target = re.search(
+                            r"(?is)(?:\b(?:application|appeal|proceeding|judicial review|motion)\b"
+                            r"[^.]{0,220}\b(?:decision\s+(?:of|by)|decision\s+made\s+by)\b"
+                            r"[^.]{0,40}\b(?:Refugee\s+Review\s+Tribunal|RRT)\b|"
+                            r"\b(?:decision\s+(?:of|by)|decision\s+made\s+by)\b"
+                            r"[^.]{0,40}\b(?:RRT|Refugee\s+Review\s+Tribunal)\b"
+                            r"[^.]{0,220}\b(?:application|appeal|proceeding|judicial review|motion)\b)",
+                            text[:12000],
+                        )
+                        linked_date = next((
+                            match for match in dated_rrt_decisions
+                            if body_rrt_target and abs(match.start() - body_rrt_target.start()) <= 300
+                        ), None)
+                        distant_link = False
+                        if body_rrt_target and not linked_date:
+                            linked_date = unique_distant_rrt_decision_date(text)
+                            distant_link = linked_date is not None
+                        if body_rrt_target and linked_date:
+                            rrt_decision = body_rrt_target
+                            rrt_decision_start = body_rrt_target.start()
+                            rrt_decision_date = linked_date
                     if (
                         rrt_decision
                         and not ministerial_subject
+                        and not ambiguous_ministerial_target
                         and rrt_decision_date
                     ):
-                        start = source_citation.end() + migration.start() + rrt_decision.start()
+                        start = rrt_decision_start
                         proof = _evidence(
                             text,
                             start,
@@ -1335,12 +1587,92 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                             "value": proof.value,
                             "quote": proof.quote,
                             "qualification_quote": _evidence(
-                                text,
-                                rrt_decision_date.start(),
-                                rrt_decision_date.end(),
-                                "RRT decision date",
-                                "rrt_decision_date",
-                            ).quote,
+                                text, rrt_decision_date.start(), rrt_decision_date.end(),
+                                "RRT decision date", "rrt_decision_date",
+                            ).quote if not distant_link else rrt_decision_date[0],
+                            "qualified": True,
+                            "rank": 4,
+                        })
+                        return proof
+                else:
+                    # Some court publications omit catchwords entirely. In
+                    # that format, only accept an explicit current-proceeding
+                    # link to an RRT decision and its date in the same short
+                    # passage; the RRT's statutory review jurisdiction then
+                    # identifies the matter as a protection-visa decision.
+                    ministerial_context = headnote + "\n" + text[:6000]
+                    ministerial_subject = re.search(
+                        r"(?i)\b(?:Ministerial intervention|"
+                        r"(?:review of )?(?:the )?Minister(?:'s)? decision[^.]{0,160}(?:substitut|intervention|s\.?\s*48b)|"
+                        r"decision of (?:the )?Minister[^.]{0,160}(?:substitut|intervention|s\.?\s*48b)|"
+                        r"Minister[^.]{0,100}not to (?:consider substituting|substitute|intervene)|"
+                        r"s\.?\s*48b[^.]{0,160}Minister(?:'s)? decision)\b",
+                        ministerial_context,
+                    )
+                    ambiguous_ministerial_target = re.search(
+                        r"(?is)\bapplication\b.{0,160}?\b(?:purports?|appears?)\b.{0,100}?"
+                        r"\bchallenge\b.{0,180}?\b(?:decision\s+of\s+the\s+Minister|"
+                        r"Ministerial\s+decision)\b.{0,100}?\bs\.?\s*417\b",
+                        text[:12000],
+                    )
+                    decision_date_pattern = re.compile(
+                        r"(?is)(?:\b(?:RRT|Refugee Review Tribunal|Tribunal)\b[^.]{0,45}\bdecision\b|"
+                        r"\bdecision\b[^.]{0,55}\b(?:of|by)\s+(?:the\s+)?"
+                        r"(?:RRT|Refugee Review Tribunal|Tribunal)\b)"
+                        r"[^.]{0,75}\b(?:made|handed\s+down|dated|delivered|given)\b"
+                        r"[^.]{0,55}\b((?:19|20)\d{2})\b",
+                    )
+                    dated_rrt_decisions = [
+                        match for match in decision_date_pattern.finditer(text)
+                        if int(match[1]) >= 1995
+                        and not re.search(
+                            r"(?i)\b(?:earlier|previous|prior|initial|former|first)\s+"
+                            r"(?:(?:RRT|Refugee Review Tribunal|Tribunal)\s+)?decision\b",
+                            text[max(0, match.start() - 90):match.start() + 30],
+                        )
+                    ]
+                    body_rrt_target = re.search(
+                        r"(?is)(?:\b(?:application|appeal|proceeding|judicial review|motion)\b"
+                        r"[^.]{0,220}\b(?:decision\s+(?:of|by)|decision\s+made\s+by)\b"
+                        r"[^.]{0,40}\b(?:Refugee\s+Review\s+Tribunal|RRT)\b|"
+                        r"\b(?:decision\s+(?:of|by)|decision\s+made\s+by)\b"
+                        r"[^.]{0,40}\b(?:RRT|Refugee\s+Review\s+Tribunal)\b"
+                        r"[^.]{0,220}\b(?:application|appeal|proceeding|judicial review|motion)\b)",
+                        text[:12000],
+                    )
+                    linked_date = next((
+                        match for match in dated_rrt_decisions
+                        if body_rrt_target and abs(match.start() - body_rrt_target.start()) <= 300
+                    ), None)
+                    distant_link = False
+                    if body_rrt_target and not linked_date:
+                        linked_date = unique_distant_rrt_decision_date(text)
+                        distant_link = linked_date is not None
+                    if (
+                        body_rrt_target
+                        and linked_date
+                        and not re.search(
+                            r"(?is)(?:\bMinister\b.{0,180}\b(?:s\.?\s*48b|section\s+48b)\b|"
+                            r"\b(?:s\.?\s*48b|section\s+48b)\b.{0,180}\bMinister\b)",
+                            ministerial_context,
+                        )
+                        and not ministerial_subject
+                        and not ambiguous_ministerial_target
+                    ):
+                        proof = _evidence(
+                            text,
+                            body_rrt_target.start(),
+                            body_rrt_target.end(),
+                            "Protection visa",
+                            "rrt_protection_visa_review_under_migration_act_s411",
+                        )
+                        assessment.candidates.append({
+                            "value": proof.value,
+                            "quote": proof.quote,
+                            "qualification_quote": _evidence(
+                                text, linked_date.start(), linked_date.end(),
+                                "RRT decision date", "rrt_decision_date",
+                            ).quote if not distant_link else linked_date[0],
                             "qualified": True,
                             "rank": 4,
                         })
@@ -1353,6 +1685,212 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
     if len(winners) == 1:
         return next(iter(winners.values()))
     assessment.reasons["visa_type"] = "conflicting_current_visa_candidates"
+    return None
+
+
+def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
+    """Resolve a personal visa refusal hidden by an employer-nomination label.
+
+    This narrow fallback requires a source paragraph that directly links a
+    refusal/non-grant to a visa, a named applicant, and one unambiguous numbered
+    visa in the judgment. Company applicants are excluded by the caller and
+    checked again here because some source records omit their title field.
+    """
+    corporate_title = bool(re.search(
+        r"(?i)\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L|Limited)\b",
+        title or "",
+    ))
+    corporate_caption = bool(re.search(
+        r"(?is)\b(?:corporate applicant|applicant company|APPLICANT\s*:\s*"
+        r"[\w &.,'’/-]{1,120}\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L|Limited))\b",
+        text[:12000],
+    ))
+    if corporate_title or corporate_caption:
+        return None
+
+    source = text[:30000]
+    catchwords_match = re.search(r"(?i)\bCATCHWORDS?\b\s*:?", source[:9000])
+    catchwords = source[catchwords_match.end():catchwords_match.end() + 2600] if catchwords_match else ""
+    catchwords_end = re.search(
+        r"(?im)^[ \t]*(?:LEGISLATION|CASES CITED|REPRESENTATION|SOLICITORS|ORDERS?)\b",
+        catchwords,
+    )
+    if catchwords_end:
+        catchwords = catchwords[:catchwords_end.start()]
+    operative_decision = ""
+    decision_label = re.search(
+        r"(?im)^[ \t]*(?:DECISION|ORDERS?)\s*:\s*",
+        source[:9000],
+    )
+    if decision_label:
+        decision_tail = source[decision_label.end():9000]
+        decision_end = re.search(
+            r"(?im)^[ \t]*(?:STATEMENT OF DECISION AND REASONS|REASONS FOR "
+            r"(?:JUDGMENT|DECISION)|APPLICATION FOR REVIEW|BACKGROUND)\b",
+            decision_tail,
+        )
+        operative_decision = (
+            decision_tail[:decision_end.start()] if decision_end else decision_tail[:1200]
+        )
+        sponsor_only_disposition = bool(re.search(
+            r"(?is)\b(?:refus\w*\s+to\s+approv\w*|refus\w*\s+approval\s+of|"
+            r"decision\s+to\s+refus\w*\s+approval\s+of)\b"
+            r".{0,220}\b(?:business\s+)?sponsor\b|"
+            r"\b(?:refus\w*|reject\w*)\b.{0,180}\b(?:business\s+)?sponsor\b",
+            operative_decision,
+        ))
+        visa_disposition_in_order = bool(re.search(
+            r"(?is)(?:\bvisa\b.{0,180}\b(?:refus\w*|not\s+granted|"
+            r"declin\w*|cancel\w*)\b|"
+            r"\b(?:refus\w*|not\s+granted|declin\w*|cancel\w*)\b"
+            r".{0,180}\bvisa\b)",
+            operative_decision,
+        ))
+        if sponsor_only_disposition and not visa_disposition_in_order:
+            return None
+    if catchwords:
+        headnote = catchwords
+    else:
+        reasons_start = re.search(
+            r"(?im)^[^\n]{0,240}?\b(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+            r"STATEMENT OF DECISION AND REASONS|DECISION RECORD|ORDERS?)\b",
+            source[:9000],
+        )
+        headnote = source[:reasons_start.start()] if reasons_start else source[:2600]
+    if re.search(
+        r"(?is)\b(?:remnant|residual|remaining)\s+costs?\s+issues?\b|"
+        r"\bapplication for (?:review of )?(?:a )?(?:judicial )?registrar['’]s decision\b"
+        r".{0,220}\b(?:costs?|costs order)\b",
+        catchwords,
+    ):
+        return None
+    nomination_only_headnote = bool(re.search(
+        r"(?i)\b(?:application for approval of (?:the )?nomination|"
+        r"review of business sponsorship rejection|nomination refusal)\b",
+        headnote,
+    ))
+    explicit_visa_disposition_headnote = bool(re.search(
+        r"(?is)\bvisa\s+refusal\b|"
+        r"\b(?:refus\w*\s+to\s+grant|not\s+to\s+grant|"
+        r"decision\s+not\s+to\s+grant|decision\s+to\s+refuse\s+to\s+grant|"
+        r"refusal\s+of\s+(?:the\s+)?[\w ()-]{0,180})\b.{0,280}?\bvisa\b|"
+        r"\bvisa\b.{0,280}?\b(?:was\s+)?(?:refus\w*|not\s+granted)\b",
+        headnote,
+    ))
+    if nomination_only_headnote and not explicit_visa_disposition_headnote:
+        return None
+    reasons_heading = re.search(
+        r"(?im)^[^\n]{0,240}?\b(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"STATEMENT OF DECISION AND REASONS|DECISION RECORD)\b",
+        source,
+    )
+    if reasons_heading:
+        references = re.search(
+            r"(?im)^[ \t]*(?:CASES CITED|SECONDARY MATERIALS|OTHER AUTHORITIES|REFERENCES)\b",
+            source[reasons_heading.start():],
+        )
+        if references:
+            source = source[:reasons_heading.start() + references.start()]
+
+    citation_spans = list(CITATION.finditer(source))
+    numbered_visas: list[tuple[re.Match[str], str]] = []
+    for match in _VISA.finditer(source):
+        subclass = re.search(r"(?i)\b(?:sub[- ]?class|sublcass|class)\s+(\d{3})\b", match[0])
+        if (
+            not subclass
+            or subclass[1] == "501"
+            or any(span.start() <= match.start() < span.end() for span in citation_spans)
+        ):
+            continue
+        suffix = source[match.end():match.end() + 24]
+        if not re.search(r"(?i)\bvisa(?:s|\(s\))?(?=\W|$)", match[0] + suffix):
+            continue
+        numbered_visas.append((match, subclass[1]))
+    bare_numbered_visa = re.compile(
+        r"(?i)\b(?P<number>\d{3})\s*\)?\s+visa(?:s|\(s\))?(?=\W|$)"
+    )
+    for match in bare_numbered_visa.finditer(source):
+        if match["number"] == "501" or any(
+            span.start() <= match.start() < span.end() for span in citation_spans
+        ):
+            continue
+        if any(
+            code == match["number"]
+            and numbered.start() <= match.start() <= numbered.end()
+            for numbered, code in numbered_visas
+        ):
+            continue
+        numbered_visas.append((match, match["number"]))
+    if not numbered_visas:
+        return None
+
+    refusal = (
+        r"(?:refus\w*|not\s+to\s+grant|not\s+granted|"
+        r"decision\s+not\s+to\s+grant|decision\s+to\s+refus\w*|"
+        r"declin\w*\s+to\s+grant)"
+    )
+    visa_word = r"visa(?:s|\(s\))?(?=\W|$)"
+    refusal_and_visa = re.compile(
+        r"(?is)(?:\b" + refusal + r"\b.{0,600}?\b" + visa_word + r"|"
+        r"\b" + visa_word + r".{0,450}?\b" + refusal + r"\b|"
+        r"\bapplication for\b.{0,260}?\b" + visa_word + r".{0,450}?"
+        r"\b(?:application|decision)\b.{0,180}?\b" + refusal + r"\b)"
+    )
+    actor_pattern = re.compile(
+        r"(?i)\b(?:applicant(?:s)?|appellant(?:s)?|visa\s+applicant|"
+        r"primary\s+applicant|he|she|his|her|Mr\s+[A-Z][A-Za-z'’-]+|"
+        r"Ms\s+[A-Z][A-Za-z'’-]+|Mrs\s+[A-Z][A-Za-z'’-]+)\b"
+    )
+    title_applicant = re.split(r"\s+v(?:s)?\.?\s+", title or "", maxsplit=1, flags=re.I)[0]
+    title_tokens = [
+        token for token in re.findall(r"[A-Za-z][A-Za-z'’-]{2,}", title_applicant)
+        if token.casefold() not in {"the", "applicant", "company", "limited", "pty"}
+    ]
+    action_spans = [
+        action for action in refusal_and_visa.finditer(source)
+        if (
+            actor_pattern.search(source[max(0, action.start() - 300):action.end() + 300])
+            or any(
+                re.search(
+                    r"(?i)\b" + re.escape(token) + r"\b",
+                    source[max(0, action.start() - 300):action.end() + 300],
+                )
+                for token in title_tokens
+            )
+        )
+    ]
+    if not action_spans:
+        return None
+
+    all_codes = {code for _, code in numbered_visas}
+    for action in action_spans:
+        local_matches = [
+            (match, code) for match, code in numbered_visas
+            if action.start() - 500 <= match.start() <= action.end() + 500
+        ]
+        local_codes = {code for _, code in local_matches}
+        if len(local_codes) == 1:
+            visa_match, code = local_matches[0]
+        elif not local_codes and len(all_codes) == 1:
+            visa_match, code = numbered_visas[0]
+        elif len(local_codes) > 1:
+            continue
+        else:
+            continue
+        action_start = action.start()
+        action_end = action.end()
+        if abs(visa_match.start() - action_start) > 5000:
+            continue
+        quote_start = max(0, min(visa_match.start(), action_start) - 120)
+        quote_end = min(len(text), max(visa_match.end(), action_end) + 180)
+        proof = Evidence(
+            value=f"Subclass {code} visa",
+            quote=text[quote_start:quote_end],
+            start=visa_match.start(),
+            end=visa_match.end(),
+            rule="direct_current_personal_visa_refusal",
+        )
+        return proof
     return None
 
 
@@ -1434,6 +1972,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
     catchwords_match = re.search(r"\bCATCHWORDS\b", body[:10000], re.I)
     if catchwords_match:
         catchwords = body[catchwords_match.end():catchwords_match.end() + 1600]
+        catchwords = re.sub(r"^[ \t\r\n]*[-–—:]+[ \t\r\n]*", "", catchwords)
         catchwords_end = re.search(
             r"^[ \t]*(?:LEGISLATION|REPRESENTATION|APPEARANCES|REVIEW APPLICANT|"
             r"VISA APPLICANT|PRESIDING MEMBER|TRIBUNAL MEMBER|TRIBUNAL:|DECISION RECORD|"
@@ -1443,6 +1982,105 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         )
         if catchwords_end:
             catchwords = catchwords[:catchwords_end.start()]
+    citizenship_subject_heading = _has_explicit_citizenship_subject(title, catchwords, body)
+    current_visa_decision_heading = bool(
+        re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|"
+            r"cancellation\s+of\s+(?:the\s+)?visa|"
+            r"review\s+of\s+(?:the\s+)?visa)\b",
+            catchwords,
+            re.I,
+        )
+    )
+    citizenship_act_review = bool(
+        re.search(r"\bAustralian Citizenship Act\s+(?:19|20)\d{2}\b", catchwords, re.I)
+        and re.search(
+            r"\b(?:application for judicial review|judicial review|review of|appeal from)\b",
+            catchwords,
+            re.I,
+        )
+        and re.search(r"\bs(?:ection)?\s+\d+(?:\([^)]*\))*", catchwords, re.I)
+    )
+    company_nomination_review = bool(
+        re.search(r"\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L)\b", title, re.I)
+        and (
+            (
+                re.search(r"\bNo\.?\s*3\b", title, re.I)
+                and re.search(
+                    r"\bseeking review of the decision\b.{0,260}?\bto refuse\b.{0,160}?"
+                    r"\bapplication for approval of a nomination\b",
+                    body[:5000],
+                    re.I | re.S,
+                )
+            )
+            or re.search(
+                r"\bapplication for review of a decision\b.{0,300}?\b(?:reject|refuse)\b.{0,180}?"
+                r"\bapplication for approval of the nomination\b",
+                body[:7000],
+                re.I | re.S,
+            )
+        )
+        and not current_visa_decision_heading
+    )
+    opening_reasons = body[:5000]
+    background_heading = re.search(r"(?i)\bBackground\b", opening_reasons)
+    if background_heading:
+        opening_reasons = opening_reasons[:background_heading.start()]
+    current_rrt_review = bool(
+        re.search(
+            r"(?is)\b(?:application|appeal|proceeding)\b.{0,260}?"
+            r"\b(?:judicial\s+)?review\b.{0,120}?\bdecision\b.{0,70}?"
+            r"\b(?:RRT|Refugee\s+Review\s+Tribunal)\b|"
+            r"\b(?:RRT|Refugee\s+Review\s+Tribunal)\b.{0,35}?\bdecision\b"
+            r".{0,220}?\b(?:application|appeal|proceeding)\b",
+            opening_reasons,
+        )
+        or re.search(
+            r"(?i)\b(?:review|judicial review|appeal from)\b.{0,180}?"
+            r"\b(?:decision\s+(?:of|by)|decision\s+made\s+by)\b.{0,60}?"
+            r"\b(?:RRT|Refugee\s+Review\s+Tribunal)\b",
+            catchwords,
+        )
+    )
+    costs_only_discontinuance = bool(
+        re.search(
+            r"(?is)\bPRACTICE\s+AND\s+PROCEDURE\s*[–—-]\s*Costs\b.{0,300}?"
+            r"\b(?:seeks?\s+to\s+file\s+)?notice\s+of\s+discontinuance\b",
+            catchwords,
+        )
+        and not current_visa_decision_heading
+        and not current_rrt_review
+    )
+    ancillary_costs_dispute = bool(
+        (
+            re.search(
+                r"(?is)\b(?:respondent\s+)?Minister\b.{0,140}?\bseeks?\b"
+                r".{0,100}?\bcosts\s+order\b.{0,140}?\bagainst\b"
+                r".{0,100}?\b(?:former\s+solicitors?|former\s+lawyers?)\b",
+                opening_reasons,
+            )
+            or costs_only_discontinuance
+        )
+        and not current_visa_decision_heading
+        and not current_rrt_review
+    )
+    nomination_decision_only = bool(
+        re.search(
+            r"(?is)\b(?:decision under review|delegate|Tribunal|AAT|MRT)\b.{0,260}?"
+            r"(?:\brefus\w*\s+to\s+(?:approve|grant)\s+(?:the\s+)?nomination\b|"
+            r"\bdecision\s+(?:under review\s+)?to\s+(?:refuse|reject)\s+(?:the\s+)?nomination\b|"
+            r"\bdecision\s+not\s+to\s+(?:approve|grant)\s+(?:the\s+)?nomination\b)",
+            body[:12000],
+        )
+        and not current_visa_decision_heading
+        and not re.search(
+            r"\bvisa\s+(?:refusal|application|decision|cancellation)|"
+            r"review of (?:the )?visa\b",
+            catchwords,
+            re.I,
+        )
+    )
     if re.search(r"\b(?:TRADE PRACTICES|TRADE MARKS|CONTRACT|COSTS)\b", head) and re.search(r"Spotwire.{0,180}Visa International", head, re.I | re.S):
         result.not_applicable["visa_type"] = "payment_card_litigation_not_immigration"
     elif (
@@ -1451,6 +2089,8 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         and re.search(r"\b(?:acquisition\s+and\s+sale|misappropriation)\b", head + catchwords, re.I)
     ):
         result.not_applicable["visa_type"] = "non_immigration_commercial_dispute"
+    elif ancillary_costs_dispute:
+        result.not_applicable["visa_type"] = "ancillary_costs_dispute_no_current_visa_review"
     elif (
         re.search(
             r"\bfor review of an unspecified\s+visa\s+cancellation\b",
@@ -1473,11 +2113,15 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.not_applicable["visa_type"] = "no_current_visa_decision"
     elif (
         (
-            re.search(
+            citizenship_subject_heading
+            or citizenship_act_review
+            or re.search(
                 r"\bcitizenship\s+by\s+(?:descent|conferral|adoption)\b|"
                 r"\bapplication\s+for\s+(?:(?:the\s+)?(?:grant|resumption|conferral)\s+of\s+)?"
                 r"(?:Australian\s+)?citizenship\b|"
                 r"\b(?:refusal\s+of\s+(?:Australian\s+)?citizenship\s+application|"
+                r"refus\w*\b.{0,180}\b(?:the\s+)?(?:applicant['’]s|his|her|their)\s+"
+                r"(?:Australian\s+)?citizenship\s+application|"
                 r"decision\s+not\s+to\s+grant\s+(?:Australian\s+)?citizenship|"
                 r"application\s+to\s+resume\s+(?:Australian\s+)?citizenship)\b|"
                 r"\b(?:Australian\s+)?citizenship\s*[-–—:]\s*"
@@ -1507,17 +2151,20 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
                 re.I | re.S,
             )
         )
+        and not current_visa_decision_heading
         and not re.search(
             r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
             r"refusal\s+of\s+(?:the\s+)?visa|"
             r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
             r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
             r"visa\s+(?:was\s+)?cancelled|review\s+of\s+.{0,40}\bvisa\b)\b",
-            head + catchwords,
+            catchwords,
             re.I,
         )
     ):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
+    elif company_nomination_review or nomination_decision_only:
+        result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
     elif (
         catchwords
         and re.search(
@@ -1620,7 +2267,53 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             result.not_applicable["visa_type"] = "corporate_deregistration_not_a_personal_visa"
     judge = _judge(body)
     outcome = _outcome(body)
-    visa = None if "visa_type" in result.not_applicable else _visa(body, result)
+    visa_not_applicable = result.not_applicable.get("visa_type")
+    if visa_not_applicable == "sponsorship_or_nomination_not_a_personal_visa":
+        corporate_title = bool(re.search(
+            r"\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L|Limited)\b",
+            title or "",
+            re.I,
+        ))
+        candidate_visa = (
+            None
+            if corporate_title or company_nomination_review
+            else _direct_personal_nomination_visa(body, title)
+        )
+        if candidate_visa and candidate_visa.rule in {
+            "direct_current_personal_visa_refusal",
+        }:
+            subclass = re.search(
+                r"(?i)\b(?:sub[- ]?class|class)\s+(\d{3})\b",
+                candidate_visa.value,
+            )
+            if subclass:
+                candidate_visa = _evidence(
+                    body,
+                    candidate_visa.start,
+                    candidate_visa.end,
+                    f"Subclass {subclass[1]} visa",
+                    candidate_visa.rule,
+                )
+            elif re.fullmatch(r"(?i)sub[- ]?class\s+\d{3}", candidate_visa.value.strip()):
+                candidate_visa = _evidence(
+                    body,
+                    candidate_visa.start,
+                    candidate_visa.end,
+                    candidate_visa.value.strip() + " visa",
+                    candidate_visa.rule,
+                )
+            result.not_applicable.pop("visa_type", None)
+            result.candidates.append({
+                "value": candidate_visa.value,
+                "quote": candidate_visa.quote,
+                "qualified": True,
+                "rank": 4,
+            })
+            visa = candidate_visa
+        else:
+            visa = None
+    else:
+        visa = None if visa_not_applicable else _visa(body, result)
     for name, proof in [("judges", judge), ("outcome", outcome), ("visa_type", visa)]:
         if proof:
             result.values[name] = proof
