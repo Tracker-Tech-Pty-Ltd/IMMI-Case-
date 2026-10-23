@@ -1459,6 +1459,62 @@ def _validate_linked_case_visa_approval(
         raise ValueError("Appealed source has a conflicting specific class or subclass")
 
 
+def _canonical_operative_outcome(value: str, quote: str) -> str | None:
+    """Return one directly stated, unambiguous outcome label from an order."""
+    patterns = {
+        "Affirmed": (
+            r"\b(?:the\s+)?(?:tribunal|court)\s+affirms?\s+the\s+decisions?\b|"
+            r"\bdecisions?\b.{0,100}\b(?:be|is|are|was|were)\s+affirmed\b"
+        ),
+        "Remitted": (
+            r"\b(?:the\s+)?(?:tribunal|court)\s+remit(?:s|ted)\s+the\s+"
+            r"(?:application|matter|decision|proceedings)\b|"
+            r"\b(?:application|matter|decision|proceedings)\s+"
+            r"(?:be|is|are|was|were)\s+remitted\b"
+        ),
+        "Set aside": (
+            r"\b(?:the\s+)?(?:tribunal|court)\s+sets?\s+aside\s+the\s+decision\b|"
+            r"\bdecision(?:\s+under\s+review)?\s+(?:be|is|are|was|were)\s+set\s+aside\b|"
+            r"\bset\s+aside\s+the\s+decision\b"
+        ),
+        "Dismissed": (
+            r"\b(?:appeal|application|proceedings?)\b.{0,120}\b"
+            r"(?:be|is|are|was|were)?\s*dismissed\b|"
+            r"\b(?:appeal|application|proceedings?)\s+dismissed\b"
+        ),
+        "No jurisdiction": (
+            r"\b(?:no jurisdiction|does not have jurisdiction|lacks jurisdiction|"
+            r"has no jurisdiction|without jurisdiction)\b"
+        ),
+    }
+    normalized = " ".join(quote.split())
+    found = set()
+    for label, pattern in patterns.items():
+        for match in re.finditer(pattern, normalized, re.I):
+            clause_start = max(
+                normalized.rfind(separator, 0, match.start())
+                for separator in (".", ";", "\n")
+            ) + 1
+            clause = normalized[clause_start:match.end()]
+            negated_word = {
+                "Affirmed": r"affirm(?:s|ed)",
+                "Remitted": r"remit(?:s|ted)",
+                "Set aside": r"set\s+aside",
+                "Dismissed": r"dismissed",
+            }.get(label)
+            if negated_word and re.search(
+                rf"\b(?:not|never|cannot|can't)\b.{{0,100}}\b{negated_word}\b",
+                clause,
+                re.I,
+            ):
+                continue
+            found.add(label)
+            break
+    if value in found and len(found) == 1:
+        return value
+    return None
+
+
 def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
     """Approval is source-pinned and literal; replacements require exact compare-and-swap."""
     seen = set()
@@ -1709,23 +1765,25 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         raise ValueError("Approval no longer matches grounded evidence")
                     if proof.to_dict() != evidence:
                         quote = evidence.get("quote", "")
-                        normalized_dismissal = (
+                        normalized_operative_order = (
                             field == "outcome"
                             and evidence.get("method") == "manual_operative_order_summary"
                             and evidence.get("source_value") == proof.value
-                            and evidence.get("value") == "Dismissed"
-                            and quote in source_text
-                            and bool(re.search(r"\b(?:appeal|application)\s+(?:be|is|was)\s+dismissed\b", quote, re.I))
+                            and evidence.get("value") == current
+                            and " ".join(quote.split()) in " ".join(source_text.split())
+                            and proof.rule in {
+                                "published_operative_table",
+                                "published_multiple_operative_tables",
+                            }
+                            and " ".join(quote.split()) in " ".join(proof.quote.split())
+                            and (
+                                evidence.get("value") == proof.value
+                                or _canonical_operative_outcome(
+                                    evidence.get("value", ""), quote
+                                ) == evidence.get("value")
+                            )
                         )
-                        normalized_remittance = (
-                            field == "outcome"
-                            and evidence.get("method") == "manual_operative_order_summary"
-                            and evidence.get("source_value") == proof.value
-                            and evidence.get("value") == "Remitted"
-                            and quote in source_text
-                            and bool(re.search(r"\b(?:the\s+)?(?:tribunal|court)\s+remit(?:s|ted)\b", quote, re.I))
-                        )
-                        if not (normalized_dismissal or normalized_remittance):
+                        if not normalized_operative_order:
                             raise ValueError("Approval no longer matches grounded evidence")
             elif field in VISA_METADATA_FIELDS:
                 if evidence.get("method") != "manual_source_bound_visa_metadata_review":

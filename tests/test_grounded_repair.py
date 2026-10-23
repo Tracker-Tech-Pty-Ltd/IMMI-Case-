@@ -23,6 +23,7 @@ from immi_case_downloader.extraction.grounded import (
 from immi_case_downloader.repair_workflow import (
     REASONS,
     _LEGACY_REASON_CODE_ALIASES,
+    _canonical_operative_outcome,
     _normalize_reason_code,
     _source_limitation_reason,
     _austlii_catchwords_visa_evidence,
@@ -39,6 +40,22 @@ BODY = HEAD + "JUDGE:\nSMITH J\nORDERS:\n1. The application is dismissed.\nREASO
 
 
 class GroundedTests(unittest.TestCase):
+    def test_canonical_operative_outcome_requires_one_direct_unnegated_result(self):
+        cases = (
+            ("Affirmed", "The Tribunal affirms the decision under review.", "Affirmed"),
+            ("Affirmed", "The decision under review be affirmed.", "Affirmed"),
+            ("Remitted", "The Tribunal remits the application for reconsideration.", "Remitted"),
+            ("Set aside", "The Court sets aside the decision under review.", "Set aside"),
+            ("Dismissed", "The application is dismissed.", "Dismissed"),
+            ("No jurisdiction", "The Tribunal does not have jurisdiction in this matter.", "No jurisdiction"),
+            ("Dismissed", "The application is not dismissed.", None),
+            ("Remitted", "The Court sets aside the decision and remits the matter.", None),
+            ("Affirmed", "The Tribunal remits the application.", None),
+        )
+        for value, quote, expected in cases:
+            with self.subTest(value=value, quote=quote):
+                self.assertEqual(_canonical_operative_outcome(value, quote), expected)
+
     def assess(self, body):
         return assess_case(body, citation="[2024] FCA 12")
 
@@ -3253,6 +3270,85 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(next(row for row in csv.DictReader(handle) if row["case_id"] == "a")["outcome"], "Remitted")
         payload = json.loads(json_path.read_text(encoding="utf-8"))
         self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Remitted")
+
+    def test_affirmed_order_summary_restores_only_blank_json_export(self):
+        source_text = (
+            "Example v Minister [2024] FCA 12\n"
+            "THE COURT ORDERS THAT:\n"
+            "1. The decision under review be affirmed.\n"
+            "REASONS FOR JUDGMENT\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0]["outcome"] = "Affirmed"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET outcome='Affirmed' WHERE case_id='a'")
+            conn.commit()
+        self.save_exports()
+
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"] = ""
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        assessment = assess_case(source_text, citation=self.rows[0]["citation"],
+                                 title=self.rows[0]["title"], url=self.rows[0]["url"])
+        proof = assessment.values["outcome"]
+        approval = {
+            "case_id": "a", "field": "outcome",
+            "expected_current_by_store": {
+                "database": "Affirmed", "csv": "Affirmed", "json": "",
+            },
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Affirmed", "source_value": proof.value,
+                "quote": proof.quote,
+                "method": "manual_operative_order_summary",
+            },
+            "reviewer": "manual-source-test",
+            "review_note": "The exact operative order confirms the existing database and CSV result.",
+        }
+        result = apply_approved(self.root, self.root / "repair-affirmed-json", [approval])
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Affirmed")
+
+    def test_exact_operative_order_text_restores_only_blank_json_export(self):
+        source_text = (
+            "Example v Minister [2024] FCA 12\n"
+            "THE COURT ORDERS THAT:\n"
+            "1. The application be dismissed.\n"
+            "2. The applicant pay the respondent's costs.\n"
+            "REASONS FOR JUDGMENT\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        assessment = assess_case(source_text, citation=self.rows[0]["citation"],
+                                 title=self.rows[0]["title"], url=self.rows[0]["url"])
+        proof = assessment.values["outcome"]
+        self.rows[0]["outcome"] = proof.value
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET outcome=? WHERE case_id='a'", (proof.value,))
+            conn.commit()
+        self.save_exports()
+        json_path = self.data / "immigration_cases.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"] = ""
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        approval = {
+            "case_id": "a", "field": "outcome",
+            "expected_current_by_store": {
+                "database": proof.value, "csv": proof.value, "json": "",
+            },
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": proof.value, "source_value": proof.value,
+                "quote": proof.quote, "method": "manual_operative_order_summary",
+            },
+            "reviewer": "manual-source-test",
+            "review_note": "The stored outcome is an exact extraction of the verified operative order.",
+        }
+        result = apply_approved(self.root, self.root / "repair-exact-order-json", [approval])
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], proof.value)
 
     def test_expected_current_mismatch_refuses_overwrite(self):
         approvals = self.approvals()
