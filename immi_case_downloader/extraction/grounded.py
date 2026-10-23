@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v61"
+RULE_VERSION = "grounded-local-20261024-v65"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -479,8 +479,53 @@ def _judge(text: str) -> Evidence | None:
             text, pos, pos + len(match["value"]), value, "compact_tribunal_member_header"
         )
 
+    # Some older AATA covers omit the member role and split the initials and
+    # surname into separate lines immediately before CATCHWORDS. Accept this
+    # only inside the structured Tribunal/Date/Place/Decision cover block.
+    legacy_aata_member = re.search(
+        r"(?is)\bADMINISTRATIVE APPEALS TRIBUNAL\b"
+        r"(?P<cover>.*?\bTRIBUNAL\b.{0,240}\bDate\b.{0,120}\bPlace\b"
+        r".{0,120}\bDecision\b.{0,500}?)"
+        r"(?P<initials>^[ \t]*[A-Z]{1,3})[ \t]*\n"
+        r"[ \t]*(?P<surname>[A-Z][A-Za-zÀ-ž’'-]{2,40})[ \t]*\n"
+        r"[ \t]*CATCHWORDS\b",
+        preamble,
+        re.I | re.M | re.S,
+    )
+    if legacy_aata_member:
+        initials = legacy_aata_member["initials"].strip()
+        surname = legacy_aata_member["surname"].strip()
+        value = f"{initials} {surname}"
+        return _evidence(
+            text,
+            legacy_aata_member.start("initials"),
+            legacy_aata_member.end("surname"),
+            value,
+            "aata_decision_cover_member_before_catchwords",
+        )
+
     # Older RRT/MRT records put a single member's name below an explicit
     # member label, sometimes split across two cells ("Ms" / "Wendy Bodisson").
+    short_eligibility_notice = re.search(
+        r"\bADVICE OF ELIGIBILITY DECISION\b",
+        preamble,
+        re.I,
+    )
+    short_notice_member = re.search(
+        r"(?im)^[ \t]*MEMBER[ \t]*:[ \t]*(?P<name>[^\n]+?)\s*$",
+        preamble,
+    )
+    if short_eligibility_notice and short_notice_member:
+        value = " ".join(short_notice_member["name"].split())
+        if 2 <= len(value.split()) <= 5 and has_person_name(value):
+            return _evidence(
+                text,
+                short_notice_member.start("name"),
+                short_notice_member.end("name"),
+                value,
+                "short_eligibility_notice_member_label",
+            )
+
     member_label = re.compile(
         r"^[ \t]*(?:PRESIDING MEMBER|CONSTITUTED MEMBER|TRIBUNAL MEMBER)"
         r"[ \t]*:?[ \t]*(?P<inline>[^\n]*)",
@@ -913,13 +958,111 @@ def _outcome(text: str) -> Evidence | None:
         maxsplit=1,
         flags=re.I | re.M,
     )[0][:12000]
+    short_eligibility_notice = re.search(
+        r"\bADVICE OF ELIGIBILITY DECISION\b",
+        preamble,
+        re.I,
+    )
+    ineligible_catchwords = re.search(
+        r"(?im)^[ \t]*CATCHWORDS?\s*:\s*Eligibility\s*[-–—]\s*"
+        r"ineligible\s+for\s+review\b",
+        preamble,
+    )
+    no_standing = re.search(
+        r"\bThe\s+review\s+applicant\s+is\s+not\s+a\s+person\s+with\s+"
+        r"standing\s+to\s+apply\s+for\s+review(?:\s+of\s+the\s+Department['’]s\s+decision)?\b",
+        preamble,
+        re.I,
+    )
+    if short_eligibility_notice and ineligible_catchwords and no_standing:
+        return _evidence(
+            text,
+            ineligible_catchwords.start(),
+            ineligible_catchwords.end(),
+            "Ineligible for review",
+            "published_eligibility_standing_decision",
+        )
+    # Some Federal Court publications place separate operative orders for
+    # multiple docket numbers before one shared reasons heading. Keep each
+    # party attached to its own formal order instead of returning only the
+    # first table or accidentally absorbing the next docket's heading.
+    operative_tables = list(re.finditer(
+        r"(?im)^[ \t]*THE COURT ORDERS(?: THAT)?[ \t]*:[ \t]*$",
+        preamble,
+    ))
+    if len(operative_tables) > 1:
+        court_headers = list(re.finditer(
+            r"(?im)^[ \t]*IN THE FEDERAL COURT OF AUSTRALIA\b",
+            preamble,
+        ))
+        multi_order_results = []
+        docket_numbers = set()
+        last_order_end = 0
+        for index, table in enumerate(operative_tables):
+            previous_headers = [header for header in court_headers if header.start() < table.start()]
+            following_headers = [header for header in court_headers if header.start() > table.start()]
+            if not previous_headers:
+                multi_order_results = []
+                break
+            header_start = previous_headers[-1].start()
+            header_text = preamble[header_start:table.start()]
+            docket = re.search(
+                r"(?i)\b([A-Z]{1,4}\s*\d{1,5}\s+of\s+\d{4})\b",
+                header_text,
+            )
+            party = re.search(
+                r"(?is)\bBETWEEN:\s*(?P<name>.{1,100}?)\s+APPLICANT\b",
+                header_text,
+            )
+            if not docket or not party:
+                multi_order_results = []
+                break
+            docket_numbers.add(" ".join(docket.group(1).split()).casefold())
+            table_end = following_headers[0].start() if following_headers else len(preamble)
+            order_block = preamble[table.end():table_end]
+            note = re.search(r"(?im)^[ \t]*Note\s*:", order_block)
+            if note:
+                order_block = order_block[:note.start()]
+                table_end = table.end() + note.start()
+            numbered = list(re.finditer(r"(?im)^[ \t]*\d+[.)]?[ \t]+", order_block))
+            if not numbered:
+                multi_order_results = []
+                break
+            clauses = []
+            for clause_index, clause in enumerate(numbered):
+                clause_end = numbered[clause_index + 1].start() if clause_index + 1 < len(numbered) else len(order_block)
+                clause_text = " ".join(order_block[clause.end():clause_end].split())
+                if clause_text:
+                    number = re.search(r"\d+", clause.group(0))
+                    clauses.append(f"{number.group(0)} {clause_text}")
+            if not clauses:
+                multi_order_results = []
+                break
+            name = " ".join(party.group("name").split())
+            multi_order_results.append(f"{name}: " + " ".join(clauses))
+            last_order_end = max(last_order_end, table_end)
+        if len(multi_order_results) == len(operative_tables) and len(docket_numbers) == len(operative_tables):
+            start = operative_tables[0].start()
+            value = "; ".join(multi_order_results)
+            return Evidence(
+                value,
+                text[start:last_order_end],
+                start,
+                last_order_end,
+                "published_multiple_operative_tables",
+            )
     for match in re.finditer(r"^(?:THE COURT ORDERS(?: THAT)?|ORDERS?|DECISION)(?:[ \t]*:[ \t]*|[ \t]*\n)", preamble, re.I | re.M):
         remainder = preamble[match.end():]
         stop = re.search(
             r"^(?:CATCHWORDS|LEGISLATION|REPRESENTATION|BETWEEN|REASONS|NOTE:|FEDERAL (?:COURT|MAGISTRATES)|"
-            r"DATE|TRIBUNAL|PLACE|SIGNATURE|(?:APPLICANT|RESPONDENT)\s*:|STATEMENT OF|REASONS FOR)\b", remainder, re.I | re.M
+            r"DATE|PLACE|SIGNATURE|(?:APPLICANT|RESPONDENT)\s*:|STATEMENT OF|REASONS FOR)\b|"
+            r"^TRIBUNAL(?:[ \t]+MEMBER)?[ \t]*:?[ \t]*$",
+            remainder,
+            re.I | re.M,
         )
-        block = remainder[:stop.start() if stop else len(remainder)].strip()
+        signature = re.search(r"^[ \t]*[.·…_—-]{8,}[ \t]*$", remainder, re.M)
+        boundaries = [match.start() for match in (stop, signature) if match]
+        block = remainder[:min(boundaries) if boundaries else len(remainder)].strip()
         if not block or len(block) > 4000 or re.search(r"(?:\.\.\.|…)\s*$", block):
             continue
         if not re.search(r"\b(?:affirm|remit|set aside|dismiss|allow|refus|grant|pay|adjourn|declar|revok|quash|substitut|withdraw|extend)\w*\b", block, re.I):
@@ -930,6 +1073,36 @@ def _outcome(text: str) -> Evidence | None:
             continue
         value = " ".join(block.split())
         return _evidence(text, match.end(), match.end() + len(block), value, "published_operative_table")
+    # A few older AATA text copies omit the operative table but retain both
+    # the s 200 catchword and the Tribunal's final no-deportation conclusion.
+    # Use this narrower summary only after searching for an explicit order.
+    aata_catchwords = re.search(
+        r"(?is)\bCATCHWORDS\b(?P<block>.*?)(?=\n[ \t]*(?:Migration Act\b|"
+        r"REASONS FOR DECISION\b))",
+        preamble,
+    )
+    no_deportation_catchword = (
+        re.search(
+            r"\bs\s*200\b.{0,240}\bshould not be exercised to deport the Applicant\b",
+            aata_catchwords["block"],
+            re.I | re.S,
+        )
+        if aata_catchwords
+        else None
+    )
+    no_deportation_conclusion = re.search(
+        r"(?is)other relevant considerations.{0,400}"
+        r"favour\s+(?:his|the Applicant['’]s)\s+not being deported\b",
+        text,
+    )
+    if no_deportation_catchword and no_deportation_conclusion:
+        return _evidence(
+            text,
+            aata_catchwords.start("block") + no_deportation_catchword.start(),
+            aata_catchwords.start("block") + no_deportation_catchword.end(),
+            "The Applicant should not be deported",
+            "aata_s200_non_deportation_conclusion",
+        )
     return None
 
 
@@ -1045,6 +1218,33 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         catchwords,
     ):
         return None
+
+    # The applicants in Cujba expressly asked the Minister for 21-day tourist
+    # visas and linked that request to withdrawing the current Federal Court
+    # proceedings. This narrow letter pattern identifies the live visa request,
+    # rather than an historical tourist visa or a generic example in the law.
+    current_tourist_visa_request = re.search(
+        r"(?is)\brequest for (?P<days>\d{1,2})\s+day tourist visas\b"
+        r".{0,140}?\bwhether\s+or\s+not\s+that\s+response\s+is\s+positive\b"
+        r".{0,100}?\bwe\s+promise\s+to\s+withdraw\s+the\s+current\s+proceedings\s+"
+        r"in\s+the\s+Federal\s+Court\b",
+        text[:12000],
+    )
+    if current_tourist_visa_request:
+        proof = _evidence(
+            text,
+            current_tourist_visa_request.start(),
+            current_tourist_visa_request.end(),
+            "Tourist visa",
+            "current_applicant_tourist_visa_request_in_proceedings",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualified": True,
+            "rank": 6,
+        })
+        return proof
 
     # Prefer the visa application actually described in the current matter
     # over a different, older visa mentioned in its history. These patterns

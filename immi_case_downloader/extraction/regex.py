@@ -143,6 +143,20 @@ def _case_nature(text: str, catchwords: str, title: str = "") -> str:
     if _has_explicit_citizenship_subject(title, catchwords, text):
         return "Citizenship"
 
+    s200_deportation_review = re.search(
+        r"\bs\s*200\b.{0,220}\bshould\s+not\s+be\s+exercised\s+to\s+deport\b",
+        catchwords,
+        re.I | re.S,
+    )
+    deportation_order_review = re.search(
+        r"\bDeportation\s+Order\b.{0,400}\b(?:applied|lodged\s+an\s+application)\b"
+        r".{0,240}\b(?:to\s+the\s+)?Tribunal\b.{0,240}\breview\s+of\s+this\s+decision\b",
+        text[:5000],
+        re.I | re.S,
+    )
+    if s200_deportation_review and deportation_order_review:
+        return "Deportation review"
+
     search = f"{catchwords}\n{text[:2500]}".lower()
     if "protection visa" in search or "refugee" in search:
         return "Protection visa"

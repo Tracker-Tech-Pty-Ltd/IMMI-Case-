@@ -1,4 +1,4 @@
-from immi_case_downloader.extraction.grounded import assess_case
+from immi_case_downloader.extraction.grounded import assess_case, document_text
 
 
 def test_citizenship_review_overrides_incidental_cancelled_visa_history():
@@ -98,3 +98,119 @@ The Applicant applied to the Tribunal for review of this decision.
     )
 
     assert result.not_applicable.get("visa_type") != "deportation_order_review_not_a_visa_decision"
+
+
+def test_short_eligibility_notice_keeps_its_explicit_member_and_result():
+    source = """Mehajer, Mohamad [2003] MRTA 5747
+[2003] MRTA 5747
+ADVICE OF ELIGIBILITY DECISION
+CATCHWORDS: Eligibility - ineligible for review - review applicant does not have standing
+VISA APPLICANT (S): Yemen Mehajar
+MEMBER: Linda Pearson
+The review applicant is not a person with standing to apply for review of the Department's decision.
+"""
+
+    assert len(document_text(source)) < 350
+    result = assess_case(
+        source,
+        citation="[2003] MRTA 5747",
+        title="Mehajer, Mohamad",
+    )
+
+    assert result.source_status == "checked"
+    assert result.values["judges"].value == "Linda Pearson"
+    assert result.values["outcome"].value == "Ineligible for review"
+    assert "ineligible for review" in result.values["outcome"].quote.lower()
+    assert result.reasons["visa_type"] == "current_visa_not_stated"
+
+
+def test_split_aata_cover_member_and_no_deportation_result_are_grounded():
+    source = """Safwan and Minister [2003] AATA 1298
+[2003] AATA 1298
+DECISION AND REASONS FOR DECISION
+ADMINISTRATIVE APPEALS TRIBUNAL
+GENERAL ADMINISTRATIVE DIVISION
+DECISION
+Tribunal
+Date
+18 December 2003
+Place
+Sydney
+Decision
+s 200 of the Migration Act 1958 to deport the Applicant.
+RP
+Handley
+CATCHWORDS
+s 200 of the Migration Act 1958 should not be exercised to deport the Applicant.
+Migration Act 1958 ss 200, 201
+REASONS FOR DECISION
+The other relevant considerations favour his not being deported.
+"""
+
+    result = assess_case(
+        source,
+        citation="[2003] AATA 1298",
+        title="Safwan and Minister",
+    )
+
+    assert result.values["judges"].value == "RP Handley"
+    assert "RP\nHandley" in result.values["judges"].quote
+    assert result.values["outcome"].value == "The Applicant should not be deported"
+    assert "should not be exercised to deport the Applicant" in result.values["outcome"].quote
+
+
+def test_aata_no_deportation_catchwords_need_matching_conclusion():
+    source = """[2003] AATA 1298
+CATCHWORDS
+s 200 of the Migration Act 1958 should not be exercised to deport the Applicant.
+REASONS FOR DECISION
+The Tribunal concludes that the Applicant should be deported.
+"""
+
+    result = assess_case(
+        source,
+        citation="[2003] AATA 1298",
+        title="Applicant v Minister",
+    )
+
+    assert "outcome" not in result.values
+
+
+def test_complete_aata_operative_order_precedes_catchword_summary():
+    source = """Safwan and Minister [2003] AATA 1298
+[2003] AATA 1298
+ADMINISTRATIVE APPEALS TRIBUNAL
+DECISION
+Tribunal
+Mr
+RP Handley, Deputy President
+Date
+18 December 2003
+Place
+Sydney
+Decision
+The
+Tribunal sets aside the decision under review and substitutes a decision not to
+exercise the power in s 200 of the Migration Act 1958 to deport the Applicant.
+...............................................
+RP Handley Deputy President
+CATCHWORDS
+s 200 of the Migration Act 1958 should not be exercised to deport the Applicant.
+REASONS FOR DECISION
+The other relevant considerations favour his not being deported.
+"""
+
+    result = assess_case(
+        source,
+        citation="[2003] AATA 1298",
+        title="Safwan and Minister",
+    )
+
+    assert result.values["judges"].value == "Mr RP Handley, Deputy President"
+    assert result.values["outcome"].rule == "published_operative_table"
+    assert result.values["outcome"].value.startswith(
+        "The Tribunal sets aside the decision under review"
+    )
+    assert "s 200 of the Migration Act 1958 to deport the Applicant" in result.values["outcome"].value
+    assert result.values["outcome"].value.endswith("the Applicant.")
+    assert "Handley" not in result.values["outcome"].value
