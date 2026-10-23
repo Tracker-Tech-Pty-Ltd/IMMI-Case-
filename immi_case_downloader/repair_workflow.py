@@ -1113,8 +1113,19 @@ def _validate_linked_case_visa_approval(
     if not linked_citation:
         raise ValueError("Linked visa approval is missing the appealed citation")
     same_proceeding = evidence.get("method") == "manual_same_proceeding_visa_review"
-    if not same_proceeding:
-        appeal = re.search(r"(?is)\bAppeal\s+from\s*:\s*(.{0,700})", body)
+    lower_court_link = evidence.get("method") == "manual_lower_court_linked_visa_review"
+    linked_source_quote_review = (
+        evidence.get("method") == "manual_linked_case_source_quote_review"
+    )
+    if not same_proceeding and not lower_court_link:
+        appeal_heading = (
+            r"(?is)\b(?:Appeal\s+from|Application\s+for\s+"
+            r"(?:leave\s+to\s+appeal(?:\s+from)?|extension\s+of\s+time"
+            r"(?:\s+and\s+leave\s+to\s+appeal)?))\s*:\s*(.{0,700})"
+            if linked_source_quote_review
+            else r"(?is)\bAppeal\s+from\s*:\s*(.{0,700})"
+        )
+        appeal = re.search(appeal_heading, body)
         if not appeal:
             raise ValueError("Target source does not identify an appealed case")
         appeal_block = appeal[1]
@@ -1139,15 +1150,141 @@ def _validate_linked_case_visa_approval(
     if len(parent_rows) != 1:
         raise ValueError("Appealed case is missing or its citation is ambiguous")
     parent = parent_rows[0]
-    if _case_title_key(row["title"]) != _case_title_key(parent["title"]):
+    if (not lower_court_link
+            and _case_title_key(row["title"]) != _case_title_key(parent["title"])):
         target_party = _case_primary_party_key(row["title"])
         parent_party = _case_primary_party_key(parent["title"])
-        if not target_party or target_party != parent_party:
+        ignored_party_words = {
+            "a", "an", "and", "anor", "affairs", "administrative", "appeals",
+            "border", "citizenship", "department", "for", "home", "immigration",
+            "minister", "multicultural", "of", "or", "ors", "protection", "services",
+            "the", "tribunal", "v", "vs",
+        }
+        def party_tokens(title: str) -> set[str]:
+            title_without_citation = re.sub(r"\s+\[\d{4}\]\s+.*$", "", str(title or ""))
+            return {
+                token for token in re.findall(r"[a-z0-9]+", title_without_citation.casefold())
+                if token not in ignored_party_words
+            }
+
+        shared_named_party = (
+            linked_source_quote_review
+            and bool(party_tokens(row["title"]) & party_tokens(parent["title"]))
+        )
+        body_caption_party = ""
+        if linked_source_quote_review:
+            target_citation = re.escape(str(row["citation"]))
+            citation_matches = re.finditer(
+                r"(?<![A-Za-z0-9])" + target_citation + r"(?![A-Za-z0-9])",
+                body,
+                re.I,
+            )
+            court_pattern = re.compile(
+                r"\b(?:FEDERAL COURT OF AUSTRALIA|FEDERAL CIRCUIT COURT OF AUSTRALIA|"
+                r"FEDERAL MAGISTRATES COURT OF AUSTRALIA)\b",
+                re.I,
+            )
+            for citation_match in citation_matches:
+                prefix = body[max(0, citation_match.start() - 1800):citation_match.start()]
+                court_captions = list(court_pattern.finditer(prefix))
+                if not court_captions:
+                    continue
+                caption_region = prefix[court_captions[-1].end():]
+                caption_lines = [
+                    line.strip() for line in caption_region.splitlines() if line.strip()
+                ]
+                for caption_line in reversed(caption_lines[-12:]):
+                    body_party = _case_primary_party_key(caption_line)
+                    if body_party:
+                        body_caption_party = body_party
+                        break
+                if body_caption_party:
+                    break
+        body_caption_matches_parent = bool(
+            body_caption_party and body_caption_party == parent_party
+        )
+        if (
+            (not target_party or target_party != parent_party)
+            and not shared_named_party
+            and not body_caption_matches_parent
+        ):
             raise ValueError(
                 "Linked visa approval requires the same case title or named applicant"
             )
+    if lower_court_link:
+        lower_appeal = re.search(
+            r"(?i)\bappeal\s+from\s+a\s+decision\s+of\s+the\s+"
+            r"(Federal Magistrates Court|Federal Circuit Court)\b"
+            r".{0,180}?\bgiven\s+by\s+"
+            r"([A-Z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)*\s+(?:FM|J))\b",
+            target_quote,
+        )
+        expected_parent_court = {
+            "federal magistrates court": "FMCA",
+            "federal circuit court": "FCCA",
+        }
+
+        def masked_applicant(case_row: sqlite3.Row) -> str:
+            for candidate in (case_row["applicant_name"], case_row["title"]):
+                match = re.match(r"\s*([A-Z]{2,6})\b", str(candidate or ""))
+                if match:
+                    return match[1].upper()
+            return ""
+
+        def normalized_judge(value: str) -> str:
+            return " ".join(re.sub(r"[^a-z0-9]+", " ", value.casefold()).split())
+
+        def parsed_case_date(value: str) -> datetime:
+            return datetime.strptime(str(value).strip().title(), "%d %B %Y")
+
+        target_mask = masked_applicant(row)
+        parent_mask = masked_applicant(parent)
+        if (
+            not lower_appeal
+            or row["court_code"] != "FCA"
+            or expected_parent_court.get(lower_appeal[1].casefold()) != parent["court_code"]
+            or not target_mask
+            or target_mask != parent_mask
+            or not parent["judges"]
+            or normalized_judge(lower_appeal[2]) != normalized_judge(parent["judges"])
+            or not re.search(r"\bREFUGEE REVIEW TRIBUNAL\b", body, re.I)
+        ):
+            raise ValueError(
+                "Unnumbered lower-court link requires the same masked applicant, "
+                "named lower-court judge, court, and Tribunal context"
+            )
+        try:
+            target_date = parsed_case_date(row["date"])
+            parent_date = parsed_case_date(parent["date"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Unnumbered lower-court link requires parseable judgment dates") from exc
+        if (
+            parent_date >= target_date
+            or not re.search(r"(?<![A-Z0-9])" + re.escape(target_mask) + r"(?![A-Z0-9])", body, re.I)
+        ):
+            raise ValueError(
+                "Unnumbered lower-court link requires earlier matching Tribunal proceedings"
+            )
+        matching_lower_cases = conn.execute(
+            "SELECT citation, title, applicant_name, judges FROM cases WHERE court_code=?",
+            (parent["court_code"],),
+        ).fetchall()
+        matching_citations = {
+            candidate["citation"]
+            for candidate in matching_lower_cases
+            if masked_applicant(candidate) == target_mask
+            and normalized_judge(str(candidate["judges"] or ""))
+            == normalized_judge(lower_appeal[2])
+        }
+        if matching_citations != {parent["citation"]}:
+            raise ValueError(
+                "Unnumbered lower-court link is ambiguous for the same applicant and judge"
+            )
     value = str(evidence.get("value", "")).strip()
-    if not value or value != str(parent["visa_type"] or "").strip():
+    if not value or (
+        not linked_source_quote_review
+        and value != str(parent["visa_type"] or "").strip()
+    ):
         raise ValueError("Linked visa value must match the existing appealed-case value")
 
     linked_path = source_path(root, linked.get("source_path", ""))
@@ -1169,6 +1306,17 @@ def _validate_linked_case_visa_approval(
         or parent["citation"] not in linked_metadata.get("title", "")
     ):
         raise ValueError("Appealed-case source identity does not match the saved case")
+    if lower_court_link and (
+        not re.search(r"\bREFUGEE REVIEW TRIBUNAL\b", linked_body, re.I)
+        or not re.search(
+            r"(?<![A-Z0-9])" + re.escape(parent_mask) + r"(?![A-Z0-9])",
+            linked_body,
+            re.I,
+        )
+    ):
+        raise ValueError(
+            "Unnumbered lower-court link requires earlier matching Tribunal proceedings"
+        )
     if same_proceeding:
         def docket_key(source_body: str) -> str:
             match = re.search(
@@ -1233,10 +1381,20 @@ def _validate_linked_case_visa_approval(
         or linked_quote not in normalized_linked_body
         or not source_value
         or source_value.casefold() not in linked_quote.casefold()
-        or not re.search(r"\bvisa\b", source_value, re.I)
-        or _visa_type_family(source_value) != _visa_type_family(value)
+        or not re.search(r"\bvisas?\b", source_value, re.I)
+        or (
+            not linked_source_quote_review
+            and _visa_type_family(source_value) != _visa_type_family(value)
+        )
     ):
         raise ValueError("Linked visa source wording does not support the stored visa class")
+    if linked_source_quote_review and (
+        not re.search(r"\b(?:refus\w*|not\s+to\s+grant|cancel\w*|revok\w*)\b", linked_quote, re.I)
+        or not re.search(r"\b(?:applicants?|appellants?|he|she|they|you|your|my)\b", linked_quote, re.I)
+    ):
+        raise ValueError(
+            "Manual linked-source review requires applicant-specific refusal or cancellation evidence"
+        )
     if not _visa_type_specifics_match(value, source_value, linked_quote):
         raise ValueError("Linked visa source wording conflicts with a specific class or subclass")
     linked_assessment = assess_case(
@@ -1248,13 +1406,45 @@ def _validate_linked_case_visa_approval(
     if linked_assessment.source_status != "checked" or "visa_type" in linked_assessment.not_applicable:
         raise ValueError("Appealed source does not verify an applicable visa category")
     linked_proof = linked_assessment.values.get("visa_type")
+    if linked_source_quote_review and source_value.casefold() != value.casefold():
+        proof_quote = " ".join(linked_proof.quote.split()) if linked_proof else ""
+        proof_subclasses = (
+            set(re.findall(r"(?i)\bsub[ -]?class\s+(\d{3})\b", linked_proof.value))
+            if linked_proof else set()
+        )
+        value_subclasses = set(
+            re.findall(r"(?i)\bsub[ -]?class\s+(\d{3})\b", value)
+        )
+        same_source_subclass = (
+            bool(proof_subclasses)
+            and proof_subclasses == value_subclasses
+            and all(
+                re.search(r"(?i)\bsub[ -]?class\s+" + re.escape(number) + r"\b", proof_quote)
+                for number in proof_subclasses
+            )
+            and _visa_type_specifics_match(value, linked_proof.value, proof_quote)
+        )
+        if (
+            not linked_proof
+            or (
+                linked_proof.value.casefold() != value.casefold()
+                and not same_source_subclass
+            )
+            or not proof_quote
+            or proof_quote not in normalized_linked_body
+        ):
+            raise ValueError(
+                "A normalized linked visa value must match the source-grounded extraction"
+            )
     if (
-        linked_proof
+        not linked_source_quote_review
+        and linked_proof
         and _visa_type_family(linked_proof.value) != _visa_type_family(value)
     ):
         raise ValueError("Appealed source has a conflicting direct visa classification")
     if (
-        linked_proof
+        not linked_source_quote_review
+        and linked_proof
         and not _visa_type_specifics_match(value, linked_proof.value, linked_proof.quote)
     ):
         raise ValueError("Appealed source has a conflicting specific class or subclass")
@@ -1309,6 +1499,14 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "visa_type"
                     and evidence.get("method") == "manual_same_proceeding_visa_review"
                 )
+                manual_lower_court_linked_visa_review = (
+                    field == "visa_type"
+                    and evidence.get("method") == "manual_lower_court_linked_visa_review"
+                )
+                manual_linked_case_source_quote_review = (
+                    field == "visa_type"
+                    and evidence.get("method") == "manual_linked_case_source_quote_review"
+                )
                 manual_judge_review = (
                     field == "judges"
                     and evidence.get("method") == "manual_official_source_judge_review"
@@ -1322,7 +1520,9 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     proof = _austlii_catchword_visa_proof(
                         dict(row), source_text, assessment, {}, {change["source_sha256"]}
                     )
-                if manual_linked_visa_review or manual_same_proceeding_visa_review:
+                if (manual_linked_visa_review or manual_same_proceeding_visa_review
+                        or manual_lower_court_linked_visa_review
+                        or manual_linked_case_source_quote_review):
                     _validate_linked_case_visa_approval(
                         root, conn, row, source_text, evidence, assessment
                     )
