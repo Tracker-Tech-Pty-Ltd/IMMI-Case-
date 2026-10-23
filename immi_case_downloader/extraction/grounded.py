@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v59"
+RULE_VERSION = "grounded-local-20261024-v60"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -2560,6 +2560,11 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         r"(?is)\brefus\w*\s+to\s+grant\b.{0,180}\b(?:Australian\s+)?citizenship\b",
         body[:5000],
     ))
+    current_citizenship_review_decision = bool(re.search(
+        r"(?is)\breviewable\s+decision\b.{0,220}?\bto\s+refuse\s+to\s+grant\b"
+        r".{0,140}?\b(?:Australian\s+)?citizenship\b",
+        body[:2600],
+    ))
     company_nomination_review = bool(
         re.search(r"\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L)\b", title, re.I)
         and (
@@ -2644,7 +2649,39 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             re.I,
         )
     )
-    if re.search(r"\b(?:TRADE PRACTICES|TRADE MARKS|CONTRACT|COSTS)\b", head) and re.search(r"Spotwire.{0,180}Visa International", head, re.I | re.S):
+    payment_card_network_dispute = bool(
+        re.search(
+            r"\bVisa International Service Association\b.{0,220}?"
+            r"\bReserve Bank\s*of\s+Australia\b",
+            (title or "") + "\n" + head,
+            re.I | re.S,
+        )
+        and re.search(
+            r"\b(?:credit card schemes?|credit card systems?|payment systems?|"
+            r"interchange fee|no surcharge standard)\b",
+            head + "\n" + catchwords,
+            re.I,
+        )
+    )
+    explicit_no_visa_applicant = bool(
+        re.search(
+            r"(?im)^[ \t]*VISA\s+APPLICANT(?:\s*\(\s*S\s*\))?\s*:\s*"
+            r"(?:N\s*/?\s*A|NOT\s+APPLICABLE)[ \t]*$",
+            body[:10000],
+        )
+        and re.search(r"\bStandard Business Sponsorship\b", body[:10000], re.I)
+        and re.search(
+            r"\b(?:ineligible for review|review application was not lodged)\b",
+            body[:10000],
+            re.I,
+        )
+    )
+    if explicit_no_visa_applicant:
+        result.not_applicable["visa_type"] = "sponsorship_review_has_no_personal_visa_applicant"
+    elif payment_card_network_dispute or (
+        re.search(r"\b(?:TRADE PRACTICES|TRADE MARKS|CONTRACT|COSTS)\b", head)
+        and re.search(r"Spotwire.{0,180}Visa International", head, re.I | re.S)
+    ):
         result.not_applicable["visa_type"] = "payment_card_litigation_not_immigration"
     elif (
         re.search(r"\bCOMMERCIAL\s+LAW\b", head + catchwords, re.I)
@@ -2715,15 +2752,18 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
                 re.I | re.S,
             )
         )
-        and not current_visa_decision_heading
-        and not re.search(
-            r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
-            r"refusal\s+of\s+(?:the\s+)?visa|"
-            r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
-            r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
-            r"visa\s+(?:was\s+)?cancelled|review\s+of\s+.{0,40}\bvisa\b)\b",
-            catchwords,
-            re.I,
+        and (current_citizenship_review_decision or not current_visa_decision_heading)
+        and (
+            current_citizenship_review_decision
+            or not re.search(
+                r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+                r"refusal\s+of\s+(?:the\s+)?visa|"
+                r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+                r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
+                r"visa\s+(?:was\s+)?cancelled|review\s+of\s+.{0,40}\bvisa\b)\b",
+                catchwords,
+                re.I,
+            )
         )
     ):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
