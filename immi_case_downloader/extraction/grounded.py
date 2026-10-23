@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261023-v52"
+RULE_VERSION = "grounded-local-20261023-v57"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -1023,6 +1023,146 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
     ):
         return None
 
+    # Prefer the visa application actually described in the current matter
+    # over a different, older visa mentioned in its history. These patterns
+    # require the application and its adverse decision to be linked in the
+    # judgment itself.
+    employer_nomination = re.search(
+        r"(?is)\bapplication\s+from\s+(?:the\s+)?applicant\s+for\s+(?:an?\s+)?"
+        r"(?P<name>Employer\s+Nomination\s*\(Residence\)\s*\(Class\s+BW\))\s+visa\b",
+        text[:12000],
+    )
+    if (
+        employer_nomination
+        and re.search(
+            r"(?i)\bapplication\s+for\s+review\s+of\s+(?:the\s+)?decision\s+of\s+"
+            r"[^\n]{0,100}\bMRT\b",
+            catchwords,
+        )
+        and re.search(r"(?is)\b(?:Tribunal|MRT)\b.{0,350}?\b(?:refus\w*|not\s+to\s+grant)\b.{0,220}?\bvisa\b", text[:12000])
+    ):
+        proof = _evidence(
+            text,
+            employer_nomination.start("name"),
+            employer_nomination.end(),
+            "Employer Nomination (Residence) (Class BW) visa",
+            "current_class_bw_application_under_review",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": catchwords,
+            "qualified": True,
+            "rank": 5,
+        })
+        return proof
+
+    current_student_clause = re.search(
+        r"(?is)\bvisa\s+application\s+was\s+refused\s+by\s+(?:a\s+)?delegate\b"
+        r".{0,360}?\bcl(?:ause)?\.?\s*(?P<number>57[0-6])\.\d{1,3}\b",
+        text[:12000],
+    )
+    if current_student_clause and re.search(
+        r"(?i)\bgenuine\s+student\b",
+        text[current_student_clause.start():current_student_clause.end() + 700],
+    ):
+        number = current_student_clause["number"]
+        proof = _evidence(
+            text,
+            current_student_clause.start("number"),
+            current_student_clause.end("number"),
+            f"Subclass {number} visa",
+            "current_student_application_refusal_clause",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": current_student_clause.group(0),
+            "qualified": True,
+            "rank": 5,
+        })
+        return proof
+
+    current_student_application = re.search(
+        r"(?is)\b(?:the\s+)?applicant\s+lodged\s+an?\s+application\s+for\s+a\s+"
+        r"Student\s*\(\s*Subclass\s+(?P<number>57[0-6])\s*\)\s+visa\s*"
+        r"\(\s*the\s+visa\s*\)"
+        r".{0,700}?\bthe\s+delegate\s+refused\s+to\s+grant\s+"
+        r"(?:the\s+)?applicant\s+the\s+visa\b",
+        text[:12000],
+    )
+    if current_student_application:
+        number = current_student_application["number"]
+        proof = _evidence(
+            text,
+            current_student_application.start("number"),
+            current_student_application.end("number"),
+            f"Subclass {number} visa",
+            "current_student_application_refusal",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": current_student_application.group(0),
+            "qualified": True,
+            "rank": 6,
+        })
+        return proof
+
+    current_tpv_application = re.search(
+        r"(?is)\bapplicant\s+applied\s+for\s+(?:a\s+)?temporary\s+protection\s+visa\b",
+        text[:12000],
+    )
+    if current_tpv_application:
+        refusal = re.search(
+            r"(?is)\bdecision\s+refusing\s+to\s+grant\s+"
+            r"(?:(?:the\s+)?applicant\s+)?(?:the\s+)?protection\s+visa\s+"
+            r"that\s+(?:he|she|they|the\s+applicant)\s+sought\b",
+            text[current_tpv_application.end():current_tpv_application.end() + 2500],
+        )
+        if refusal:
+            proof = _evidence(
+                text,
+                current_tpv_application.start(),
+                current_tpv_application.end(),
+                "Subclass 785 visa",
+                "current_temporary_protection_application_refusal",
+            )
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualification_quote": refusal.group(0),
+                "qualified": True,
+                "rank": 5,
+            })
+            return proof
+
+    current_shev_application = re.search(
+        r"(?is)\b(?:first\s+)?applicant\s+\(applicant\)\s+applied\s+for\s+a\s+(?P<name>SHEV)\b",
+        text[:12000],
+    )
+    if current_shev_application:
+        refusal = re.search(
+            r"(?is)\bdelegate\s+refused\s+to\s+grant\s+the\s+applicants?\s+a\s+SHEV\b",
+            text[current_shev_application.end():current_shev_application.end() + 5000],
+        )
+        if refusal:
+            proof = _evidence(
+                text,
+                current_shev_application.start("name"),
+                current_shev_application.end("name"),
+                "Subclass 790 visa",
+                "current_shev_application_refusal",
+            )
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualification_quote": refusal.group(0),
+                "qualified": True,
+                "rank": 5,
+            })
+            return proof
+
     decision_record = re.search(
         r"(?is)\bDECISION RECORD\b(?P<block>.{0,1800})",
         text[:8000],
@@ -1145,6 +1285,107 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
             return proof
 
     results: list[tuple[int, Evidence]] = []
+
+    # Some s 501 cancellation decisions identify only the legal effect of the
+    # current visa, not its subclass. Accept that broad type only when the
+    # source ties the holder's permanent-residence visa to the cancellation
+    # decision that is expressly the subject of the review.
+    permanent_residence_cancellation = re.search(
+        r"(?is)\bFrom\s+[^,.;\n]{1,80},\s*until\s+(?:the\s+)?"
+        r"(?:Delegate|Minister)(?:['’\s\uFFFD]{0,6}s)?\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+"
+        r"cancellation\s+decision\b"
+        r"(?:(?![.?!]).){0,160}?\bthat\s+is\s+the\s+subject\s+of\s+"
+        r"these\s+review\s+proceedings\b"
+        r"(?:(?![.?!]).){0,160}?\bheld\s+(?:a|the)\s+visa\s+entitling\s+"
+        r"(?:him|her|them|the\s+applicant)\s+to\s+reside\s+permanently\s+"
+        r"in\s+Australia\b",
+        text[:12000],
+    )
+    if permanent_residence_cancellation:
+        proof = _evidence(
+            text,
+            permanent_residence_cancellation.start(),
+            permanent_residence_cancellation.end(),
+            "Permanent visa",
+            "current_permanent_residence_cancellation",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualified": True,
+            "rank": 3,
+        })
+        results.append((3, proof))
+
+    # Some decisions state the current visa class directly in an application
+    # narrative, then link the same application to a refusal and review. Keep
+    # the class name only when that chain is explicit and local to the case.
+    class_bt_application = re.search(
+        r"(?is)\bthe\s+appellants?\s+applied\s+to\s+(?:the\s+)?department\s+for\s+"
+        r"(?P<name>Child\s*\(Residence\)\s*\(Class\s+BT\))\s+visas?\b",
+        text[:12000],
+    )
+    class_bt_refusal = None
+    if class_bt_application:
+        after_application = text[class_bt_application.end():class_bt_application.end() + 1800]
+        class_bt_refusal = re.search(
+            r"(?is)\bdelegate\s+refused\s+to\s+grant\s+(?:the\s+)?visa\b"
+            r".{0,350}?\bappellants?\s+applied\b.{0,180}?\btribunal\b"
+            r".{0,120}?\breview\s+of\s+that\s+decision\b",
+            after_application,
+        )
+    if class_bt_application and class_bt_refusal:
+        value = "Child (Residence) (Class BT) visa"
+        proof = _evidence(
+            text,
+            class_bt_application.start("name"),
+            class_bt_application.end("name"),
+            value,
+            "current_class_bt_application_refusal_review",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": class_bt_refusal.group(0),
+            "qualified": True,
+            "rank": 4,
+        })
+        results.append((4, proof))
+
+    # A class mentioned as background is not enough. For Class BF, require the
+    # same person's visa to be expressly cancelled and that cancellation to be
+    # the decision under review which the tribunal then revokes.
+    class_bf_cancellation = re.search(
+        r"(?is)\b(?:minister|department)\s+(?:cancelled|canceled)\s+"
+        r"(?P<subject>[^,.;\n]{1,90}?)\s+visa\s*\(\s*"
+        r"(?P<class>Class\s+BF\s+transitional\s*\(\s*permanent\s*\))\s*\)",
+        text,
+    )
+    class_bf_review_outcome = re.search(
+        r"(?is)\bdecision\s+under\s+review\s+is\s+set\s+aside\b.{0,220}?"
+        r"\bcancellation\s+of\s+(?P<subject>[^,.;\n]{1,90}?)\s+visa\s+is\s+revoked\b",
+        text,
+    )
+    if class_bf_cancellation and class_bf_review_outcome:
+        normalize_subject = lambda value: re.sub(r"[^\w]+", " ", value.casefold()).strip()
+        if normalize_subject(class_bf_cancellation["subject"]) == normalize_subject(class_bf_review_outcome["subject"]):
+            value = "Class BF Transitional (Permanent) visa"
+            proof = _evidence(
+                text,
+                class_bf_cancellation.start("class"),
+                class_bf_cancellation.end("class"),
+                value,
+                "current_class_bf_cancellation_review",
+            )
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualification_quote": class_bf_review_outcome.group(0),
+                "qualified": True,
+                "rank": 4,
+            })
+            results.append((4, proof))
+
     class_visa_matches = [
         match for match in _VISA.finditer(text)
         if re.match(r"(?i)^class\s+\d{3}\b", match[0].strip())
@@ -1428,6 +1669,17 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
             r"refus\w*|grant\w*|cancel\w*|revok\w*)\b)",
             context,
         )
+        another_person_visa = re.search(
+            r"(?is)\b(?:my|his|her|their|the\s+applicant[’']s)\s+"
+            r"(?:former\s+)?(?:wife|husband|spouse|partner|son|daughter|child|"
+            r"mother|father)\b"
+            r"[^.!?]{0,240}?\b(?:she|he|they)\b[^.!?]{0,180}?"
+            r"\b(?:appl\w*|lodg\w*|fil\w*|receiv\w*|grant\w*|hold\w*)\b"
+            r"[^.!?]{0,140}?\b(?:sub[- ]?class\s+)?"
+            + re.escape(number)
+            + r"\s+visa\b",
+            context,
+        )
         visa_status_only = re.search(
             r"(?is)\bvisa\b.{0,140}\b(?:ceased|expired)\b.{0,140}\b"
             r"(?:does not currently hold|does not hold|no longer holds)\b.{0,80}\bvisa\b",
@@ -1443,7 +1695,7 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         )
         if visa_status_only and not explicit_visa_disposition:
             continue
-        if not subject or not action or not direct_action:
+        if another_person_visa or not subject or not action or not direct_action:
             continue
         proof = _evidence(
             text, match.start(), match.end(), f"Subclass {number} visa",
@@ -1745,6 +1997,15 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         return None
 
     source = text[:30000]
+    if re.search(
+        r"(?is)\b(?:it|this\s+application|the\s+present\s+application|"
+        r"this\s+proceeding|the\s+present\s+proceeding)\b"
+        r".{0,180}?\bdoes\s+not\s+seek\s+(?:judicial\s+)?review\s+of\s+"
+        r"(?:a|the)\s+decision\s+to\s+(?:cancel|refuse|grant)\b"
+        r".{0,120}?\bvisa\b",
+        source[:12000],
+    ):
+        return None
     catchwords_match = re.search(r"(?i)\bCATCHWORDS?\b\s*:?", source[:9000])
     catchwords = source[catchwords_match.end():catchwords_match.end() + 2600] if catchwords_match else ""
     catchwords_end = re.search(
@@ -1878,6 +2139,21 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
             source = source[:reasons_heading.start() + references.start()]
 
     citation_spans = list(CITATION.finditer(source))
+    sentence_break = re.compile(
+        r"[.!?](?:[\"')\]]*)[ \t\r\n]+|"
+        r"[ \t]*\r?\n[ \t]*(?=(?:REASONS\s+FOR\s+(?:JUDGMENT|DECISION)|"
+        r"STATEMENT\s+OF\s+DECISION|DECISION\s+RECORD|CATCHWORDS|"
+        r"BACKGROUND|INTRODUCTION|ORDERS?)\b)|\n[ \t]*\n+",
+        re.I,
+    )
+
+    def sentence_bounds(position: int) -> tuple[int, int]:
+        start = 0
+        for boundary in sentence_break.finditer(source, 0, position):
+            start = boundary.end()
+        following = sentence_break.search(source, position)
+        return start, following.start() if following else len(source)
+
     numbered_visas: list[tuple[re.Match[str], str]] = []
     named_nomination_visa_pattern = re.compile(
         r"(?i)\b(?:Regional\s+Employer\s+Nomination\s*\(Permanent\)|"
@@ -1929,7 +2205,7 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         return None
 
     refusal = (
-        r"(?:refus\w*|not\s+to\s+grant|not\s+granted|"
+        r"(?:refus\w*|not\s+to\s+grant|to\s+not\s+grant|not\s+granted|"
         r"decision\s+not\s+to\s+grant|decision\s+to\s+refus\w*|"
         r"declin\w*\s+to\s+grant)"
     )
@@ -1950,27 +2226,77 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         token for token in re.findall(r"[A-Za-z][A-Za-z'’-]{2,}", title_applicant)
         if token.casefold() not in {"the", "applicant", "company", "limited", "pty"}
     ]
-    action_spans = [
-        action for action in refusal_and_visa.finditer(source)
-        if (
-            actor_pattern.search(source[max(0, action.start() - 300):action.end() + 300])
-            or any(
-                re.search(
-                    r"(?i)\b" + re.escape(token) + r"\b",
-                    source[max(0, action.start() - 300):action.end() + 300],
+    sentence_ranges: list[tuple[int, int]] = []
+    cursor = 0
+    for boundary in sentence_break.finditer(source):
+        sentence_ranges.append((cursor, boundary.start()))
+        cursor = boundary.end()
+    sentence_ranges.append((cursor, len(source)))
+    action_spans: list[tuple[int, int]] = []
+    for sentence_start, sentence_end in sentence_ranges:
+        sentence = source[sentence_start:sentence_end]
+        for action in refusal_and_visa.finditer(sentence):
+            action_start = sentence_start + action.start()
+            action_end = sentence_start + action.end()
+            action_context = source[max(0, action_start - 300):action_end + 300]
+            if (
+                actor_pattern.search(action_context)
+                or any(
+                    re.search(r"(?i)\b" + re.escape(token) + r"\b", action_context)
+                    for token in title_tokens
                 )
-                for token in title_tokens
-            )
-        )
-    ]
+            ):
+                action_spans.append((action_start, action_end))
     if not action_spans:
         return None
 
-    all_codes = {code for _, code in numbered_visas}
-    for action in action_spans:
+    def is_linked_application_mention(
+        visa_match: re.Match[str], code: str, action_start: int
+    ) -> bool:
+        visa_start, visa_end = sentence_bounds(visa_match.start())
+        if visa_match.start() >= action_start or action_start - visa_match.end() > 5000:
+            return False
+        if re.search(
+            r"(?i)\b(?:was\s+)?(?:mandatorily\s+)?cancel(?:led|ed)\b|"
+            r"\b(?:expired|ceased)\b",
+            source[visa_match.end():min(len(source), visa_match.end() + 120)],
+        ):
+            return False
+        application_sentence = source[visa_start:visa_end]
+        application_pattern = re.compile(
+            r"(?is)\b(?:applicant(?:s)?|appellant(?:s)?|he|she|they|"
+            r"the\s+first\s+applicant|the\s+second\s+applicant)\b"
+            r"[^.!?]{0,240}?\b(?:applied|lodged|filed)\b[^.!?]{0,280}?"
+            r"\b(?:sub[- ]?class|sublcass|class)\s+" + re.escape(code) +
+            r"\b[^.!?]{0,100}?\bvisa(?:s|\(s\))?\b"
+        )
+        application = application_pattern.search(application_sentence)
+        if not application or not (
+            application.start() <= visa_match.start() - visa_start
+            and visa_match.end() - visa_start <= application.end()
+        ):
+            return False
+        if re.search(r"(?i)\b(?:previous|previously|earlier|former|historical)\b", application.group(0)):
+            return False
+        action_sentence_start, action_sentence_end = sentence_bounds(action_start)
+        action_sentence = source[action_sentence_start:action_sentence_end]
+        if not re.search(
+            r"(?i)\b(?:visa\s+application|application\s+for\s+(?:the\s+)?visa|"
+            r"decision\s+on\s+that\s+application)\b",
+            action_sentence,
+        ):
+            return False
+        return not any(
+            other_code != code
+            and visa_match.end() <= other.start() < action_start
+            for other, other_code in numbered_visas
+        )
+
+    for action_start, action_end in action_spans:
+        action_sentence_start, action_sentence_end = sentence_bounds(action_start)
         local_named_visas = [
             match for match in named_nomination_visas
-            if action.start() - 500 <= match.start() <= action.end() + 500
+            if action_sentence_start <= match.start() < action_sentence_end
         ]
         named_values = {
             re.sub(
@@ -1982,15 +2308,15 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         if len(named_values) == 1:
             visa_match = min(
                 local_named_visas,
-                key=lambda match: abs(match.start() - action.start()),
+                key=lambda match: abs(match.start() - action_start),
             )
-            if abs(visa_match.start() - action.start()) <= 5000:
+            if abs(visa_match.start() - action_start) <= 5000:
                 value = re.sub(
                     r"(?i)\bvisas?$", "visa", " ".join(visa_match[0].split())
                 )
                 value = re.sub(r"\)\s*(?=\()", ") ", value)
-                quote_start = max(0, min(visa_match.start(), action.start()) - 120)
-                quote_end = min(len(text), max(visa_match.end(), action.end()) + 180)
+                quote_start = max(0, min(visa_match.start(), action_start) - 120)
+                quote_end = min(len(text), max(visa_match.end(), action_end) + 180)
                 return Evidence(
                     value=value,
                     quote=text[quote_start:quote_end],
@@ -2000,19 +2326,25 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
                 )
         local_matches = [
             (match, code) for match, code in numbered_visas
-            if action.start() - 500 <= match.start() <= action.end() + 500
+            if (
+                (
+                    action_sentence_start <= match.start() < action_sentence_end
+                    and not re.search(
+                        r"(?i)\b(?:was\s+)?(?:mandatorily\s+)?cancel(?:led|ed)\b|"
+                        r"\b(?:expired|ceased)\b",
+                        source[match.end():min(len(source), match.end() + 120)],
+                    )
+                )
+                or is_linked_application_mention(match, code, action_start)
+            )
         ]
         local_codes = {code for _, code in local_matches}
         if len(local_codes) == 1:
             visa_match, code = local_matches[0]
-        elif not local_codes and len(all_codes) == 1:
-            visa_match, code = numbered_visas[0]
         elif len(local_codes) > 1:
             continue
         else:
             continue
-        action_start = action.start()
-        action_end = action.end()
         if abs(visa_match.start() - action_start) > 5000:
             continue
         quote_start = max(0, min(visa_match.start(), action_start) - 120)
@@ -2203,6 +2535,11 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         and not current_visa_decision_heading
         and not current_rrt_review
     )
+    costs_only_migration_judgment = bool(
+        re.search(r"(?i)\bMIGRATION\s*[–—-]\s*Costs judgment\b", catchwords)
+        and not current_visa_decision_heading
+        and not current_rrt_review
+    )
     nomination_decision_only = bool(
         re.search(
             r"(?is)\b(?:decision under review|delegate|Tribunal|AAT|MRT)\b.{0,260}?"
@@ -2227,7 +2564,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         and re.search(r"\b(?:acquisition\s+and\s+sale|misappropriation)\b", head + catchwords, re.I)
     ):
         result.not_applicable["visa_type"] = "non_immigration_commercial_dispute"
-    elif ancillary_costs_dispute:
+    elif ancillary_costs_dispute or costs_only_migration_judgment:
         result.not_applicable["visa_type"] = "ancillary_costs_dispute_no_current_visa_review"
     elif (
         re.search(
@@ -2292,7 +2629,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         )
         and not current_visa_decision_heading
         and not re.search(
-            r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
+            r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
             r"refusal\s+of\s+(?:the\s+)?visa|"
             r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
             r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"

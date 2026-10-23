@@ -30,7 +30,29 @@ from .extraction.grounded import (
 )
 from .extraction.regex import _case_nature
 
-REPAIR_FIELDS = CORE_FIELDS + ("case_nature", "full_text_path", "text_snippet")
+VISA_METADATA_FIELDS = ("visa_subclass", "visa_class_code", "visa_subclass_number")
+REPAIR_FIELDS = CORE_FIELDS + VISA_METADATA_FIELDS + ("case_nature", "full_text_path", "text_snippet")
+
+# Historical subclass-to-class mappings used only to validate an individually
+# reviewed metadata correction. The current visa must still be independently
+# identified from that case's own source before these mappings are applied.
+_VISA_CLASS_BY_SUBCLASS = {
+    "100": "BC",
+    "485": "VC",
+    "500": "TU",
+    "570": "TU",
+    "571": "TU",
+    "572": "TU",
+    "573": "TU",
+    "574": "TU",
+    "575": "TU",
+    "576": "TU",
+    "785": "XD",
+    "790": "XE",
+    "801": "BS",
+    "866": "XA",
+    "885": "VB",
+}
 
 REASONS = {
     "author_not_stated": "可核對原文沒有明列裁決者，不從案件名稱或其他案件推斷",
@@ -1013,10 +1035,52 @@ def _case_primary_party_key(title: str) -> str:
 
 def _visa_type_family(value: str) -> str:
     normalized = re.sub(r"\bsubclass\s+\d{3}\b", " ", value.casefold())
+    if re.search(r"\bsubclass\s+457\b", value, re.I):
+        # "business" is a descriptor in the full legal name "subclass 457
+        # business visa", not a separate visa subclass.
+        normalized = re.sub(r"\bbusiness\b", " ", normalized)
     normalized = re.sub(r"\bclass\s+[a-z]{1,3}\b", " ", normalized)
     normalized = re.sub(r"\b\d{3}\b", " ", normalized)
     normalized = re.sub(r"\b(?:temporary|permanent|visa)\b", " ", normalized)
     return " ".join(re.findall(r"[a-z]+", normalized))
+
+
+def _expected_visa_metadata(field: str, visa_value: str) -> str | None:
+    subclass = re.search(r"(?i)\bsub[- ]?class\s+(\d{3})\b", visa_value)
+    number = subclass.group(1) if subclass else ""
+    if field in {"visa_subclass", "visa_subclass_number"}:
+        return number
+    if field == "visa_class_code":
+        visa_class = re.search(r"(?i)\bclass\s+([a-z]{1,3})\b", visa_value)
+        if visa_class:
+            return visa_class.group(1).upper()
+        return _VISA_CLASS_BY_SUBCLASS.get(number) if number else None
+    return None
+
+
+def _visa_type_specifics_match(value: str, source_value: str, source_quote: str) -> bool:
+    """Do not treat different numbered subclasses as the same visa family."""
+    subclass_pattern = re.compile(r"\bsub[ -]?class\s+(\d{3})\b", re.I)
+    class_pattern = re.compile(r"\bclass\s+([a-z]{1,3})\b", re.I)
+    expected_subclasses = set(subclass_pattern.findall(value))
+    expected_classes = {item.upper() for item in class_pattern.findall(value)}
+
+    normalized_quote = " ".join(source_quote.split())
+    normalized_source_value = " ".join(source_value.split())
+    source_subclasses = set(subclass_pattern.findall(normalized_source_value))
+    source_classes = {item.upper() for item in class_pattern.findall(normalized_source_value)}
+    source_start = normalized_quote.casefold().find(normalized_source_value.casefold())
+    if source_start >= 0:
+        nearby = normalized_quote[max(0, source_start - 80):
+                                  min(len(normalized_quote), source_start + len(normalized_source_value) + 80)]
+        source_subclasses.update(subclass_pattern.findall(nearby))
+        source_classes.update(item.upper() for item in class_pattern.findall(nearby))
+
+    if expected_subclasses and source_subclasses and expected_subclasses != source_subclasses:
+        return False
+    if expected_classes and source_classes and expected_classes != source_classes:
+        return False
+    return True
 
 
 def _validate_linked_case_visa_approval(
@@ -1027,7 +1091,7 @@ def _validate_linked_case_visa_approval(
     evidence: dict[str, Any],
     assessment: Any,
 ) -> None:
-    """Validate a visa value inherited from the exact judgment under appeal."""
+    """Validate a visa value supported by a linked judgment in the same matter."""
     metadata, body, has_separator = _case_source_header(source_text)
     if (
         not has_separator
@@ -1048,25 +1112,26 @@ def _validate_linked_case_visa_approval(
     linked_citation = str(linked.get("citation", "")).strip()
     if not linked_citation:
         raise ValueError("Linked visa approval is missing the appealed citation")
-
-    appeal = re.search(r"(?is)\bAppeal\s+from\s*:\s*(.{0,700})", body)
-    if not appeal:
-        raise ValueError("Target source does not identify an appealed case")
-    appeal_block = appeal[1]
-    next_heading = re.search(
-        r"(?im)^\s*(?:File number(?:\(s\))?|Judgment of|Date of judgment|"
-        r"Catchwords|Legislation|Division|Registry|National Practice Area)\s*:",
-        appeal_block,
-    )
-    if next_heading:
-        appeal_block = appeal_block[:next_heading.start()]
-    normalized_appeal = " ".join(appeal_block.split())
-    normalized_citation = " ".join(linked_citation.split())
-    citation_pattern = (
-        r"(?<![A-Za-z0-9])" + re.escape(normalized_citation) + r"(?![A-Za-z0-9])"
-    )
-    if not re.search(citation_pattern, normalized_appeal):
-        raise ValueError("Linked citation is not the case identified under Appeal from")
+    same_proceeding = evidence.get("method") == "manual_same_proceeding_visa_review"
+    if not same_proceeding:
+        appeal = re.search(r"(?is)\bAppeal\s+from\s*:\s*(.{0,700})", body)
+        if not appeal:
+            raise ValueError("Target source does not identify an appealed case")
+        appeal_block = appeal[1]
+        next_heading = re.search(
+            r"(?im)^\s*(?:File number(?:\(s\))?|Judgment of|Date of judgment|"
+            r"Catchwords|Legislation|Division|Registry|National Practice Area)\s*:",
+            appeal_block,
+        )
+        if next_heading:
+            appeal_block = appeal_block[:next_heading.start()]
+        normalized_appeal = " ".join(appeal_block.split())
+        normalized_citation = " ".join(linked_citation.split())
+        citation_pattern = (
+            r"(?<![A-Za-z0-9])" + re.escape(normalized_citation) + r"(?![A-Za-z0-9])"
+        )
+        if not re.search(citation_pattern, normalized_appeal):
+            raise ValueError("Linked citation is not the case identified under Appeal from")
 
     parent_rows = conn.execute(
         "SELECT * FROM cases WHERE citation=?", (linked_citation,)
@@ -1104,6 +1169,62 @@ def _validate_linked_case_visa_approval(
         or parent["citation"] not in linked_metadata.get("title", "")
     ):
         raise ValueError("Appealed-case source identity does not match the saved case")
+    if same_proceeding:
+        def docket_key(source_body: str) -> str:
+            match = re.search(
+                r"(?i)\b([A-Z]{1,6})\s+(\d+)\s+of\s+(\d{4})\b",
+                source_body[:8000],
+            )
+            return " ".join(match.groups()).upper() if match else ""
+
+        def applicant_key(source_body: str) -> str:
+            match = re.search(
+                r"(?is)\bBETWEEN\s*:\s*(.{1,200}?)\bApplicant\b",
+                source_body[:10000],
+            )
+            return (
+                re.sub(r"[^a-z0-9]+", "", match[1].casefold())
+                if match else ""
+            )
+
+        def judge_key(source_body: str) -> str:
+            match = re.search(
+                r"(?im)^\s*JUDGES?:\s*([^\r\n]{1,80})\s*$",
+                source_body[:10000],
+            )
+            return " ".join(match[1].casefold().split()) if match else ""
+
+        prior_reasons_date = re.search(
+            r"(?i)\breasons\s+for\s+judgment\s+published\s+on\s+"
+            r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
+            body,
+        )
+        parent_judgment_date = re.search(
+            r"\((\d{1,2}\s+[A-Za-z]+\s+\d{4})\)\s*$",
+            linked_metadata.get("title", ""),
+            re.I,
+        )
+        if (
+            row["citation"] == parent["citation"]
+            or not re.search(r"(?i)\bSUPPLEMENTARY\s+REASONS\s+FOR\s+JUDGMENT\b", body)
+            or not re.search(r"(?i)\bSUPPLEMENTARY\s+REASONS\s+FOR\s+JUDGMENT\b", target_quote)
+            or not prior_reasons_date
+            or not parent_judgment_date
+            or " ".join(prior_reasons_date[1].casefold().split())
+            != " ".join(parent_judgment_date[1].casefold().split())
+            or not re.search(r"(?i)\bIN\s+THE\s+FEDERAL\s+COURT\s+OF\s+AUSTRALIA\b", body)
+            or not re.search(r"(?i)\bIN\s+THE\s+FEDERAL\s+COURT\s+OF\s+AUSTRALIA\b", linked_body)
+            or not docket_key(body)
+            or docket_key(body) != docket_key(linked_body)
+            or not applicant_key(body)
+            or applicant_key(body) != applicant_key(linked_body)
+            or not judge_key(body)
+            or judge_key(body) != judge_key(linked_body)
+        ):
+            raise ValueError(
+                "Same-proceeding approval requires matching court, docket, applicant, judge, "
+                "and a quoted supplementary-judgment date"
+            )
     linked_quote = " ".join(str(linked.get("quote", "")).split())
     source_value = " ".join(str(linked.get("source_value", "")).split())
     normalized_linked_body = " ".join(linked_body.split())
@@ -1116,6 +1237,8 @@ def _validate_linked_case_visa_approval(
         or _visa_type_family(source_value) != _visa_type_family(value)
     ):
         raise ValueError("Linked visa source wording does not support the stored visa class")
+    if not _visa_type_specifics_match(value, source_value, linked_quote):
+        raise ValueError("Linked visa source wording conflicts with a specific class or subclass")
     linked_assessment = assess_case(
         linked_text,
         citation=parent["citation"],
@@ -1130,6 +1253,11 @@ def _validate_linked_case_visa_approval(
         and _visa_type_family(linked_proof.value) != _visa_type_family(value)
     ):
         raise ValueError("Appealed source has a conflicting direct visa classification")
+    if (
+        linked_proof
+        and not _visa_type_specifics_match(value, linked_proof.value, linked_proof.quote)
+    ):
+        raise ValueError("Appealed source has a conflicting specific class or subclass")
 
 
 def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
@@ -1177,6 +1305,10 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "visa_type"
                     and evidence.get("method") == "manual_linked_case_visa_review"
                 )
+                manual_same_proceeding_visa_review = (
+                    field == "visa_type"
+                    and evidence.get("method") == "manual_same_proceeding_visa_review"
+                )
                 manual_judge_review = (
                     field == "judges"
                     and evidence.get("method") == "manual_official_source_judge_review"
@@ -1190,7 +1322,7 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     proof = _austlii_catchword_visa_proof(
                         dict(row), source_text, assessment, {}, {change["source_sha256"]}
                     )
-                if manual_linked_visa_review:
+                if manual_linked_visa_review or manual_same_proceeding_visa_review:
                     _validate_linked_case_visa_approval(
                         root, conn, row, source_text, evidence, assessment
                     )
@@ -1218,10 +1350,16 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     normalized_quote = " ".join(quote.split())
                     normalized_body = " ".join(body.split())
                     normalized_value = " ".join(value.split())
+                    exact_grounded_quote = bool(
+                        proof
+                        and proof.value == value
+                        and " ".join(proof.quote.split()) == normalized_quote
+                    )
                     if (not separator or not quote
                             or normalized_quote not in normalized_body
                             or not value
-                            or normalized_value not in normalized_quote):
+                            or (normalized_value not in normalized_quote
+                                and not exact_grounded_quote)):
                         raise ValueError("Manual visa approval requires exact source wording")
                     not_applicable = assessment.not_applicable.get(field)
                     sponsor_decision_confirmed = (
@@ -1380,6 +1518,46 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         )
                         if not (normalized_dismissal or normalized_remittance):
                             raise ValueError("Approval no longer matches grounded evidence")
+            elif field in VISA_METADATA_FIELDS:
+                if evidence.get("method") != "manual_source_bound_visa_metadata_review":
+                    raise ValueError("Visa metadata requires a source-bound manual review")
+                metadata = {}
+                separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                header_text = (
+                    source_text[:separator.start()]
+                    if separator else "\n".join(source_text.splitlines()[:20])
+                )
+                for line in header_text.splitlines():
+                    match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+                    if match and match[2].strip():
+                        metadata.setdefault(match[1].casefold(), match[2].strip())
+                if (
+                    metadata.get("citation") != row["citation"]
+                    or metadata.get("url") != row["url"]
+                    or row["citation"] not in metadata.get("title", "")
+                ):
+                    raise ValueError("Visa metadata review requires matching source identity")
+                body = source_text[separator.end():] if separator else ""
+                quote = evidence.get("quote", "")
+                if not quote or " ".join(quote.split()) not in " ".join(body.split()):
+                    raise ValueError("Visa metadata review requires an exact source quote")
+                assessment = assess_case(
+                    source_text,
+                    citation=row["citation"],
+                    title=row["title"],
+                    url=row["url"],
+                )
+                proof = assessment.values.get("visa_type")
+                current_visa_value = evidence.get("current_visa_value", "")
+                if (
+                    assessment.source_status != "checked"
+                    or not proof
+                    or proof.value != current_visa_value
+                ):
+                    raise ValueError("Visa metadata review must match the case's current source evidence")
+                expected_metadata = _expected_visa_metadata(field, proof.value)
+                if expected_metadata is None or evidence.get("value") != expected_metadata:
+                    raise ValueError("Visa metadata value does not match the verified visa classification")
             elif field == "case_nature":
                 quote = evidence.get("quote", "")
                 value = evidence.get("value", "")

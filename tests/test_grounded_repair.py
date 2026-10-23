@@ -781,6 +781,28 @@ class GroundedTests(unittest.TestCase):
         )
         self.assertNotIn("visa_type", result.not_applicable)
 
+    def test_citizenship_case_does_not_inherit_historical_visa_from_catchwords(self):
+        body = (
+            "Peter v Minister (Citizenship) [2024] AATA 3224\n"
+            "DECISION\nThe delegate's decision to refuse citizenship is affirmed.\n"
+            "CATCHWORDS\nCITIZENSHIP – application for citizenship by conferral – refusal of "
+            "citizenship – false information on a resident return visa application\n"
+            "REASONS FOR DECISION\n"
+            "The Applicant first arrived as the holder of a Refugee (subclass 200) visa. "
+            "He is currently the holder of a Resident Return (subclass 155) visa. "
+            "The application before the Tribunal is the citizenship application.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2024] AATA 3224",
+            title="Peter and Minister (Citizenship) [2024] AATA 3224",
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+        self.assertNotIn("visa_type", result.values)
+
     def test_unspecified_cancellation_with_no_primary_decision_has_no_visa_type(self):
         body = (
             HEAD
@@ -896,6 +918,96 @@ class GroundedTests(unittest.TestCase):
             "direct_current_personal_visa_refusal",
         )
         self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_historical_visitor_subclass_is_not_used_for_current_protection_refusal(self):
+        body = (
+            "SZUIJ v Minister [2017] FCCA 1590\n"
+            "CATCHWORDS: MIGRATION – protection visa application\n"
+            "REASONS FOR JUDGMENT\n"
+            "The delegate refused to grant the applicant a Protection (Class XA) visa. "
+            "The applicant applied for a Protection visa, having arrived as the holder "
+            "of a Visitor (Class FA) (Subclass 600) visa.\n"
+        )
+        proof = _direct_personal_nomination_visa(
+            document_text(body), "SZUIJ v Minister"
+        )
+        self.assertIsNone(proof)
+        result = assess_case(body, citation="[2017] FCCA 1590", title="SZUIJ v Minister")
+        self.assertNotEqual(
+            result.values.get("visa_type").value if result.values.get("visa_type") else None,
+            "Subclass 600 visa",
+        )
+
+    def test_historical_subclass_601_is_not_used_for_current_protection_refusal(self):
+        body = (
+            "Example v Minister [2017] FCCA 1894\n"
+            "CATCHWORDS: MIGRATION – protection visa application\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Tribunal affirmed a decision not to grant the applicants a protection visa. "
+            "The first applicant arrived in Australia on 7 August 2013, having been granted "
+            "a subclass 601 visa which ceased on 7 November 2013. It was not until 2015 "
+            "that the applicant applied for protection.\n"
+        )
+        proof = _direct_personal_nomination_visa(
+            document_text(body), "Example v Minister"
+        )
+        self.assertIsNone(proof)
+
+    def test_student_visa_subclass_beats_spouse_visa_in_reinstatement_evidence(self):
+        body = (
+            "Singh v Minister [2015] FCCA 2232\n"
+            "CATCHWORDS: MIGRATION – application to reinstate judicial review\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Applicant lodged an application for a Student (Subclass 570) visa "
+            "(the visa) on 23 November 2012. The delegate refused to grant the "
+            "Applicant the visa. The applicant later stated: \"I have faxed my "
+            "medical certificate because my wife was sick, and she lodged the 309 "
+            "visa application offshore.\"\n"
+        )
+        result = assess_case(body, citation="[2015] FCCA 2232", title="Singh v Minister")
+        self.assertEqual(result.values["visa_type"].value, "Subclass 570 visa")
+        self.assertEqual(
+            result.values["visa_type"].rule,
+            "current_student_application_refusal",
+        )
+
+    def test_spouse_subclass_application_is_not_the_applicants_current_visa(self):
+        body = (
+            "Example v Minister [2015] FCCA 2232\n"
+            "CATCHWORDS: MIGRATION – reinstatement application dismissed\n"
+            "REASONS FOR JUDGMENT\n"
+            "The applicant stated: \"My wife was sick, and she lodged the 309 visa "
+            "application offshore.\" The present application concerns reinstatement.\n"
+        )
+        result = assess_case(body, citation="[2015] FCCA 2232", title="Example v Minister")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_expired_historical_subclass_is_not_bound_to_later_student_application(self):
+        body = (
+            "Example v Minister [2017] FCA 1333\n"
+            "CATCHWORDS: MIGRATION – refusal of student visa\n"
+            "REASONS FOR JUDGMENT\n"
+            "The appellant previously held a Graduate Temporary Class VC subclass 485 visa "
+            "that expired in 2014. In October 2014 she applied for the student visa in question. "
+            "The delegate refused the student visa application.\n"
+        )
+        proof = _direct_personal_nomination_visa(
+            document_text(body), "Example v Minister"
+        )
+        self.assertIsNone(proof)
+
+    def test_current_numbered_visa_is_bound_when_named_in_the_refusal_sentence(self):
+        body = (
+            "Example v Minister [2024] FCA 123\n"
+            "CATCHWORDS: MIGRATION – visa refusal\n"
+            "REASONS FOR JUDGMENT\n"
+            "The delegate refused to grant the applicant a Safe Haven Enterprise "
+            "(Class XE) (Subclass 790) visa.\n"
+        )
+        proof = _direct_personal_nomination_visa(
+            document_text(body), "Example v Minister"
+        )
+        self.assertEqual(proof.value if proof else None, "Subclass 790 visa")
 
     def test_named_personal_visa_refusal_resolves_sponsorship_na(self):
         categories = (
@@ -1091,6 +1203,74 @@ class GroundedTests(unittest.TestCase):
         self.assertIsNone(
             _direct_personal_nomination_visa(document_text(body), "Qiao v Minister (No 3)")
         )
+        result = assess_case(body, citation="[2025] FedCFamC2G 132")
+        self.assertNotIn("visa_type", result.values)
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "ancillary_costs_dispute_no_current_visa_review",
+        )
+
+    def test_class_bf_is_filled_only_for_the_current_cancellation_review(self):
+        body = (
+            "Kostopoulos v Minister [2018] AATA 3859\n"
+            "CATCHWORDS: MIGRATION – mandatory visa cancellation – character test\n"
+            "REASONS FOR DECISION\n"
+            "On 27 September 2007 the Minister cancelled Mr Kostopoulos’ visa "
+            "(Class BF transitional (permanent)) under s 501(2).\n"
+            "DECISION\n"
+            "The decision under review is set aside and in substitution thereof the "
+            "cancellation of Mr Kostopoulos’ visa is revoked.\n"
+        )
+        result = assess_case(body, citation="[2018] AATA 3859")
+        self.assertEqual(
+            result.values["visa_type"].value,
+            "Class BF Transitional (Permanent) visa",
+        )
+        self.assertEqual(
+            result.values["visa_type"].rule,
+            "current_class_bf_cancellation_review",
+        )
+
+    def test_class_bt_requires_the_named_application_refusal_and_review_link(self):
+        body = (
+            "Nakad v Minister [2013] FCA 810\n"
+            "REASONS FOR JUDGMENT\n"
+            "The appellants applied to the Department for Child (Residence) (Class BT) "
+            "visas on 7 March 2012. The delegate refused to grant the visa on 16 March "
+            "2012 and the appellants applied shortly thereafter to the Tribunal for a "
+            "review of that decision. The appeal is dismissed.\n"
+        )
+        result = assess_case(body, citation="[2013] FCA 810")
+        self.assertEqual(
+            result.values["visa_type"].value,
+            "Child (Residence) (Class BT) visa",
+        )
+        self.assertEqual(
+            result.values["visa_type"].rule,
+            "current_class_bt_application_refusal_review",
+        )
+
+    def test_historical_class_bf_without_current_review_outcome_stays_blank(self):
+        body = (
+            "Example v Minister [2018] FCA 12\n"
+            "CATCHWORDS: MIGRATION – judicial review – application dismissed\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Minister cancelled Mr Kostopoulos’ visa (Class BF transitional "
+            "(permanent)) in 2007. The current application concerns a separate "
+            "procedural decision.\n"
+        )
+        result = assess_case(body, citation="[2018] FCA 12")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_class_bt_in_legislation_without_a_linked_current_refusal_stays_blank(self):
+        body = (
+            "Example v Minister [2014] FCA 12\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Migration Regulations refer to a Child (Residence) (Class BT) visa. "
+            "This proceeding concerns a filing timetable only.\n"
+        )
+        result = assess_case(body, citation="[2014] FCA 12")
+        self.assertNotIn("visa_type", result.values)
 
     def test_section_499_direction_is_not_a_subclass_499_visa(self):
         body = (
@@ -1694,6 +1874,16 @@ class GroundedTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_historical_student_subclasses_map_to_class_tu(self):
+        from immi_case_downloader.repair_workflow import _expected_visa_metadata
+
+        for subclass in ("570", "571", "572", "573", "574", "575", "576"):
+            with self.subTest(subclass=subclass):
+                self.assertEqual(
+                    _expected_visa_metadata("visa_class_code", f"Subclass {subclass} visa"),
+                    "TU",
+                )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -1704,10 +1894,12 @@ class WorkflowTests(unittest.TestCase):
         self.rows = [{"case_id": "a", "citation": "[2024] FCA 12", "title": "Example v Minister",
                       "url": "https://www.austlii.edu.au/au/cases/cth/FCA/2024/12.html",
                       "judges": "", "outcome": "", "visa_type": "", "user_notes": "Keep my notes",
-                      "full_text_path": "downloaded_cases/case.txt", "text_snippet": ""},
+                      "full_text_path": "downloaded_cases/case.txt", "text_snippet": "",
+                      "visa_subclass": "", "visa_class_code": "", "visa_subclass_number": ""},
                      {"case_id": "b", "citation": "[2024] FCA 13", "title": "Other",
                       "url": "", "judges": "Correct J", "outcome": "Allowed", "visa_type": "Subclass 866",
-                      "user_notes": "", "full_text_path": "", "text_snippet": ""}]
+                      "user_notes": "", "full_text_path": "", "text_snippet": "",
+                      "visa_subclass": "572", "visa_class_code": "TP", "visa_subclass_number": "572.0"}]
         db = sqlite3.connect(self.data / "cases.db")
         db.execute("CREATE TABLE cases (" + ",".join(f'{x} TEXT' for x in self.rows[0]) + ")")
         db.executemany("INSERT INTO cases VALUES (" + ",".join("?" for _ in self.rows[0]) + ")", [tuple(r.values()) for r in self.rows])
@@ -2438,6 +2630,84 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0],
                              "Subclass 050 (Bridging E) visa")
 
+    def test_manual_source_bound_visa_metadata_updates_all_stores(self):
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            "Example v Minister [2024] FCA 12\n"
+            "CATCHWORDS: MIGRATION - review of refusal of a Subclass 866 visa\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Minister refused the applicant's Subclass 866 Protection visa.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0].update({
+            "visa_subclass": "785.0",
+            "visa_class_code": "TP",
+            "visa_subclass_number": "785.0",
+        })
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute(
+                "UPDATE cases SET visa_subclass='785.0', visa_class_code='TP', "
+                "visa_subclass_number='785.0' WHERE case_id='a'"
+            )
+            conn.commit()
+        self.save_exports()
+        proof = assess_case(
+            source_text,
+            citation="[2024] FCA 12",
+            title=self.rows[0]["title"],
+            url=self.rows[0]["url"],
+        ).values["visa_type"]
+        self.assertEqual(proof.value, "Subclass 866 visa")
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        values = {
+            "visa_subclass": "866",
+            "visa_class_code": "XA",
+            "visa_subclass_number": "866",
+        }
+        old_values = {
+            "visa_subclass": "785.0",
+            "visa_class_code": "TP",
+            "visa_subclass_number": "785.0",
+        }
+        approvals = [
+            {
+                "case_id": "a",
+                "field": field,
+                "source_path": "downloaded_cases/case.txt",
+                "source_sha256": source_hash,
+                "expected_current_by_store": {
+                    "database": old_values[field],
+                    "csv": old_values[field],
+                    "json": old_values[field],
+                },
+                "evidence": {
+                    "value": value,
+                    "quote": "Subclass 866 Protection visa",
+                    "current_visa_value": proof.value,
+                    "method": "manual_source_bound_visa_metadata_review",
+                },
+                "reviewer": "independent-test-review",
+                "review_note": "Current subclass is directly identified in the source; class code follows the subclass crosswalk.",
+            }
+            for field, value in values.items()
+        ]
+
+        result = apply_approved(self.root, self.root / "manual-visa-metadata", approvals)
+
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 3)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT visa_subclass, visa_class_code, visa_subclass_number "
+                    "FROM cases WHERE case_id='a'"
+                ).fetchone(),
+                ("866", "XA", "866"),
+            )
+
     def test_manual_source_bound_visa_review_normalizes_source_line_wrap(self):
         source_text = (
             "Title: Example v Minister [2024] FCA 12\n"
@@ -2466,6 +2736,63 @@ class WorkflowTests(unittest.TestCase):
         result = apply_approved(self.root, self.root / "manual-visa-line-wrap", [approval])
         self.assertEqual(result["applied"], 1)
         self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+
+    def test_manual_source_bound_visa_review_accepts_exact_grounded_category_proof(self):
+        cases = (
+            (
+                "The applicant applied for a temporary protection visa on 23 September 2015. "
+                "The delegate made a decision refusing to grant the protection visa that he sought.",
+                "Subclass 785 visa",
+                "The source names the visa as a temporary protection visa; subclass follows the applicable statutory category.",
+            ),
+            (
+                "The first applicant (applicant) applied for a SHEV, including his wife. "
+                "The delegate refused to grant the applicants a SHEV.",
+                "Subclass 790 visa",
+                "The source identifies the applied-for and refused visa as a SHEV; subclass follows the applicable statutory category.",
+            ),
+        )
+        for passage, expected, note in cases:
+            with self.subTest(expected=expected):
+                source_text = (
+                    "Title: Example v Minister [2024] FCA 12\n"
+                    "Citation: [2024] FCA 12\n"
+                    f"URL: {self.rows[0]['url']}\n"
+                    + "=" * 80 + "\n"
+                    + "Example v Minister [2024] FCA 12\n"
+                    + "CATCHWORDS: MIGRATION – review of visa refusal\n"
+                    + "REASONS FOR JUDGMENT\n"
+                    + passage
+                )
+                self.source.write_text(source_text, encoding="utf-8")
+                self.save_exports()
+                proof = assess_case(
+                    source_text,
+                    citation="[2024] FCA 12",
+                    title=self.rows[0]["title"],
+                    url=self.rows[0]["url"],
+                ).values["visa_type"]
+                self.assertEqual(proof.value, expected)
+                self.assertNotIn(expected, " ".join(proof.quote.split()))
+                approval = {
+                    "case_id": "a",
+                    "field": "visa_type",
+                    "expected_current_by_store": {
+                        "database": "",
+                        "csv": "",
+                        "json": "",
+                    },
+                    "source_path": "downloaded_cases/case.txt",
+                    "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+                    "evidence": {
+                        "value": proof.value,
+                        "quote": proof.quote,
+                        "method": "manual_source_bound_visa_review",
+                    },
+                    "reviewer": "independent-test-review",
+                    "review_note": note,
+                }
+                validate_approvals(self.root, [approval])
 
     def test_manual_source_bound_visa_review_rejects_wrong_identity_or_unquoted_value(self):
         source_text = (
