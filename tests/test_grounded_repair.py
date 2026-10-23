@@ -227,6 +227,29 @@ class GroundedTests(unittest.TestCase):
         result = assess_case(body, citation="[2000] FCA 77")
         self.assertEqual(result.values["judges"].value, "MANSFIELD J")
 
+    def test_split_federal_court_panel_is_read_under_the_judge_label(self):
+        body = (
+            "Abidin v Minister [2002] FCA 236\n"
+            "JUDGE:\nBRANSON,\nNORTH and GYLES JJ\n"
+            "DATE: 14 MARCH 2002\n"
+            "PLACE: SYDNEY (HEARD IN PERTH)\n"
+            "REASONS FOR JUDGMENT\n"
+            "THE COURT: Introduction\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 236", title="Abidin v Minister")
+        proof = result.values["judges"]
+        self.assertEqual(proof.value, "BRANSON, NORTH and GYLES JJ")
+        self.assertEqual(proof.rule, "published_judicial_panel_heading")
+
+    def test_unlabelled_judicial_names_stay_blank(self):
+        body = (
+            "Example v Minister [2002] FCA 236\n"
+            "BRANSON, NORTH and GYLES JJ\n"
+            "REASONS FOR JUDGMENT\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 236", title="Example v Minister")
+        self.assertNotIn("judges", result.values)
+
     def test_federal_court_judge_heading_rejects_date_and_place_labels(self):
         for value in ("DATE", "MELBOURNE"):
             with self.subTest(value=value):
@@ -918,6 +941,54 @@ class GroundedTests(unittest.TestCase):
             "direct_current_personal_visa_refusal",
         )
         self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_named_visa_is_bound_to_appellants_application_refusal_and_tribunal_review(self):
+        body = (
+            "SZIGQ & Anor v Minister [2007] FCA 328\n"
+            "REASONS FOR JUDGMENT\n"
+            "The appellants are a husband and wife from Indonesia. They applied for protection "
+            "visas, claiming a well-founded fear of persecution. Their applications were refused "
+            "by the Minister's delegate. The appellants sought review by the Refugee Review Tribunal.\n"
+        )
+        result = assess_case(body, citation="[2007] FCA 328", title="SZIGQ & Anor v Minister")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "protection visa")
+        self.assertEqual(
+            proof.rule,
+            "direct_applicant_application_refusal_and_tribunal_review",
+        )
+        self.assertIn("Their applications were refused", proof.quote)
+        self.assertIn("sought review by the Refugee Review Tribunal", proof.quote)
+
+    def test_explicit_plural_visa_name_is_stored_as_one_visa_type(self):
+        body = (
+            "Example v Minister [2002] FCA 367\n"
+            "CATCHWORDS: MIGRATION – application for review of a Refugee Review Tribunal decision\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Tribunal affirmed a decision of a delegate to refuse protection visas to the applicants.\n"
+        )
+        result = assess_case(body, citation="[2002] FCA 367", title="Example v Minister")
+        self.assertEqual(result.values["visa_type"].value, "protection visa")
+
+    def test_named_visa_application_without_linked_refusal_and_tribunal_review_stays_blank(self):
+        body = (
+            "Example v Minister [2007] FCA 329\n"
+            "REASONS FOR JUDGMENT\n"
+            "The appellants applied for protection visas in 2005. The present appeal concerns "
+            "a later procedural decision and does not identify a review of that refusal.\n"
+        )
+        result = assess_case(body, citation="[2007] FCA 329", title="Example v Minister")
+        self.assertNotIn("visa_type", result.values)
+
+    def test_named_visa_is_not_selected_when_current_applicants_have_conflicting_applications(self):
+        body = (
+            "Example v Minister [2007] FCA 330\n"
+            "REASONS FOR JUDGMENT\n"
+            "The applicants applied for protection visas and student visas. Their applications "
+            "were refused by the delegate. The applicants sought review by the Refugee Review Tribunal.\n"
+        )
+        result = assess_case(body, citation="[2007] FCA 330", title="Example v Minister")
+        self.assertNotIn("visa_type", result.values)
 
     def test_historical_visitor_subclass_is_not_used_for_current_protection_refusal(self):
         body = (

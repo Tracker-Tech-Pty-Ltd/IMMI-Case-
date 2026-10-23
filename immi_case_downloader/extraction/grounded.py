@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261023-v57"
+RULE_VERSION = "grounded-local-20261024-v59"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -344,6 +344,29 @@ def _judge(text: str) -> Evidence | None:
                 )
             break
             offset += len(raw_line)
+
+    # Some Federal Court tables split a full court panel after the explicit
+    # JUDGE label; accept the complete surname list even when "and" is
+    # lowercase or the names cross table-cell line breaks.
+    judge_panel_heading = re.search(
+        r"(?ms)^[ \t]*JUDGE:[ \t]*\n"
+        r"[ \t]*(?P<panel>[A-Z][A-Z’'-]{2,39}"
+        r"(?:[ \t]*,[ \t\r\n]*[A-Z][A-Z’'-]{2,39})*"
+        r"[ \t\r\n]+and[ \t\r\n]+[A-Z][A-Z’'-]{2,39})"
+        r"[ \t\r\n]+(?P<suffix>JJ)[ \t]*$",
+        preamble,
+    )
+    if judge_panel_heading:
+        value = " ".join(
+            f"{judge_panel_heading['panel']} {judge_panel_heading['suffix']}".split()
+        )
+        return _evidence(
+            text,
+            judge_panel_heading.start("panel"),
+            judge_panel_heading.end("suffix"),
+            value,
+            "published_judicial_panel_heading",
+        )
 
     # Federal Court cover sheets often print only a judge's surname (and
     # sometimes split initials, surname, and the judicial suffix across HTML
@@ -1420,7 +1443,7 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         line_end = len(text) if line_end < 0 else line_end
         before = text[max(sentence_start, match.start() - 240):match.start()]
         context = text[max(0, line_start - 140):min(len(text), line_end + 180)]
-        value = match[0].strip()
+        value = re.sub(r"(?i)\bvisas?$", "visa", " ".join(match[0].split()))
         if re.match(r"(?i)^class\s+\d{3}\b", value) and class_cancellation_review:
             value = re.sub(r"(?i)^class\s+(\d{3})", r"Class \1", value, count=1)
             value = re.sub(r"(?i)\bresident\b", "Resident", value)
@@ -2137,6 +2160,71 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
         )
         if references:
             source = source[:reasons_heading.start() + references.start()]
+
+    # Some judgments state the applicants' visa in one sentence, then state
+    # that their application was refused and that they sought Tribunal review
+    # in the next. Require all three links, in this order and close together,
+    # before treating the named visa as the current case's visa.
+    application_pattern = re.compile(
+        r"(?is)\b(?P<actor>(?:(?:the\s+)?applicants?|(?:the\s+)?appellants?|they))\b"
+        r"\s+(?:each\s+)?(?:applied\s+for|lodged\s+(?:an?\s+)?application\s+for|"
+        r"filed\s+(?:an?\s+)?application\s+for|made\s+an?\s+application\s+for)"
+        r"(?P<tail>[^.!?]{0,260})"
+    )
+    refusal_pattern = re.compile(
+        r"(?is)\b(?:their|the\s+applicants?[’']?|the\s+appellants?[’']?)\s+"
+        r"applications?\s+(?:were|was)\s+refus\w*\b"
+    )
+    tribunal_review_pattern = re.compile(
+        r"(?is)\b(?:the\s+)?(?:applicants?|appellants?|they)\b"
+        r"[^.!?]{0,180}\b(?:sought|requested|applied\s+for)\s+(?:a\s+)?review\b"
+        r"[^.!?]{0,100}\b(?:Refugee\s+Review\s+Tribunal|RRT|MRT|Tribunal)\b"
+    )
+    direct_applications: list[Evidence] = []
+    for application in application_pattern.finditer(source):
+        actor = application["actor"].casefold()
+        if actor == "they" and not re.search(
+            r"(?i)\b(?:the\s+)?(?:applicants?|appellants?)\b",
+            source[max(0, application.start() - 320):application.start()],
+        ):
+            continue
+        visa_matches = list(_VISA.finditer(application["tail"]))
+        values = {
+            re.sub(r"(?i)\bvisas?$", "visa", " ".join(match[0].split()))
+            for match in visa_matches
+        }
+        if len(values) != 1 or not visa_matches:
+            continue
+        visa_match = visa_matches[0]
+        follow = source[application.end():application.end() + 1400]
+        refusal = refusal_pattern.search(follow)
+        if not refusal or refusal.start() > 1000:
+            continue
+        intervening_visas = [
+            re.sub(r"(?i)\bvisas?$", "visa", " ".join(match[0].split()))
+            for match in _VISA.finditer(follow[:refusal.start()])
+        ]
+        if any(value not in values for value in intervening_visas):
+            continue
+        review = tribunal_review_pattern.search(follow, refusal.end())
+        if not review or review.start() > refusal.end() + 500:
+            continue
+        value = next(iter(values))
+        visa_start = application.start("tail") + visa_match.start()
+        visa_end = application.start("tail") + visa_match.end()
+        review_end = application.end() + review.end()
+        direct_applications.append(Evidence(
+            value=value,
+            quote=source[application.start():review_end],
+            start=visa_start,
+            end=visa_end,
+            rule="direct_applicant_application_refusal_and_tribunal_review",
+        ))
+    direct_values = {proof.value.casefold() for proof in direct_applications}
+    if len(direct_values) == 1:
+        return direct_applications[0]
+    if len(direct_values) > 1:
+        return None
 
     citation_spans = list(CITATION.finditer(source))
     sentence_break = re.compile(
