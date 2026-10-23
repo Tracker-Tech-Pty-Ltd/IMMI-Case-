@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v65"
+RULE_VERSION = "grounded-local-20261024-v66"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 _LABEL_END = re.compile(
@@ -1590,7 +1590,9 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         text,
     )
     if class_bf_cancellation and class_bf_review_outcome:
-        normalize_subject = lambda value: re.sub(r"[^\w]+", " ", value.casefold()).strip()
+        def normalize_subject(value: str) -> str:
+            return re.sub(r"[^\w]+", " ", value.casefold()).strip()
+
         if normalize_subject(class_bf_cancellation["subject"]) == normalize_subject(class_bf_review_outcome["subject"]):
             value = "Class BF Transitional (Permanent) visa"
             proof = _evidence(
@@ -2749,18 +2751,23 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
     )
     deportation_order_review = bool(
         not current_visa_decision_heading
-        and re.search(
-            r"\bs\.?\s*200\s+of\s+the\s+Migration\s+Act\b",
-            catchwords,
-            re.I,
-        )
-        and re.search(r"\bdeportation\s+order\b", body[:6000], re.I)
-        and re.search(
-            r"\b(?:applied\s+to\s+(?:the\s+)?(?:Tribunal|Court)|"
-            r"lodged\s+an?\s+application)\b.{0,160}?\breview\b.{0,120}?"
-            r"\bthis\s+decision\b",
-            body[:6000],
-            re.I | re.S,
+        and re.search(r"\bs\.?\s*200\b", catchwords + "\n" + head, re.I)
+        and re.search(r"\bMigration\s+Act\b", catchwords + "\n" + head, re.I)
+        and re.search(r"\bdeport(?:ation|ed)?\w*\b", body[:6000], re.I)
+        and (
+            re.search(
+                r"\b(?:applied\s+to\s+(?:the\s+)?(?:Tribunal|Court)|"
+                r"lodged\s+an?\s+application)\b.{0,160}?\breview\b.{0,120}?"
+                r"\bthis\s+decision\b",
+                body[:6000],
+                re.I | re.S,
+            )
+            or re.search(
+                r"\bseeks?\s+judicial\s+review\s+of\s+(?:a|the)\s+decision\b"
+                r".{0,180}?\bto\s+deport\b",
+                body[:6000],
+                re.I | re.S,
+            )
         )
         and not re.search(
             r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
@@ -2901,6 +2908,31 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             re.I,
         )
     )
+    nonvisa_proceeding = bool(
+        not current_visa_decision_heading
+        and (
+            (
+                re.search(r"\bPRACTICE\s*&\s*PROCEDURE\b", head, re.I)
+                and re.search(
+                    r"(?is)\bapplication\s+seeks\s+damages\b.{0,220}?"
+                    r"\bconsequence\s+of\s+criminal\s+conduct\s+of\s+"
+                    r"Commonwealth\s+employees\b",
+                    head,
+                )
+            )
+            or (
+                re.search(r"\bLEGAL\s+PROFESSIONAL\s+PRIVILEGE\b", head, re.I)
+                and re.search(r"\bunlawful\s+non-citizen\b", head, re.I)
+                and re.search(r"\btelephone\s+number\b", head, re.I)
+            )
+            or re.search(
+                r"(?is)\bpowers?\s+to\s+remove\s+(?:an?\s+)?unlawful\s+non-citizen\b"
+                r".{0,240}?\badjournment\b.{0,200}?"
+                r"\bwhile\s+(?:the\s+)?Minister\s+considers\s+(?:a\s+)?grant\s+of\s+(?:a\s+)?visa\b",
+                head,
+            )
+        )
+    )
     if explicit_no_visa_applicant:
         result.not_applicable["visa_type"] = "sponsorship_review_has_no_personal_visa_applicant"
     elif payment_card_network_dispute or (
@@ -2916,7 +2948,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.not_applicable["visa_type"] = "non_immigration_commercial_dispute"
     elif ancillary_costs_dispute or costs_only_migration_judgment:
         result.not_applicable["visa_type"] = "ancillary_costs_dispute_no_current_visa_review"
-    elif (
+    elif nonvisa_proceeding or (
         re.search(
             r"\bfor review of an unspecified\s+visa\s+cancellation\b",
             body[:7000],

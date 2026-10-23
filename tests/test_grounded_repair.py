@@ -2591,8 +2591,17 @@ class WorkflowTests(unittest.TestCase):
             writer = csv.DictWriter(f, fieldnames=["case_id", "field", "status", "reason", "source_sha256"])
             writer.writeheader()
             writer.writerow(dict(case_id="a", field="visa_type", status="不適用（前輪已確認）", reason="Confirmed citizenship review", source_sha256=hashlib.sha256(self.source.read_bytes()).hexdigest()))
-        self.assertEqual(self.review(prior_status=prior)["counts"]["not_applicable"], 1)
-        self.assertEqual(self.review("second")["counts"]["not_applicable"], 1)
+        first = self.review(prior_status=prior)
+        self.assertEqual(first["counts"]["not_applicable"], 1)
+        self.assertEqual(first["reviewed_blank_cells"], 3)
+        self.assertEqual(first["not_applicable_blank_cells"], 1)
+        self.assertEqual(first["actionable_missing_cells"], 2)
+        self.assertEqual(first["missing_cells"], 2)
+
+        second = self.review("second")
+        self.assertEqual(second["counts"]["not_applicable"], 1)
+        self.assertEqual(second["reviewed_blank_cells"], 3)
+        self.assertEqual(second["actionable_missing_cells"], 2)
 
     def test_apply_preserves_notes_rows_and_json_envelope(self):
         result = apply_approved(self.root, self.root / "apply", self.approvals())

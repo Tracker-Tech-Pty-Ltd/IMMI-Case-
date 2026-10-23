@@ -981,9 +981,18 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     db.close()
     if jev_cache_reader:
         jev_cache_reader.close()
+    reviewed_blank_cells = len(records)
+    not_applicable_blank_cells = int(stats.get("not_applicable", 0))
+    actionable_missing_cells = int(stats.get("waiting_new_evidence", 0)) + int(
+        stats.get("candidate_review", 0)
+    )
     summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v2",
                "created_utc": utc_now(),
-               "counts": dict(stats), "missing_cells": len(records),
+               "counts": dict(stats),
+               "reviewed_blank_cells": reviewed_blank_cells,
+               "not_applicable_blank_cells": not_applicable_blank_cells,
+               "actionable_missing_cells": actionable_missing_cells,
+               "missing_cells": actionable_missing_cells,
                "network_requests": 0, "paid_model_calls": 0, "new_provider_usd": 0,
                "ledger": str(ledger.resolve())}
     write_json(output / "review.json", records)
