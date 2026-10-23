@@ -158,9 +158,17 @@ def _case_nature(text: str, catchwords: str, title: str = "") -> str:
         return "Deportation review"
 
     search = f"{catchwords}\n{text[:2500]}".lower()
+    student_guardian_decision = re.search(
+        r"(?ims)^[ \t]*DECISION\s*:\s*.{0,800}\bstudent\s+guardian\s+visa\b",
+        text[:2500],
+    )
     if "protection visa" in search or "refugee" in search:
         return "Protection visa"
-    if "student visa" in search or "genuine temporary entrant" in search:
+    if (
+        "student visa" in search
+        or "genuine temporary entrant" in search
+        or student_guardian_decision
+    ):
         return "Student visa"
     if "partner visa" in search:
         return "Partner visa"

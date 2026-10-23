@@ -1,4 +1,5 @@
 from immi_case_downloader.extraction.grounded import assess_case, document_text
+from immi_case_downloader.extraction.regex import _case_nature
 
 
 def test_citizenship_review_overrides_incidental_cancelled_visa_history():
@@ -98,6 +99,30 @@ The Applicant applied to the Tribunal for review of this decision.
     )
 
     assert result.not_applicable.get("visa_type") != "deportation_order_review_not_a_visa_decision"
+
+
+def test_student_guardian_visa_in_published_decision_is_student_visa_nature():
+    source = """Title: 1416648 [2014] MRTA 2701 (10 November 2014)
+Citation: [2014] MRTA 2701
+URL: https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2014/2701.html
+DECISION RECORD
+DECISION: The Tribunal remits the application for a Student (Temporary) visa with direction that the applicant meets a criterion for a Subclass 580 Student Guardian visa.
+STATEMENT OF DECISION AND REASONS
+The matter is remitted for reconsideration.
+"""
+
+    assert _case_nature(source, "", "1416648 [2014] MRTA 2701") == "Student visa"
+
+
+def test_student_guardian_visa_mentioned_only_in_reasons_does_not_set_case_nature():
+    source = """Title: Example [2014] MRTA 2701
+Citation: [2014] MRTA 2701
+URL: https://example.test/case
+STATEMENT OF DECISION AND REASONS
+The applicant referred to another matter involving a Student Guardian visa.
+"""
+
+    assert _case_nature(source, "", "Example [2014] MRTA 2701") == ""
 
 
 def test_short_eligibility_notice_keeps_its_explicit_member_and_result():

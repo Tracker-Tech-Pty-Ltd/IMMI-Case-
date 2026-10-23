@@ -16,9 +16,10 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v66"
+RULE_VERSION = "grounded-local-20261024-v71"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
-CITATION = re.compile(r"\[(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
+CITATION = re.compile(r"\[[ \t]*(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
+REVERSED_FCA_CITATION = re.compile(r"\bFCA\s+\[\s*(\d{4})\s*\]\s+(\d+)(?!\d)", re.I)
 _LABEL_END = re.compile(
     r"\b(?:MRT|RRT|DIMA|DIBP|DEPT|FILE|CASE|DATE|PLACE|HEARING|DELIVERED|"
     r"REPRESENTATION|REASONS|CATCHWORDS|DECISION|APPLICANT|RESPONDENT)\b\s*:?", re.I
@@ -77,7 +78,19 @@ def document_text(raw: str) -> str:
 
 def canonical_citation(value: str) -> str:
     match = CITATION.search(value or "")
-    return f"[{match[1]}] {match[2]} {int(match[3])}" if match else ""
+    if match:
+        return f"[{match[1]}] {match[2]} {int(match[3])}"
+    reversed_match = REVERSED_FCA_CITATION.search(value or "")
+    return f"[{reversed_match[1]}] FCA {int(reversed_match[2])}" if reversed_match else ""
+
+
+def _citation_finditer(value: str):
+    matches = [*CITATION.finditer(value or ""), *REVERSED_FCA_CITATION.finditer(value or "")]
+    return iter(sorted(matches, key=lambda match: match.start()))
+
+
+def _citation_search(value: str):
+    return next(_citation_finditer(value), None)
 
 
 def citation_from_url(url: str) -> str:
@@ -1821,7 +1834,7 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         primary_decision_summary,
     ))
     catchwords_end = catchwords_start + len(catchwords)
-    source_citations = list(CITATION.finditer(text))
+    source_citations = list(_citation_finditer(text))
     corporate_nomination = bool(
         re.search(
             r"(?is)\b(?:corporate applicant|applicant company|APPLICANT\s*:\s*"
@@ -1989,7 +2002,7 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
         # 1995 or later. (Migration Act 1958 (Cth), historical s 411(1)(c)-(d):
         # https://www.legislation.gov.au/C1958A00062/1999-07-22/1999-07-22/text/original/epub/OEBPS/document_2/document_2.html)
         if assessment.reasons.get("visa_type") != "conflicting_current_visa_candidates":
-            source_citation = CITATION.search(text[:1800])
+            source_citation = _citation_search(text[:1800])
             if (
                 source_citation
                 and canonical_citation(source_citation[0]) == assessment.citation
@@ -2428,7 +2441,7 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
     if len(direct_values) > 1:
         return None
 
-    citation_spans = list(CITATION.finditer(source))
+    citation_spans = list(_citation_finditer(source))
     sentence_break = re.compile(
         r"[.!?](?:[\"')\]]*)[ \t\r\n]+|"
         r"[ \t]*\r?\n[ \t]*(?=(?:REASONS\s+FOR\s+(?:JUDGMENT|DECISION)|"
@@ -2656,7 +2669,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
     expected = canonical_citation(citation) or citation_from_url(url)
     result = Assessment(expected, hashlib.sha256((text or "").encode("utf-8")).hexdigest(), hashlib.sha256(body.encode("utf-8")).hexdigest())
     result.reasons = {"judges": "author_not_stated", "outcome": "operative_orders_not_available", "visa_type": "current_visa_not_stated"}
-    first = CITATION.search(body[:1800])
+    first = _citation_search(body[:1800])
     formal_heading = re.search(
         r"\b(?:DECISION\s+AND\s+REASONS\s+FOR\s+DECISION|"
         r"STATEMENT\s+OF\s+DECISION\s+AND\s+REASONS)\b",
@@ -2669,7 +2682,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         # citation must immediately follow the heading; otherwise we fall back
         # to the initial case caption, never to a citation inside catchwords.
         heading_text = body[formal_heading.end():formal_heading.end() + 180]
-        heading_citation = CITATION.search(heading_text)
+        heading_citation = _citation_search(heading_text)
         if heading_citation and not heading_text[:heading_citation.start()].strip():
             identity_matches = bool(
                 expected and canonical_citation(heading_citation[0]) == expected
@@ -2705,7 +2718,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             for line in caption.splitlines()[:12]:
                 if not re.search(r"\bv\b", line, re.I):
                     continue
-                if any(canonical_citation(match[0]) == expected for match in CITATION.finditer(line)):
+                if any(canonical_citation(match[0]) == expected for match in _citation_finditer(line)):
                     identity_matches = True
                     break
 
@@ -2817,6 +2830,47 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             )
         )
         and not current_visa_decision_heading
+    )
+    nomination_position_review = bool(
+        re.search(
+            r"(?is)\bapplication for review of a decision\b.{0,700}?"
+            r"\b(?:reject|refuse)\w*\b.{0,100}?"
+            r"\bapplication for approval of (?:the )?nomination of (?:a )?position\b"
+            r".{0,180}?\bunder r\.?\s*5\.19\b",
+            body[:12000],
+        )
+        and not current_visa_decision_heading
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|application|decision|cancellation)|"
+            r"review of (?:the )?visa)\b",
+            catchwords,
+            re.I,
+        )
+    )
+    nomination_review_with_statute = bool(
+        re.search(
+            r"\b(?:application for review|review application|"
+            r"application has been lodged for review|applicant sought review|"
+            r"originating application for review|decision under review|"
+            r"judicial review|seeks? review|sought review)\b",
+            body[:12000],
+            re.I,
+        )
+        and re.search(r"\b(?:nomination|nominated position)\b", body[:12000], re.I)
+        and re.search(
+            r"\b(?:r\.?\s*5\.19|r\.?\s*2\.72|s\.?\s*140GB)\b",
+            body[:12000],
+            re.I,
+        )
+        and not current_visa_decision_heading
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|application|decision|cancellation)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|"
+            r"cancellation\s+of\s+(?:the\s+)?visa|"
+            r"review\s+of\s+(?:the\s+)?visa)\b",
+            catchwords,
+            re.I,
+        )
     )
     opening_reasons = body[:5000]
     background_heading = re.search(r"(?i)\bBackground\b", opening_reasons)
@@ -3026,7 +3080,12 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         )
     ):
         result.not_applicable["visa_type"] = "citizenship_review_not_a_visa_application"
-    elif company_nomination_review or nomination_decision_only:
+    elif (
+        company_nomination_review
+        or nomination_decision_only
+        or nomination_position_review
+        or nomination_review_with_statute
+    ):
         result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
     elif (
         catchwords

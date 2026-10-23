@@ -1580,6 +1580,10 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "outcome"
                     and evidence.get("method") == "manual_official_docket_outcome_review"
                 )
+                manual_source_outcome_review = (
+                    field == "outcome"
+                    and evidence.get("method") == "manual_source_bound_outcome_review"
+                )
                 if (field == "visa_type" and not proof
                         and assessment.source_status == "checked"):
                     proof = _austlii_catchword_visa_proof(
@@ -1691,6 +1695,43 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         raise ValueError("Manual judge approval requires exact source wording")
                     if proof and proof.value.casefold() != value.casefold():
                         raise ValueError("Manual judge approval conflicts with grounded evidence")
+                elif manual_source_outcome_review:
+                    metadata = {}
+                    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                    header_text = (
+                        source_text[:separator.start()]
+                        if separator else "\n".join(source_text.splitlines()[:20])
+                    )
+                    for line in header_text.splitlines():
+                        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+                        if match and match[2].strip():
+                            metadata.setdefault(match[1].casefold(), match[2].strip())
+                    quote = evidence.get("quote", "")
+                    value = evidence.get("value", "")
+                    source_value = evidence.get("source_value", "")
+                    normalized_quote = " ".join(quote.split())
+                    normalized_source = " ".join(source_text.split())
+                    normalized_proof = " ".join(proof.quote.split()) if proof else ""
+                    if (
+                        metadata.get("citation") != row["citation"]
+                        or metadata.get("url") != row["url"]
+                        or row["citation"] not in metadata.get("title", "")
+                        or not separator
+                        or assessment.source_status != "checked"
+                        or not proof
+                        or proof.rule not in {
+                            "published_operative_table",
+                            "published_multiple_operative_tables",
+                        }
+                        or source_value != proof.value
+                        or not normalized_quote
+                        or normalized_quote not in normalized_source
+                        or normalized_quote not in normalized_proof
+                        or _canonical_operative_outcome(value, quote) != value
+                    ):
+                        raise ValueError(
+                            "Manual source-bound outcome review requires an exact, matching operative decision"
+                        )
                 elif manual_docket_outcome_review:
                     metadata = {}
                     separator = re.search(r"(?m)^={10,}\s*$", source_text)

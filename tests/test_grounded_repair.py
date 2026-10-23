@@ -17,6 +17,7 @@ from immi_case_downloader.csv_write_lock import CatalogLockedError, catalog_lock
 from immi_case_downloader.extraction.grounded import (
     _direct_personal_nomination_visa,
     assess_case,
+    canonical_citation,
     document_text,
     verified_metadata,
 )
@@ -499,6 +500,33 @@ class GroundedTests(unittest.TestCase):
         self.assertEqual(result.source_status, "identity_conflict")
         self.assertEqual(result.values, {})
 
+    def test_citation_identity_accepts_space_after_opening_year_bracket(self):
+        body = (
+            "Example v Minister [  2005] FCA 1347\n"
+            "JUDGE:\nHELY J\n"
+            "THE COURT ORDERS THAT:\n1. The appeal be dismissed with costs.\n"
+            "REASONS FOR JUDGMENT\n"
+        )
+        result = assess_case(body, citation="[2005] FCA 1347")
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["judges"].value, "HELY J")
+        self.assertEqual(result.values["outcome"].rule, "published_operative_table")
+
+    def test_citation_identity_accepts_federal_court_reversed_year_order(self):
+        body = (
+            "FEDERAL COURT OF AUSTRALIA\n"
+            "WEI FAN v MINISTER FOR IMMIGRATION AND MULTICULTURAL AND INDIGENOUS AFFAIRS\n"
+            "FCA [2003] 1553\n"
+            "WEI FAN v MINISTER FOR IMMIGRATION AND MULTICULTURAL AND INDIGENOUS AFFAIRS\n"
+            "JUDGE: FRENCH J\n"
+            "THE COURT ORDERS THAT:\n1. The application be dismissed.\n"
+            "REASONS FOR JUDGMENT\n"
+        )
+        self.assertEqual(canonical_citation("FCA [2003] 1553"), "[2003] FCA 1553")
+        result = assess_case(body, citation="[2003] FCA 1553")
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["judges"].value, "FRENCH J")
+
     def test_written_direction_withholding_reasons_is_restricted_publication(self):
         body = (
             HEAD
@@ -749,6 +777,98 @@ class GroundedTests(unittest.TestCase):
             "sponsorship_or_nomination_not_a_personal_visa",
         )
         self.assertNotIn("visa_type", result.values)
+
+    def test_aata_position_nomination_decision_record_marks_visa_type_not_applicable(self):
+        body = (
+            "1517656 (Migration) [2016] AATA 3841\n"
+            "DECISION RECORD\n"
+            "DIVISION: Migration & Refugee Division\n"
+            "APPLICANT: Sri Lanka Buddhist Monastery (Brisbane) Incorporated\n"
+            "DECISION: The Tribunal sets aside the decision under review and substitutes "
+            "a decision approving the nomination.\n"
+            "STATEMENT OF DECISION AND REASONS\n"
+            "APPLICATION FOR REVIEW\n"
+            "This is an application for review of a decision made by a delegate to reject "
+            "the applicant's application for approval of the nomination of a position in "
+            "Australia under r.5.19 of the Migration Regulations 1994.\n"
+            "The nominee held a religious worker visa, subclass The delegate refused the nomination.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2016] AATA 3841",
+            title="1517656 (Migration) [2016] AATA 3841",
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+        self.assertNotIn("visa_type", result.values)
+
+    def test_personal_visa_heading_blocks_position_nomination_na_rule(self):
+        body = (
+            "Example v Minister [2016] AATA 3841\n"
+            "CATCHWORDS: MIGRATION - visa refusal - Subclass 186 visa\n"
+            "DECISION RECORD\n"
+            "DECISION: The Tribunal affirms the refusal of the applicant's visa.\n"
+            "This is an application for review of a decision made by a delegate to reject "
+            "the applicant's application for approval of the nomination of a position in "
+            "Australia under r.5.19 of the Migration Regulations 1994.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2016] AATA 3841",
+            title="Example v Minister [2016] AATA 3841",
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_statutory_nomination_reviews_are_not_personal_visa_decisions(self):
+        cases = (
+            (
+                "[2016] AATA 3057",
+                "Example [2016] AATA 3057\n"
+                "STATEMENT OF DECISION AND REASONS\nAPPLICATION FOR REVIEW\n"
+                "An application has been lodged for review of a decision of a delegate "
+                "to refuse a nomination under s.140GB of the Migration Act 1958.\n",
+            ),
+            (
+                "[2023] FedCFamC2G 597",
+                "Trustee for Example Unit Trust [2023] FedCFamC2G 597\n"
+                "CATCHWORDS: MIGRATION LAW - review of a nomination decision under r.5.19\n"
+                "REASONS FOR JUDGMENT\n"
+                "The applicant company sought approval of a nomination under r.5.19.\n"
+                "The delegate refused the nomination and the Tribunal affirmed that decision.\n"
+                "The applicant filed an Originating Application for Review of the Tribunal's decision.\n",
+            ),
+            (
+                "[2010] MRTA 2712",
+                "[2010] MRTA 2712\nDECISION RECORD\n"
+                "This is an application for review of a decision to reject an application "
+                "for approval of a nominated position under r.5.19(1B).\n",
+            ),
+            (
+                "[2016] AATA 3397",
+                "[2016] AATA 3397\nDECISION RECORD\n"
+                "DECISION: The Tribunal sets aside the decision under review and substitutes "
+                "a decision approving the nomination.\n"
+                "Approval of the nominated position is governed by r.5.19.\n",
+            ),
+            (
+                "[2016] FCCA 2825",
+                "Jayshree Enterprises Pty Ltd v Minister [2016] FCCA 2825\n"
+                "CATCHWORDS: MIGRATION - review of an administrative decision\n"
+                "REASONS FOR JUDGMENT\n"
+                "The applicant sought judicial review of the Tribunal decision affirming "
+                "the refusal of its nomination under s.140GB.\n",
+            ),
+        )
+        for citation, body in cases:
+            with self.subTest(citation=citation):
+                result = assess_case(body, citation=citation)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "sponsorship_or_nomination_not_a_personal_visa",
+                )
+                self.assertNotIn("visa_type", result.values)
 
     def test_legacy_split_citizenship_heading_marks_visa_not_applicable(self):
         result = self.assess(
@@ -2694,6 +2814,66 @@ class WorkflowTests(unittest.TestCase):
         approval["evidence"]["value"] = "Protection visa"
         with self.assertRaisesRegex(ValueError, "source-bound classification"):
             validate_approvals(self.root, [approval])
+
+    def test_source_bound_outcome_review_corrects_a_conflicting_label(self):
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            "Example v Minister [2024] FCA 12\n"
+            "DECISION RECORD\n"
+            "TRIBUNAL MEMBER: Jane Smith\n"
+            "DECISION: The Tribunal remits the application for reconsideration.\n"
+            "STATEMENT OF DECISION AND REASONS\n"
+            "The Tribunal considered the application.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0]["outcome"] = "Dismissed"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("UPDATE cases SET outcome='Dismissed' WHERE case_id='a'")
+            conn.commit()
+        self.save_exports()
+
+        proof = assess_case(
+            source_text,
+            citation=self.rows[0]["citation"],
+            title=self.rows[0]["title"],
+            url=self.rows[0]["url"],
+        ).values["outcome"]
+        approval = {
+            "case_id": "a",
+            "field": "outcome",
+            "expected_current_by_store": {
+                "database": "Dismissed",
+                "csv": "Dismissed",
+                "json": "Dismissed",
+            },
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "Remitted",
+                "source_value": proof.value,
+                "quote": proof.value,
+                "method": "manual_source_bound_outcome_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The published decision line contradicts the stored outcome label.",
+        }
+        invalid = dict(approval, evidence=dict(approval["evidence"]))
+        invalid["evidence"]["value"] = "Affirmed"
+        with self.assertRaisesRegex(ValueError, "exact, matching operative decision"):
+            validate_approvals(self.root, [invalid])
+
+        result = apply_approved(self.root, self.root / "source-bound-outcome-apply", [approval])
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT outcome FROM cases WHERE case_id='a'").fetchone()[0], "Remitted")
+        with (self.data / "immigration_cases.csv").open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(next(row for row in csv.DictReader(handle) if row["case_id"] == "a")["outcome"], "Remitted")
+        payload = json.loads((self.data / "immigration_cases.json").read_text(encoding="utf-8"))
+        self.assertEqual(next(row for row in payload["cases"] if row["case_id"] == "a")["outcome"], "Remitted")
 
     def test_manual_source_bound_visa_review_applies_only_literal_identified_evidence(self):
         source_text = (
