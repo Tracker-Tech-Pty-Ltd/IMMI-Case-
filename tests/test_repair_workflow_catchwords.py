@@ -198,6 +198,152 @@ class AustliiProtectionCatchwordTests(unittest.TestCase):
             )
         )
 
+    def test_temporary_business_sponsor_review_excludes_a_separate_employee_visa_case(self):
+        citation = "[2003] MRTA 535"
+        url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2003/535.html"
+        case = {
+            "source": "AustLII",
+            "url": url,
+            "citation": citation,
+            "title": "Resurrection Re-Roofing [2003] MRTA 535",
+            "case_nature": "Other",
+            "catchwords": "Temporary business entry scheme -",
+        }
+        source_text = (
+            f"Title: {case['title']}\nCitation: {citation}\nCourt: MRTA\n"
+            f"URL: {url}\n"
+            + "=" * 80
+            + "\n[2003] MRTA 535\n"
+            + "CATCHWORDS: Temporary business entry scheme -\n"
+            + "REVIEW APPLICANT: Resurrection Re-Roofing\n"
+            + "DECISION: The Tribunal affirms the decision to refuse approval of the "
+            + "review applicant as a standard business sponsor.\n"
+            + "The Tribunal is dealing with a separate application for review in "
+            + "relation to refusal of a visa applied for by Adrian Patrick Burns "
+            + "on the basis that the review applicant is proposing to employ him.\n"
+        )
+
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable(case, source_text),
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+
+        mismatched_source = source_text.replace("[2003] MRTA 535", "[2003] MRTA 536", 1)
+        self.assertIsNone(
+            _austlii_catchwords_visa_not_applicable(case, mismatched_source)
+        )
+
+        current_visa_catchword = {
+            **case,
+            "catchwords": "Temporary Business Entry (Class UC) visa - visa refusal",
+        }
+        self.assertIsNone(
+            _austlii_catchwords_visa_not_applicable(
+                current_visa_catchword, source_text
+            )
+        )
+
+    def test_offshore_entry_refugee_review_has_no_personal_visa_decision(self):
+        citation = "[2012] FMCA 36"
+        url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FMCA/2012/36.html"
+        case = {
+            "source": "AustLII",
+            "url": url,
+            "citation": citation,
+            "title": "DZABG v Minister for Immigration & Anor [2012] FMCA 36",
+            "case_nature": "Judicial review",
+            "catchwords": (
+                "MIGRATION – Judicial review of Independent Merits Reviewer decision – "
+                "applicant stateless Bidoon – refugee claim based on religious persecution."
+            ),
+        }
+        source_text = (
+            f"Title: {case['title']}\nCitation: {citation}\nURL: {url}\n"
+            + "=" * 80
+            + "\nFEDERAL MAGISTRATES COURT OF AUSTRALIA\n"
+            + "DZABG v MINISTER FOR IMMIGRATION & ANOR\n"
+            + "MIGRATION – Independent merits review of\n"
+            + "offshore entry person – "
+            + "applicant stateless Bidoon whose previous permanent place of residence was Kuwait.\n"
+            + "LEGISLATION\nMigration Act 1958 (Cth), ss 5, 36, 46A, 476, 477\n"
+            + "Section 46A(2) permits the Minister to grant an offshore entry person a visa.\n"
+            + "The applicant seeks review of the decision of the Independent Merits Reviewer.\n"
+            + "The application is dismissed.\n"
+        )
+
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable(case, source_text),
+            "no_current_visa_decision",
+        )
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable(
+                {**case, "catchwords": "MIGRATION – Judicial review of Independent Merits Reviewer decision"}
+            ),
+            "no_current_visa_decision",
+        )
+
+        mismatched_source = source_text.replace(citation, "[2012] FMCA 37", 1)
+        self.assertIsNone(
+            _austlii_catchwords_visa_not_applicable(case, mismatched_source)
+        )
+
+        visa_refusal_case = {
+            **case,
+            "catchwords": "MIGRATION – visa refusal – decision under review.",
+        }
+        self.assertIsNone(
+            _austlii_catchwords_visa_not_applicable(visa_refusal_case, source_text)
+        )
+
+    def test_temporary_protection_catchword_overrides_generic_protection_fallback(self):
+        citation = "[2018] FCCA 1766"
+        url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FCCA/2018/1766.html"
+        catchwords = (
+            "MIGRATION – Immigration Assessment Authority – application for a "
+            "Temporary Protection visa – amended application dismissed."
+        )
+        case = {
+            "source": "AustLII",
+            "url": url,
+            "citation": citation,
+            "title": "ERN17 v Minister for Immigration & Anor [2018] FCCA 1766",
+            "case_nature": "Judicial review",
+            "catchwords": catchwords,
+        }
+        source_text = (
+            f"Title: {case['title']}\nCitation: {citation}\nURL: {url}\n"
+            + "=" * 80
+            + "\nFEDERAL CIRCUIT COURT OF AUSTRALIA\n"
+            + f"Catchwords:\n{catchwords}\n"
+            + "This is an application in respect of a decision of the Immigration "
+            + "Assessment Authority affirming a decision of the delegate not to "
+            + "grant the applicant a Temporary Protection visa.\n"
+        )
+        assessment = SimpleNamespace(
+            source_status="checked",
+            not_applicable={},
+            reasons={"visa_type": "current_visa_not_stated"},
+        )
+
+        evidence = _austlii_catchwords_visa_evidence(case)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.value, "Temporary Protection visa")
+        self.assertEqual(evidence.rule, "austlii_catchwords_temporary_protection_visa")
+
+        proof = _austlii_catchword_visa_proof(case, source_text, assessment, {}, set())
+        self.assertIsNotNone(proof)
+        self.assertEqual(proof.value, "Temporary Protection visa")
+        self.assertIn("Temporary Protection visa", proof.quote)
+
+        identity_conflict = SimpleNamespace(
+            source_status="identity_conflict",
+            not_applicable={},
+            reasons={"visa_type": "current_visa_not_stated"},
+        )
+        self.assertIsNone(
+            _austlii_catchword_visa_proof(case, source_text, identity_conflict, {}, set())
+        )
+
     def test_metadata_approval_can_use_the_same_verified_class_xa_catchword(self):
         citation = "[2015] FCCA 1077"
         url = self.case("")["url"]

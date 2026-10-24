@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v89"
+RULE_VERSION = "grounded-local-20261024-v94"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[[ \t]*(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 REVERSED_FCA_CITATION = re.compile(r"\bFCA\s+\[\s*(\d{4})\s*\]\s+(\d+)(?!\d)", re.I)

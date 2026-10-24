@@ -2441,6 +2441,22 @@ class WorkflowTests(unittest.TestCase):
             "XD",
         )
 
+    def test_temporary_protection_name_maps_to_subclass_785_and_class_xd(self):
+        from immi_case_downloader.repair_workflow import _expected_visa_metadata
+
+        self.assertEqual(
+            _expected_visa_metadata("visa_subclass", "Temporary Protection visa"),
+            "785",
+        )
+        self.assertEqual(
+            _expected_visa_metadata("visa_subclass_number", "Temporary Protection visa"),
+            "785.0",
+        )
+        self.assertEqual(
+            _expected_visa_metadata("visa_class_code", "Temporary Protection visa"),
+            "XD",
+        )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -3139,7 +3155,7 @@ class WorkflowTests(unittest.TestCase):
                          json.dumps({"answers": {"select": {"choice": "Invented Judge", "confidence": 1}}}), "jev-test"))
             conn.commit()
         first_review = self.review(jev_cache=cache)
-        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v4")
+        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v5")
         review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
         advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
         self.assertEqual(len(advice_by_field["judges"]), 1)

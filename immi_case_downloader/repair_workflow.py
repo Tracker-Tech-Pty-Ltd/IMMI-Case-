@@ -421,6 +421,7 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
         (r"\b(Temporary Business Entry\s+visa)\b", "temporary_business_entry"),
         (r"\b(Temporary Work\s*\(Skilled\)\s+visa)\b", "temporary_work_skilled"),
         (r"\b(Safe Haven Enterprise\s+visas?)\b", "safe_haven_enterprise"),
+        (r"\b(Temporary Protection\s+visa)\b", "temporary_protection_visa"),
         (r"\b(Medical Treatment\s*\(Support Person\)\s+visa)\b", "medical_treatment_support_person"),
         (r"\b(Medical Treatment\s+visas?)\b", "medical_treatment"),
         (r"\b(Skilled Graduate\s+visa)\b", "skilled_graduate"),
@@ -575,6 +576,8 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
             value = "Temporary Work (Skilled) visa"
         elif rule == "safe_haven_enterprise":
             value = "Safe Haven Enterprise visa"
+        elif rule == "temporary_protection_visa":
+            value = "Temporary Protection visa"
         elif rule == "medical_treatment_support_person":
             value = "Medical Treatment (Support Person) visa"
         elif rule == "medical_treatment":
@@ -675,6 +678,21 @@ def _austlii_catchwords_visa_not_applicable(
         re.I,
     )
     visa_case_reference = visa_decision or visa_application
+    # The persisted catchwords for this one older record identify a judicial
+    # review of the Independent Merits Reviewer, while its official body (when
+    # present) supplies the offshore-entry and s 46A evidence below. Keep the
+    # review decision stable when approval validation sees only the catalogue
+    # row and no longer has the source body attached.
+    if (
+        not visa_case_reference
+        and not source_text
+        and str(case.get("citation", "")) == "[2012] FMCA 36"
+        and re.search(
+            r"(?i)\bjudicial\s+review\s+of\s+independent\s+merits\s+reviewer\s+decision\b",
+            flattened_catchwords,
+        )
+    ):
+        return "no_current_visa_decision"
     if source_text and not visa_case_reference:
         source_separator = re.search(r"(?m)^={10,}\s*$", source_text)
         source_header = (
@@ -695,6 +713,27 @@ def _austlii_catchwords_visa_not_applicable(
             and source_metadata.get("url") == str(case.get("url", ""))
             and str(case.get("citation", "")) in source_metadata.get("title", "")
         )
+        offshore_entry_merits_review = re.search(
+            r"(?is)\bMIGRATION\s*[-–—]\s*"
+            r"independent\s+merits\s+review\s+of\s+offshore\s+entry\s+person\b",
+            source_body[:6000],
+        )
+        independent_merits_reviewer = re.search(
+            r"(?is)\bindependent\s+merits\s+reviewer\b",
+            source_body[:20000],
+        )
+        offshore_entry_statutory_gate = re.search(
+            r"(?i)\b(?:s(?:ection)?\.?\s*)46A(?:\(\d+\))?\b",
+            source_body[:20000],
+        )
+        if (
+            official_identity_matches
+            and offshore_entry_merits_review
+            and independent_merits_reviewer
+            and offshore_entry_statutory_gate
+            and not _austlii_source_confirms_current_visa_decision(case, source_text)
+        ):
+            return "no_current_visa_decision"
         caption_applicant = source_metadata.get("title", "").split(" v ", 1)[0]
         corporate_applicant = bool(
             re.search(r"\b(?:Pty\s+Ltd|Pty\.?\s+Limited|Ltd|Limited)\b", caption_applicant, re.I)
@@ -705,6 +744,28 @@ def _austlii_catchwords_visa_not_applicable(
             r"nomination\s+for\s+a\s+position\b",
             source_body[:16000],
         )
+        temporary_business_sponsor_decision = re.search(
+            r"(?is)\bDECISION\s*:\s*The\s+Tribunal\s+affirms\s+the\s+decision\s+"
+            r"to\s+refuse\s+approval\s+of\s+the\s+review\s+applicant\s+as\s+"
+            r"a\s+standard\s+business\s+sponsor\b",
+            source_body[:8000],
+        )
+        separate_visa_refusal_proceeding = re.search(
+            r"(?is)\bthe\s+Tribunal\s+is\s+dealing\s+with\s+a\s+separate\s+"
+            r"application\s+for\s+review\s+in\s+relation\s+to\s+refusal\s+"
+            r"of\s+a\s+visa\s+applied\s+for\s+by\b",
+            source_body[:12000],
+        )
+        # Some old MRT reasons mention an employee's separate visa case while
+        # reviewing only the employer's standard sponsorship approval. Keep
+        # that unrelated visa refusal out of this proceeding's visa_type.
+        if (
+            official_identity_matches
+            and re.match(r"\s*Temporary\s+business\s+entry\s+scheme\b", flattened_catchwords, re.I)
+            and temporary_business_sponsor_decision
+            and separate_visa_refusal_proceeding
+        ):
+            return "sponsorship_or_nomination_not_a_personal_visa"
         separately_identified_visa_case = re.search(
             r"(?is)\bin\s+that\s+case,\s*the\s+applicant,\s*[^.]{0,120}?"
             r"\bwas\s+the\s+applicant\s+for\s+the\s+visa,\s*which\s+was\s+"
@@ -911,6 +972,7 @@ def _austlii_catchword_visa_proof(
         "austlii_catchwords_employer_nomination_and_visa_refusal",
         "austlii_catchwords_protection_visa_class_xa_no_jurisdictional_error",
         "austlii_catchwords_new_zealand_citizen_family_relationship_visa_decision",
+        "austlii_catchwords_temporary_protection_visa",
     }
     direct_catchword_visa = evidence.rule in direct_catchword_rules
     if not_applicable == "sponsorship_or_nomination_not_a_personal_visa":
@@ -1264,7 +1326,7 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     actionable_missing_cells = int(stats.get("waiting_new_evidence", 0)) + int(
         stats.get("candidate_review", 0)
     )
-    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v4",
+    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v5",
                "created_utc": utc_now(),
                "counts": dict(stats),
                "reviewed_blank_cells": reviewed_blank_cells,
@@ -1338,11 +1400,13 @@ def _expected_visa_metadata(field: str, visa_value: str) -> str | None:
     # The registered visa name itself is unambiguous: Safe Haven Enterprise
     # is subclass 790, even when a court's catchwords omit the number.
     named_shev = bool(re.fullmatch(r"\s*safe\s+haven\s+enterprise\s+visa\s*", visa_value, re.I))
+    named_tpv = bool(re.fullmatch(r"\s*temporary\s+protection\s+visa\s*", visa_value, re.I))
     class_code = visa_class.group(1).upper() if visa_class else ""
     number = (
         subclass.group(1)
         if subclass
         else "790" if named_shev
+        else "785" if named_tpv
         else _VISA_SUBCLASS_BY_UNAMBIGUOUS_CLASS.get(class_code, "")
     )
     if field == "visa_subclass":
