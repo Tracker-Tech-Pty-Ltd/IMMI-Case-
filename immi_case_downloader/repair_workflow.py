@@ -1809,7 +1809,17 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         or not normalized_quote
                         or normalized_quote not in normalized_source
                         or normalized_quote not in normalized_proof
-                        or _canonical_operative_outcome(value, quote) != value
+                        or (
+                            _canonical_operative_outcome(value, quote) != value
+                            and not (
+                                value == "No jurisdiction"
+                                and re.search(
+                                    r"\bnot\s+an?\s+MRT[-\s]reviewable\s+decision\b",
+                                    re.sub(r"[*_`]", "", normalized_quote),
+                                    re.I,
+                                )
+                            )
+                        )
                     ):
                         raise ValueError(
                             "Manual source-bound outcome review requires an exact, matching operative decision"
