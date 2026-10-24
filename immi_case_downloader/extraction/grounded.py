@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v74"
+RULE_VERSION = "grounded-local-20261024-v83"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[[ \t]*(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 REVERSED_FCA_CITATION = re.compile(r"\bFCA\s+\[\s*(\d{4})\s*\]\s+(\d+)(?!\d)", re.I)
@@ -965,7 +965,8 @@ def _outcome(text: str) -> Evidence | None:
     # Only the publication's own operative table, before its reasons. Never
     # return a date, catchword, proposed order, or an isolated evidence finding.
     preamble = re.split(
-        r"^[ \t]*(?:REASONS FOR (?:JUDGMENT|DECISION)|"
+        r"^[ \t]*(?:EX[ \t]+TEMPORE[ \t]+REASONS|"
+        r"REASONS FOR (?:JUDGMENT|DECISION)|"
         r"STATEMENT OF DECISION(?!\s+AND\s+REASONS))\b",
         text,
         maxsplit=1,
@@ -1426,6 +1427,47 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
                 "qualification_quote": refusal.group(0),
                 "qualified": True,
                 "rank": 5,
+            })
+            return proof
+
+    # Some judgments call a Safe Haven Enterprise subclass 790 visa simply a
+    # "protection visa" in the operative account. Prefer the specifically
+    # named SHEV only when the same short passage links it to an applicant and
+    # an application plus an adverse decision; a historical or other person's
+    # visa mention cannot satisfy this gate by itself.
+    numbered_shev = re.search(
+        r"(?is)\b(?P<visa>(?:"
+        r"(?:class\s+XE\s+)?subclass\s+790\s+Safe\s+Haven\s+Enterprise"
+        r"|Safe\s+Haven\s+Enterprise\s*(?:\(class\s+XE\)\s*)?"
+        r"(?:\(subclass\s+790\)|subclass\s+790)"
+        r"|Safe\s+Haven\s+Enterprise\s+visa\s*\(class\s+XE\)\s*subclass\s+790"
+        r")\s*(?:protection\s+)?visa)\b",
+        text[:12000],
+    )
+    if numbered_shev:
+        context = text[max(0, numbered_shev.start() - 700):numbered_shev.end() + 700]
+        has_applicant = re.search(r"(?i)\b(?:applicant|appellants?|first named applicant)\b", context)
+        has_application = re.search(r"(?i)\b(?:appl\w*|lodg\w*|decision|delegate|tribunal)\b", context)
+        has_adverse_decision = re.search(
+            r"(?i)\b(?:refus\w*|not\s+to\s+grant|affirm\w*)\b", context,
+        )
+        refers_to_other_person = re.search(
+            r"(?i)\b(?:a\s+)?(?:different|another|other|former|previous|earlier)\s+applicant\b",
+            context,
+        )
+        if has_applicant and has_application and has_adverse_decision and not refers_to_other_person:
+            proof = _evidence(
+                text,
+                numbered_shev.start("visa"),
+                numbered_shev.end("visa"),
+                "Safe Haven Enterprise visa (subclass 790)",
+                "direct_shev_790_visa_decision",
+            )
+            assessment.candidates.append({
+                "value": proof.value,
+                "quote": proof.quote,
+                "qualified": True,
+                "rank": 6,
             })
             return proof
 
@@ -2693,6 +2735,52 @@ def _direct_personal_nomination_visa(text: str, title: str) -> Evidence | None:
     return None
 
 
+def _anonymized_title_alias_missing_from_caption(
+    body: str, *, title: str, expected_citation: str,
+) -> bool:
+    """Flag an anonymized catalogue title when the court caption names a different party.
+
+    Only inspect the caption under an explicit court/tribunal heading and only
+    when that same caption carries the expected citation. This avoids treating
+    references to other cases elsewhere in the reasons as identity evidence.
+    """
+    alias = re.match(r"^\s*([A-Z]{2,6}\d{0,2})\s+(?:v\.?|and)\b", title)
+    if not alias:
+        return False
+    heading = re.search(
+        r"(?im)^[ \t]*(?:FEDERAL COURT OF AUSTRALIA|"
+        r"FEDERAL MAGISTRATES COURT OF AUSTRALIA|"
+        r"FEDERAL CIRCUIT COURT OF AUSTRALIA|"
+        r"FEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA|"
+        r"ADMINISTRATIVE APPEALS TRIBUNAL|ADMINISTRATIVE REVIEW TRIBUNAL)\s*$",
+        body[:12000],
+    )
+    if not heading:
+        return False
+    section = body[heading.end():heading.end() + 6000]
+    boundary = re.search(
+        r"(?im)^[ \t]*(?:CATCHWORDS|PARTIES|APPEAL FROM|LEGISLATION|"
+        r"REASONS FOR (?:JUDGMENT|DECISION)|STATEMENT OF DECISION)\b",
+        section,
+    )
+    caption = section[:boundary.start()] if boundary else section
+    citation_in_caption = any(
+        canonical_citation(match[0]) == expected_citation
+        for match in _citation_finditer(caption)
+    )
+    if not citation_in_caption:
+        return False
+    # AustLII/OCR occasionally inserts a space inside a coded party label
+    # (for example, "AFJ 16" for "AFJ16"). Treat only that formatting
+    # difference as equivalent; different letters still remain a conflict.
+    normalized_alias = re.sub(r"\s+", "", alias[1].upper())
+    alias_pattern = r"\s*".join(re.escape(character) for character in normalized_alias)
+    return not re.search(
+        rf"(?<![A-Z0-9]){alias_pattern}(?![A-Z0-9])",
+        caption.upper(),
+    )
+
+
 def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> Assessment:
     """Return only source-grounded values; every held field has a reason."""
     body = document_text(text or "")
@@ -2752,6 +2840,15 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
                     identity_matches = True
                     break
 
+    if (
+        expected
+        and identity_matches
+        and _anonymized_title_alias_missing_from_caption(
+            body, title=title, expected_citation=expected,
+        )
+    ):
+        identity_matches = False
+
     if not expected or not identity_matches:
         result.source_status = "identity_unverified" if not first or not expected else "identity_conflict"
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
@@ -2782,6 +2879,31 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         if catchwords_end:
             catchwords = catchwords[:catchwords_end.start()]
     citizenship_subject_heading = _has_explicit_citizenship_subject(title, catchwords, body)
+    direct_sponsor_visa_heading = bool(re.search(
+        r"\bdecision\s+to\s+refuse\s+(?:the\s+)?visa\b|"
+        r"\brefusal\s+of\s+employer\s+nomination\s+and\s+visas?\b|"
+        r"\bemployer\s+nomination\s+visa\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)"
+        r"whether\s+the\s+Tribunal\s+misdirected\s+itself\b|"
+        r"\bemployer\s+nomination\s*\(permanent\)\s+visa"
+        r"\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)decision\s+already\s+reviewed\b|"
+        r"\bregional\s+employer\s+nomination(?:\s*\(permanent\))?\s+visa"
+        r"\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)appeal\s+from\s+a\s+decision\b|"
+        r"\bapplication\s+for\s+(?:a\s+)?prospective\s+marriage(?:\s*\([^)]{1,50}\))?\s+visa\b|"
+        r"\brefusal\s+of\s+(?:the\s+)?(?:regional\s+)?employer\s+nomination"
+        r"(?:\s*\([^)]{1,50}\)){0,2}\s+visas?\b|"
+        r"\bapplication\s+for\s+judicial\s+review.{0,120}?\bregional\s+employer\s+nomination\s+visa\b|"
+        r"\bregional\s+employer\s+nomination\s+visa\s*(?:[-:–—]\s*|\uFFFD(?:C|\uFFFD)\s*)"
+        r"decision\s+of\s+(?:the\s+)?(?:administrative\s+appeals\s+tribunal|AAT)\b|"
+        r"\bregional\s+employer\s+nomination(?:\s*\(permanent\))?\s+visa"
+        r"\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)appeal\s+from\s+a\s+decision\b|"
+        r"\bdecision\s+not\s+to\s+grant\s+(?:an?\s+)?employer\s+nomination"
+        r"\s*\(residence\)\s+visas?\b|"
+        r"\bemployer\s+nomination\s*\(permanent\)\s+visa\s*(?:[-:–—]\s*|"
+        r"\uFFFD(?:C|\uFFFD)\s*)not\s+in\s+(?:the\s+)?migration\s+zone\s+at\s+time\s+of\s+application\b|"
+        r"\bemployer\s+nomination\s+visa\s*(?:[-:–—]\s*|\uFFFD(?:C|\uFFFD)\s*)refusal\b",
+        catchwords,
+        re.I,
+    ))
     current_visa_decision_heading = bool(
         re.search(
             r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
@@ -2791,7 +2913,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             catchwords,
             re.I,
         )
-    )
+    ) or direct_sponsor_visa_heading
     deportation_order_review = bool(
         not current_visa_decision_heading
         and re.search(r"\bs\.?\s*200\b", catchwords + "\n" + head, re.I)
@@ -2801,7 +2923,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             re.search(
                 r"\b(?:applied\s+to\s+(?:the\s+)?(?:Tribunal|Court)|"
                 r"lodged\s+an?\s+application)\b.{0,160}?\breview\b.{0,120}?"
-                r"\bthis\s+decision\b",
+                r"\b(?:this|that)\s+decision\b",
                 body[:6000],
                 re.I | re.S,
             )
@@ -3227,7 +3349,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         r"decision (?:not to grant|to refuse|to approve) (?:an? )?(?:employment )?nomination)\b",
         head,
         re.I | re.S,
-    ):
+    ) and not direct_sponsor_visa_heading:
         result.not_applicable["visa_type"] = "sponsorship_or_nomination_not_a_personal_visa"
     elif (
         re.search(r"\bmigration\s+agents?\b", (title or "") + head + catchwords, re.I)
@@ -3263,6 +3385,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
     elif (
         catchwords
         and re.search(r"\b(?:nomination|sponsor(?:ship)?)\b", catchwords, re.I)
+        and not direct_sponsor_visa_heading
         and not re.search(
             r"\b(?:visa\s+(?:refusal|cancellation|application|decision)|"
             r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"

@@ -83,6 +83,56 @@ class GroundedTests(unittest.TestCase):
         self.assertEqual({k: v.value for k, v in result.values.items()},
                          {"judges": "SMITH J", "outcome": "1. The application is dismissed.", "visa_type": "protection visa"})
 
+    def test_line_broken_ex_tempore_heading_keeps_formal_orders_extractable(self):
+        source = (
+            "BVW19 v Minister for Immigration [2021] FCA 1458\n"
+            "THE COURT ORDERS THAT:\n"
+            "\n"
+            "1.\tThe appeal is dismissed.\n"
+            "2.\tThe appellant pay the costs of the first respondent of and incidental to\n"
+            "the appeal.\n"
+            "Note:\tEntry of orders is dealt with in Rule 39.32 of the Federal Court Rules 2011.\n"
+            "EX TEMPORE REASONS\n"
+            "\n"
+            "FOR JUDGMENT\n"
+            "GREENWOOD J:\n"
+            "The appeal concerned an earlier decision.\n"
+        )
+        result = assess_case(
+            source,
+            citation="[2021] FCA 1458",
+            title="BVW19 v Minister for Immigration [2021] FCA 1458",
+            url="https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FCA/2021/1458.html",
+        )
+        self.assertEqual(result.values["outcome"].rule, "published_operative_table")
+        self.assertTrue(result.values["outcome"].value.startswith("1. The appeal is dismissed."))
+
+    def test_legacy_s200_deportation_review_is_not_a_personal_visa_decision(self):
+        source = (
+            "Cao v Minister for Immigration & Multicultural Affairs [2000] FCA 1392\n"
+            "FEDERAL COURT OF AUSTRALIA\n"
+            "IN THE FEDERAL COURT OF AUSTRALIA\n"
+            "JUDGE: CARR J\n"
+            "THE COURT ORDERS THAT:\n"
+            "1. The application be dismissed.\n"
+            "REASONS FOR JUDGMENT\n"
+            "The Tribunal's decision was to affirm a decision of a delegate of the respondent, "
+            "made on 24 June 1998, under s 200 of the Migration Act 1958 (Cth) (\"the Act\"), "
+            "to deport the applicant.\n"
+            "On 19 July 1998 the applicant applied to the Tribunal for review of that decision.\n"
+        )
+        result = assess_case(
+            source,
+            citation="[2000] FCA 1392",
+            title="Cao v Minister for Immigration & Multicultural Affairs [2000] FCA 1392",
+            url="https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FCA/2000/1392.html",
+        )
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "deportation_order_review_not_a_visa_decision",
+        )
+
     def test_table_cells_and_inline_orders_are_retained(self):
         html = "<html><nav>Other [2000] FCA 1</nav><body>" + HEAD + "<table><tr><th>JUDGE:</th><td>SMITH J</td></tr><tr><th>DECISION:</th><td>The Tribunal affirms the decision.</td></tr></table><p>REASONS FOR DECISION</p></body></html>"
         result = self.assess(html)
@@ -517,6 +567,65 @@ class GroundedTests(unittest.TestCase):
         result = assess_case(BODY, citation="[2024] FCA 13")
         self.assertEqual(result.source_status, "identity_conflict")
         self.assertEqual(result.values, {})
+
+    def test_anonymized_catalogue_title_must_match_official_caption(self):
+        body = (
+            "FEDERAL COURT OF AUSTRALIA\n"
+            "Goyal, in the matter of Tree Minders Pty Ltd (Administrators Appointed) "
+            "[2017] FCA 725\n"
+            "CATCHWORDS: CORPORATIONS – meeting of creditors\n"
+            "JUDGE: O'CALLAGHAN J\n"
+            "THE COURT ORDERS THAT:\n1. The application is granted.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2017] FCA 725",
+            title="FGB17 v Minister for Home Affairs [2017] FCA 725",
+        )
+        self.assertEqual(result.source_status, "identity_conflict")
+        self.assertEqual(result.values, {})
+
+    def test_matching_anonymized_caption_remains_eligible(self):
+        body = (
+            "FEDERAL COURT OF AUSTRALIA\n"
+            "FGB17 v Minister for Home Affairs [2019] FCA 725\n"
+            "CATCHWORDS: MIGRATION – application for leave to appeal\n"
+            "JUDGE: SMITH J\n"
+            "THE COURT ORDERS THAT:\n1. The application is dismissed.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2019] FCA 725",
+            title="FGB17 v Minister for Home Affairs [2019] FCA 725",
+        )
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["judges"].value, "SMITH J")
+
+    def test_spacing_inside_anonymized_alias_is_not_a_case_mismatch(self):
+        for title_alias, caption_alias, citation in (
+            ("AFJ16", "AFJ 16", "[2016] FCCA 3034"),
+            ("DVD20", "DVD2 0", "[2025] FedCFamC2G 1987"),
+        ):
+            with self.subTest(citation=citation):
+                body = (
+                    "FEDERAL CIRCUIT COURT OF AUSTRALIA\n"
+                    f"{caption_alias} v Minister [2016] FCCA 3034\n"
+                    "CATCHWORDS: MIGRATION – judicial review\n"
+                    "JUDGE: SMITH J\n"
+                )
+                if "FedCFamC2G" in citation:
+                    body = (
+                        "FEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA\n"
+                        f"{caption_alias} v Minister [2025] FedCFamC2G 1987\n"
+                        "CATCHWORDS: MIGRATION – judicial review\n"
+                        "JUDGE: SMITH J\n"
+                    )
+                result = assess_case(
+                    body,
+                    citation=citation,
+                    title=f"{title_alias} v Minister {citation}",
+                )
+                self.assertEqual(result.source_status, "checked")
 
     def test_citation_identity_accepts_space_after_opening_year_bracket(self):
         body = (
@@ -1349,6 +1458,31 @@ class GroundedTests(unittest.TestCase):
             document_text(body), "Example v Minister"
         )
         self.assertEqual(proof.value if proof else None, "Subclass 790 visa")
+
+    def test_shev_790_is_more_specific_than_generic_protection_visa_label(self):
+        body = (
+            "Example v Minister [2018] FCA 1366\n"
+            "CATCHWORDS: MIGRATION – appeal from decision to refuse a protection visa\n"
+            "REASONS FOR JUDGMENT\n"
+            "The appellant challenges a decision of a delegate to refuse the grant of a "
+            "particular type of protection visa known as a Safe Haven Enterprise "
+            "(subclass 790) visa to the appellant.\n"
+        )
+        result = assess_case(body, citation="[2018] FCA 1366", title="Example v Minister")
+        proof = result.values["visa_type"]
+        self.assertEqual(proof.value, "Safe Haven Enterprise visa (subclass 790)")
+        self.assertEqual(proof.rule, "direct_shev_790_visa_decision")
+
+    def test_shev_790_mentioned_only_for_another_person_is_not_selected(self):
+        body = (
+            "Example v Minister [2018] FCA 1367\n"
+            "CATCHWORDS: COSTS – application for extension of time\n"
+            "REASONS FOR JUDGMENT\n"
+            "A different applicant previously applied for a Safe Haven Enterprise "
+            "(subclass 790) visa. That application was refused. The present case concerns costs.\n"
+        )
+        result = assess_case(body, citation="[2018] FCA 1367", title="Example v Minister")
+        self.assertNotIn("visa_type", result.values)
 
     def test_named_personal_visa_refusal_resolves_sponsorship_na(self):
         categories = (
@@ -2225,6 +2359,29 @@ class WorkflowTests(unittest.TestCase):
                     "TU",
                 )
 
+    def test_safe_haven_enterprise_name_maps_to_subclass_790_and_class_xe(self):
+        from immi_case_downloader.repair_workflow import _expected_visa_metadata
+
+        self.assertEqual(_expected_visa_metadata("visa_subclass", "Safe Haven Enterprise visa"), "790")
+        self.assertEqual(_expected_visa_metadata("visa_subclass_number", "Safe Haven Enterprise visa"), "790.0")
+        self.assertEqual(_expected_visa_metadata("visa_class_code", "Safe Haven Enterprise visa"), "XE")
+
+    def test_temporary_protection_class_xd_maps_to_subclass_785(self):
+        from immi_case_downloader.repair_workflow import _expected_visa_metadata
+
+        self.assertEqual(
+            _expected_visa_metadata("visa_subclass", "Protection (Class XD) visa"),
+            "785",
+        )
+        self.assertEqual(
+            _expected_visa_metadata("visa_subclass_number", "Protection (Class XD) visa"),
+            "785.0",
+        )
+        self.assertEqual(
+            _expected_visa_metadata("visa_class_code", "Protection (Class XD) visa"),
+            "XD",
+        )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -2486,6 +2643,60 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not-applicable evidence"):
             validate_approvals(self.root, [approval])
 
+    def test_prior_sponsorship_na_reopens_when_source_proves_visa_decision_but_not_type(self):
+        catchwords = "MIGRATION - decision to refuse visa"
+        citation = "[2019] FCCA 903"
+        title = "Example v Minister [2019] FCCA 903"
+        url = "https://www.austlii.edu.au/au/cases/cth/FCCA/2019/903.html"
+        source_text = (
+            f"Title: {title}\n"
+            f"Citation: {citation}\n"
+            f"URL: {url}\n"
+            + "=" * 50 + "\n"
+            + title + "\n"
+            + "CATCHWORDS: " + catchwords + "\n"
+            + "ORDERS:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\nThe decision to refuse visa is under review.\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute("ALTER TABLE cases ADD COLUMN catchwords TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE cases ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "UPDATE cases SET citation=?,title=?,url=?,catchwords=?,source='AustLII' WHERE case_id='a'",
+                (citation, title, url, catchwords),
+            )
+            conn.commit()
+        self.rows[0].update(citation=citation, title=title, url=url)
+        self.rows[0]["catchwords"] = catchwords
+        self.rows[0]["source"] = "AustLII"
+        self.save_exports()
+
+        prior = self.root / "prior-sponsorship-na-without-type.csv"
+        with prior.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["case_id", "field", "fact_status", "reason_code", "reason", "source_sha256"],
+            )
+            writer.writeheader()
+            writer.writerow({
+                "case_id": "a",
+                "field": "visa_type",
+                "fact_status": "not_applicable",
+                "reason_code": "sponsorship_or_nomination_not_a_personal_visa",
+                "reason": REASONS["sponsorship_or_nomination_not_a_personal_visa"],
+                "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            })
+
+        self.review(prior_status=prior)
+        visa = next(
+            row for row in json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+            if row["case_id"] == "a" and row["field"] == "visa_type"
+        )
+        self.assertEqual(visa["fact_status"], "waiting_new_evidence")
+        self.assertEqual(visa["reason_code"], "current_visa_not_stated")
+        self.assertIsNone(visa["evidence"])
+
     def test_generic_or_non_primary_catchwords_cannot_fill_visa_type(self):
         self.assertIsNone(_austlii_catchwords_visa_evidence({
             "source": "AustLII",
@@ -2627,6 +2838,50 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["verification"]["verified_cells_each_store"], 1)
         self.assertEqual(self.review("after-protection")["missing_cells"], 2)
 
+    def test_employer_nomination_personal_visa_catchwords_do_not_mark_not_applicable(self):
+        rows = (
+            (
+                "MIGRATION – Regional Employer Nomination visa – decision of the Administrative Appeals Tribunal",
+                "Regional Employer Nomination visa",
+            ),
+            (
+                "MIGRATION – application for Prospective Marriage visa – application refused under s 501",
+                "Prospective Marriage visa",
+            ),
+            (
+                "MIGRATION – decision not to grant Employer Nomination (Residence) visas",
+                "Employer Nomination (Residence) visa",
+            ),
+        )
+        for catchwords, expected in rows:
+            with self.subTest(catchwords=catchwords):
+                evidence = _austlii_catchwords_visa_evidence({
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "catchwords": catchwords,
+                })
+                self.assertIsNotNone(evidence)
+                self.assertEqual(evidence.value, expected)
+                self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "catchwords": catchwords,
+                }))
+
+    def test_nomination_only_catchword_remains_not_applicable(self):
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable({
+                "source": "AustLII",
+                "url": self.rows[0]["url"],
+                "title": "Example Pty Ltd (Migration) [2021] AATA 1",
+                "catchwords": (
+                    "MIGRATION – Employer nomination for Direct Entry stream visa – "
+                    "refusal to approve nomination due to insufficient financial capacity"
+                ),
+            }),
+            "sponsorship_or_nomination_not_a_personal_visa",
+        )
+
     def test_austlii_nomination_catchword_marks_visa_type_not_applicable(self):
         self.assertEqual(
             _austlii_catchwords_visa_not_applicable({
@@ -2646,6 +2901,73 @@ class WorkflowTests(unittest.TestCase):
             "url": "https://casenote.au/cases/example",
             "catchwords": "MIGRATION – Employer Nomination Scheme – Tribunal jurisdiction",
         }))
+
+    def test_exact_non_immigration_catchwords_mark_visa_type_not_applicable(self):
+        for title, catchwords in (
+            (
+                "Wiseway Logistics Pty Ltd v Secretary [2024] AATA 1032",
+                "AVIATION SECURITY – regulated air cargo agent – application for stay",
+            ),
+            (
+                "Invisalign Australia Pty Limited v SmileDirectClub LLC [2023] FCA 395",
+                "CONSUMER LAW – misleading and deceptive conduct",
+            ),
+            (
+                "Sheather v Staples Waste Removals Pty Limited [2014] FCA 84",
+                "AGENCY – appeal concerning registration of a domain name",
+            ),
+            (
+                "Decleah Investments Pty Ltd v Commissioner of Taxation [2018] FCA 929",
+                "TAXATION – remittal to the Administrative Appeals Tribunal",
+            ),
+        ):
+            with self.subTest(title=title):
+                self.assertEqual(
+                    _austlii_catchwords_visa_not_applicable({
+                        "source": "AustLII",
+                        "url": self.rows[0]["url"],
+                        "title": title,
+                        "catchwords": catchwords,
+                    }),
+                    "non_immigration_subject_not_a_visa_decision",
+                )
+        self.assertIsNone(_austlii_catchwords_visa_not_applicable({
+            "source": "AustLII",
+            "url": self.rows[0]["url"],
+            "title": "Lawrance v Refugee Review Tribunal [2001] FCA 1",
+            "catchwords": "REFUGEE REVIEW – reasons for decision not published",
+        }))
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable(
+                {
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "title": "Sheather v Staples Waste Removals Pty Limited (No 3) [2014] FCA 330",
+                    "catchwords": "Number of paragraphs:",
+                },
+                "FEDERAL COURT OF AUSTRALIA\n"
+                "Sheather v Staples [2014] FCA 330\n"
+                "CATCHWORDS: AGENCY – appeal concerning registration of a domain name\n"
+                "Legislation: Corporations Act 2001 (Cth)",
+            ),
+            "non_immigration_subject_not_a_visa_decision",
+        )
+        self.assertEqual(
+            _austlii_catchwords_visa_not_applicable(
+                {
+                    "source": "AustLII",
+                    "url": self.rows[0]["url"],
+                    "title": "Wiseway Logistics Pty Ltd and Secretary [2024] AATA 1033",
+                    "catchwords": "Practice and procedure – request to issue summonses",
+                },
+                "ADMINISTRATIVE APPEALS TRIBUNAL\n"
+                "Wiseway Logistics Pty Ltd and Secretary [2024] AATA 1033\n"
+                "CATCHWORDS: Practice and procedure – request to issue summonses\n"
+                "Legislation: Aviation Transport Security Regulations 2005 (Cth). "
+                "The applicant is a regulated air cargo agent (RACA).",
+            ),
+            "non_immigration_subject_not_a_visa_decision",
+        )
 
     def test_austlii_citizenship_heading_marks_visa_type_not_applicable(self):
         self.assertEqual(
@@ -2758,7 +3080,7 @@ class WorkflowTests(unittest.TestCase):
                          json.dumps({"answers": {"select": {"choice": "Invented Judge", "confidence": 1}}}), "jev-test"))
             conn.commit()
         first_review = self.review(jev_cache=cache)
-        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v3")
+        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v4")
         review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
         advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
         self.assertEqual(len(advice_by_field["judges"]), 1)
@@ -3199,6 +3521,125 @@ class WorkflowTests(unittest.TestCase):
         payload = json.loads((self.data / "immigration_cases.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["cases"][0]["visa_type"], "")
         self.assertEqual(payload["cases"][0]["user_notes"], "Keep my notes")
+
+    def test_expired_historical_visa_can_be_cleared_when_current_visa_is_unstated(self):
+        quote = (
+            "The applicant arrived in Australia on a student visa on 14 March 2008, "
+            "which expired on 15 March 2010."
+        )
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            + "Example v Minister [2024] FCA 12\n"
+            + "JUDGE:\nSMITH J\n"
+            + "THE COURT ORDERS THAT:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\n"
+            + quote + "\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        old_values = {
+            "visa_type": "Student visa (subclass 500)",
+            "visa_subclass": "500.0",
+            "visa_class_code": "TU",
+            "visa_subclass_number": "500.0",
+        }
+        self.rows[0].update(old_values)
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute(
+                "UPDATE cases SET visa_type=?, visa_subclass=?, visa_class_code=?, "
+                "visa_subclass_number=? WHERE case_id='a'",
+                tuple(old_values[field] for field in old_values),
+            )
+            conn.commit()
+        self.save_exports()
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        approvals = [
+            {
+                "case_id": "a",
+                "field": field,
+                "expected_current_by_store": {
+                    "database": old_values[field],
+                    "csv": old_values[field],
+                    "json": old_values[field],
+                },
+                "source_path": "downloaded_cases/case.txt",
+                "source_sha256": source_hash,
+                "evidence": {
+                    "value": "",
+                    "reason_code": "current_visa_not_stated",
+                    "previous_visa_value": old_values["visa_type"],
+                    "quote": quote,
+                    "method": (
+                        "manual_source_bound_unstated_visa_review"
+                        if field == "visa_type"
+                        else "manual_source_bound_unstated_visa_metadata_clear_review"
+                    ),
+                },
+                "reviewer": "independent-test-review",
+                "review_note": "The source explicitly says the stored student visa expired and does not identify a current visa.",
+            }
+            for field in old_values
+        ]
+
+        result = apply_approved(
+            self.root, self.root / "expired-visa-clear-apply", approvals
+        )
+
+        self.assertEqual(result["verification"]["verified_cells_each_store"], 4)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT visa_type, visa_subclass, visa_class_code, visa_subclass_number "
+                    "FROM cases WHERE case_id='a'"
+                ).fetchone(),
+                ("", "", "", ""),
+            )
+
+    def test_expired_visa_clear_rejects_quote_without_expiry_evidence(self):
+        quote = "The applicant arrived in Australia on a student visa."
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            + "JUDGE:\nSMITH J\n"
+            + "THE COURT ORDERS THAT:\n1. The application is dismissed.\n"
+            + "REASONS FOR JUDGMENT\n"
+            + quote + "\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0]["visa_type"] = "Student visa (subclass 500)"
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            conn.execute(
+                "UPDATE cases SET visa_type='Student visa (subclass 500)' WHERE case_id='a'"
+            )
+            conn.commit()
+        self.save_exports()
+        approval = {
+            "case_id": "a",
+            "field": "visa_type",
+            "expected_current_by_store": {
+                "database": "Student visa (subclass 500)",
+                "csv": "Student visa (subclass 500)",
+                "json": "Student visa (subclass 500)",
+            },
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "evidence": {
+                "value": "",
+                "reason_code": "current_visa_not_stated",
+                "previous_visa_value": "Student visa (subclass 500)",
+                "quote": quote,
+                "method": "manual_source_bound_unstated_visa_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The source does not state the applicant's current visa.",
+        }
+        with self.assertRaisesRegex(ValueError, "explicitly says the stored visa expired"):
+            validate_approvals(self.root, [approval])
 
     def test_manual_source_bound_visa_metadata_updates_all_stores(self):
         source_text = (

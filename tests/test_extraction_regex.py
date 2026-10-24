@@ -94,6 +94,93 @@ def test_protection_visa_catchwords_set_protection_case_nature():
     assert fields["case_nature"]["value"] == "Protection visa"
 
 
+def test_case_nature_uses_official_non_migration_catchwords():
+    examples = (
+        ("FAIR WORK – underpayment of wages – employment", "Fair Work"),
+        ("PRACTICE AND PROCEDURE – application for suppression orders", "Practice and procedure"),
+        ("COSTS – application for security for costs", "Costs"),
+        ("AGENCY – appeal concerning registration of a domain name", "Appeal"),
+        ("TAXATION – appeal concerning goods and services tax", "Appeal"),
+        ("AVIATION SECURITY – merits review of a registered cargo agent decision", "Merits review"),
+        ("AVIATION SECURITY – application for a stay", "Practice and procedure"),
+        ("CONSUMER LAW – misleading or deceptive conduct", "Other"),
+        ("CORPORATE INSOLVENCY – administrators – creditors' meeting", "Other"),
+        ("CORPORATIONS – meeting of creditors – application by administrators", "Other"),
+        ("CRIMINAL LAW AND PROCEDURE – child protection offender register", "Other"),
+        ("INDUSTRIAL LAW – review of Registrar decision – underpayment claim", "Fair Work"),
+        ("AVIATION SECURITY – review of decision not to renew RACA designation", "Merits review"),
+        ("ADMINISTRATIVE LAW – application for judicial review – aviation security stay", "Judicial review"),
+    )
+    for catchwords, expected in examples:
+        fields = extract_regex(f"CATCHWORDS: {catchwords}\n", {"catchwords": catchwords})
+        assert fields["case_nature"]["value"] == expected
+
+
+def test_immigration_case_nature_still_beats_procedural_catchwords():
+    catchwords = "MIGRATION – practice and procedure – review of refusal of Partner visa"
+    fields = extract_regex(f"CATCHWORDS: {catchwords}\n", {"catchwords": catchwords})
+    assert fields["case_nature"]["value"] == "Partner visa"
+
+
+def test_appeal_without_catchwords_uses_the_court_heading_and_orders():
+    text = (
+        "FEDERAL COURT OF AUSTRALIA [2014] FCA 330\n"
+        "Category: No Catchwords\n"
+        "ON APPEAL FROM THE FEDERAL CIRCUIT COURT OF AUSTRALIA\n"
+        "THE COURT ORDERS THAT: The appeal be allowed in part.\n"
+    )
+    fields = extract_regex(text, {"title": "Sheather v Staples [2014] FCA 330"})
+    assert fields["case_nature"]["value"] == "Appeal"
+
+
+def test_legacy_s200_deportation_review_prose_sets_deportation_case_nature():
+    text = (
+        "Cao v Minister for Immigration & Multicultural Affairs [2000] FCA 1392\n"
+        "The Tribunal's decision was to affirm a decision of a delegate of the respondent, "
+        "made on 24 June 1998, under s 200 of the Migration Act 1958 (Cth) (\"the Act\"), "
+        "to deport the applicant.\n"
+        "On 19 July 1998 the applicant applied to the Tribunal for review of that decision.\n"
+    )
+
+    fields = extract_regex(
+        text,
+        {"title": "Cao v Minister for Immigration & Multicultural Affairs [2000] FCA 1392"},
+    )
+
+    assert fields["case_nature"]["value"] == "Deportation review"
+
+
+def test_criminal_deportation_decision_is_not_misclassified_as_visa_cancellation():
+    catchwords = (
+        "IMMIGRATION AND CITIZENSHIP - criminal deportation - prior warning - "
+        "weighing of factors against deportation - decision set aside"
+    )
+    text = (
+        "DECISION\n"
+        "The decision under review is set aside and the matter is directed back "
+        "to the Minister with a direction that Mr Mai not be deported.\n"
+        f"CATCHWORDS\n{catchwords}\n"
+        "Migration Act 1958 s 200\n"
+    )
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Deportation review"
+
+
+def test_s200_deportation_order_judicial_review_is_not_classified_as_other():
+    text = (
+        "FEDERAL COURT OF AUSTRALIA\n"
+        "MIGRATION - MIGRATION ACT - Deportation of non-citizens who have committed "
+        "serious crimes - Minister made a deportation order under s 200 of the Act.\n"
+        "The applicant seeks judicial review of that deportation decision.\n"
+    )
+
+    fields = extract_regex(text, {"catchwords": "Unable to extract contents."})
+
+    assert fields["case_nature"]["value"] == "Deportation review"
+
+
 def test_explicit_citizenship_catchwords_override_incidental_visa_terms():
     text = """
     CATCHWORDS

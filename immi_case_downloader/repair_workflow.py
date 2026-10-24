@@ -53,6 +53,7 @@ _VISA_CLASS_BY_SUBCLASS = {
     "866": "XA",
     "885": "VB",
 }
+_VISA_SUBCLASS_BY_UNAMBIGUOUS_CLASS = {"XD": "785"}
 
 REASONS = {
     "author_not_stated": "可核對原文沒有明列裁決者，不從案件名稱或其他案件推斷",
@@ -73,6 +74,7 @@ REASONS = {
     "security_card_case_not_a_personal_visa": "原文摘要顯示本案審理航空或海事保安識別卡，不是個人簽證審查；簽證類別不適用",
     "freedom_of_information_not_a_visa_decision": "原文摘要顯示本案審理資訊公開或文件披露，不是簽證決定；簽證類別不適用",
     "corporate_deregistration_not_a_personal_visa": "原文摘要顯示本案審理公司註銷或登記，不是個人簽證審查；簽證類別不適用",
+    "non_immigration_subject_not_a_visa_decision": "原文標題與正式案情摘要均指向非移民法律事項；本案簽證類別不適用",
     "citizenship_review_not_a_visa_application": "本案審理公民身分申請，簽證類別不適用",
     "citizenship_matter_not_a_visa_decision": "原判決標題或官方 catchwords 明確標示公民權事項；本案沒有審查特定簽證決定，簽證類別不適用",
     "detention_proceeding_not_a_visa_decision": "官方 catchwords 顯示本案審理拘留、遣返或驅逐事項，且未提及簽證、簽證 subclass 或 s 501；簽證類別不適用",
@@ -285,6 +287,59 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
         return None
 
     rules: list[tuple[str, str]] = [
+        (
+            r"\b(Prospective\s+Marriage(?:\s*\(Temporary\))?(?:\s*\(Class\s+TO\))?\s+visa)\b"
+            r".{0,180}?\b(?:application\s+refused|refusal|decision\s+under\s+review|review)\b",
+            "prospective_marriage_visa_decision",
+        ),
+        (
+            r"\b(Regional\s+Employer\s+Nomination(?:\s*\(Permanent\))?\s+visa)\b"
+            r"\s*(?:[-:–—]\s*|\uFFFD(?:C|\uFFFD)\s*)"
+            r"(?:decision\s+of\s+(?:the\s+)?(?:Administrative\s+Appeals\s+Tribunal|AAT)|"
+            r"appeal\s+from\s+(?:a\s+)?decision|judicial\s+review|review\s+of\s+(?:the\s+)?visa)",
+            "regional_employer_nomination_visa_decision",
+        ),
+        (
+            r"\b(Regional\s+Employer\s+Nomination(?:\s*\(Permanent\))?\s+visa)\b"
+            r".{0,80}?\bappeal\s+from\s+a\s+decision\b",
+            "regional_employer_nomination_visa_appeal",
+        ),
+        (
+            r"\bapplication\s+for\s+judicial\s+review.{0,120}?"
+            r"(Regional\s+Employer\s+Nomination\s+visa)\b",
+            "regional_employer_nomination_judicial_review",
+        ),
+        (
+            r"\brefusal\s+of\s+(?:the\s+)?((?:Regional\s+)?Employer\s+Nomination"
+            r"(?:\s*\([^)]{1,50}\)){0,2}\s+visas?)\b",
+            "employer_nomination_visa_refusal",
+        ),
+        (
+            r"\b(?:decision\s+not\s+to\s+grant\s+(?:an?\s+)?|"
+            r"(?:refusal|refused)\s+of\s+(?:the\s+)?)(Employer\s+Nomination\s*\(Residence\)\s+visa)s?\b",
+            "employer_nomination_residence_visa_decision",
+        ),
+        (
+            r"\b(Employer\s+Nomination\s*\(Permanent\)\s+visa)\b"
+            r"\s*(?:[-:–—]\s*|\uFFFD(?:C|\uFFFD)\s*)"
+            r"not\s+in\s+(?:the\s+)?migration\s+zone\s+at\s+time\s+of\s+application\b",
+            "employer_nomination_permanent_visa_location_decision",
+        ),
+        (
+            r"\b(Employer\s+Nomination\s*\(Permanent\)\s+visa)\b"
+            r"\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)decision\s+already\s+reviewed\b",
+            "employer_nomination_permanent_visa_review",
+        ),
+        (
+            r"\b(Employer\s+Nomination\s+visa)\b"
+            r"\s*(?:[-:\u2013\u2014\uFFFD]\s*|\uFFFD(?:C|\uFFFD)\s*)"
+            r"whether\s+the\s+Tribunal\s+misdirected\s+itself\b",
+            "employer_nomination_visa_judicial_review",
+        ),
+        (
+            r"\brefusal\s+of\s+(Employer\s+Nomination)\s+and\s+visas?\b",
+            "employer_nomination_and_visa_refusal",
+        ),
         (
             r"\b(Skilled\s*\(Provisional\)\s*\(Class\s+VC\)\s+visa)\b",
             "skilled_provisional_class_vc",
@@ -522,8 +577,11 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
             value = "Carer visa"
         elif rule == "transitional_permanent_bf_visa":
             value = "Transitional (permanent) BF visa"
+        elif rule == "employer_nomination_and_visa_refusal":
+            value = "Employer Nomination visa"
         else:
-            value = match[1].strip()
+            value = " ".join(match[1].split())
+            value = re.sub(r"(?i)\bvisas?$", "visa", value)
         return Evidence(
             value=value,
             quote=catchwords[max(0, match.start() - 140):min(len(catchwords), match.end() + 180)],
@@ -545,7 +603,9 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
     return None
 
 
-def _austlii_catchwords_visa_not_applicable(case: dict[str, Any]) -> str | None:
+def _austlii_catchwords_visa_not_applicable(
+    case: dict[str, Any], source_text: str = "",
+) -> str | None:
     """Use explicit AustLII headings to classify matters without a visa dispute.
 
     Citizenship proceedings and nomination or sponsorship reviews are not
@@ -560,10 +620,32 @@ def _austlii_catchwords_visa_not_applicable(case: dict[str, Any]) -> str | None:
     if urlparse(str(case.get("url", ""))).hostname not in {"austlii.edu.au", "www.austlii.edu.au"}:
         return None
     catchwords = str(case.get("catchwords", "") or "")
-    flattened_catchwords = " ".join(catchwords.split())
+    source_catchwords = ""
+    if source_text:
+        court_heading = re.search(
+            r"(?im)^[ \t]*(?:FEDERAL COURT OF AUSTRALIA|"
+            r"FEDERAL MAGISTRATES COURT OF AUSTRALIA|"
+            r"FEDERAL CIRCUIT COURT OF AUSTRALIA|"
+            r"FEDERAL CIRCUIT AND FAMILY COURT OF AUSTRALIA|"
+            r"ADMINISTRATIVE APPEALS TRIBUNAL|ADMINISTRATIVE REVIEW TRIBUNAL)\s*$",
+            source_text[:16000],
+        )
+        if court_heading:
+            source_head = source_text[court_heading.end():court_heading.end() + 12000]
+            source_match = re.search(
+                r"(?is)\bCATCHWORDS\b\s*:?\s*(.{1,3000}?)"
+                r"(?=\b(?:LEGISLATION|CASES CITED|DATE OF HEARING|DATE OF LAST SUBMISSIONS|"
+                r"REASONS FOR (?:JUDGMENT|DECISION)|DECISION RECORD|REPRESENTATION|"
+                r"APPEARANCES|PRESIDING MEMBER|ORDERS?)\b)",
+                source_head,
+            )
+            if source_match:
+                source_catchwords = source_match.group(1)
+    flattened_catchwords = " ".join(f"{catchwords} {source_catchwords}".split())
     title = str(case.get("title", "") or "")
     visa_decision = re.search(
         r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+        r"decision\s+to\s+refuse\s+(?:the\s+)?visa|"
         r"refusal\s+of\s+(?:the\s+)?visa|"
         r"cancellation\s+of\s+(?:(?:the|applicant['’]s)\s+)?visa|"
         r"decision\s+to\s+cancel\s+(?:(?:the|applicant['’]s)\s+)?visa|"
@@ -603,6 +685,57 @@ def _austlii_catchwords_visa_not_applicable(case: dict[str, Any]) -> str | None:
     )
     if detention_proceeding and not visa_case_reference and not visa_or_subclass_reference:
         return "detention_proceeding_not_a_visa_decision"
+    # Use whole words so a party or product name such as Invisalign is not
+    # mistaken for a reference to a visa. Only apply this rule to explicit,
+    # high-signal non-immigration subject headings in the official catchwords.
+    title_and_catchwords = f"{title} {flattened_catchwords}"
+    if not re.search(r"\b(?:visa|immigration|migration|refugee|subclass)\b", title_and_catchwords, re.I):
+        non_immigration_subject = (
+            re.search(r"\bEXTRADITION\b", flattened_catchwords, re.I)
+            or re.search(r"\bBANKRUPTCY\b", flattened_catchwords, re.I)
+            or re.search(
+                r"\bCUSTOMS\b.{0,240}\b(?:countervailing|dumping|tariff|import duty)\b|"
+                r"\b(?:countervailing|dumping)\b.{0,240}\bCUSTOMS\b",
+                flattened_catchwords,
+                re.I,
+            )
+            or re.search(
+                r"\bCORPORATIONS\b.{0,300}\b(?:meeting of creditors|administrators?|"
+                r"winding up|insolvency)\b",
+                flattened_catchwords,
+                re.I,
+            )
+            or re.search(r"\b(?:CONSUMER LAW|TRADE PRACTICES)\b", flattened_catchwords, re.I)
+            or (
+                re.search(r"\bAGENCY\b", flattened_catchwords, re.I)
+                and re.search(r"\bdomain name\b", flattened_catchwords, re.I)
+            )
+            or (
+                re.search(r"\bCommissioner of Taxation\b", title, re.I)
+                and re.search(
+                    r"\b(?:TAXATION|goods and services tax|GST|remittal|Administrative Appeals Tribunal)\b",
+                    flattened_catchwords,
+                    re.I,
+                )
+            )
+            or re.search(
+                r"\bMilitary Rehabilitation and Compensation(?: Act)?\b|"
+                r"\bDefence Force Retirement and Death Benefits Act\b",
+                title_and_catchwords,
+                re.I,
+            )
+            or (
+                re.search(r"\bWiseway Logistics\b", title, re.I)
+                and re.search(r"\b(?:aviation|air cargo|RACA|regulated air cargo agent)\b", flattened_catchwords, re.I)
+            )
+        )
+        source_confirms_wiseway_aviation = (
+            re.search(r"\bWiseway Logistics\b", title, re.I)
+            and re.search(r"\b(?:Aviation Transport Security|regulated air cargo agent|RACA)\b", source_text, re.I)
+            and re.search(r"\b(?:summons(?:es)?|interlocutory stay|suppression|non-publication)\b", flattened_catchwords, re.I)
+        )
+        if non_immigration_subject or source_confirms_wiseway_aviation:
+            return "non_immigration_subject_not_a_visa_decision"
     if _austlii_catchwords_visa_evidence(case):
         return None
     if not re.search(r"\b(?:nomination|sponsor(?:ship)?)\b", flattened_catchwords, re.I):
@@ -704,12 +837,25 @@ def _austlii_catchword_visa_proof(
         re.I,
     ))
     source_confirms_visa = _austlii_source_confirms_current_visa_decision(case, source_text)
+    direct_catchword_rules = {
+        "austlii_catchwords_prospective_marriage_visa_decision",
+        "austlii_catchwords_regional_employer_nomination_visa_decision",
+        "austlii_catchwords_regional_employer_nomination_judicial_review",
+        "austlii_catchwords_regional_employer_nomination_visa_appeal",
+        "austlii_catchwords_employer_nomination_residence_visa_decision",
+        "austlii_catchwords_employer_nomination_permanent_visa_location_decision",
+        "austlii_catchwords_employer_nomination_permanent_visa_review",
+        "austlii_catchwords_employer_nomination_visa_judicial_review",
+        "austlii_catchwords_employer_nomination_visa_refusal",
+        "austlii_catchwords_employer_nomination_and_visa_refusal",
+    }
+    direct_catchword_visa = evidence.rule in direct_catchword_rules
     if not_applicable == "sponsorship_or_nomination_not_a_personal_visa":
-        allowed = source_confirms_visa
+        allowed = source_confirms_visa or direct_catchword_visa
     elif not_applicable:
         allowed = False
     elif sponsorship_context:
-        allowed = source_confirms_visa
+        allowed = source_confirms_visa or direct_catchword_visa
     else:
         allowed = assessment.reasons.get("visa_type") == "current_visa_not_stated"
     prior_is_na = (
@@ -937,23 +1083,62 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                             row, source_text, decision, old, {sha, legacy_sha}
                         )
                         if not proof:
-                            catchword_na = _austlii_catchwords_visa_not_applicable(row)
+                            catchword_na = _austlii_catchwords_visa_not_applicable(row, source_text)
                     sponsorship_na_overridden = (
                         field == "visa_type"
-                        and bool(proof)
                         and (
                             (
-                                proof.rule.startswith("austlii_catchwords_")
-                                and decision.not_applicable.get(field)
-                                    == "sponsorship_or_nomination_not_a_personal_visa"
+                                bool(proof)
+                                and proof.rule.startswith("austlii_catchwords_")
                                 and _austlii_source_confirms_current_visa_decision(row, source_text)
+                                and (
+                                    decision.not_applicable.get(field)
+                                        == "sponsorship_or_nomination_not_a_personal_visa"
+                                    or (
+                                        same_evidence
+                                        and old.get("fact_status") == "not_applicable"
+                                        and prior_reason_code
+                                            == "sponsorship_or_nomination_not_a_personal_visa"
+                                    )
+                                )
                             )
                             or (
-                                proof.rule == "direct_current_personal_visa_refusal"
+                                bool(proof)
+                                and proof.rule.startswith("austlii_catchwords_")
                                 and same_evidence
                                 and old.get("fact_status") == "not_applicable"
                                 and prior_reason_code
                                     == "sponsorship_or_nomination_not_a_personal_visa"
+                                and proof.rule in {
+                                    "austlii_catchwords_prospective_marriage_visa_decision",
+                                    "austlii_catchwords_regional_employer_nomination_visa_decision",
+                                    "austlii_catchwords_regional_employer_nomination_judicial_review",
+                                    "austlii_catchwords_regional_employer_nomination_visa_appeal",
+                                    "austlii_catchwords_employer_nomination_residence_visa_decision",
+                                    "austlii_catchwords_employer_nomination_permanent_visa_location_decision",
+                                    "austlii_catchwords_employer_nomination_permanent_visa_review",
+                                    "austlii_catchwords_employer_nomination_visa_judicial_review",
+                                    "austlii_catchwords_employer_nomination_visa_refusal",
+                                    "austlii_catchwords_employer_nomination_and_visa_refusal",
+                                }
+                            )
+                            or (
+                                bool(proof)
+                                and proof.rule == "direct_current_personal_visa_refusal"
+                                and same_evidence
+                                and old.get("fact_status") == "not_applicable"
+                                and prior_reason_code
+                                    == "sponsorship_or_nomination_not_a_personal_visa"
+                            )
+                            or (
+                                field == "visa_type"
+                                and not proof
+                                and same_evidence
+                                and old.get("fact_status") == "not_applicable"
+                                and prior_reason_code
+                                    == "sponsorship_or_nomination_not_a_personal_visa"
+                                and decision.not_applicable.get(field) is None
+                                and _austlii_source_confirms_current_visa_decision(row, source_text)
                             )
                         )
                     )
@@ -1016,7 +1201,7 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     actionable_missing_cells = int(stats.get("waiting_new_evidence", 0)) + int(
         stats.get("candidate_review", 0)
     )
-    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v3",
+    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v4",
                "created_utc": utc_now(),
                "counts": dict(stats),
                "reviewed_blank_cells": reviewed_blank_cells,
@@ -1086,13 +1271,24 @@ def _visa_type_family(value: str) -> str:
 
 def _expected_visa_metadata(field: str, visa_value: str) -> str | None:
     subclass = re.search(r"(?i)\bsub[- ]?class\s+(\d{3})\b", visa_value)
-    number = subclass.group(1) if subclass else ""
-    if field in {"visa_subclass", "visa_subclass_number"}:
+    visa_class = re.search(r"(?i)\bclass\s+([a-z]{1,3})\b", visa_value)
+    # The registered visa name itself is unambiguous: Safe Haven Enterprise
+    # is subclass 790, even when a court's catchwords omit the number.
+    named_shev = bool(re.fullmatch(r"\s*safe\s+haven\s+enterprise\s+visa\s*", visa_value, re.I))
+    class_code = visa_class.group(1).upper() if visa_class else ""
+    number = (
+        subclass.group(1)
+        if subclass
+        else "790" if named_shev
+        else _VISA_SUBCLASS_BY_UNAMBIGUOUS_CLASS.get(class_code, "")
+    )
+    if field == "visa_subclass":
         return number
+    if field == "visa_subclass_number":
+        return f"{number}.0" if number else ""
     if field == "visa_class_code":
-        visa_class = re.search(r"(?i)\bclass\s+([a-z]{1,3})\b", visa_value)
         if visa_class:
-            return visa_class.group(1).upper()
+            return class_code
         return _VISA_CLASS_BY_SUBCLASS.get(number) if number else None
     return None
 
@@ -1505,12 +1701,37 @@ def _canonical_operative_outcome(value: str, quote: str) -> str | None:
         "Set aside": (
             r"\b(?:the\s+)?(?:tribunal|court)\s+sets?\s+aside\s+the\s+decision\b|"
             r"\bdecision(?:\s+under\s+review)?\s+(?:be|is|are|was|were)\s+set\s+aside\b|"
+            r"\b(?:decision|orders?)\b.{0,140}\b(?:be|is|are|was|were)\s+set\s+aside\b|"
             r"\bset\s+aside\s+the\s+decision\b"
         ),
         "Dismissed": (
             r"\b(?:appeal|application|proceedings?)\b.{0,120}\b"
             r"(?:be|is|are|was|were)?\s*dismissed\b|"
             r"\b(?:appeal|application|proceedings?)\s+dismissed\b"
+        ),
+        "Withdrawn": (
+            r"\b(?:appeal|application|proceedings?)\b.{0,120}\b"
+            r"(?:withdrawn|discontinued)\b"
+        ),
+        "Allowed": (
+            r"\b(?:appeal|application|proceedings?)\b.{0,120}\b"
+            r"(?:be|is|are|was|were)?\s*allowed\b"
+        ),
+        "Granted": (
+            r"\b(?:application|appeal|leave|relief)\b.{0,120}\b"
+            r"(?:be|is|are|was|were)?\s*granted\b"
+        ),
+        "Refused": (
+            r"\b(?:application|appeal|motion|request|leave|extension)\b"
+            r".{0,120}\b(?:be|is|are|was|were)?\s*refused\b"
+        ),
+        "Cancelled": (
+            r"\b(?:visa|decision|cancellation)\b.{0,120}\b"
+            r"(?:be|is|are|was|were)?\s*cancelled\b"
+        ),
+        "Quashed": (
+            r"\b(?:decision|order|proceedings?)\b.{0,120}\b"
+            r"(?:be|is|are|was|were)?\s*quashed\b"
         ),
         "No jurisdiction": (
             r"\b(?:no jurisdiction|does not have jurisdiction|lacks jurisdiction|"
@@ -1531,6 +1752,12 @@ def _canonical_operative_outcome(value: str, quote: str) -> str | None:
                 "Remitted": r"remit(?:s|ted)",
                 "Set aside": r"set\s+aside",
                 "Dismissed": r"dismissed",
+                "Withdrawn": r"(?:withdrawn|discontinued)",
+                "Allowed": r"allowed",
+                "Granted": r"granted",
+                "Refused": r"refused",
+                "Cancelled": r"cancelled",
+                "Quashed": r"quashed",
             }.get(label)
             if negated_word and re.search(
                 rf"\b(?:not|never|cannot|can't)\b.{{0,100}}\b{negated_word}\b",
@@ -1540,9 +1767,97 @@ def _canonical_operative_outcome(value: str, quote: str) -> str | None:
                 continue
             found.add(label)
             break
+    # Prefer the immigration decision's result when an appeal also changes a
+    # separate procedural order (for example, the Tribunal decision is
+    # affirmed while an unrelated security order is set aside).
+    if value == "Affirmed" and re.search(
+        r"\bdecision\b.{0,160}\b(?:be\s+)?affirmed\b|"
+        r"\b(?:tribunal|refugee review tribunal|migration review tribunal)"
+        r"\b.{0,120}\bdecision\b.{0,80}\b(?:be\s+)?affirmed\b|"
+        r"\b(?:the\s+)?tribunal\s+affirms?\s+the\s+decision\s+under\s+review\b",
+        normalized,
+        re.I,
+    ):
+        return value
+    # A set-aside order that remits or substitutes the decision is classified
+    # by the primary action, Set aside, even when the same order also says the
+    # appeal/application is allowed.
+    set_aside_is_primary = (
+        "Set aside" in found
+        and (
+            "Remitted" in found
+            or "Withdrawn" in found
+            or re.search(r"\bsubstitut\w*\b", normalized, re.I)
+        )
+    )
+    if set_aside_is_primary:
+        return "Set aside" if value == "Set aside" else None
+    if (
+        value == "Remitted"
+        and "Remitted" in found
+        and found <= {"Remitted", "Allowed"}
+    ):
+        return value
+    # Leave, extension, and interlocutory requests can be granted/refused in
+    # the same order that finally dismisses the substantive application.
+    if (
+        value == "Dismissed"
+        and "Dismissed" in found
+        and found <= {"Dismissed", "Allowed", "Granted", "Refused"}
+    ):
+        return value
     if value in found and len(found) == 1:
         return value
     return None
+
+
+def _validate_unstated_current_visa_clear(
+    row: sqlite3.Row,
+    source_text: str,
+    assessment: Any,
+    evidence: dict[str, Any],
+) -> None:
+    """Allow removal of a stored former visa only when the source says it expired."""
+    previous_visa = evidence.get("previous_visa_value", "")
+    quote = evidence.get("quote", "")
+    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+    header_text = (
+        source_text[:separator.start()]
+        if separator else "\n".join(source_text.splitlines()[:20])
+    )
+    metadata = {}
+    for line in header_text.splitlines():
+        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+        if match and match[2].strip():
+            metadata.setdefault(match[1].casefold(), match[2].strip())
+    body = source_text[separator.end():] if separator else ""
+    normalized_quote = " ".join(quote.split())
+    normalized_body = " ".join(body.split())
+    old_label = re.match(r"(.+?)\s*\(", previous_visa)
+    old_label = old_label.group(1).strip() if old_label else previous_visa.strip()
+    if (
+        evidence.get("reason_code") != "current_visa_not_stated"
+        or assessment.source_status != "checked"
+        or assessment.values.get("visa_type")
+        or assessment.reasons.get("visa_type") != "current_visa_not_stated"
+        or not previous_visa
+        or row["visa_type"] != previous_visa
+        or metadata.get("citation") != row["citation"]
+        or metadata.get("url") != row["url"]
+        or row["citation"] not in metadata.get("title", "")
+        or not separator
+        or not normalized_quote
+        or normalized_quote not in normalized_body
+        or not old_label
+        or old_label.casefold() not in normalized_quote.casefold()
+        or not re.search(
+            r"\b(?:expired|ceased|ended|lapsed)\b", normalized_quote, re.I
+        )
+    ):
+        raise ValueError(
+            "Clearing an unstated current visa requires an identity-matched source "
+            "that explicitly says the stored visa expired"
+        )
 
 
 def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
@@ -1590,6 +1905,11 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "visa_type"
                     and evidence.get("method")
                     == "manual_source_bound_not_applicable_visa_review"
+                )
+                manual_unstated_current_visa_review = (
+                    field == "visa_type"
+                    and evidence.get("method")
+                    == "manual_source_bound_unstated_visa_review"
                 )
                 manual_linked_visa_review = (
                     field == "visa_type"
@@ -1677,6 +1997,12 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                             "Manual not-applicable visa review requires an exact source-bound "
                             "nomination or sponsorship decision"
                         )
+                elif manual_unstated_current_visa_review:
+                    if evidence.get("value") != "" or proof:
+                        raise ValueError("An unstated current visa can only be cleared")
+                    _validate_unstated_current_visa_clear(
+                        row, source_text, assessment, evidence
+                    )
                 elif manual_visa_review:
                     metadata = {}
                     separator = re.search(r"(?m)^={10,}\s*$", source_text)
@@ -1919,7 +2245,14 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         if not normalized_operative_order:
                             raise ValueError("Approval no longer matches grounded evidence")
             elif field in VISA_METADATA_FIELDS:
-                if evidence.get("method") != "manual_source_bound_visa_metadata_review":
+                manual_unstated_current_visa_clear = (
+                    evidence.get("method")
+                    == "manual_source_bound_unstated_visa_metadata_clear_review"
+                )
+                if (
+                    evidence.get("method") != "manual_source_bound_visa_metadata_review"
+                    and not manual_unstated_current_visa_clear
+                ):
                     raise ValueError("Visa metadata requires a source-bound manual review")
                 metadata = {}
                 separator = re.search(r"(?m)^={10,}\s*$", source_text)
@@ -1949,15 +2282,25 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                 )
                 proof = assessment.values.get("visa_type")
                 current_visa_value = evidence.get("current_visa_value", "")
-                if (
-                    assessment.source_status != "checked"
-                    or not proof
-                    or proof.value != current_visa_value
-                ):
-                    raise ValueError("Visa metadata review must match the case's current source evidence")
-                expected_metadata = _expected_visa_metadata(field, proof.value)
-                if expected_metadata is None or evidence.get("value") != expected_metadata:
-                    raise ValueError("Visa metadata value does not match the verified visa classification")
+                if manual_unstated_current_visa_clear:
+                    if evidence.get("value") != "":
+                        raise ValueError("Unstated current-visa metadata can only be cleared")
+                    _validate_unstated_current_visa_clear(
+                        row, source_text, assessment, evidence
+                    )
+                else:
+                    if (
+                        assessment.source_status != "checked"
+                        or not proof
+                        or proof.value != current_visa_value
+                    ):
+                        raise ValueError("Visa metadata review must match the case's current source evidence")
+                    expected_metadata = _expected_visa_metadata(field, proof.value)
+                    accepted_metadata = {expected_metadata} if expected_metadata is not None else set()
+                    if field == "visa_subclass_number" and expected_metadata:
+                        accepted_metadata.add(expected_metadata.removesuffix(".0"))
+                    if evidence.get("value") not in accepted_metadata:
+                        raise ValueError("Visa metadata value does not match the verified visa classification")
             elif field == "case_nature":
                 quote = evidence.get("quote", "")
                 value = evidence.get("value", "")

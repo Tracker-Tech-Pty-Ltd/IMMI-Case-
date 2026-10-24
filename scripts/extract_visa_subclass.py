@@ -30,7 +30,7 @@ RE_VISA_NUM = re.compile(r"(?:visa|subclass)\s*(\d{3})", re.IGNORECASE)
 # Subclass → Class code mapping (common Australian visa subclasses)
 SUBCLASS_TO_CLASS = {
     # Protection visas
-    "866": "XA", "790": "XA", "200": "XB", "201": "XB",
+    "866": "XA", "790": "XE", "200": "XB", "201": "XB",
     "202": "XB", "203": "XB", "204": "XB",
     # Skilled visas
     "189": "SK", "190": "SN", "191": "PR", "457": "UC", "482": "TS",

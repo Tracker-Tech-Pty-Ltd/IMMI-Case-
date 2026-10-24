@@ -154,7 +154,64 @@ def _case_nature(text: str, catchwords: str, title: str = "") -> str:
         text[:5000],
         re.I | re.S,
     )
-    if s200_deportation_review and deportation_order_review:
+    legacy_s200_deportation_review = bool(
+        re.search(
+            r"\bunder\s+s\.?\s*200\b.{0,260}\bMigration\s+Act\b.{0,120}"
+            r"\bto\s+deport\s+the\s+applicant\b",
+            text[:5500],
+            re.I | re.S,
+        )
+        and re.search(
+            r"\bthe\s+applicant\b.{0,180}\bapplied\s+to\s+(?:the\s+)?Tribunal\b"
+            r".{0,120}\bfor\s+review\s+of\s+(?:this|that)\s+decision\b",
+            text[:7000],
+            re.I | re.S,
+        )
+        and not re.search(
+            r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+            r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+            r"review\s+of\s+(?:the\s+)?visa)\b",
+            catchwords,
+            re.I,
+        )
+    )
+    visa_decision_subject = re.search(
+        r"\b(?:visa\s+(?:refusal|cancellation|decision)|"
+        r"refusal\s+of\s+(?:the\s+)?visa|cancellation\s+of\s+(?:the\s+)?visa|"
+        r"review\s+of\s+(?:the\s+)?visa)\b",
+        catchwords,
+        re.I,
+    )
+    criminal_deportation_review = bool(
+        re.search(r"\bcriminal\s+deportation\b", catchwords, re.I)
+        and re.search(
+            r"\b(?:Migration\s+Act\s+1958|s(?:ection)?\.?\s*200)\b",
+            catchwords + "\n" + text[:8000],
+            re.I,
+        )
+        and re.search(
+            r"\bdecision\s+under\s+review\b.{0,300}\bnot\s+be\s+deported\b",
+            text[:5000],
+            re.I | re.S,
+        )
+        and not visa_decision_subject
+    )
+    s200_deportation_judicial_review = bool(
+        re.search(
+            r"\bdeportation\s+of\s+non-citizens\b.{0,300}"
+            r"\bdeportation\s+order\s+under\s+s\.?\s*200\b",
+            text[:4000],
+            re.I | re.S,
+        )
+        and re.search(r"\bjudicial\s+review\b", text[:8000], re.I)
+        and not visa_decision_subject
+    )
+    if (
+        (s200_deportation_review and deportation_order_review)
+        or legacy_s200_deportation_review
+        or criminal_deportation_review
+        or s200_deportation_judicial_review
+    ):
         return "Deportation review"
 
     # Treat the official catchwords as the case subject. A later reference to
@@ -178,6 +235,61 @@ def _case_nature(text: str, catchwords: str, title: str = "") -> str:
         return "Student visa"
     if _has_character_catchword(catchwords, text):
         return "Character"
+
+    official_subject = "\n".join(_official_catchword_subjects(catchwords, text))
+    if re.search(r"\bFair\s+Work\b", official_subject, re.I) or re.search(
+        r"\bindustrial\s+law\b.{0,180}\bunderpayment\b",
+        official_subject,
+        re.I | re.S,
+    ):
+        return "Fair Work"
+    if re.search(
+        r"\b(?:agency|domain\s+name|taxation|goods\s+and\s+services\s+tax)\b",
+        official_subject,
+        re.I,
+    ) and re.search(r"\bappeal\b", official_subject, re.I):
+        return "Appeal"
+    if re.search(r"\baviation\s+(?:transport\s+)?security\b|\bregulated\s+air\s+cargo\s+agent\b", official_subject, re.I):
+        if re.search(r"\bapplication\s+for\s+judicial\s+review\b", official_subject, re.I):
+            return "Judicial review"
+        if re.search(r"\bmerits\s+review\b", official_subject, re.I):
+            return "Merits review"
+        if re.search(
+            r"\b(?:practice\s+and\s+procedure|interlocutory|summons|stay|suppression|non-publication)\b",
+            official_subject,
+            re.I,
+        ):
+            return "Practice and procedure"
+        if re.search(
+            r"\breview\s+of\s+(?:the\s+)?decision\b|\bdecision\s+under\s+review\b",
+            official_subject,
+            re.I,
+        ):
+            return "Merits review"
+        return "Other"
+    if re.search(r"\bsecurity\s+for\s+costs\b", official_subject, re.I):
+        return "Costs"
+    if re.search(r"\bpractice\s+and\s+procedure\b", official_subject, re.I):
+        return "Practice and procedure"
+    if re.search(
+        r"\b(?:consumer\s+law|economic\s+torts?|extradition|criminal\s+law(?:\s+and\s+procedure)?)\b",
+        official_subject,
+        re.I,
+    ):
+        return "Other"
+    if re.search(
+        r"\b(?:corporations?\b.{0,160}\bmeeting\s+of\s+creditors|"
+        r"corporate\s+insolvency|administrators?\s+appointed|"
+        r"second\s+meeting\s+of\s+creditors)\b",
+        official_subject,
+        re.I | re.S,
+    ):
+        return "Other"
+    if (
+        re.search(r"(?i)\bON\s+APPEAL\s+FROM\s+THE\s+FEDERAL\s+(?:CIRCUIT\s+)?COURT\b", text[:9000])
+        and re.search(r"(?i)\bthe\s+appeal\b", text[:12000])
+    ):
+        return "Appeal"
     return ""
 
 
