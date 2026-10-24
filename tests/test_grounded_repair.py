@@ -3131,6 +3131,75 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0],
                              "Subclass 050 (Bridging E) visa")
 
+    def test_manual_source_bound_not_applicable_review_clears_wrong_visa_in_all_stores(self):
+        catchwords = "MIGRATION - nomination - Direct Entry nomination stream"
+        quote = (
+            "The Tribunal sets aside the decision under review and substitutes a decision "
+            "approving the nomination."
+        )
+        source_text = (
+            "Title: Example v Minister [2024] FCA 12\n"
+            "Citation: [2024] FCA 12\n"
+            f"URL: {self.rows[0]['url']}\n"
+            + "=" * 80 + "\n"
+            + "Example v Minister [2024] FCA 12\n"
+            + f"CATCHWORDS: {catchwords}\n"
+            + "DECISION RECORD\n"
+            + f"DECISION: {quote}\n"
+        )
+        self.source.write_text(source_text, encoding="utf-8")
+        self.rows[0].update({
+            "source": "AustLII",
+            "case_nature": "Skilled migration",
+            "catchwords": catchwords,
+            "visa_type": "Partner visa (subclass 820)",
+        })
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            for column in ("source", "case_nature", "catchwords"):
+                conn.execute(f"ALTER TABLE cases ADD COLUMN {column} TEXT DEFAULT ''")
+            conn.execute(
+                "UPDATE cases SET source=?,case_nature=?,catchwords=?,visa_type=? WHERE case_id='a'",
+                ("AustLII", "Skilled migration", catchwords, self.rows[0]["visa_type"]),
+            )
+            conn.commit()
+        self.save_exports()
+        approval = {
+            "case_id": "a",
+            "field": "visa_type",
+            "source_path": "downloaded_cases/case.txt",
+            "source_sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            "expected_current_by_store": {
+                "database": "Partner visa (subclass 820)",
+                "csv": "Partner visa (subclass 820)",
+                "json": "Partner visa (subclass 820)",
+            },
+            "evidence": {
+                "value": "",
+                "reason_code": "sponsorship_or_nomination_not_a_personal_visa",
+                "quote": quote,
+                "method": "manual_source_bound_not_applicable_visa_review",
+            },
+            "reviewer": "independent-test-review",
+            "review_note": "The identified AustLII decision concerns the employer's nomination, not a personal visa.",
+        }
+
+        invalid = dict(approval, evidence=dict(approval["evidence"]))
+        invalid["evidence"]["reason_code"] = "current_visa_not_stated"
+        with self.assertRaisesRegex(ValueError, "exact source-bound nomination"):
+            validate_approvals(self.root, [invalid])
+
+        result = apply_approved(self.root, self.root / "manual-na-visa-apply", [approval])
+
+        self.assertEqual(result["applied"], 1)
+        self.assertTrue(result["verification"]["all_unapproved_data_preserved"])
+        with closing(sqlite3.connect(self.data / "cases.db")) as conn:
+            self.assertEqual(conn.execute("SELECT visa_type FROM cases WHERE case_id='a'").fetchone()[0], "")
+        with (self.data / "immigration_cases.csv").open(encoding="utf-8-sig", newline="") as handle:
+            self.assertEqual(next(csv.DictReader(handle))["visa_type"], "")
+        payload = json.loads((self.data / "immigration_cases.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["cases"][0]["visa_type"], "")
+        self.assertEqual(payload["cases"][0]["user_notes"], "Keep my notes")
+
     def test_manual_source_bound_visa_metadata_updates_all_stores(self):
         source_text = (
             "Title: Example v Minister [2024] FCA 12\n"

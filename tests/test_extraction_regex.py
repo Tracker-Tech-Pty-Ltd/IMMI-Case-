@@ -24,6 +24,76 @@ def test_extract_regex_from_loaded_text():
     assert fields["case_nature"]["value"] == "Student visa"
 
 
+def test_partner_class_catchwords_override_background_protection_visa():
+    catchwords = "MIGRATION – Partner (Temporary) (Class UK) visa – Subclass 820"
+    text = (
+        f"CATCHWORDS: {catchwords}\n"
+        "LEGISLATION\nMigration Regulations 1994\n"
+        "The sponsor previously held a protection visa."
+    )
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Partner visa"
+
+
+def test_prospective_marriage_subclass_300_is_partner_visa_nature():
+    catchwords = "Review of visa refusal - Subclass 300 - prospective marriage"
+    text = f"CATCHWORDS: {catchwords}\nREVIEW APPLICANT: Jane Doe\n"
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Partner visa"
+
+
+def test_partner_visa_program_mentioned_in_nomination_reasons_is_not_case_nature():
+    catchwords = "MIGRATION – nomination – Direct Entry nomination stream – Fleet Manager"
+    text = (
+        f"CATCHWORDS: {catchwords}\n"
+        "LEGISLATION\nMigration Regulations 1994\n"
+        "A representative mentioned the Partner visa program in another context."
+    )
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Skilled migration"
+
+
+def test_direct_entry_nomination_catchwords_override_refugee_division_label():
+    catchwords = "MIGRATION - nomination - Direct Entry nomination stream - Fleet Manager"
+    text = (
+        f"CATCHWORDS: {catchwords}\n"
+        "DECISION RECORD\n"
+        "DIVISION: Migration & Refugee Division\n"
+    )
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Skilled migration"
+
+
+def test_refugee_division_name_alone_is_not_protection_visa_case_nature():
+    catchwords = "MIGRATION - employer nomination - subclass 186"
+    text = (
+        f"CATCHWORDS: {catchwords}\n"
+        "DECISION RECORD\n"
+        "DIVISION: Migration & Refugee Division\n"
+    )
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] is None
+
+
+def test_protection_visa_catchwords_set_protection_case_nature():
+    catchwords = "MIGRATION - refusal of Protection visa - Subclass 866"
+    text = f"CATCHWORDS: {catchwords}\nREASONS FOR DECISION\n"
+
+    fields = extract_regex(text, {"catchwords": catchwords})
+
+    assert fields["case_nature"]["value"] == "Protection visa"
+
+
 def test_explicit_citizenship_catchwords_override_incidental_visa_terms():
     text = """
     CATCHWORDS

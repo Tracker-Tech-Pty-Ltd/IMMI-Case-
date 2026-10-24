@@ -1586,6 +1586,11 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     field == "visa_type"
                     and evidence.get("method") == "manual_source_bound_visa_review"
                 )
+                manual_not_applicable_visa_review = (
+                    field == "visa_type"
+                    and evidence.get("method")
+                    == "manual_source_bound_not_applicable_visa_review"
+                )
                 manual_linked_visa_review = (
                     field == "visa_type"
                     and evidence.get("method") == "manual_linked_case_visa_review"
@@ -1625,6 +1630,53 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     _validate_linked_case_visa_approval(
                         root, conn, row, source_text, evidence, assessment
                     )
+                elif manual_not_applicable_visa_review:
+                    metadata = {}
+                    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+                    header_text = (
+                        source_text[:separator.start()]
+                        if separator else "\n".join(source_text.splitlines()[:20])
+                    )
+                    for line in header_text.splitlines():
+                        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+                        if match and match[2].strip():
+                            metadata.setdefault(match[1].casefold(), match[2].strip())
+                    reason_code = evidence.get("reason_code", "")
+                    quote = evidence.get("quote", "")
+                    value = evidence.get("value", None)
+                    if (
+                        metadata.get("citation") != row["citation"]
+                        or metadata.get("url") != row["url"]
+                        or row["citation"] not in metadata.get("title", "")
+                    ):
+                        raise ValueError(
+                            "Manual not-applicable visa review requires matching source identity"
+                        )
+                    body = source_text[separator.end():] if separator else ""
+                    normalized_quote = " ".join(quote.split())
+                    normalized_body = " ".join(body.split())
+                    reason = "sponsorship_or_nomination_not_a_personal_visa"
+                    source_case = dict(row)
+                    if (
+                        value != ""
+                        or reason_code != reason
+                        or assessment.source_status != "checked"
+                        or assessment.not_applicable.get(field) != reason
+                        or _austlii_catchwords_visa_not_applicable(source_case) != reason
+                        or not separator
+                        or not normalized_quote
+                        or normalized_quote not in normalized_body
+                        or not re.search(r"\b(?:nomination|sponsorship)\b", normalized_quote, re.I)
+                        or not re.search(
+                            r"\b(?:approv\w*|reject\w*|refus\w*|substitut\w*|decision)\b",
+                            normalized_quote,
+                            re.I,
+                        )
+                    ):
+                        raise ValueError(
+                            "Manual not-applicable visa review requires an exact source-bound "
+                            "nomination or sponsorship decision"
+                        )
                 elif manual_visa_review:
                     metadata = {}
                     separator = re.search(r"(?m)^={10,}\s*$", source_text)

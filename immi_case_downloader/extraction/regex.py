@@ -157,24 +157,110 @@ def _case_nature(text: str, catchwords: str, title: str = "") -> str:
     if s200_deportation_review and deportation_order_review:
         return "Deportation review"
 
-    search = f"{catchwords}\n{text[:2500]}".lower()
+    # Treat the official catchwords as the case subject. A later reference to
+    # another visa in the reasons can be background only (for example, a
+    # previous visa held by a sponsor).
+    if _has_partner_visa_catchword(catchwords, text):
+        return "Partner visa"
+    if _has_skilled_migration_catchword(catchwords, text):
+        return "Skilled migration"
+
     student_guardian_decision = re.search(
         r"(?ims)^[ \t]*DECISION\s*:\s*.{0,800}\bstudent\s+guardian\s+visa\b",
         text[:2500],
     )
-    if "protection visa" in search or "refugee" in search:
+    if _has_protection_visa_catchword(catchwords, text):
         return "Protection visa"
     if (
-        "student visa" in search
-        or "genuine temporary entrant" in search
+        _has_student_visa_catchword(catchwords, text)
         or student_guardian_decision
     ):
         return "Student visa"
-    if "partner visa" in search:
-        return "Partner visa"
-    if "character" in search or "s 501" in search or "s.501" in search:
+    if _has_character_catchword(catchwords, text):
         return "Character"
     return ""
+
+
+def _official_catchword_subjects(catchwords: str, text: str) -> list[str]:
+    subjects = [str(catchwords or "")]
+    catchword_block = re.search(
+        r"(?is)\bCATCHWORDS\b\s*:?\s*(.{0,1600}?)"
+        r"(?=\b(?:LEGISLATION|DECISION RECORD|WRITTEN STATEMENT OF DECISION|"
+        r"STATEMENT OF DECISION AND REASONS|REVIEW APPLICANT)\b|\Z)",
+        (text or "")[:12000],
+    )
+    if catchword_block:
+        subjects.append(catchword_block.group(1))
+    return [subject for subject in subjects if subject.strip()]
+
+
+def _has_partner_visa_catchword(catchwords: str, text: str) -> bool:
+    subjects = _official_catchword_subjects(catchwords, text)
+
+    patterns = (
+        r"\bpartner\s*\([^)]{1,100}\)(?:\s*\([^)]{1,100}\))*\s+visa\b",
+        r"\bpartner\s+visa\b",
+        r"\bsubclass\s*300\b.{0,120}\bprospective\s+marriage\b",
+        r"\bprospective\s+marriage\b.{0,120}\bvisa\b",
+    )
+    return any(
+        re.search(pattern, subject, re.I | re.S)
+        for subject in subjects
+        if subject.strip()
+        for pattern in patterns
+    )
+
+
+def _has_skilled_migration_catchword(catchwords: str, text: str) -> bool:
+    subjects = _official_catchword_subjects(catchwords, text)
+    patterns = (
+        r"\bskilled\s+(?:migration|visa)\b",
+        r"\b(?:direct\s+entry|temporary\s+residence\s+transition)\s+"
+        r"nomination\s+stream\b",
+        r"\bemployer\s+nomination\s+scheme\b",
+    )
+    return any(
+        re.search(pattern, subject, re.I | re.S)
+        for subject in subjects
+        for pattern in patterns
+    )
+
+
+def _has_protection_visa_catchword(catchwords: str, text: str) -> bool:
+    patterns = (
+        r"\bprotection\s+(?:\([^)]{1,80}\)\s*)?visa\b",
+        r"\brefugee\s+visa\b",
+        r"\brefugees\b",
+    )
+    return any(
+        re.search(pattern, subject, re.I | re.S)
+        for subject in _official_catchword_subjects(catchwords, text)
+        for pattern in patterns
+    )
+
+
+def _has_student_visa_catchword(catchwords: str, text: str) -> bool:
+    patterns = (
+        r"\bstudent\s+(?:guardian\s+)?visa\b",
+        r"\bgenuine\s+temporary\s+entrant\b",
+    )
+    return any(
+        re.search(pattern, subject, re.I | re.S)
+        for subject in _official_catchword_subjects(catchwords, text)
+        for pattern in patterns
+    )
+
+
+def _has_character_catchword(catchwords: str, text: str) -> bool:
+    patterns = (
+        r"\bcharacter\s+(?:test|grounds?|consideration)\b",
+        r"\bs\s*\.?\s*501\b",
+    )
+    return any(
+        re.search(pattern, subject, re.I | re.S)
+        for subject in _official_catchword_subjects(catchwords, text)
+        for pattern in patterns
+    )
 
 
 def _has_explicit_citizenship_subject(title: str, catchwords: str, text: str) -> bool:
