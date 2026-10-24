@@ -449,6 +449,18 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
         ),
         (r"\breview of a (Visitor visa) refusal\b", "visitor_visa_refusal"),
         (r"\breview of visa refusal\s*[-–]\s*(Partner visa)\b", "partner_visa_refusal"),
+        (
+            r"\bMIGRATION\b.{0,60}\bRefugee Review Tribunal\b"
+            r".{0,80}?\b(Protection\s*\(\s*class\s+XA\s*\)\s+visa)\b"
+            r".{0,80}?\bno jurisdictional error\b",
+            "protection_visa_class_xa_no_jurisdictional_error",
+        ),
+        (
+            r"\bMIGRATION\b.{0,80}?"
+            r"\b(New\s+Zealand\s+Citizen\s*\(\s*Family\s+Relationship\s*\)\s+visa)\b"
+            r".{0,100}?\bdecision\s+of\s+the\s+Administrative\s+Appeals\s+Tribunal\b",
+            "new_zealand_citizen_family_relationship_visa_decision",
+        ),
         # AustLII catchwords are official case metadata. Accept a visa family
         # only when the catchwords explicitly tie it to this proceeding.
         (r"\bMIGRATION\s*[–-]\s*Protection visa\b", "protection_visa_heading"),
@@ -495,6 +507,10 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
             value = f"Aged Dependent Relative visa (subclass {match[1]})"
         elif rule == "class_104_preferential_family":
             value = "Class 104 (Preferential Family) visa"
+        elif rule == "protection_visa_class_xa_no_jurisdictional_error":
+            value = "Protection (Class XA) visa"
+        elif rule == "new_zealand_citizen_family_relationship_visa_decision":
+            value = "New Zealand Citizen (Family Relationship) visa"
         elif rule.startswith("protection_visa"):
             value = "Protection visa"
         elif rule == "tourist_visa_cancellation":
@@ -606,11 +622,11 @@ def _austlii_catchwords_visa_evidence(case: dict[str, Any]) -> Evidence | None:
 def _austlii_catchwords_visa_not_applicable(
     case: dict[str, Any], source_text: str = "",
 ) -> str | None:
-    """Use explicit AustLII headings to classify matters without a visa dispute.
+    """Use official AustLII evidence to classify matters without a visa dispute.
 
-    Citizenship proceedings and nomination or sponsorship reviews are not
-    personal visa decisions when the official title or catchwords do not
-    identify any visa application, refusal, cancellation, or review. Do not
+    Citizenship proceedings and employer nomination or sponsorship reviews
+    are not personal visa decisions when the official title, catchwords, or
+    tightly linked current-review text establishes that distinction. Do not
     infer this from a secondary source.
     """
     from urllib.parse import urlparse
@@ -659,6 +675,51 @@ def _austlii_catchwords_visa_not_applicable(
         re.I,
     )
     visa_case_reference = visa_decision or visa_application
+    if source_text and not visa_case_reference:
+        source_separator = re.search(r"(?m)^={10,}\s*$", source_text)
+        source_header = (
+            source_text[:source_separator.start()]
+            if source_separator else "\n".join(source_text.splitlines()[:20])
+        )
+        source_metadata = {}
+        for line in source_header.splitlines():
+            match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+            if match and match[2].strip():
+                source_metadata.setdefault(match[1].casefold(), match[2].strip())
+        source_body = (
+            source_text[source_separator.end():]
+            if source_separator else ""
+        )
+        official_identity_matches = (
+            source_metadata.get("citation") == str(case.get("citation", ""))
+            and source_metadata.get("url") == str(case.get("url", ""))
+            and str(case.get("citation", "")) in source_metadata.get("title", "")
+        )
+        caption_applicant = source_metadata.get("title", "").split(" v ", 1)[0]
+        corporate_applicant = bool(
+            re.search(r"\b(?:Pty\s+Ltd|Pty\.?\s+Limited|Ltd|Limited)\b", caption_applicant, re.I)
+        )
+        current_nomination_review = re.search(
+            r"(?is)\bapplicant\s+seeks\s+judicial\s+review\s+of\s+a\s+decision\b"
+            r".{0,900}?\brefus(?:ing|ed|al)\s+to\s+grant\s+(?:a\s+)?"
+            r"nomination\s+for\s+a\s+position\b",
+            source_body[:16000],
+        )
+        separately_identified_visa_case = re.search(
+            r"(?is)\bin\s+that\s+case,\s*the\s+applicant,\s*[^.]{0,120}?"
+            r"\bwas\s+the\s+applicant\s+for\s+the\s+visa,\s*which\s+was\s+"
+            r"the\s+subject\s+of\s+sponsorship\s+by\s+the\s+applicant\s+"
+            r"in\s+this\s+proceeding\b",
+            source_body[:16000],
+        )
+        if (
+            official_identity_matches
+            and corporate_applicant
+            and current_nomination_review
+            and separately_identified_visa_case
+            and not _austlii_source_confirms_current_visa_decision(case, source_text)
+        ):
+            return "sponsorship_or_nomination_not_a_personal_visa"
     citizenship_title = re.search(r"\(\s*citizenship\s*\)", title, re.I)
     citizenship_catchwords = re.match(
         r"\s*(?:AUSTRALIAN\s+)?CITIZENSHIP\s*[-–—:]\s*\S",
@@ -848,6 +909,8 @@ def _austlii_catchword_visa_proof(
         "austlii_catchwords_employer_nomination_visa_judicial_review",
         "austlii_catchwords_employer_nomination_visa_refusal",
         "austlii_catchwords_employer_nomination_and_visa_refusal",
+        "austlii_catchwords_protection_visa_class_xa_no_jurisdictional_error",
+        "austlii_catchwords_new_zealand_citizen_family_relationship_visa_decision",
     }
     direct_catchword_visa = evidence.rule in direct_catchword_rules
     if not_applicable == "sponsorship_or_nomination_not_a_personal_visa":
@@ -2281,6 +2344,10 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                     url=row["url"],
                 )
                 proof = assessment.values.get("visa_type")
+                if not proof and assessment.source_status == "checked":
+                    proof = _austlii_catchword_visa_proof(
+                        dict(row), source_text, assessment, {}, {change["source_sha256"]}
+                    )
                 current_visa_value = evidence.get("current_visa_value", "")
                 if manual_unstated_current_visa_clear:
                     if evidence.get("value") != "":

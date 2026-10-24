@@ -601,6 +601,37 @@ class GroundedTests(unittest.TestCase):
         self.assertEqual(result.source_status, "checked")
         self.assertEqual(result.values["judges"].value, "SMITH J")
 
+    def test_anonymized_alias_tightly_followed_by_v_is_a_caption_match(self):
+        body = (
+            "FEDERAL CIRCUIT COURT OF AUSTRALIA\n"
+            "CHE15v MINISTER FOR IMMIGRATION & ANOR\n"
+            "[2017] FCCA 2598\n"
+            "CATCHWORDS: MIGRATION – Administrative Appeals Tribunal\n"
+            "REASONS FOR JUDGMENT\n"
+            "The application is dismissed because the applicant did not appear. "
+            "The respondent sought dismissal at the scheduled hearing. The Court "
+            "considered the notice sent to the applicant and the record of the "
+            "directions hearing. No visa subclass is identified in these reasons. "
+            "The result follows from the failure to appear, and the judgment does "
+            "not decide the merits of the underlying tribunal review.\n"
+        )
+        result = assess_case(
+            body,
+            citation="[2017] FCCA 2598",
+            title="CHE15 v Minister for Immigration & Anor [2017] FCCA 2598",
+        )
+        self.assertEqual(result.source_status, "checked")
+        self.assertNotIn("visa_type", result.values)
+        self.assertEqual(result.reasons["visa_type"], "current_visa_not_stated")
+
+        mismatched_alias = body.replace("CHE15v", "FGB17v")
+        conflict = assess_case(
+            mismatched_alias,
+            citation="[2017] FCCA 2598",
+            title="CHE15 v Minister for Immigration & Anor [2017] FCCA 2598",
+        )
+        self.assertEqual(conflict.source_status, "identity_conflict")
+
     def test_spacing_inside_anonymized_alias_is_not_a_case_mismatch(self):
         for title_alias, caption_alias, citation in (
             ("AFJ16", "AFJ 16", "[2016] FCCA 3034"),
@@ -671,6 +702,34 @@ class GroundedTests(unittest.TestCase):
                 "visa_type": "restricted_publication",
             },
         )
+
+    def test_lower_court_publication_delay_does_not_restrict_current_judgment(self):
+        body = (
+            HEAD
+            + "FEDERAL COURT OF AUSTRALIA\n"
+            + "CATCHWORDS: MIGRATION – application to extend time – where reasons not "
+            "published until well after the prescribed time had lapsed\n"
+            + "ORDER MADE BY: KATZMANN J\n"
+            + "ORDERS\n"
+            + "THE COURT ORDERS THAT:\n"
+            + "The proceeding be dismissed.\n"
+            + "REASONS FOR JUDGMENT\n"
+        )
+        result = self.assess(body)
+        self.assertEqual(result.source_status, "checked")
+        self.assertEqual(result.values["outcome"].rule, "published_operative_table")
+        self.assertEqual(
+            _canonical_operative_outcome(
+                "Dismissed", result.values["outcome"].value
+            ),
+            "Dismissed",
+        )
+
+    def test_explicit_unpublished_reasons_notice_remains_restricted(self):
+        result = self.assess(
+            HEAD + "JUDGE: PERRAM J\nThe Reasons for Judgment are not published.\n"
+        )
+        self.assertEqual(result.source_status, "restricted_publication")
 
     def test_exact_formal_heading_can_confirm_identity_after_cited_authorities(self):
         body = (

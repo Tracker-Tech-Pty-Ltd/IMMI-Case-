@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v83"
+RULE_VERSION = "grounded-local-20261024-v89"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[[ \t]*(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 REVERSED_FCA_CITATION = re.compile(r"\bFCA\s+\[\s*(\d{4})\s*\]\s+(\d+)(?!\d)", re.I)
@@ -1068,10 +1068,16 @@ def _outcome(text: str) -> Evidence | None:
     for match in re.finditer(r"^(?:THE COURT ORDERS(?: THAT)?|ORDERS?|DECISION)(?:[ \t]*:[ \t]*|[ \t]*\n)", preamble, re.I | re.M):
         remainder = preamble[match.end():]
         if match.group().strip().casefold() in {"decision", "order", "orders"}:
-            first_content = next(
-                (line.strip() for line in remainder.splitlines() if line.strip()),
-                "",
-            )
+            content_lines = [line.strip() for line in remainder.splitlines() if line.strip()]
+            first_content = content_lines[0] if content_lines else ""
+            # Formal AATA decisions sometimes wrap the opening article onto
+            # its own line ("The\nTribunal sets aside ..."). Join only that
+            # standalone article so catchword bullets remain excluded.
+            if (
+                len(content_lines) > 1
+                and re.fullmatch(r"(?:the|a|an)", first_content, re.I)
+            ):
+                first_content = f"{first_content} {content_lines[1]}"
             # Catchwords can wrap the final word "decision" onto its own
             # line (for example, "...security decision\n- refusal affirmed").
             # A following bullet is a continuation of that summary, not an
@@ -1593,6 +1599,43 @@ def _visa(text: str, assessment: Assessment) -> Evidence | None:
             return proof
 
     results: list[tuple[int, Evidence]] = []
+
+    # A few current cancellation judgments state the named visa only inside
+    # the sentence describing the decision under review. Accept these two
+    # explicit source forms only when the same sentence links the visa to a
+    # cancellation decision under review.
+    direct_named_cancellation = re.search(
+        r"(?is)\b(?:application\s+for\s+judicial\s+review|"
+        r"application\s+for\s+review|seeking\s+to\s+review)\b"
+        r"[^.]{0,900}?\bdecision\b[^.]{0,300}?\bto\s+cancel\b"
+        r"[^.]{0,180}?\b(?:(?:the\s+visa,\s+being\s+(?:a|an)\s+)|"
+        r"(?:a|an)\s+(?:standard\s+)?)"
+        r"(?P<name>Skilled\s*[-\u2010-\u2015]?\s*Independent\s+Regional\s*"
+        r"\(\s*Provisional\s*\)|Temporary\s+Class\s*\(\s*TC\s*\))"
+        r"\s+visa\b",
+        text[:12000],
+    )
+    if direct_named_cancellation:
+        value = (
+            "Skilled-Independent Regional (Provisional) visa"
+            if direct_named_cancellation["name"].casefold().startswith("skilled")
+            else "Temporary Class (TC) visa"
+        )
+        proof = _evidence(
+            text,
+            direct_named_cancellation.start("name"),
+            direct_named_cancellation.end(),
+            value,
+            "current_named_visa_cancellation_review",
+        )
+        assessment.candidates.append({
+            "value": proof.value,
+            "quote": proof.quote,
+            "qualification_quote": direct_named_cancellation.group(0),
+            "qualified": True,
+            "rank": 5,
+        })
+        results.append((5, proof))
 
     # Some s 501 cancellation decisions identify only the legal effect of the
     # current visa, not its subclass. Accept that broad type only when the
@@ -2775,8 +2818,11 @@ def _anonymized_title_alias_missing_from_caption(
     # difference as equivalent; different letters still remain a conflict.
     normalized_alias = re.sub(r"\s+", "", alias[1].upper())
     alias_pattern = r"\s*".join(re.escape(character) for character in normalized_alias)
+    # AustLII sometimes removes the space before the legal "v" separator
+    # (for example, "CHE15v MINISTER"). Keep the alias boundary strict, while
+    # accepting that one explicit party-separator form.
     return not re.search(
-        rf"(?<![A-Z0-9]){alias_pattern}(?![A-Z0-9])",
+        rf"(?<![A-Z0-9]){alias_pattern}(?:(?![A-Z0-9])|(?=V(?:\s|&)))",
         caption.upper(),
     )
 
@@ -2853,8 +2899,13 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.source_status = "identity_unverified" if not first or not expected else "identity_conflict"
         result.reasons = dict.fromkeys(CORE_FIELDS, result.source_status)
         return result
+    # Treat a current publication notice as a restriction only when the source
+    # states it directly. Catchwords may discuss delayed publication of a lower
+    # tribunal's reasons while the current court judgment is fully available.
     if re.search(
-        r"(?:reasons?|judgment).{0,70}(?:not (?:published|available|for publication)|restricted)|"
+        r"(?m)^[ \t]*(?:the[ \t]+)?"
+        r"(?:reasons?(?:[ \t]+for[ \t]+(?:judgment|decision))?|judgment)"
+        r"[ \t]+(?:are|is)[ \t]+(?:not[ \t]+(?:published|available)|restricted)\b|"
         r"not permitted to publish|written direction.{0,180}withhold the publication of the "
         r"Tribunal(?:['’]s|s)?\s+Statement of Reasons and Decision",
         body[:4000],
