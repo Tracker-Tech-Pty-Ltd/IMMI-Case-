@@ -186,7 +186,13 @@ def _has_explicit_citizenship_subject(title: str, catchwords: str, text: str) ->
     considered; mentions in the reasons do not change the case subject.
     """
     def normalize_heading(value: str) -> str:
-        value = (value or "").replace("\uFFFD", "-").replace("\x96", "-").replace("\x97", "-")
+        value = (
+            (value or "")
+            .replace("\uFFFD", "-")
+            .replace("\u2212", "-")
+            .replace("\x96", "-")
+            .replace("\x97", "-")
+        )
         # Some older AustLII text files decode an en dash as "\uFFFD C".
         value = re.sub(r"[-–—][ \t]*C(?=\s)", "-", value)
         return re.sub(r"\s+", " ", value).strip()
@@ -222,13 +228,27 @@ def _has_explicit_citizenship_subject(title: str, catchwords: str, text: str) ->
             r"^(?:application|refusal|refused|revocation|revoking|cancellation|cancelled|"
             r"decision|eligibility|appeal|review|judicial review|certificate|register|registration|"
             r"extension of time)\b.{0,180}\b(?:Australian\s+)?citizenship\b|"
-            r"^(?:whether|where)\b.{0,180}\b(?:application|grant|refusal|conferral|registration|"
-            r"revocation)\b.{0,60}\b(?:Australian\s+)?citizenship\b",
+            r"^(?:whether|where)\b.{0,300}\b(?:application|grant|refusal|conferral|registration|"
+            r"revocation|revok\w*|acquir\w*)\b.{0,100}\b(?:Australian\s+)?citizenship\b",
             clause,
             re.I,
         ))
 
     def has_citizenship_issue(value: str) -> bool:
+        normalized = normalize_heading(value)
+        if re.search(
+            r"\b(?:discretion\s+under\s+)?s(?:ection)?\s*22\s*\(\s*9\s*\)(?!\w)"
+            r".{0,100}\bAustralian\s+Citizenship\s+Act\b",
+            normalized,
+            re.I,
+        ):
+            return True
+        if (
+            re.search(r"\b(?:stay\s+application|application\s+for\s+stay)\b", normalized, re.I)
+            and re.search(r"\bpending\s+determination\s+of\s+appeal\b", normalized, re.I)
+            and re.search(r"\bAustralian\s+Citizenship\s+Act\b", normalized, re.I)
+        ):
+            return True
         parts = clauses(value)
         for index, part in enumerate(parts[:5]):
             if is_citizenship_issue(part):
@@ -335,6 +355,19 @@ def _has_explicit_citizenship_subject(title: str, catchwords: str, text: str) ->
         return True
 
     if marker is not None and has_citizenship_issue(section):
+        return True
+
+    # Some Federal Court decisions identify the matter as CITIZENSHIP in the
+    # formal case heading, immediately before the file number, rather than in
+    # catchwords. Require the governing Act in the same opening section.
+    if (
+        re.search(
+            r"(?im)^[ \t]*(?:AUSTRALIAN\s+)?CITIZENSHIP[ \t]+FILE\s+(?:NUMBER|NO\.? )\b",
+            source[:5000],
+        )
+        and re.search(r"\bAustralian\s+Citizenship\s+Act\s+(?:19|20)\d{2}\b", source[:8000], re.I)
+        and not has_current_visa_dispute(combined_heading)
+    ):
         return True
 
     # Some older AAT files put the subject on a member's signature line, or

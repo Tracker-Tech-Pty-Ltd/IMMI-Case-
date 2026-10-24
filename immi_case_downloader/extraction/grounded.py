@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from .regex import _has_explicit_citizenship_subject
 
-RULE_VERSION = "grounded-local-20261024-v71"
+RULE_VERSION = "grounded-local-20261024-v74"
 CORE_FIELDS = ("judges", "outcome", "visa_type")
 CITATION = re.compile(r"\[[ \t]*(\d{4})\]\s*(AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|FedCFamC2G|RRTA|MRTA)\s+(\d+)(?!\d)")
 REVERSED_FCA_CITATION = re.compile(r"\bFCA\s+\[\s*(\d{4})\s*\]\s+(\d+)(?!\d)", re.I)
@@ -1066,16 +1066,39 @@ def _outcome(text: str) -> Evidence | None:
             )
     for match in re.finditer(r"^(?:THE COURT ORDERS(?: THAT)?|ORDERS?|DECISION)(?:[ \t]*:[ \t]*|[ \t]*\n)", preamble, re.I | re.M):
         remainder = preamble[match.end():]
+        if match.group().strip().casefold() in {"decision", "order", "orders"}:
+            first_content = next(
+                (line.strip() for line in remainder.splitlines() if line.strip()),
+                "",
+            )
+            # Catchwords can wrap the final word "decision" onto its own
+            # line (for example, "...security decision\n- refusal affirmed").
+            # A following bullet is a continuation of that summary, not an
+            # operative DECISION section.
+            if not re.match(
+                r"^(?:\(?\d+\)?[.)]?\s+|(?:the\s+)?"
+                r"(?:tribunal|court|application|appeal|proceedings?|matter|"
+                r"decision|orders?|motion|leave|costs)\b)",
+                first_content,
+                re.I,
+            ):
+                continue
         stop = re.search(
-            r"^(?:CATCHWORDS|LEGISLATION|REPRESENTATION|BETWEEN|REASONS|NOTE:|FEDERAL (?:COURT|MAGISTRATES)|"
+            r"^(?:CATCHWORDS|LEGISLATION|REPRESENTATION|BETWEEN|REASONS|NOTE:|"
             r"DATE|PLACE|SIGNATURE|(?:APPLICANT|RESPONDENT)\s*:|STATEMENT OF|REASONS FOR)\b|"
+            r"^(?:IN\s+THE\s+)?FEDERAL\s+(?:CIRCUIT\s+)?COURT\s+OF\s+AUSTRALIA\b|"
+            r"^FEDERAL\s+MAGISTRATES\s+COURT\s+OF\s+AUSTRALIA\b|"
+            r"^[^\r\n]*\b(?:APPLICANT|RESPONDENT|JUDGE|MEMBER)\s+"
+            r"(?:REASONS FOR (?:JUDGMENT|DECISION)|STATEMENT OF DECISION(?!\s+AND\s+REASONS))\b|"
             r"^TRIBUNAL(?:[ \t]+MEMBER)?[ \t]*:?[ \t]*$",
             remainder,
             re.I | re.M,
         )
         signature = re.search(r"^[ \t]*[.·…_—-]{8,}[ \t]*$", remainder, re.M)
         boundaries = [match.start() for match in (stop, signature) if match]
-        block = remainder[:min(boundaries) if boundaries else len(remainder)].strip()
+        block_end = min(boundaries) if boundaries else len(remainder)
+        raw_block = remainder[:block_end]
+        block = raw_block.strip()
         if not block or len(block) > 4000 or re.search(r"(?:\.\.\.|…)\s*$", block):
             continue
         if not re.search(r"\b(?:affirm|remit|set aside|dismiss|allow|refus|grant|pay|adjourn|declar|revok|quash|substitut|withdraw|extend)\w*\b", block, re.I):
@@ -1085,7 +1108,14 @@ def _outcome(text: str) -> Evidence | None:
         if re.search(r"\b(?:the|in accordance with|of|and|to)\s*$", block, re.I):
             continue
         value = " ".join(block.split())
-        return _evidence(text, match.end(), match.end() + len(block), value, "published_operative_table")
+        start = match.end() + len(raw_block) - len(raw_block.lstrip())
+        return Evidence(
+            value,
+            block,
+            start,
+            start + len(block),
+            "published_operative_table",
+        )
     # A few older AATA text copies omit the operative table but retain both
     # the s 200 catchword and the Tribunal's final no-deportation conclusion.
     # Use this narrower summary only after searching for an explicit order.
@@ -2810,6 +2840,45 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         r".{0,140}?\b(?:Australian\s+)?citizenship\b",
         body[:2600],
     ))
+    direct_citizenship_proceeding = bool(
+        re.search(
+            r"(?is)\b(?:refus\w*|reject\w*|decision\s+to\s+refuse|review|"
+            r"appeal|extension\s+of\s+time)\b.{0,220}"
+            r"\b(?:the\s+)?(?:applicant['’]s\s+)?application\s+to\s+"
+            r"(?:renounc\w*|resum\w*)\b.{0,100}\bcitizenship\b|"
+            r"\b(?:refus\w*|reject\w*|decision)\b.{0,180}"
+            r"\b(?:the\s+)?(?:applicant['’]s\s+)?application\s+to\s+"
+            r"become\s+an?\s+Australian\s+citizen\b|"
+            r"\bapplication\s+to\s+become\s+an?\s+Australian\s+citizen\b"
+            r".{0,220}\b(?:refus\w*|reject\w*|decision|review|extension\s+of\s+time)\b|"
+            r"\bapplied\s+to\s+(?:the\s+)?Minister\s+for\s+Australian\s+citizenship\b"
+            r".{0,180}\bMinister\s+(?:refus\w*|reject\w*)\s+(?:her|his|their|the\s+applicant['’]s)\s+application\b|"
+            r"\bapplied\s+to\s+resum\w*\s+(?:his|her|their|the\s+applicant['’]s)?\s*"
+            r"(?:Australian\s+)?citizenship\b.{0,260}\b(?:reject\w*|refus\w*|decision|review)\b|"
+            r"\b(?:application\s+to\s+(?:renounc\w*|resum\w*)\b.{0,100}"
+            r"\bcitizenship|(?:renounc\w*|resum\w*)\s+(?:the\s+)?"
+            r"(?:applicant['’]s\s+)?Australian\s+citizenship)\b"
+            r".{0,260}\b(?:refus\w*|reject\w*|decision|review|appeal|"
+            r"extension\s+of\s+time)\b|"
+            r"\b(?:refus\w*|reject\w*|decision)\b.{0,180}"
+            r"\b(?:the\s+)?(?:applicant['’]s\s+)?application\s+for\s+"
+            r"(?:Australian\s+)?citizenship\b|"
+            r"\b(?:decision\s+to\s+cancel|cancel\w*\s+the)\s+(?:the\s+)?"
+            r"approval\b.{0,180}\b(?:to\s+become\s+an?\s+Australian\s+citizen|"
+            r"of\s+(?:the\s+)?Australian\s+citizenship)\b|"
+            r"\bcancel\w*\s+approval\b.{0,220}\bto\s+become\s+an?\s+Australian\s+citizen\b|"
+            r"\b(?:not\s+allow|must\s+not\s+allow)\s+citizenship\s+to\s+be\s+conferred\b|"
+            r"\bmandamus\b.{0,220}\b(?:determine|process)\b.{0,160}"
+            r"(?:the\s+)?(?:applicant['’]s\s+)?citizenship\s+application\b|"
+            r"\b(?:review|appeal|sought\s+to\s+review)\b.{0,180}"
+            r"\bdecision\b.{0,180}\bconfer\w*\s+(?:Australian\s+)?citizenship\b|"
+            r"\bdecision\b.{0,180}\brevok\w*\b.{0,160}\bAustralian\s+citizenship\b|"
+            r"\b(?:Australian\s+Citizenship\s+Act\s+(?:19|20)\d{2})\b.{0,300}"
+            r"\bapplication\s+for\s+(?:the\s+)?registration\b.{0,180}\bbirth\s+certificate\b",
+            body[:16000],
+            re.I,
+        )
+    )
     company_nomination_review = bool(
         re.search(r"\b(?:Pty\.?\s+Ltd|Proprietary Limited|P\s*/\s*L)\b", title, re.I)
         and (
@@ -2985,6 +3054,47 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
                 r"\bwhile\s+(?:the\s+)?Minister\s+considers\s+(?:a\s+)?grant\s+of\s+(?:a\s+)?visa\b",
                 head,
             )
+            or (
+                re.search(
+                    r"(?is)\b(?:application\s+for|seek\w*)\s+(?:a\s+)?stay\s+of\s+"
+                    r"(?:the\s+)?(?:applicant['’]s\s+)?removal\b",
+                    body[:8000],
+                )
+                and re.search(
+                    r"\b(?:citizenship\s+application|application\s+for\s+"
+                    r"(?:Australian\s+)?citizenship)\b",
+                    body[:8000],
+                    re.I,
+                )
+                and re.search(
+                    r"\b(?:does\s+not\s+currently\s+hold\s+(?:a\s+)?valid\s+visa|"
+                    r"no\s+(?:valid\s+)?visa|has\s+no\s+visa)\b",
+                    body[:8000],
+                    re.I,
+                )
+            )
+        )
+    )
+    foi_subject_proceeding = bool(
+        not current_visa_decision_heading
+        and (
+            re.search(
+                r"(?im)^[ \t]*(?:(?:IMMIGRATION|ADMINISTRATIVE\s+LAW)\s*[-–—:]\s*)?"
+                r"FREEDOM\s+OF\s+INFORMATION\s*[-–—:]",
+                head,
+            )
+            or re.search(
+                r"(?is)\b(?:substantive\s+application|proceeding|application)\b"
+                r".{0,220}?\brequests?\s+for\s+(?:access\s+to\s+)?documents\b"
+                r".{0,260}?\b(?:Freedom\s+of\s+Information|FOI)\s+Act\b",
+                body[:7000],
+            )
+            or re.search(
+                r"(?is)\b(?:appeal|review)\b.{0,220}?\bdecision\b.{0,180}?"
+                r"\brefus\w*\s+to\s+grant\s+access\s+to\s+documents\b"
+                r".{0,220}?\b(?:Freedom\s+of\s+Information|FOI)\s+Act\b",
+                body[:7000],
+            )
         )
     )
     if explicit_no_visa_applicant:
@@ -3002,7 +3112,11 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
         result.not_applicable["visa_type"] = "non_immigration_commercial_dispute"
     elif ancillary_costs_dispute or costs_only_migration_judgment:
         result.not_applicable["visa_type"] = "ancillary_costs_dispute_no_current_visa_review"
-    elif nonvisa_proceeding or (
+    elif nonvisa_proceeding:
+        result.not_applicable["visa_type"] = "no_current_visa_decision"
+    elif foi_subject_proceeding:
+        result.not_applicable["visa_type"] = "freedom_of_information_not_a_visa_decision"
+    elif (
         re.search(
             r"\bfor review of an unspecified\s+visa\s+cancellation\b",
             body[:7000],
@@ -3029,6 +3143,7 @@ def assess_case(text: str, *, citation: str, title: str = "", url: str = "") -> 
             citizenship_subject_heading
             or citizenship_act_review
             or direct_citizenship_refusal
+            or direct_citizenship_proceeding
             or re.search(
                 r"\bcitizenship\s+by\s+(?:descent|conferral|adoption)\b|"
                 r"\bapplication\s+for\s+(?:(?:the\s+)?(?:grant|resumption|conferral)\s+of\s+)?"

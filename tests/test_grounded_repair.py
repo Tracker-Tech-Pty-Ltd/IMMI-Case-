@@ -46,10 +46,28 @@ class GroundedTests(unittest.TestCase):
             ("Affirmed", "The Tribunal affirms the decision under review.", "Affirmed"),
             ("Affirmed", "The decision under review be affirmed.", "Affirmed"),
             ("Remitted", "The Tribunal remits the application for reconsideration.", "Remitted"),
+            ("Remitted", "1. The application be allowed. 2. The matter be remitted to the Tribunal.", "Remitted"),
             ("Set aside", "The Court sets aside the decision under review.", "Set aside"),
             ("Dismissed", "The application is dismissed.", "Dismissed"),
+            ("Withdrawn", "The proceeding be discontinued.", "Withdrawn"),
+            ("Refused", "The application to set aside the orders is refused.", "Refused"),
+            ("Allowed", "The appeal be allowed.", "Allowed"),
+            ("Granted", "Leave to appeal is granted.", "Granted"),
+            ("Quashed", "The decision is quashed.", "Quashed"),
             ("No jurisdiction", "The Tribunal does not have jurisdiction in this matter.", "No jurisdiction"),
             ("Dismissed", "The application is not dismissed.", None),
+            ("Set aside", "The Court sets aside the decision and remits the matter.", "Set aside"),
+            ("Set aside", "The Tribunal sets aside the decision and substitutes a decision that the application was withdrawn.", "Set aside"),
+            ("Affirmed", "The Tribunal affirms the decision under review and sets aside a separate security decision.", "Affirmed"),
+            ("Affirmed", "1. The appeal be allowed. 2. The orders made by the primary judge be set aside. 3. The decision of the Refugee Review Tribunal be affirmed.", "Affirmed"),
+            ("Dismissed", "The application as amended by leave granted on 10 August 2021 is dismissed.", "Dismissed"),
+            ("Dismissed", "1. Leave to amend the notice of appeal be refused. 2. The proceedings be dismissed.", "Dismissed"),
+            ("Dismissed", "1. Application for an extension of time is refused. 2. The application is dismissed.", "Dismissed"),
+            ("Set aside", "1. The appeal be allowed. 2. The decision be set aside. 3. The matter be remitted for reconsideration.", "Set aside"),
+            ("Remitted", "1. The appeal be allowed. 2. The decision be set aside. 3. The matter be remitted for reconsideration.", None),
+            ("Set aside", "1. The appeal be allowed. 2. The decision of the Refugee Review Tribunal be set aside. 3. The matter be remitted for reconsideration.", "Set aside"),
+            ("Remitted", "1. The appeal be allowed. 2. The decision of the Refugee Review Tribunal be set aside. 3. The matter be remitted for reconsideration.", None),
+            ("Set aside", "The Tribunal sets aside the decision and substitutes a decision that the application be granted.", "Set aside"),
             ("Remitted", "The Court sets aside the decision and remits the matter.", None),
             ("Affirmed", "The Tribunal remits the application.", None),
         )
@@ -684,6 +702,121 @@ class GroundedTests(unittest.TestCase):
     def test_citizenship_catchword_marks_visa_type_not_applicable(self):
         result = self.assess(HEAD + "CATCHWORDS – CITIZENSHIP – grant of citizenship – decision set aside")
         self.assertEqual(result.not_applicable["visa_type"], "citizenship_review_not_a_visa_application")
+
+    def test_unicode_minus_in_legacy_citizenship_heading_is_recognized(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: IMMIGRATION AND CITIZENSHIP \u2212 citizenship \u2212 "
+            + "applicant applied for Australian citizenship \u2212 decision under review affirmed"
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_citizenship_status_and_statutory_appeal_headings_are_recognized(self):
+        headings = (
+            "MIGRATION \u2013 whether applicant acquired Australian citizenship by virtue of abandonment",
+            "MIGRATION \u2013 appeal from a decision to revoke the appellant's Australian citizenship",
+            "MIGRATION \u2013 close and continuing association with Australia \u2013 decision-maker's "
+            "discretion under s 22(9) of the Australian Citizenship Act 2007 (Cth)",
+            "PRACTICE AND PROCEDURE \u2013 stay application \u2013 stay of Tribunal direction pending "
+            "determination of appeal \u2013 s 23A of the Australian Citizenship Act 2007 (Cth)",
+        )
+        for heading in headings:
+            with self.subTest(heading=heading):
+                result = self.assess(HEAD + "CATCHWORDS: " + heading)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "citizenship_review_not_a_visa_application",
+                )
+
+    def test_formal_citizenship_file_heading_marks_visa_type_not_applicable(self):
+        result = self.assess(
+            HEAD
+            + "CITIZENSHIP File number: NSD 721 of 2013\n"
+            + "Australian Citizenship Act 2007 (Cth), s 33(7)\n"
+            + "The application concerns renunciation of Australian citizenship."
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_direct_citizenship_decisions_are_not_visa_type_candidates(self):
+        sources = (
+            "The decision refusing the applicant's application to become an Australian citizen by conferral is under review.",
+            "The Tribunal is reviewing a decision to cancel approval granted to Mr Wang to become an Australian citizen.",
+            "The applicant sought mandamus requiring the Minister to determine the applicant's citizenship application.",
+            "The proceeding seeks review of the decision of the Minister to confer Australian citizenship on Joseph.",
+            "The Minister must not allow citizenship to be conferred while court proceedings are pending.",
+            "The applicant applied to the Minister for Australian citizenship and the Minister refused her application.",
+        )
+        for statement in sources:
+            with self.subTest(statement=statement):
+                result = self.assess(HEAD + "REASONS FOR JUDGMENT\n" + statement)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "citizenship_review_not_a_visa_application",
+                )
+
+    def test_citizenship_registration_under_the_act_is_not_a_visa_review(self):
+        result = self.assess(
+            HEAD
+            + "REASONS FOR DECISION\nAustralian Citizenship Act 1948.\n"
+            + "The application for registration was supported by a birth certificate."
+        )
+        self.assertEqual(
+            result.not_applicable["visa_type"],
+            "citizenship_review_not_a_visa_application",
+        )
+
+    def test_stay_of_removal_pending_citizenship_with_no_valid_visa_is_not_a_visa_review(self):
+        result = self.assess(
+            HEAD
+            + "REASONS FOR JUDGMENT\nThe applicant does not currently hold a valid visa. "
+            + "She seeks a stay of removal until her citizenship application is resolved."
+        )
+        self.assertEqual(result.not_applicable["visa_type"], "no_current_visa_decision")
+
+    def test_explicit_freedom_of_information_subject_is_not_a_visa_review(self):
+        for heading in (
+            "ADMINISTRATIVE LAW \u2013 Freedom of Information \u2013 appeal from an access decision",
+            "IMMIGRATION \u2013 Freedom of Information \u2013 amendment of personal information",
+            "FREEDOM OF INFORMATION \u2013 requests for access refused",
+        ):
+            with self.subTest(heading=heading):
+                result = self.assess(HEAD + heading)
+                self.assertEqual(
+                    result.not_applicable["visa_type"],
+                    "freedom_of_information_not_a_visa_decision",
+                )
+
+    def test_foi_mentions_in_a_visa_cancellation_case_do_not_hide_the_visa_issue(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION \u2013 judicial review of a decision to cancel the applicant's visa\n"
+            + "LEGISLATION: Freedom of Information Act 1982 (Cth)\n"
+            + "The Minister relied on evidence from a DVD."
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_citizenship_background_does_not_hide_a_visa_cancellation_case(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION \u2013 review of a decision not to revoke the mandatory "
+            + "cancellation of the applicant's visa\n"
+            + "The applicant is a New Zealand citizen and is not an Australian citizen."
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
+
+    def test_child_citizenship_as_a_character_factor_is_not_a_citizenship_case(self):
+        result = self.assess(
+            HEAD
+            + "CATCHWORDS: MIGRATION \u2013 judicial review of a character decision under s 501\n"
+            + "Direction 65 required consideration of the wellbeing of a child who is an Australian citizen."
+        )
+        self.assertNotIn("visa_type", result.not_applicable)
 
     def test_citizenship_cases_with_migration_prefix_are_not_visa_reviews(self):
         for catchwords in (
