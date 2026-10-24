@@ -2758,7 +2758,7 @@ class WorkflowTests(unittest.TestCase):
                          json.dumps({"answers": {"select": {"choice": "Invented Judge", "confidence": 1}}}), "jev-test"))
             conn.commit()
         first_review = self.review(jev_cache=cache)
-        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v2")
+        self.assertEqual(first_review["review_workflow_version"], "jev-field-binding-v3")
         review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
         advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
         self.assertEqual(len(advice_by_field["judges"]), 1)
@@ -2854,6 +2854,97 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(advice_by_field["outcome"], [])
         self.assertEqual(result["counts"]["field_bound_cache_fields"], 1)
         self.assertEqual(result["counts"]["jev_other_field_advice_associations_skipped"], 2)
+
+    def test_candidate_specific_question_keys_recover_legacy_judge_prompt(self):
+        cache = self.root / "jev.sqlite3"
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        state = {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
+                 "public_source_sha256": source_hash}
+        instruction = (
+            "Who issued THIS judgment? Select the complete current issuing judge/member or full panel "
+            "from its current header or certification/signature. Exclude cited judges, lawyers, "
+            "headings and partial panels. If the offered candidates omit the complete answer, select none."
+        )
+        with closing(sqlite3.connect(cache)) as conn:
+            conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
+            conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", (
+                "candidate-specific-judge",
+                json.dumps({"state": state, "questions": {"select_c0": {"instructions": instruction}}}),
+                json.dumps({"answers": {"select_c0": {"choice": "none"}}}), "jev-test",
+            ))
+            conn.commit()
+
+        result = self.review(jev_cache=cache)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
+        self.assertEqual(
+            [a["request_hash"] for a in advice_by_field["judges"]],
+            ["candidate-specific-judge"],
+        )
+        self.assertEqual(advice_by_field["visa_type"], [])
+        self.assertEqual(advice_by_field["outcome"], [])
+        self.assertEqual(result["counts"]["field_bound_cache_fields"], 1)
+
+    def test_legacy_explicit_visa_prompt_binds_advice_without_filling_value(self):
+        self.source.write_text(
+            HEAD + "REASONS FOR JUDGMENT\nNo visa class is identified in this excerpt.\n",
+            encoding="utf-8",
+        )
+        cache = self.root / "jev.sqlite3"
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        state = {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
+                 "public_source_sha256": source_hash}
+        instruction = (
+            "Identify the explicit visa or entry permit associated with THIS proceeding. It may be the "
+            "visa decision under review, or the explicitly identified visa program of the current "
+            "nomination/sponsorship dispute."
+        )
+        with closing(sqlite3.connect(cache)) as conn:
+            conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
+            conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", (
+                "legacy-visa-prompt",
+                json.dumps({"state": state, "questions": {"select_c0": {"instructions": instruction}}}),
+                json.dumps({"answers": {"select_c0": {"choice": "c0", "confidence": 0.99}}}),
+                "jev-test",
+            ))
+            conn.commit()
+
+        result = self.review(jev_cache=cache)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        visa = next(row for row in review if row["case_id"] == "a" and row["field"] == "visa_type")
+        self.assertEqual([a["request_hash"] for a in visa["jev_cached_advice"]], ["legacy-visa-prompt"])
+        self.assertEqual(visa["fact_status"], "waiting_new_evidence")
+        self.assertIsNone(visa["evidence"])
+        self.assertEqual(result["counts"]["field_bound_cache_fields"], 1)
+
+    def test_mixed_legacy_selection_prompts_are_not_bound_to_a_field(self):
+        cache = self.root / "jev.sqlite3"
+        source_hash = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        state = {"citation": self.rows[0]["citation"], "public_url": self.rows[0]["url"],
+                 "public_source_sha256": source_hash}
+        questions = {
+            "select_c0": {"instructions": "Who issued THIS judgment? Select the complete current "
+                                         "issuing judge/member or full panel from its current header."},
+            "select_c1": {"instructions": "Identify the explicit visa or entry permit associated with "
+                                         "THIS proceeding. It may be the visa decision under review."},
+        }
+        with closing(sqlite3.connect(cache)) as conn:
+            conn.execute("CREATE TABLE judgments (request_hash TEXT,payload TEXT,response TEXT,model TEXT)")
+            conn.execute("INSERT INTO judgments VALUES (?,?,?,?)", (
+                "mixed-legacy-prompts", json.dumps({"state": state, "questions": questions}),
+                json.dumps({"answers": {"select_c0": {"choice": "none"}, "select_c1": {"choice": "none"}}}),
+                "jev-test",
+            ))
+            conn.commit()
+
+        result = self.review(jev_cache=cache)
+        review = json.loads((self.root / "review/review.json").read_text(encoding="utf-8"))
+        advice_by_field = {row["field"]: row["jev_cached_advice"] for row in review if row["case_id"] == "a"}
+        self.assertEqual(advice_by_field["judges"], [])
+        self.assertEqual(advice_by_field["visa_type"], [])
+        self.assertEqual(advice_by_field["outcome"], [])
+        self.assertNotIn("field_bound_cache_fields", result["counts"])
+        self.assertEqual(result["counts"]["jev_untyped_advice_field_associations_skipped"], 3)
 
     def test_prior_not_applicable_is_preserved_on_matching_evidence(self):
         prior = self.root / "prior.csv"

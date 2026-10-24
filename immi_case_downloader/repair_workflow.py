@@ -796,7 +796,8 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     stats: Counter = Counter()
     jev_field_markers = {
         "visa_type": ("select the visa type currently in dispute",
-                      "select the explicit visa name whose refusal/cancellation/non-revocation"),
+                      "select the explicit visa name whose refusal/cancellation/non-revocation",
+                      "identify the explicit visa or entry permit associated with this proceeding"),
         "judges": ("select the judge(s) or tribunal member(s) who issued this current judgment",
                    "who issued this judgment?"),
         "outcome": ("select the complete operative result of this current judgment",
@@ -866,13 +867,42 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
                             if payload_row:
                                 try:
                                     questions = json.loads(payload_row[0]).get("questions", {})
-                                    instruction = questions.get("select", {}).get("instructions", "")
+                                    selection_questions = (
+                                        question
+                                        for key, question in questions.items()
+                                        if isinstance(question, dict)
+                                        and (key == "select" or re.fullmatch(r"select_c\d+", key))
+                                    )
+                                    recovered = []
+                                    unmatched_instruction = False
+                                    for question in selection_questions:
+                                        candidate_instruction = question.get("instructions", "")
+                                        normalized_instruction = " ".join(
+                                            str(candidate_instruction).casefold().split()
+                                        )
+                                        if not normalized_instruction:
+                                            continue
+                                        matched_fields = [
+                                            field_name
+                                            for field_name, markers in jev_field_markers.items()
+                                            if any(normalized_instruction.startswith(marker)
+                                                   for marker in markers)
+                                        ]
+                                        if len(matched_fields) != 1:
+                                            unmatched_instruction = True
+                                            break
+                                        recovered.append((matched_fields[0], candidate_instruction))
+                                    recovered_fields = {field_name for field_name, _ in recovered}
+                                    if (
+                                        not unmatched_instruction
+                                        and len(recovered_fields) == 1
+                                        and recovered
+                                    ):
+                                        instruction = recovered[0][1]
+                                    else:
+                                        instruction = ""
                                 except (AttributeError, TypeError, ValueError):
                                     instruction = ""
-                            normalized_instruction = " ".join(str(instruction).casefold().split())
-                            if not any(normalized_instruction.startswith(marker)
-                                       for markers in jev_field_markers.values() for marker in markers):
-                                instruction = ""
                             question_field_definitions[request_hash] = instruction
                         if question_field_definitions[request_hash]:
                             advice["field_definition"] = question_field_definitions[request_hash]
@@ -986,7 +1016,7 @@ def review_catalogue(root: Path, output: Path, *, ledger: Path,
     actionable_missing_cells = int(stats.get("waiting_new_evidence", 0)) + int(
         stats.get("candidate_review", 0)
     )
-    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v2",
+    summary = {"rule_version": RULE_VERSION, "review_workflow_version": "jev-field-binding-v3",
                "created_utc": utc_now(),
                "counts": dict(stats),
                "reviewed_blank_cells": reviewed_blank_cells,
