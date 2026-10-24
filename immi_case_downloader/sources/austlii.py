@@ -11,7 +11,7 @@ primary free source for Australian legal cases including:
 
 import re
 import logging
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from .metadata_extractor import MetadataExtractor
@@ -42,6 +42,19 @@ class YearListingUnavailable(RuntimeError):
 
 
 _DECISION_NUMBER_RE = re.compile(r"/(\d+)\.html?$", re.IGNORECASE)
+_AUSTLII_MISSING_CONTENT_RE = re.compile(
+    r"\b(?:no (?:database )?title|can't extract contents)\b", re.IGNORECASE
+)
+_AUSTLII_DOCUMENT_MARKER_RE = re.compile(
+    r"(?im)^\s*(?:"
+    r"REASONS FOR (?:JUDGMENT|DECISION)|"
+    r"STATEMENT OF DECISION(?: AND REASONS)?|"
+    r"DECISION RECORD|ORDERS?|CATCHWORDS|CORRIGENDUM|"
+    r"DIRECTION TO RESTRICT PUBLICATION|"
+    r"REVIEW APPLICANTS?|VISA APPLICANTS?|PRESIDING MEMBER|TRIBUNAL MEMBER|"
+    r"DATE OF (?:DECISION|HEARING)|MIGRATION\s*[–—-]\s+\S"
+    r")\b"
+)
 
 
 def _recency_key(case: ImmigrationCase) -> tuple[int, int, str]:
@@ -399,16 +412,27 @@ class AustLIIScraper(BaseScraper):
 
         soup = BeautifulSoup(response.text, "lxml")
 
-        # Extract case metadata from the page
-        self._extract_metadata(soup, case)
-
         # Extract the main case text
         # AustLII typically puts case content in specific divs
-        content_div = soup.find("div", id="cases_doc") or soup.find(
-            "div", class_="document"
+        content_div = (
+            soup.find("div", id="cases_doc")
+            or soup.find("div", class_="cases_doc")
+            or soup.find("div", class_="document")
         )
         if content_div:
-            return content_div.get_text(separator="\n", strip=True)
+            text = content_div.get_text(separator="\n", strip=True)
+            if text and not _AUSTLII_MISSING_CONTENT_RE.search(text):
+                self._extract_metadata(soup, case)
+                return text
+
+        # Older AustLII pages sometimes expose the decision as a linked plain-
+        # text file instead of embedding it in the HTML page. Follow only the
+        # matching case-number attachment on the same host; never treat the
+        # surrounding site navigation as the decision itself.
+        attachment = self._download_plain_text_attachment(soup, case)
+        if attachment:
+            self._extract_metadata(BeautifulSoup(attachment, "lxml"), case)
+            return attachment
 
         # Fallback: get main body content
         body = soup.find("body")
@@ -416,9 +440,72 @@ class AustLIIScraper(BaseScraper):
             # Remove navigation, headers, footers
             for tag in body.find_all(["nav", "header", "footer", "script", "style"]):
                 tag.decompose()
-            return body.get_text(separator="\n", strip=True)
+            text = body.get_text(separator="\n", strip=True)
+            # AustLII can return a valid page shell even when it cannot render
+            # the judgment. Do not save that shell as a full-text source.
+            if (
+                text
+                and not _AUSTLII_MISSING_CONTENT_RE.search(text)
+                and _AUSTLII_DOCUMENT_MARKER_RE.search(text)
+            ):
+                self._extract_metadata(soup, case)
+                return text
+            self.last_error = {"category": "incomplete_document", "url": case.url}
+            logger.warning("AustLII page has no decision body for %s", case.url)
+            return None
 
-        return soup.get_text(separator="\n", strip=True)
+        text = soup.get_text(separator="\n", strip=True)
+        if (
+            text
+            and not _AUSTLII_MISSING_CONTENT_RE.search(text)
+            and _AUSTLII_DOCUMENT_MARKER_RE.search(text)
+        ):
+            self._extract_metadata(soup, case)
+            return text
+        self.last_error = {"category": "incomplete_document", "url": case.url}
+        logger.warning("AustLII response has no decision body for %s", case.url)
+        return None
+
+    def _download_plain_text_attachment(
+        self, soup: BeautifulSoup, case: ImmigrationCase
+    ) -> str | None:
+        """Fetch an exact-case .txt attachment when the HTML has no body."""
+        case_url = urlparse(case.url)
+        case_number = _DECISION_NUMBER_RE.search(case_url.path)
+        if not case_url.hostname or not case_number:
+            return None
+        expected_name = f"{case_number.group(1)}.txt".lower()
+        expected_path = case_url.path.lower()
+        viewdoc_prefix = "/cgi-bin/viewdoc"
+        if viewdoc_prefix in expected_path:
+            expected_path = expected_path.split(viewdoc_prefix, 1)[1]
+        expected_path = expected_path.rsplit(".", 1)[0] + ".txt"
+
+        for link in soup.find_all("a", href=True):
+            attachment_url = urljoin(case.url, link["href"])
+            parsed = urlparse(attachment_url)
+            name = parsed.path.rsplit("/", 1)[-1].lower()
+            if (
+                parsed.hostname != case_url.hostname
+                or not parsed.path.lower().endswith(expected_path)
+                or name != expected_name
+                or "download" not in link.get_text(" ", strip=True).lower()
+            ):
+                continue
+
+            response = self.fetch(attachment_url)
+            if not response:
+                return None
+            text = response.text.strip()
+            if (
+                not text
+                or "html" in response.headers.get("Content-Type", "").lower()
+                or text[:200].lstrip().lower().startswith(("<!doctype html", "<html"))
+                or not _AUSTLII_DOCUMENT_MARKER_RE.search(text)
+            ):
+                return None
+            return text
+        return None
 
     def download_case_text(self, case: ImmigrationCase) -> str | None:
         """Protocol-compatible alias for download_case_detail."""

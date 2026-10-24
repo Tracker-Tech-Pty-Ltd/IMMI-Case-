@@ -243,6 +243,109 @@ class TestDownloadCaseDetail:
         case = ImmigrationCase(url=case_url)
         assert scraper.download_case_detail(case) is None
 
+    @responses.activate
+    def test_follows_exact_plain_text_decision_attachment(self, tmp_path):
+        from immi_case_downloader.models import ImmigrationCase
+
+        case_url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2000/658.html"
+        attachment_url = "https://www.austlii.edu.au/au/cases/cth/MRTA/2000/658.txt"
+        shell = (
+            '<html><body><p>No title</p><p>Can\'t extract contents</p>'
+            '<a href="/au/cases/cth/MRTA/2000/658.txt">Download</a></body></html>'
+        )
+        decision = (
+            "[2000] MRTA 658\n\nREASONS FOR DECISION\n"
+            "The Tribunal affirms the decision under review."
+        )
+        responses.add(
+            responses.GET,
+            case_url,
+            body=shell,
+            status=200,
+            content_type="text/html",
+        )
+        responses.add(
+            responses.GET,
+            attachment_url,
+            body=decision,
+            status=200,
+            content_type="text/plain; charset=utf-8",
+        )
+
+        scraper = AustLIIScraper(delay=0)
+        scraper.source_cache_dir = tmp_path
+        case = ImmigrationCase(
+            citation="[2000] MRTA 658", url=case_url, court_code="MRTA", year=2000
+        )
+        text = scraper.download_case_detail(case)
+
+        assert text == decision
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_rejects_navigation_shell_and_preserves_existing_metadata(self, tmp_path):
+        from immi_case_downloader.models import ImmigrationCase
+
+        case_url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/MRTA/2000/658.html"
+        attachment_url = "https://www.austlii.edu.au/au/cases/cth/MRTA/2000/658.txt"
+        shell = (
+            "<html><body><p>No title</p><p>Can't extract contents</p>"
+            "<p>Senior Member Other</p>"
+            "<a href='/au/cases/cth/MRTA/2000/658.txt'>Download</a>"
+            "</body></html>"
+        )
+        responses.add(
+            responses.GET,
+            case_url,
+            body=shell,
+            status=200,
+            content_type="text/html",
+        )
+        responses.add(
+            responses.GET,
+            attachment_url,
+            body="Not found",
+            status=410,
+            content_type="text/plain",
+        )
+
+        scraper = AustLIIScraper(delay=0)
+        scraper.source_cache_dir = tmp_path
+        case = ImmigrationCase(
+            citation="[2000] MRTA 658",
+            url=case_url,
+            court_code="MRTA",
+            year=2000,
+            judges="Existing Judge",
+            visa_type="Existing Visa",
+        )
+        assert scraper.download_case_detail(case) is None
+        assert case.judges == "Existing Judge"
+        assert case.visa_type == "Existing Visa"
+        assert scraper.last_error["category"] == "incomplete_document"
+
+    @responses.activate
+    def test_does_not_mistake_decision_maker_text_for_a_decision(self, tmp_path):
+        from immi_case_downloader.models import ImmigrationCase
+
+        case_url = "https://www.austlii.edu.au/au/cases/cth/MRTA/2000/659.html"
+        responses.add(
+            responses.GET,
+            case_url,
+            body=(
+                "<html><body><p>Decision maker reviewed the application.</p>"
+                "<p>Use the navigation links to continue.</p></body></html>"
+            ),
+            status=200,
+            content_type="text/html",
+        )
+        scraper = AustLIIScraper(delay=0)
+        scraper.source_cache_dir = tmp_path
+        case = ImmigrationCase(citation="[2000] MRTA 659", url=case_url)
+
+        assert scraper.download_case_detail(case) is None
+        assert scraper.last_error["category"] == "incomplete_document"
+
 
 class TestExtractMetadata:
     """Test _extract_metadata with fixture HTML."""
