@@ -13,6 +13,7 @@ import { verifyCsrf } from "../auth/csrf.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError } from "../storage/contracts.js";
 import { readBoundedBodyText } from "../storage/body_limit.js";
+import { publicCase } from "./cloudflare.js";
 
 const CASE_ID_RE = /^[0-9a-f]{12}$/;
 
@@ -127,7 +128,7 @@ async function handleGuidedSearch(request, stores) {
     return json({
       success: true,
       flow,
-      results: result.results,
+      results: result.results.map(publicCase),
       meta: {
         total_results: result.total,
         returned_results: result.results.length,

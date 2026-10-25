@@ -1,0 +1,38 @@
+[
+  {
+    "type": "component",
+    "id": 7841,
+    "name": "Stats Card",
+    "description": "Stats Card\nThis is a reusable card component designed to display a key metric, a descriptive summary, and a mini bar chart for trend visualization. It features animations that trigger when the component enters the view.",
+    "previewUrl": "https://cdn.21st.dev/kavikatiyar/stats-card-1/default/preview.1758356287705.png",
+    "videoUrl": "https://cdn.21st.dev/kavikatiyar/stats-card-1/default/video.1758356287706.mp4",
+    "author": "kavikatiyar",
+    "authorImage": "https://vucvdpamtrjkzmubwlts.supabase.co/storage/v1/object/public/users/user_32hbh6QoSVv3IJTJfaQWBLHRl6N/avatar.jpeg",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/kavikatiyar/stats-card-1?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@kavikatiyar/components/stats-card-1"
+  },
+  {
+    "type": "component",
+    "id": 19070,
+    "name": "Advanced Stats",
+    "description": "Analytics dashboard stats section with an animated area chart, KPI cards, and scroll-triggered timeline reveals.",
+    "previewUrl": "https://cdn.21st.dev/uilayout.contact/advanced-stats/default/preview.1783677974362.png",
+    "videoUrl": "https://cdn.21st.dev/uilayout.contact/advanced-stats/default/video.1783677974362.mp4",
+    "author": "uilayout.contact",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ29vZ2xlL2ltZ18yekFzdlBhQVN2bFB2ZVp5UmZ3dWhlaHFtZmoifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/uilayout.contact/advanced-stats?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@uilayout.contact/components/advanced-stats"
+  },
+  {
+    "type": "component",
+    "id": 8321,
+    "name": "Stats Card",
+    "description": "Stats Card\nThis component is designed to display a single, key statistic. It includes a title, a primary value, an icon, and a percentage change indicator that is color-coded for positive or negative trends.",
+    "previewUrl": "https://cdn.21st.dev/ravikatiyar162/stats-card-1/default/preview.1759173339031.png",
+    "videoUrl": "https://cdn.21st.dev/ravikatiyar162/stats-card-1/default/video.1759173339031.mp4",
+    "author": "ravikatiyar162",
+    "authorImage": "https://vucvdpamtrjkzmubwlts.supabase.co/storage/v1/object/public/users/user_2zMtrqo9RMaaIn4f8F2z3oeY497/avatar.png",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/ravikatiyar162/stats-card-1?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@ravikatiyar162/components/stats-card-1"
+  }
+]

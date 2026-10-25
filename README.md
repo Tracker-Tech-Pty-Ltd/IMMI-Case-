@@ -1,5 +1,7 @@
 # IMMI-Case — 澳洲移民司法案件情報平台
 
+2026-10-26 本機整合、程式碼審查、測試及工作樹狀態見 [最新整合紀錄](docs/reviews/2026-10-26-worktree-integration.md)。介面新增新聞更新頁；歷史截圖與數據不等於目前正式站驗收。
+
 > 15 萬+ 個案件。9 個法院。26 年判決紀錄。一個可搜尋的真相。
 
 *This repository is guarded by **Anansi**.*
@@ -8,18 +10,18 @@
 
 ## 1. 概覽 (Overview)
 
-IMMI-Case 是一個澳洲移民法律研究工具，完整爬取、解析並呈現自 AustLII（澳洲法律資訊研究所）可取得的所有移民、難民、國土安全相關判決，涵蓋 2000 年至今。
+IMMI-Case 是一個澳洲移民法律研究工具，收集、解析並呈現自 AustLII（澳洲法律資訊研究所）取得的移民、難民、國土安全相關判決，涵蓋 2000 年至今。案件欄位依原文證據保存，來源不足時保留待查狀態。
 
 系統由三層構成：
 - **Python 爬蟲管線**：自動從 9 個法院 / 仲裁庭抓取案件元資料與全文（支援 Cloudflare Workers 加速）
 - **Cloudflare Worker（D1 原生，`workers/cloudflare-native.js`）**：讀寫全部在單一 standalone Worker 內完成 —— D1（×3：catalog/account/ops）+ R2 + Vectorize + Queues + Durable Objects，正式環境完全沒有 Postgres / Hyperdrive / Flask container。舊版 `workers/proxy.js`（Hyperdrive → Supabase）已於 commit `f91f45f` 刪除；Flask 應用（`immi_case_downloader/`、`web.py`）現在**僅供本機開發使用**，不在正式流量路徑上。詳見 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- **React SPA**：26 個頁面，雙語（English + 繁體中文），完整深色模式，設計令牌系統
+- **React SPA**：27 個頁面，包含新聞更新，雙語（English + 繁體中文），完整深色模式，設計令牌系統
 
 **核心能力**：
 
 - 語意搜尋（正式環境）：Cloudflare Vectorize（`CASE_VECTORS`）+ Workers AI `@cf/qwen/qwen3-embedding-0.6b`（1024-dim），支援 lexical / semantic / hybrid 三模式；pgvector + OpenAI/Gemini 只存在於本機開發腳本
-- 自動欄位萃取：regex pipeline + 10 個平行 Claude Sonnet sub-agent，90%+ 覆蓋率
-- 法官分析：勝率計算器、任職時間軸、跨法院對比（15,465 筆法官紀錄）+ 104 位成員傳記庫（`/api/v1/analytics/judge-bio`，含法律資格狀態 `legal_status`）
+- 欄位審核與抽取：原文證據審核、規則抽取與既有模型快取交叉核對；缺少可靠證據的欄位維持待查
+- 法官分析：歷史結果分析、任職時間軸、跨法院對比，以及成員傳記庫（`/api/v1/analytics/judge-bio`，含法律資格狀態 `legal_status`）；歷史比例不作個人案件結果預測
 - 案件線系圖：FMCA → FCCA → FedCFamC2G，MRTA+RRTA → AATA → ARTA 完整脈絡
 - 結構化導航：依簽證類別、案件性質、法律概念多維過濾
 - 雙語立法瀏覽器：6 部澳洲移民相關法律全文，EN / 繁中切換

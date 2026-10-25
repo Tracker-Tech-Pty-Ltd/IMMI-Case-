@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import "../helpers/auth-lock";
 
 /** Build a real, parseable JWT whose `exp` is `secondsFromNow` in the future. */
 function makeToken(secondsFromNow: number): string {
@@ -85,6 +86,8 @@ describe("AuthProvider silent refresh", () => {
   });
 
   it("arms the refresh at exactly exp - 60s: nothing fires 1ms early, exactly one fires 1ms late", async () => {
+    // Reading /me does not extend a token's lifetime; only refresh does.
+    const initialToken = makeToken(ACCESS_TTL_SECONDS);
     fetchMock.mockImplementation((url: string) => {
       if (String(url).includes("/auth/me")) {
         return Promise.resolve(
@@ -92,7 +95,7 @@ describe("AuthProvider silent refresh", () => {
             user: { id: "u1" },
             tenant: { id: "t1" },
             tenants: [{ id: "t1" }],
-            access_token: makeToken(ACCESS_TTL_SECONDS),
+            access_token: initialToken,
           }),
         );
       }

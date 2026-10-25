@@ -123,6 +123,8 @@ def test_migration_creates_required_indexes(migration_sql: str) -> None:
 
 def _supabase_client():
     """Return a supabase-py client; skip if creds missing."""
+    if os.environ.get("IMMI_LIVE_SUPABASE_TESTS") != "1":
+        pytest.skip("Remote schema writes require explicit IMMI_LIVE_SUPABASE_TESTS=1")
     url = os.environ.get("SUPABASE_URL", "").strip()
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     if not url or not key:

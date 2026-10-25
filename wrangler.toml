@@ -75,9 +75,17 @@ class_name = "AuthNonce"
 name = "COUNCIL_SESSION"
 class_name = "CouncilSessionDO"
 
+[[durable_objects.bindings]]
+name = "CASE_MUTATION_COORDINATOR"
+class_name = "CaseMutationDO"
+
 [[migrations]]
 tag = "cloudflare-native-v1"
 new_sqlite_classes = ["AuthNonce", "CouncilSessionDO"]
+
+[[migrations]]
+tag = "case-mutation-coordinator-v1"
+new_sqlite_classes = ["CaseMutationDO"]
 
 [[queues.producers]]
 binding = "CASE_MUTATION_QUEUE"

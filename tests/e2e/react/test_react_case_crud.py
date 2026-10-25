@@ -1,5 +1,7 @@
 """Case CRUD lifecycle tests: create, read, edit, delete."""
 
+from playwright.sync_api import expect
+
 from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
@@ -145,11 +147,14 @@ class TestDeleteCase:
 
         # Click Delete to open the ConfirmModal
         main.get_by_role("button", name="Delete").click()
-        react_page.wait_for_timeout(300)
-
-        # ConfirmModal renders a danger-styled "Delete" confirm button
-        modal = react_page.locator(".fixed.inset-0")
-        modal.get_by_role("button", name="Delete").click()
+        # Radix renders the overlay and dialog content as separate siblings.
+        modal = react_page.get_by_role("dialog")
+        expect(modal).to_be_visible()
+        with react_page.expect_response(
+            lambda response: response.request.method == "DELETE" and "/api/v1/cases/" in response.url,
+        ) as deleted:
+            modal.get_by_role("button", name="Delete", exact=True).click()
+        assert deleted.value.ok
         react_page.wait_for_load_state("networkidle")
 
         toast = get_toast_text(react_page)
@@ -160,12 +165,18 @@ class TestDeleteCase:
         """Clicking Cancel in the ConfirmModal does NOT delete the case."""
         _navigate_to_first_case(react_page)
         main = react_page.locator("main")
+        case_url = react_page.url
+        deletions = []
+        react_page.on("request", lambda request: deletions.append(request) if request.method == "DELETE" else None)
 
         main.get_by_role("button", name="Delete").click()
-        react_page.wait_for_timeout(300)
-
         # Click Cancel in the modal
-        modal = react_page.locator(".fixed.inset-0")
+        modal = react_page.get_by_role("dialog")
+        expect(modal).to_be_visible()
         modal.get_by_role("button", name="Cancel").click()
-        react_page.wait_for_timeout(300)
-        assert "/cases/" in react_page.url
+        expect(modal).not_to_be_visible()
+        assert react_page.url == case_url
+        assert deletions == []
+        # Confirm the case still exists after a fresh server read.
+        react_page.reload(wait_until="networkidle")
+        expect(main.get_by_role("button", name="Delete", exact=True)).to_be_visible()

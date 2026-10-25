@@ -11,6 +11,9 @@ import { ErrorBoundary, RouteBoundary } from "@/components/shared/RouteErrorBoun
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })),
 );
+const NewsPage = lazy(() =>
+  import("@/pages/NewsPage").then((m) => ({ default: m.NewsPage })),
+);
 const CasesPage = lazy(() =>
   import("@/pages/CasesPage").then((m) => ({ default: m.CasesPage })),
 );
@@ -156,6 +159,14 @@ export default function App() {
                 element={
                   <RouteBoundary>
                     <CasesPage />
+                  </RouteBoundary>
+                }
+              />
+              <Route
+                path="news"
+                element={
+                  <RouteBoundary>
+                    <NewsPage />
                   </RouteBoundary>
                 }
               />

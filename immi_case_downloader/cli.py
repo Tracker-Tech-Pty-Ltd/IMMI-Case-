@@ -8,7 +8,9 @@ import sys
 from .config import AUSTLII_DATABASES, START_YEAR, END_YEAR, OUTPUT_DIR
 from .sources.austlii import AustLIIScraper
 from .sources.federal_court import FederalCourtScraper
+from .csv_write_lock import csv_write_lock
 from .storage import (
+    CASES_CSV,
     ensure_output_dirs,
     load_all_cases,
     save_cases_csv,
@@ -76,18 +78,18 @@ def cmd_search(args):
         case.ensure_id()
 
     # Merge with existing data (never overwrite)
-    existing = load_all_cases(args.output)
-    existing_urls = {c.url for c in existing}
-    added = 0
-    for case in all_cases:
-        if case.url not in existing_urls:
-            existing.append(case)
-            existing_urls.add(case.url)
-            added += 1
+    with csv_write_lock(os.path.join(args.output, CASES_CSV), job_name="cli_search"):
+        existing = load_all_cases(args.output, use_cache=False)
+        existing_urls = {c.url for c in existing}
+        added = 0
+        for case in all_cases:
+            if case.url not in existing_urls:
+                existing.append(case)
+                existing_urls.add(case.url)
+                added += 1
 
-    # Save merged results
-    csv_path = save_cases_csv(existing, args.output)
-    json_path = save_cases_json(existing, args.output)
+        csv_path = save_cases_csv(existing, args.output)
+        json_path = save_cases_json(existing, args.output)
     report_path = generate_summary_report(existing, args.output)
 
     print(f"\nSearch found: {len(all_cases)} cases")

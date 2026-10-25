@@ -1,5 +1,11 @@
 """Dashboard page tests: stat cards, charts, quick actions, recent cases."""
 
+import re
+from datetime import date
+from urllib.parse import parse_qs, urlsplit
+
+from playwright.sync_api import expect
+
 from .react_helpers import (
     react_navigate,
     wait_for_loading_gone,
@@ -77,32 +83,58 @@ class TestQuickActions:
     """Quick action buttons that navigate to other pages."""
 
     def test_download_action(self, react_page):
+        """The former download quick action now opens the merged Data Tools."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         main = react_page.locator("main")
-        btn = main.get_by_role("button", name="Download", exact=True)
-        assert btn.is_visible()
+        btn = main.get_by_role("button", name="Data Tools", exact=True)
+        btn.click()
+        expect(react_page).to_have_url(re.compile(r"/data-tools$"))
+        expect(react_page.get_by_role("heading", name="Data Tools", exact=True)).to_be_visible()
 
     def test_pipeline_action(self, react_page):
+        """The dashboard's current analytics quick action navigates correctly."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         main = react_page.locator("main")
-        btn = main.get_by_role("button", name="Pipeline", exact=True)
-        assert btn.is_visible()
+        btn = main.get_by_role("button", name="Analytics", exact=True)
+        btn.click()
+        expect(react_page).to_have_url(re.compile(r"/analytics\?"))
+        scope = parse_qs(urlsplit(react_page.url).query)
+        assert scope["year_from"] == ["2000"]
+        assert scope["year_to"] == [str(date.today().year)]
+        expect(react_page.get_by_role("heading", name="Analytics", exact=True)).to_be_visible()
 
     def test_export_csv_action(self, react_page):
-        react_navigate(react_page, "/")
+        """CSV export lives on the cases selection toolbar; verify a real download."""
+        react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
-        main = react_page.locator("main")
-        btn = main.get_by_role("button", name="Export CSV", exact=True)
-        assert btn.is_visible()
+        react_page.locator("tbody input[type='checkbox']").first.check()
+        btn = react_page.get_by_test_id("cases-batch-bar").get_by_role("button", name="Export CSV", exact=True)
+        with react_page.expect_download() as downloaded:
+            btn.click()
+        download = downloaded.value
+        assert download.failure() is None
+        assert download.suggested_filename.endswith(".csv")
+        content = download.path().read_text(encoding="utf-8")
+        assert "citation,title,court_code" in content
+        assert "Minister for Immigration" in content
 
     def test_export_json_action(self, react_page):
+        """The retained JSON download endpoint returns the actual seed data."""
+        response = react_page.request.get("/api/v1/export/json")
+        assert response.ok
+        assert "attachment" in response.headers.get("content-disposition", "")
+        data = response.json()
+        cases = data if isinstance(data, list) else data.get("cases", [])
+        assert len(cases) >= 10
+        assert any("Minister for Immigration" in case["title"] for case in cases)
+
+    def test_guided_search_action(self, react_page):
         react_navigate(react_page, "/")
-        wait_for_loading_gone(react_page)
-        main = react_page.locator("main")
-        btn = main.get_by_role("button", name="Export JSON", exact=True)
-        assert btn.is_visible()
+        react_page.locator("main").get_by_role("button", name="Guided Search", exact=True).click()
+        expect(react_page).to_have_url(re.compile(r"/guided-search$"))
+        expect(react_page.get_by_role("heading", name="Guided Search", exact=True)).to_be_visible()
 
 
 class TestRecentCases:

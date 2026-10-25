@@ -11,12 +11,13 @@ from immi_case_downloader.web.routes import api as api_routes
 
 
 @pytest.fixture
-def api_client():
-    from immi_case_downloader.web import create_app
+def api_client(tmp_path):
+    from immi_case_downloader.web import close_app, create_app
 
-    app = create_app()
+    app = create_app(output_dir=str(tmp_path), backend="csv")
     app.config["TESTING"] = True
-    return app.test_client()
+    yield app.test_client()
+    close_app(app, wait=True)
 
 
 @pytest.fixture

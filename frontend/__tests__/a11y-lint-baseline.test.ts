@@ -54,7 +54,7 @@ describe("jsx-a11y lint baseline", () => {
         .flatMap((r) =>
           r.messages
             .filter((m) => m.ruleId?.startsWith("jsx-a11y/"))
-            .map((m) => `${path.relative(cwd, r.filePath)}\t${m.ruleId}`),
+            .map((m) => `${path.relative(cwd, r.filePath).split(path.sep).join("/")}\t${m.ruleId}`),
         )
         .toSorted();
 

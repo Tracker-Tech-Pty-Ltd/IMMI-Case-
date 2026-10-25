@@ -14,14 +14,14 @@ export function FilterPill({ label, value, onRemove }: FilterPillProps) {
   })
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-accent-muted px-2.5 py-1 text-xs font-medium text-accent">
-      <span className="text-accent/60">{label}:</span>
-      {value}
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-accent-muted px-3 font-data text-xs font-medium text-accent">
+      <span className="text-accent">{label}:</span>
+      <span className="min-w-0 break-words">{value}</span>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`${removeLabel}: ${label}: ${value}`}
-        className="ml-0.5 rounded-full p-0.5 hover:bg-accent/20 transition-colors"
+        className="codex-icon-button shrink-0 rounded-full hover:bg-accent/20 transition-colors"
       >
         <X className="h-3 w-3" />
       </button>

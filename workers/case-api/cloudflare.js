@@ -307,9 +307,9 @@ function vectorFilters(filters) {
   return result;
 }
 
-function publicCase(row) {
+export function publicCase(row) {
   if (!row) return row;
-  const { content_key, content_sha256, content_size, semantic_ready, vector_mutation_id, ...response } = row;
+  const { user_notes, content_key, content_sha256, content_size, semantic_ready, vector_mutation_id, ...response } = row;
   return { ...response, full_text_path: response.full_text_path ?? content_key ?? null };
 }
 

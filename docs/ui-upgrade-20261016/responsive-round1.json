@@ -1,0 +1,194 @@
+[
+  {
+    "h1": "Dashboard",
+    "height": 844,
+    "overflow": [],
+    "path": "/",
+    "scroll": 385,
+    "width": 391
+  },
+  {
+    "h1": "Cases",
+    "height": 844,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 385,
+    "width": 391
+  },
+  {
+    "h1": "Analytics",
+    "height": 844,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 450,
+    "width": 391
+  },
+  {
+    "h1": "Dashboard",
+    "height": 720,
+    "overflow": [],
+    "path": "/",
+    "scroll": 534,
+    "width": 540
+  },
+  {
+    "h1": "Cases",
+    "height": 720,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 534,
+    "width": 540
+  },
+  {
+    "h1": "Analytics",
+    "height": 720,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 534,
+    "width": 540
+  },
+  {
+    "h1": "Dashboard",
+    "height": 1024,
+    "overflow": [],
+    "path": "/",
+    "scroll": 762,
+    "width": 768
+  },
+  {
+    "h1": "Cases",
+    "height": 1024,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 762,
+    "width": 768
+  },
+  {
+    "h1": "Analytics",
+    "height": 1024,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 762,
+    "width": 768
+  },
+  {
+    "h1": "Dashboard",
+    "height": 391,
+    "overflow": [],
+    "path": "/",
+    "scroll": 838,
+    "width": 844
+  },
+  {
+    "h1": "Cases",
+    "height": 391,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 838,
+    "width": 844
+  },
+  {
+    "h1": "Analytics",
+    "height": 391,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 838,
+    "width": 844
+  },
+  {
+    "h1": "Dashboard",
+    "height": 768,
+    "overflow": [],
+    "path": "/",
+    "scroll": 1018,
+    "width": 1024
+  },
+  {
+    "h1": "Cases",
+    "height": 768,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 1018,
+    "width": 1024
+  },
+  {
+    "h1": "Analytics",
+    "height": 768,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 1018,
+    "width": 1024
+  },
+  {
+    "h1": "Dashboard",
+    "height": 800,
+    "overflow": [],
+    "path": "/",
+    "scroll": 1275,
+    "width": 1280
+  },
+  {
+    "h1": "Cases",
+    "height": 800,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 1275,
+    "width": 1280
+  },
+  {
+    "h1": "Analytics",
+    "height": 800,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 1275,
+    "width": 1280
+  },
+  {
+    "h1": "Dashboard",
+    "height": 1080,
+    "overflow": [],
+    "path": "/",
+    "scroll": 1915,
+    "width": 1920
+  },
+  {
+    "h1": "Cases",
+    "height": 1080,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 1920,
+    "width": 1920
+  },
+  {
+    "h1": "Analytics",
+    "height": 1080,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 1915,
+    "width": 1920
+  },
+  {
+    "h1": "Dashboard",
+    "height": 1080,
+    "overflow": [],
+    "path": "/",
+    "scroll": 2555,
+    "width": 2560
+  },
+  {
+    "h1": "Cases",
+    "height": 1080,
+    "overflow": [],
+    "path": "/cases",
+    "scroll": 2560,
+    "width": 2560
+  },
+  {
+    "h1": "Analytics",
+    "height": 1080,
+    "overflow": [],
+    "path": "/analytics",
+    "scroll": 2555,
+    "width": 2560
+  }
+]

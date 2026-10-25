@@ -1,0 +1,44 @@
+
+  GitNexus Status (1.6.12)
+Repository: /mnt/d/Dev/Projects/IMMI-Case-
+Branch: codex/fix-review-13
+Indexed: 10/16/2026, 7:59:04 AM
+Indexed commit: 4144917
+Current commit: 4144917
+Indexed analyzer runner identity: {"schemaVersion":4,"runtime":{"executablePath":"/opt/nodejs/node-v22.23.3-linux-x64/bin/node","version":"v22.23.3","platform":"linux","architecture":"x64","modulesAbi":"127","libc":"glibc:2.39"},"cliVersion":"1.6.12","invokedArtifact":{"path":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/dist/cli/index.js","digest":"sha256:e2c96d62b26a1898e536457377f7b73c539b080c7e8c316869ffc6a790003eb4"},"build":{"kind":"distribution","rootPath":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/dist","canonicalization":"gitnexus-analyzer-build-v2","digest":"sha256:262cf80deec8ff56ec019ac08406b7098bf40ae07756aa02ef8fa42720d3583e"},"dependencyRuntime":{"manifestPath":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/package.json","lockfilePath":"/root/.npm/_npx/e46929201c1128dd/package-lock.json","canonicalization":"gitnexus-analyzer-dependency-runtime-v4","packageCount":253,"artifactCount":12373,"digest":"sha256:34ee9a5b96a0345a7159801c4295557d16aa5c1b0ac98a12d10fb32ec7b1899c"}}
+Current analyzer runner identity: {"schemaVersion":4,"runtime":{"executablePath":"/opt/nodejs/node-v22.23.3-linux-x64/bin/node","version":"v22.23.3","platform":"linux","architecture":"x64","modulesAbi":"127","libc":"glibc:2.39"},"cliVersion":"1.6.12","invokedArtifact":{"path":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/dist/cli/index.js","digest":"sha256:e2c96d62b26a1898e536457377f7b73c539b080c7e8c316869ffc6a790003eb4"},"build":{"kind":"distribution","rootPath":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/dist","canonicalization":"gitnexus-analyzer-build-v2","digest":"sha256:262cf80deec8ff56ec019ac08406b7098bf40ae07756aa02ef8fa42720d3583e"},"dependencyRuntime":{"manifestPath":"/root/.npm/_npx/e46929201c1128dd/node_modules/gitnexus/package.json","lockfilePath":"/root/.npm/_npx/e46929201c1128dd/package-lock.json","canonicalization":"gitnexus-analyzer-dependency-runtime-v4","packageCount":253,"artifactCount":12373,"digest":"sha256:34ee9a5b96a0345a7159801c4295557d16aa5c1b0ac98a12d10fb32ec7b1899c"}}
+Index content: 32 changed, 198 added, 88 deleted
+  changed: frontend/package.json
+  changed: frontend/src/App.tsx
+  changed: frontend/src/components/analytics/ChartCard.tsx
+  changed: frontend/src/components/analytics/OutcomeFunnelChart.tsx
+  changed: frontend/src/components/analytics/SuccessRateCalculator.tsx
+  changed: frontend/src/components/cases/CasesFilters.tsx
+  changed: frontend/src/components/layout/AppLayout.tsx
+  changed: frontend/src/components/layout/MobileNav.tsx
+  changed: frontend/src/components/layout/Sidebar.tsx
+  changed: frontend/src/components/layout/Topbar.tsx
+  ...and 22 more changed
+  added: DESIGN.md
+  added: PRODUCT.md
+  added: docs/news-updates-design-20261016/DOCUMENTATION.md
+  added: docs/news-updates-design-20261016/PROMPT.md
+  added: docs/news-updates-design-20261016/README.md
+  added: docs/news-updates-design-20261016/SOURCES.md
+  added: docs/news-updates-design-20261016/VERIFICATION.md
+  added: docs/news-updates-design-20261016/fonts/prepare_news_font.py
+  added: docs/news-updates-design-20261016/fonts/provenance.json
+  added: docs/news-updates-design-20261016/sticker-assets/README.md
+  ...and 188 more added
+  deleted: immi_case_downloader/static/react/assets/AdminPipelineRunsPage-BRxnLuSr.js
+  deleted: immi_case_downloader/static/react/assets/AnalyticsFilters-DK0cCEVr.js
+  deleted: immi_case_downloader/static/react/assets/AnalyticsPage-Divd9rt9.js
+  deleted: immi_case_downloader/static/react/assets/ApiErrorState-Cj_bnaTe.js
+  deleted: immi_case_downloader/static/react/assets/BookmarkButton-DxjfBVRe.js
+  deleted: immi_case_downloader/static/react/assets/Breadcrumb-vCyZ9exU.js
+  deleted: immi_case_downloader/static/react/assets/CaseAddPage-CwJ7vL5b.js
+  deleted: immi_case_downloader/static/react/assets/CaseCard-DEDuMSVO.js
+  deleted: immi_case_downloader/static/react/assets/CaseComparePage-CbLApIu3.js
+  deleted: immi_case_downloader/static/react/assets/CaseDetailPage-Dh0TnRKS.js
+  ...and 78 more deleted
+Status: ⚠️ stale (re-run gitnexus analyze)

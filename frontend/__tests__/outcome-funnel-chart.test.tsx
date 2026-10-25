@@ -27,6 +27,7 @@ describe("OutcomeFunnelChart - pure CSS rewrite (C5)", () => {
     const winsLabel = screen.getByText(/Wins/i);
     // Check either class or inline style contains green
     const hasGreen =
+      winsLabel.className.includes("text-success") ||
       winsLabel.className.includes("green") ||
       (winsLabel.parentElement?.className ?? "").includes("green");
     expect(hasGreen).toBe(true);
@@ -36,6 +37,7 @@ describe("OutcomeFunnelChart - pure CSS rewrite (C5)", () => {
     render(<OutcomeFunnelChart winCount={60} lossCount={40} />);
     const lossLabel = screen.getByText(/Losses/i);
     const hasRed =
+      lossLabel.className.includes("text-danger") ||
       lossLabel.className.includes("red") ||
       (lossLabel.parentElement?.className ?? "").includes("red");
     expect(hasRed).toBe(true);

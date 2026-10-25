@@ -1,0 +1,34 @@
+.........................F....................................F......... [ 96%]
+...                                                                      [100%]
+=================================== FAILURES ===================================
+___________ TestFilters.test_court_filter_changes_results[chromium] ____________
+tests/e2e/react/test_react_cases_list.py:117: in test_court_filter_changes_results
+    assert rows.count() < 10
+E   AssertionError: assert 10 < 10
+E    +  where 10 = count()
+E    +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:5194/cases?court=FCA&page=1'> selector='tbody tr'>.count
+______________ TestDarkModeCases.test_case_detail_dark[chromium] _______________
+tests/e2e/react/test_react_dark_mode.py:129: in test_case_detail_dark
+    react_navigate(react_page, f"/cases/{case_id}")
+tests/e2e/react/react_helpers.py:113: in react_navigate
+    wait_for_react(page)
+tests/e2e/react/react_helpers.py:119: in wait_for_react
+    page.wait_for_selector("#root", state="attached", timeout=timeout)
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:21370: in wait_for_selector
+    self._sync(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_page.py:431: in wait_for_selector
+    return await self._main_frame.wait_for_selector(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:395: in wait_for_selector
+    await self._channel.send(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 15000ms exceeded.
+E   Call log:
+E     - waiting for locator("#root")
+=========================== short test summary info ============================
+FAILED tests/e2e/react/test_react_cases_list.py::TestFilters::test_court_filter_changes_results[chromium]
+FAILED tests/e2e/react/test_react_dark_mode.py::TestDarkModeCases::test_case_detail_dark[chromium]
+2 failed, 73 passed in 134.27s (0:02:14)

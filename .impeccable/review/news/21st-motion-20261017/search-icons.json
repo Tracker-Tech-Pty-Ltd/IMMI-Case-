@@ -1,0 +1,38 @@
+[
+  {
+    "type": "component",
+    "id": 28541,
+    "name": "Animated Icon Buttons",
+    "description": "A set of interactive icon buttons (arrow, menu, volume) with hover and click micro-animations, useful for toolbars and navigation controls.",
+    "previewUrl": "https://cdn.21st.dev/user_skiper-ui/skiper99/default/preview.1789986472734.png",
+    "videoUrl": "https://cdn.21st.dev/user_skiper-ui/skiper99/default/video.1789986487868.mp4",
+    "author": "reuno-ui",
+    "authorImage": "https://www.google.com/s2/favicons?domain=skiper-ui.com&sz=128",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/reuno-ui/skiper99?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@reuno-ui/components/skiper99"
+  },
+  {
+    "type": "component",
+    "id": 10058,
+    "name": "Animated State Icons",
+    "description": "12 icons that continuously morph between two meaningful states — loading→checkmark, hamburger→X, play→pause, lock→unlock, copy→copied, bell→notification, heart fill/unfill, download→done, send→fly, toggle switch, eye→hidden, volume→mute. Each cycles on its own timer with spring physics and smooth transitions. Import individually and control the toggle programmatically.",
+    "previewUrl": "https://cdn.21st.dev/user_39US82jUnMicURPKQSF6KHvMUo3/animated-state-icons/default/preview.1786451127140.webp",
+    "videoUrl": "https://cdn.21st.dev/user_39US82jUnMicURPKQSF6KHvMUo3/animated-state-icons/default/video.1786451131141.mp4",
+    "author": "dev.yadhakim",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ29vZ2xlL2ltZ18zOVVTODJUMHo3c3hsejk4T3lKVU5DaW1YWVIifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/dev.yadhakim/animated-state-icons?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@dev.yadhakim/components/animated-state-icons"
+  },
+  {
+    "type": "component",
+    "id": 37504,
+    "name": "Animated Icon",
+    "description": "Replayable micro-interactions for the full Cojeev icon library, with semantic motion families and optional visual treatments.",
+    "previewUrl": "https://cdn.21st.dev/user_3KW6Oj1QC9S2YdFe5GWCVMoh9AR/animated-icon/default/preview.1791822823261.webp",
+    "videoUrl": "https://cdn.21st.dev/user_3KW6Oj1QC9S2YdFe5GWCVMoh9AR/animated-icon/default/video.1791822810001.mp4",
+    "author": "luv-jeri_c92deb60",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ2l0aHViL2ltZ18zS1c2T2dXRGRtMjVLTk9TMTFMcUJiT2E1VG4ifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/luv-jeri_c92deb60/animated-icon?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@luv-jeri_c92deb60/components/animated-icon"
+  }
+]

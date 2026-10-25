@@ -530,7 +530,7 @@ class SmartPipeline:
         dupes_removed = 0
 
         with csv_write_lock(os.path.join(self.output_dir, CASES_CSV)):
-            cases = load_all_cases(self.output_dir)
+            cases = load_all_cases(self.output_dir, use_cache=False)
 
             # Fix year=0: extract from citation [YYYY]
             if self.config.fix_year_zero:

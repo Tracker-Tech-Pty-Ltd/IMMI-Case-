@@ -27,10 +27,10 @@ function OutcomeFunnelChartInner({ winCount, lossCount }: OutcomeFunnelChartProp
     >
       {/* Two stat numbers */}
       <div className="flex justify-between text-xs">
-        <span className="font-semibold text-green-600 dark:text-green-400">
+        <span className="font-semibold text-success">
           {t("analytics.wins", { defaultValue: "Wins" })}: {winCount.toLocaleString()}
         </span>
-        <span className="font-semibold text-red-600 dark:text-red-400">
+        <span className="font-semibold text-danger">
           {t("analytics.losses", { defaultValue: "Losses" })}: {lossCount.toLocaleString()}
         </span>
       </div>
@@ -39,15 +39,15 @@ function OutcomeFunnelChartInner({ winCount, lossCount }: OutcomeFunnelChartProp
         {total > 0 ? (
           <>
             <div
-              className="flex items-center justify-center text-xs font-medium text-white"
-              style={{ width: `${winPct}%`, backgroundColor: "#1f8a4d" }}
+              className="flex items-center justify-center bg-success text-xs font-medium text-on-solid"
+              style={{ width: `${winPct}%` }}
               data-testid="win-bar"
             >
               {winPct >= 12 ? `${winPct.toFixed(0)}%` : ""}
             </div>
             <div
-              className="flex items-center justify-center text-xs font-medium text-white"
-              style={{ width: `${lossPct}%`, backgroundColor: "#b64040" }}
+              className="flex items-center justify-center bg-danger text-xs font-medium text-on-solid"
+              style={{ width: `${lossPct}%` }}
               data-testid="loss-bar"
             >
               {lossPct >= 12 ? `${lossPct.toFixed(0)}%` : ""}

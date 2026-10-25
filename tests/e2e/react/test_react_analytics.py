@@ -87,14 +87,14 @@ class TestAnalyticsFilters:
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
         assert react_page.get_by_role("button", name="All Time", exact=True).is_visible()
-        assert react_page.get_by_role("button", name="Last 5y", exact=True).is_visible()
-        assert react_page.get_by_role("button", name="Last 10y", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="Last 5 Years", exact=True).is_visible()
+        assert react_page.get_by_role("button", name="Last 10 Years", exact=True).is_visible()
 
     def test_click_time_preset(self, react_page):
         """Clicking a time preset activates it."""
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        btn = react_page.get_by_role("button", name="Last 5y", exact=True)
+        btn = react_page.get_by_role("button", name="Last 5 Years", exact=True)
         btn.click()
         react_page.wait_for_timeout(500)
         classes = btn.get_attribute("class") or ""

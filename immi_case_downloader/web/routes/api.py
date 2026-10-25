@@ -1464,6 +1464,9 @@ def analytics_outcomes():
                         by_family[get_family(cleaned)][norm] += 1
         except FuturesTimeoutError:
             logger.warning("analytics_outcomes fallback timed out, returning empty result")
+        except RuntimeError as exc:
+            if "shutdown" not in str(exc).lower():
+                logger.warning("analytics_outcomes fallback failed, returning empty result", exc_info=True)
         except Exception:
             logger.warning("analytics_outcomes fallback failed, returning empty result", exc_info=True)
 
@@ -1534,6 +1537,9 @@ def analytics_judges():
                         judge_courts[key].add(c.court_code)
         except FuturesTimeoutError:
             logger.warning("analytics_judges fallback timed out, returning empty result")
+        except RuntimeError as exc:
+            if "shutdown" not in str(exc).lower():
+                logger.warning("analytics_judges fallback failed, returning empty result", exc_info=True)
         except Exception:
             logger.warning("analytics_judges fallback failed, returning empty result", exc_info=True)
 
@@ -1590,6 +1596,9 @@ def analytics_legal_concepts():
                     concept_counter[concept] += 1
         except FuturesTimeoutError:
             logger.warning("analytics_legal_concepts fallback timed out, returning empty result")
+        except RuntimeError as exc:
+            if "shutdown" not in str(exc).lower():
+                logger.warning("analytics_legal_concepts fallback failed, returning empty result", exc_info=True)
         except Exception:
             logger.warning("analytics_legal_concepts fallback failed, returning empty result", exc_info=True)
 
@@ -1641,6 +1650,9 @@ def analytics_nature_outcome():
                 nature_outcome[c.case_nature][norm] += 1
         except FuturesTimeoutError:
             logger.warning("analytics_nature_outcome fallback timed out, returning empty result")
+        except RuntimeError as exc:
+            if "shutdown" not in str(exc).lower():
+                logger.warning("analytics_nature_outcome fallback failed, returning empty result", exc_info=True)
         except Exception:
             logger.warning("analytics_nature_outcome fallback failed, returning empty result", exc_info=True)
 

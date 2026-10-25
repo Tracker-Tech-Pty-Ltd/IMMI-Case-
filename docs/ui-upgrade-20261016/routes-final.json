@@ -1,0 +1,92 @@
+[
+  {
+    "documentWidth": 391,
+    "heading": "案例收藏",
+    "route": "/collections",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "已儲存搜尋",
+    "route": "/saved-searches",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "導引搜尋",
+    "route": "/taxonomy",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "導引搜尋",
+    "route": "/guided-search",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "語意搜尋",
+    "route": "/search/semantic",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "LLM 移民評議會",
+    "route": "/llm-council",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "資料工具",
+    "route": "/data-tools",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "法院沿革時間軸",
+    "route": "/court-lineage",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "法律法規",
+    "route": "/legislations",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "資料字典",
+    "route": "/data-dictionary",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "法官檔案",
+    "route": "/judge-profiles",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "[2024] AATA 200",
+    "route": "/cases/6c00ba654bcc",
+    "width": 391
+  },
+  {
+    "documentWidth": 385,
+    "heading": "新增案件",
+    "route": "/cases/add",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "案例對照",
+    "route": "/cases/compare",
+    "width": 391
+  },
+  {
+    "documentWidth": 391,
+    "heading": "IMMI Case",
+    "route": "/login",
+    "width": 391
+  }
+]

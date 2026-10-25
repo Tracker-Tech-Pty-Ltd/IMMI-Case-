@@ -31,8 +31,8 @@ function ChartCardInner({
 
   return (
     <div
-      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 400px" }}
-      className={`flex h-full flex-col rounded-lg border border-border bg-card p-4 ${className ?? ""}`}
+      style={{ contentVisibility: "auto", containIntrinsicBlockSize: "auto 400px" }}
+      className={`flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4 ${className ?? ""}`}
     >
       <h3 className="mb-3 font-heading text-base font-semibold text-foreground">
         {title}
@@ -59,7 +59,7 @@ function ChartCardInner({
           />
         </div>
       ) : (
-        <div className="min-h-0 flex-1">{children}</div>
+        <div className="min-h-0 min-w-0 flex-1">{children}</div>
       )}
     </div>
   );

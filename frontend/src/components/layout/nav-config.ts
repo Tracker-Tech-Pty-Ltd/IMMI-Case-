@@ -15,6 +15,7 @@ import {
   Scale,
   ShieldCheck,
   Zap,
+  Newspaper,
 } from "lucide-react";
 
 export interface AppNavItem {
@@ -36,10 +37,15 @@ export const APP_NAV_GROUPS: readonly AppNavGroup[] = [
     titleKey: "nav.browse",
     items: [
       { to: "/", icon: LayoutDashboard, labelKey: "nav.dashboard" },
+      { to: "/cases", icon: FileText, labelKey: "nav.cases" },
       { to: "/analytics", icon: TrendingUp, labelKey: "nav.analytics" },
       { to: "/judge-profiles", icon: Users, labelKey: "nav.judge_profiles" },
-      { to: "/court-lineage", icon: Network, labelKey: "nav.court_lineage" },
-      { to: "/cases", icon: FileText, labelKey: "nav.cases" },
+      { to: "/news", icon: Newspaper, labelKey: "nav.news", descriptionKey: "nav_descriptions.news" },
+    ],
+  },
+  {
+    titleKey: "nav.workspace",
+    items: [
       {
         to: "/collections",
         icon: BookmarkCheck,
@@ -83,6 +89,7 @@ export const APP_NAV_GROUPS: readonly AppNavGroup[] = [
   {
     titleKey: "nav.reference",
     items: [
+      { to: "/court-lineage", icon: Network, labelKey: "nav.court_lineage" },
       {
         to: "/legislations",
         icon: BookMarked,

@@ -18,6 +18,7 @@ import sqlite3
 import uuid
 
 from .extraction.grounded import CORE_FIELDS, RULE_VERSION, assess_case, canonical_citation, citation_from_url, document_text
+from .atomic_file import replace_file
 from .repair_workflow import REASONS, blank, digest, encode, load_jev_cache, open_ledger, utc_now
 
 DOWNLOAD_FIELDS = ("date", "judges", "catchwords", "outcome", "visa_type", "legislation", "full_text_path")
@@ -313,13 +314,13 @@ def persist_downloads(repo, downloaded: list, originals: dict[str, dict], base_d
                         row[field] = after
             temporary = json_path.with_name(json_path.name + "." + uuid.uuid4().hex + ".tmp")
             temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(temporary, json_path)
+            replace_file(temporary, json_path)
         temporary = csv_path.with_name(csv_path.name + "." + uuid.uuid4().hex + ".tmp")
         with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
-        os.replace(temporary, csv_path)
+        replace_file(temporary, csv_path)
         from .storage import invalidate_cases_cache
         invalidate_cases_cache()
         return len(patches)

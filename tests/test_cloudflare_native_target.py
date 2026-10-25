@@ -52,6 +52,12 @@ class_name = "AuthNonce"
 [[durable_objects.bindings]]
 name = "COUNCIL_SESSION"
 class_name = "CouncilSessionDO"
+[[durable_objects.bindings]]
+name = "CASE_MUTATION_COORDINATOR"
+class_name = "CaseMutationDO"
+[[migrations]]
+tag = "case-mutation-coordinator-v1"
+new_sqlite_classes = ["CaseMutationDO"]
 [[queues.producers]]
 binding = "CASE_MUTATION_QUEUE"
 queue = "immi-case-mutation-queue"
@@ -234,3 +240,21 @@ def test_operator_gate_rejects_a_boolean_council_rate_limit(tmp_path: Path) -> N
     errors: list[str] = []
     MODULE._validate_main(main, errors)
     assert any("positive integer" in error for error in errors)
+
+
+def test_operator_gate_requires_catalog_mutation_coordinator(tmp_path: Path) -> None:
+    main = tmp_path / "main.toml"
+    main.write_text(_valid_main().replace('name = "CASE_MUTATION_COORDINATOR"', 'name = "MISSING_COORDINATOR"'), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert any("CASE_MUTATION_COORDINATOR" in error for error in errors)
+
+
+@pytest.mark.parametrize("replacement", ["WrongClass", "MissingMigration"])
+def test_operator_gate_rejects_wrong_coordinator_class_or_migration(tmp_path: Path, replacement: str) -> None:
+    main = tmp_path / "main.toml"
+    original = 'class_name = "CaseMutationDO"' if replacement == "WrongClass" else 'new_sqlite_classes = ["CaseMutationDO"]'
+    main.write_text(_valid_main().replace(original, original.replace("CaseMutationDO", replacement)), encoding="utf-8")
+    errors: list[str] = []
+    MODULE._validate_main(main, errors)
+    assert any("CaseMutationDO" in error for error in errors)

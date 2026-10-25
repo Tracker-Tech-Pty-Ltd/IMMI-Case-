@@ -8,6 +8,7 @@ const prefetchMap: Record<string, () => Promise<unknown>> = {
   "/analytics": () => import("@/pages/AnalyticsPage"),
   "/judge-profiles": () => import("@/pages/JudgeProfilesPage"),
   "/cases": () => import("@/pages/CasesPage"),
+  "/news": () => import("@/pages/NewsPage"),
   "/llm-council": () => import("@/pages/LlmCouncilPage"),
   "/llm-council/sessions": () => import("@/pages/LlmCouncilSessionsPage"),
   "/data-tools": () => import("@/pages/DataToolsPage"),

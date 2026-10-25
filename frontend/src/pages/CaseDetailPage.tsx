@@ -8,7 +8,6 @@ import {
   Check,
   BookmarkPlus,
   Plus,
-  Scale,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useCase, useRelatedCases, useDeleteCase } from "@/hooks/use-cases";
@@ -24,6 +23,10 @@ import { CaseMutationsDisabledNotice } from "@/components/shared/CaseMutationsDi
 import { CaseTextViewer } from "@/components/cases/CaseTextViewer";
 import { BookmarkButton } from "@/components/shared/BookmarkButton";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { CodexDisclosure } from "@/components/ui/CodexDisclosure";
+import { CodexSectionNav, type CodexSectionLink } from "@/components/ui/CodexSectionNav";
+import "@/styles/detail-codex.css";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { ApiError } from "@/lib/api";
@@ -172,11 +175,18 @@ export function CaseDetailPage() {
 
   const c = data.case;
   const fullText = data.full_text;
+  const sections: CodexSectionLink[] = [
+    { id: "case-information", label: t("cases.case_information", { defaultValue: "Case information" }), sticker: "dictionary" },
+    ...(c.catchwords ? [{ id: "case-catchwords", label: t("case_detail.catchwords", { defaultValue: "Catchwords" }), sticker: "summary" } as const] : []),
+    ...(c.legal_concepts ? [{ id: "case-concepts", label: t("cases.legal_concepts", { defaultValue: "Legal concepts" }), sticker: "research" } as const] : []),
+    ...(related?.cases.length ? [{ id: "case-related", label: t("cases.related_cases", { defaultValue: "Related cases" }), sticker: "cases" } as const] : []),
+    ...(fullText ? [{ id: "case-full-text", label: t("components.case_text_viewer.full_text", { defaultValue: "Full text" }), sticker: "document" } as const] : []),
+  ];
 
   return (
-    <div className="space-y-4">
+    <div className="codex-detail-page codex-case-detail space-y-4">
       {/* Breadcrumb + actions */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="codex-detail-toolbar flex flex-wrap items-center justify-between gap-2">
         <Breadcrumb
           items={[
             { label: t("cases.title"), href: "/cases" },
@@ -192,7 +202,7 @@ export function CaseDetailPage() {
             })}
             className="flex items-center gap-1 rounded-md border border-accent/40 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/5"
           >
-            <Scale className="h-3.5 w-3.5" />
+            <CodexSticker id="council" />
             {t("case_detail.ask_council", {
               defaultValue: "Ask the Council about this case",
             })}
@@ -204,7 +214,8 @@ export function CaseDetailPage() {
               rel="noopener noreferrer"
               className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-surface"
             >
-              <ExternalLink className="h-3.5 w-3.5" /> {t("cases.url")}
+              <CodexSticker id="original" /> {t("cases.url")}
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             </a>
           )}
           <AddToCollectionMenu
@@ -231,13 +242,14 @@ export function CaseDetailPage() {
 
       {mutationsDisabled && <CaseMutationsDisabledNotice />}
 
-      <div className="rounded-lg border border-border bg-card p-5">
+      <div className="codex-dossier-header rounded-lg border border-border bg-card p-5">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <CourtBadge court={c.court_code} />
           <OutcomeBadge outcome={c.outcome} />
           <NatureBadge nature={c.case_nature} />
         </div>
         <PageHeader
+          icon={<CodexSticker id="document" className="codex-detail-emblem" />}
           title={c.citation || c.title}
           description={
             c.title && c.citation && c.title !== c.citation ? c.title : undefined
@@ -258,6 +270,8 @@ export function CaseDetailPage() {
                 }}
                 className="rounded-md border border-border px-2.5 py-1.5 text-muted-text hover:bg-surface hover:text-foreground"
                 title={t("case_detail.copy_citation")}
+                aria-label={t("case_detail.copy_citation", { defaultValue: "Copy citation" })}
+                aria-live="polite"
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-success" />
@@ -278,8 +292,10 @@ export function CaseDetailPage() {
         />
       </div>
 
+      <CodexSectionNav key={c.case_id} label={t("case_detail.sections_label", { defaultValue: "Case chapters" })} sections={sections} />
+
       {/* Case Information — consolidated single card */}
-      <div className="rounded-lg border border-border bg-card p-5">
+      <div id="case-information" tabIndex={-1} className="codex-dossier-section codex-case-metadata rounded-lg border border-border bg-card p-5">
         <h2 className="mb-3 font-heading text-base font-semibold text-foreground">
           {t("cases.case_information")}
         </h2>
@@ -343,19 +359,18 @@ export function CaseDetailPage() {
 
       {/* Catchwords */}
       {c.catchwords && (
-        <div className="rounded-lg border border-border bg-card p-5">
-          <h2 className="mb-2 font-heading text-base font-semibold">
-            {t("case_detail.catchwords")}
-          </h2>
+        <div id="case-catchwords" tabIndex={-1} className="codex-dossier-section">
+        <CodexDisclosure title={t("case_detail.catchwords", { defaultValue: "Catchwords" })} sticker="summary">
           <p className="text-sm leading-relaxed text-muted-text">
             {c.catchwords}
           </p>
+        </CodexDisclosure>
         </div>
       )}
 
       {/* Legal Concepts */}
       {c.legal_concepts && (
-        <div className="rounded-lg border border-border bg-card p-5">
+        <div id="case-concepts" tabIndex={-1} className="codex-dossier-section rounded-lg border border-border bg-card p-5">
           <h2 className="mb-2 font-heading text-base font-semibold">
             {t("cases.legal_concepts")}
           </h2>
@@ -379,7 +394,7 @@ export function CaseDetailPage() {
 
       {/* Notes & Tags */}
       {(c.tags || c.user_notes) && (
-        <div className="rounded-lg border border-border bg-card p-5">
+        <div className="codex-dossier-section rounded-lg border border-border bg-card p-5">
           <h2 className="mb-2 font-heading text-base font-semibold">
             {t("case_detail.notes")} & {t("case_detail.tags")}
           </h2>
@@ -420,7 +435,7 @@ export function CaseDetailPage() {
 
       {/* Related cases */}
       {related && related.cases.length > 0 && (
-        <div className="rounded-lg border border-border bg-card p-5">
+        <div id="case-related" tabIndex={-1} className="codex-dossier-section rounded-lg border border-border bg-card p-5">
           <h2 className="mb-3 font-heading text-base font-semibold">
             {t("cases.related_cases")}
           </h2>
@@ -452,7 +467,7 @@ export function CaseDetailPage() {
       />
 
       {/* Full text */}
-      {fullText && <CaseTextViewer text={fullText} citation={c.citation} />}
+      {fullText && <section id="case-full-text" tabIndex={-1} className="codex-dossier-section"><CaseTextViewer text={fullText} citation={c.citation} /></section>}
 
       {/* Delete modal */}
       <ConfirmModal

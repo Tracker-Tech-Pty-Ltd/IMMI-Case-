@@ -1,0 +1,25 @@
+...........................F.................................            [100%]
+=================================== FAILURES ===================================
+_____________ TestActionButtons.test_breadcrumb_visible[chromium] ______________
+tests/e2e/react/test_react_case_detail.py:129: in test_breadcrumb_visible
+    assert breadcrumb.is_visible()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py:12657: in is_visible
+    self._sync(self._impl_obj.is_visible(timeout=to_milliseconds(timeout)))
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_locator.py:569: in is_visible
+    return await self._frame.is_visible(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_frame.py:434: in is_visible
+    return await self._channel.send(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+/opt/immi-case-review-20261016/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.Error: Locator.is_visible: Error: strict mode violation: locator("main nav").filter(has_text="Cases") resolved to 2 elements:
+E       1) <nav aria-label="Breadcrumb" class="flex min-w-0 flex-wrap items-center gap-1 font-data text-sm text-muted-text">…</nav> aka get_by_role("navigation", name="Breadcrumb")
+E       2) <nav class="codex-section-nav" aria-label="Case chapters">…</nav> aka get_by_role("navigation", name="Case chapters")
+E   
+E   Call log:
+E       - checking visibility of locator("main nav").filter(has_text="Cases")
+=========================== short test summary info ============================
+FAILED tests/e2e/react/test_react_case_detail.py::TestActionButtons::test_breadcrumb_visible[chromium]
+1 failed, 60 passed in 113.25s (0:01:53)

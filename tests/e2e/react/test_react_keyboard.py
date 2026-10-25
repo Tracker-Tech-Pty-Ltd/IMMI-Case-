@@ -21,12 +21,13 @@ def _is_dashboard_url(url: str) -> bool:
 
 
 class TestNavigationShortcuts:
-    """Keys d, c, p navigate to Dashboard, Cases, Pipeline."""
+    """Go-to chords navigate to Dashboard, Cases and the merged Data Tools."""
 
     def test_d_goes_to_dashboard(self, react_page):
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         _focus_body(react_page)
+        react_page.keyboard.press("g")
         react_page.keyboard.press("d")
         react_page.wait_for_timeout(1000)
         assert _is_dashboard_url(react_page.url)
@@ -35,17 +36,20 @@ class TestNavigationShortcuts:
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         _focus_body(react_page)
+        react_page.keyboard.press("g")
         react_page.keyboard.press("c")
         react_page.wait_for_timeout(1000)
         assert "/cases" in react_page.url
 
     def test_p_goes_to_pipeline(self, react_page):
+        """The retired Pipeline shortcut is now the g,t Data Tools chord."""
         react_navigate(react_page, "/")
         wait_for_loading_gone(react_page)
         _focus_body(react_page)
-        react_page.keyboard.press("p")
+        react_page.keyboard.press("g")
+        react_page.keyboard.press("t")
         react_page.wait_for_timeout(1000)
-        assert "/pipeline" in react_page.url
+        assert urlparse(react_page.url).path == "/data-tools"
 
     def test_question_mark_goes_to_design_tokens(self, react_page):
         """? key navigates to Design Tokens page."""
@@ -83,19 +87,19 @@ class TestInputExclusion:
     """Shortcuts are disabled when typing in INPUT, TEXTAREA, SELECT."""
 
     def test_shortcut_disabled_in_input(self, react_page):
-        """Pressing 'd' while focused on an input should NOT navigate."""
+        """Typing a complete go-to chord in an input must not navigate."""
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
         # Use the keyword filter input on the cases page
         keyword_input = react_page.locator("input[placeholder*='earch']")
         keyword_input.click()
-        keyword_input.type("d")
+        keyword_input.type("gd")
         react_page.wait_for_timeout(300)
         # Should still be on cases page
         assert "/cases" in react_page.url
 
     def test_shortcut_disabled_in_textarea(self, react_page):
-        """Pressing 'c' while focused on a textarea should NOT navigate."""
+        """Typing a complete go-to chord in a textarea must not navigate."""
         # Navigate to edit page which has textarea fields
         react_navigate(react_page, "/cases")
         wait_for_loading_gone(react_page)
@@ -108,11 +112,11 @@ class TestInputExclusion:
         wait_for_loading_gone(react_page)
 
         textarea = react_page.locator("textarea").first
-        if textarea.count() > 0:
-            textarea.click()
-            textarea.type("c")
-            react_page.wait_for_timeout(300)
-            assert "/edit" in react_page.url  # Should stay on edit page
+        textarea.wait_for(state="visible")
+        textarea.click()
+        textarea.type("gc")
+        react_page.wait_for_timeout(300)
+        assert "/edit" in react_page.url
 
     def test_shortcut_works_after_blur(self, react_page):
         """After blurring an input, shortcuts work again."""
@@ -124,7 +128,8 @@ class TestInputExclusion:
         # Click outside to blur
         react_page.locator("h1").click()
         react_page.wait_for_timeout(200)
-        # Now 'd' should navigate to dashboard
+        # The complete chord should work again once focus leaves the input.
+        react_page.keyboard.press("g")
         react_page.keyboard.press("d")
         react_page.wait_for_timeout(1000)
         assert _is_dashboard_url(react_page.url)

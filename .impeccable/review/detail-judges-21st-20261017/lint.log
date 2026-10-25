@@ -1,0 +1,6 @@
+
+/mnt/d/Dev/Projects/IMMI-Case-/frontend/src/components/judges/JudgeCard.tsx
+  104:13  warning  Non-interactive elements should not be assigned mouse or keyboard event listeners  jsx-a11y/no-noninteractive-element-interactions
+
+✖ 1 problem (0 errors, 1 warning)
+

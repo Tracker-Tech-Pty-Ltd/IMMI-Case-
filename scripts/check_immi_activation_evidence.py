@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ EXPECTED_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b"
 EXPECTED_EMBEDDING_DIMENSIONS = 1024
 EXPECTED_EMBEDDING_METRIC = "cosine"
 REQUIRED_D1_BINDINGS = ("IMMI_CATALOG_DB", "IMMI_ACCOUNT_DB", "IMMI_OPS_DB")
+ROOT = Path(__file__).resolve().parents[1]
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
 EXPECTED_VECTOR_METADATA_INDEXES = {
     "court_code": "string",
@@ -97,7 +99,7 @@ def _release_identity(payload: dict[str, Any]) -> dict[str, str]:
 
     release = _object(payload, "release")
     git_sha = _non_empty_string(release.get("git_sha"), "release.git_sha")
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", git_sha):
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", git_sha) or git_sha == "0" * 40:
         raise ActivationEvidenceError("release.git_sha must be a 40-character commit SHA")
     main_version = _non_empty_string(
         release.get("main_worker_version_id"),
@@ -118,6 +120,25 @@ def _release_identity(payload: dict[str, Any]) -> dict[str, str]:
         "pipeline_worker_version_id": pipeline_version,
         "config_digest": config_digest,
     }
+
+
+def _validate_source_identity(release: dict[str, str]) -> None:
+    """Bind deployment evidence to the pristine source checkout being deployed."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT,
+            check=True, capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        if release["git_sha"].lower() != head.lower():
+            raise ActivationEvidenceError("release.git_sha does not match the source checkout HEAD")
+        clean = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD", "--"], cwd=ROOT,
+            check=False, capture_output=True, timeout=10,
+        )
+        if clean.returncode != 0:
+            raise ActivationEvidenceError("source checkout has uncommitted tracked changes or cannot be verified")
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ActivationEvidenceError("release.git_sha cannot be verified against the source checkout") from exc
 
 
 def _legacy_reference_scan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -608,6 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(payload, dict):
             raise ActivationEvidenceError("evidence root must be an object")
         report = inspect(payload)
+        _validate_source_identity(report["release"])
         if (args.main_config is None) != (args.pipeline_config is None):
             raise ActivationEvidenceError(
                 "--main-config and --pipeline-config must be supplied together"

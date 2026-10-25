@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockStores = vi.fn();
 const mockRequireAuth = vi.fn();
 const mockVerifyCsrf = vi.fn();
+const mockCoordinator = vi.fn();
 
 vi.mock("../storage/cloudflare.js", () => ({ createCloudflareStores: (...args) => mockStores(...args) }));
 vi.mock("../auth/request_auth.js", () => ({ requireAuth: (...args) => mockRequireAuth(...args) }));
 vi.mock("../auth/csrf.js", () => ({ verifyCsrf: (...args) => mockVerifyCsrf(...args) }));
 vi.mock("../auth/jwt.js", () => ({ verifyJwt: vi.fn() }));
+vi.mock("../case-api/mutation_namespace.js", () => ({ getCaseMutationStub: (...args) => mockCoordinator(...args) }));
 
 import { StorageBoundaryError } from "../storage/contracts.js";
 import { dispatchCloudflareCaseMutation } from "../case-api/cloudflare_mutations.js";
@@ -50,6 +52,24 @@ beforeEach(() => {
   mockVerifyCsrf.mockResolvedValue(null);
   mockRequireAuth.mockResolvedValue({ claims: CLAIMS });
   mockStores.mockReturnValue(stores());
+  mockCoordinator.mockReturnValue({
+    putCase: vi.fn(async ({ record, canonicalText, preserveExisting }) => {
+      const current = mockStores();
+      const previous = preserveExisting ? await current.caseStore.getCase(record.case_id) : {};
+      const patch = Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+      const pointer = await current.objectStore.putCaseSource({ caseId: record.case_id, body: canonicalText });
+      await current.caseStore.putImportedCase({
+        case: { ...previous, ...patch }, sourcePointer: pointer, textChunks: canonicalText ? [canonicalText] : [],
+      });
+      return pointer;
+    }),
+    updateCaseFields: vi.fn(async (id, updates) => mockStores().caseStore.updateCaseFields(id, updates)),
+    deleteCase: vi.fn(async (id) => {
+      await mockStores().caseStore.deleteCase(id);
+      return { affected: 1, updatedAt: "" };
+    }),
+    tagCase: vi.fn(async (id, tag) => ({ affected: await mockStores().caseStore.batchAddTag([id], tag), case: await mockStores().caseStore.getCase(id) })),
+  });
 });
 
 describe("Cloudflare-native case mutations", () => {
@@ -194,14 +214,17 @@ describe("Cloudflare-native case mutations", () => {
     const current = stores();
     mockStores.mockReturnValue(current);
     const queue = { send: vi.fn(async () => undefined) };
+    const reindexCase = vi.fn(async () => ({ status: "deleted" }));
     const response = await dispatchCloudflareCaseMutation(
       request("/api/v1/cases/0123456789ab", {}, "DELETE"),
       "/api/v1/cases/0123456789ab",
-      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue,
+        CASE_MUTATION_COORDINATOR: { getByName: () => ({ reindexCase }) } },
     );
     expect(response.status).toBe(200);
     expect(current.caseStore.deleteCase).toHaveBeenCalledWith("0123456789ab");
-    expect(current.semanticIndex.deleteCase).toHaveBeenCalledWith("0123456789ab");
+    expect(mockCoordinator().deleteCase).toHaveBeenCalledWith("0123456789ab");
+    expect(current.semanticIndex.deleteCase).not.toHaveBeenCalled();
   });
 
   it("queues R2 cleanup and aggregate refresh after a batch delete", async () => {
@@ -214,14 +237,18 @@ describe("Cloudflare-native case mutations", () => {
     }]);
     current.caseStore.batchDeleteCases.mockResolvedValue(1);
     const queue = { send: vi.fn(async () => undefined) };
+    const reindexCase = vi.fn(async () => ({ status: "deleted" }));
     mockStores.mockReturnValue(current);
     const response = await dispatchCloudflareCaseMutation(
       request("/api/v1/cases/batch", { action: "delete", case_ids: ["0123456789ab"] }),
       "/api/v1/cases/batch",
-      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue },
+      { IMMI_STORAGE_MODE: "cloudflare", IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: queue,
+        CASE_MUTATION_COORDINATOR: { getByName: () => ({ reindexCase }) } },
     );
     expect(response.status).toBe(200);
-    expect(queue.send).toHaveBeenCalledWith(expect.objectContaining({ kind: "case.source.delete" }));
+    // Source retirement is owned by the coordinator, whose real storage path
+    // is covered by case-mutation-races.test.js.
+    expect(mockCoordinator().deleteCase).toHaveBeenCalledWith("0123456789ab");
     expect(queue.send).toHaveBeenCalledWith(expect.objectContaining({ kind: "catalog.rebuild" }));
   });
 

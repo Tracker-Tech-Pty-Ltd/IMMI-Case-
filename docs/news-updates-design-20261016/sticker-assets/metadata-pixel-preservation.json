@@ -1,0 +1,722 @@
+[
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/analytics-dark.png",
+    "pixelHashBefore": "c518ec5e969f17bd767eaabb5d4dec5477f5e7a7529b97abe3ba4f23f6fd44aa",
+    "pixelHashAfter": "c518ec5e969f17bd767eaabb5d4dec5477f5e7a7529b97abe3ba4f23f6fd44aa",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/analytics-dark.webp",
+    "pixelHashBefore": "0cd3f74021d29dbb926a357b33db57eddb9cb05e742c4f5c78bd92c352584d37",
+    "pixelHashAfter": "0cd3f74021d29dbb926a357b33db57eddb9cb05e742c4f5c78bd92c352584d37",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/analytics-light.png",
+    "pixelHashBefore": "139d6bf72faf3d8d8fc93ee28e06cdf2ba8aa64e4e3f5271a5d3a6ff9f19c549",
+    "pixelHashAfter": "139d6bf72faf3d8d8fc93ee28e06cdf2ba8aa64e4e3f5271a5d3a6ff9f19c549",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/analytics-light.webp",
+    "pixelHashBefore": "9cb050fc268dd001f0d68c2267a779126cedd137c9a163be1daf3b5154cff8d0",
+    "pixelHashAfter": "9cb050fc268dd001f0d68c2267a779126cedd137c9a163be1daf3b5154cff8d0",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/calendar-dark.png",
+    "pixelHashBefore": "d8531aa8821c47c61e7b604a818d6c8bfbc02fbdc14352b2d5742c2cee753ecb",
+    "pixelHashAfter": "d8531aa8821c47c61e7b604a818d6c8bfbc02fbdc14352b2d5742c2cee753ecb",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/calendar-dark.webp",
+    "pixelHashBefore": "64ddcad71f1b249e01940c399645c418333b06016550c0dc116212ad8141df19",
+    "pixelHashAfter": "64ddcad71f1b249e01940c399645c418333b06016550c0dc116212ad8141df19",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/calendar-light.png",
+    "pixelHashBefore": "7b3c55c3c1a330971572df531ee58e606bcaf26aa88008fcb225563f0ca402e6",
+    "pixelHashAfter": "7b3c55c3c1a330971572df531ee58e606bcaf26aa88008fcb225563f0ca402e6",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/calendar-light.webp",
+    "pixelHashBefore": "e3b29431eaa6f3168e069f3d9f6e97be22b24a640258d70bc2cc3298e3ab9347",
+    "pixelHashAfter": "e3b29431eaa6f3168e069f3d9f6e97be22b24a640258d70bc2cc3298e3ab9347",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/cases-dark.png",
+    "pixelHashBefore": "11ec64f1d63684be60e1ce6f012e36b78986de8bd7fb62cb52d9b66dd9e9b233",
+    "pixelHashAfter": "11ec64f1d63684be60e1ce6f012e36b78986de8bd7fb62cb52d9b66dd9e9b233",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/cases-dark.webp",
+    "pixelHashBefore": "1ada3afc5fe750899385733638cc230ca38f2f02dcfb2308d90febfb1b1312f9",
+    "pixelHashAfter": "1ada3afc5fe750899385733638cc230ca38f2f02dcfb2308d90febfb1b1312f9",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/cases-light.png",
+    "pixelHashBefore": "ec796ada78f00b52e577c06a1742b06c4cbb25f0b7e9be1ab86fd61e0eb0f02e",
+    "pixelHashAfter": "ec796ada78f00b52e577c06a1742b06c4cbb25f0b7e9be1ab86fd61e0eb0f02e",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/cases-light.webp",
+    "pixelHashBefore": "b626eb2a3c84c04b8c4e2b19e3064fdf9a04e42a9a85ebcfa057ee960637b881",
+    "pixelHashAfter": "b626eb2a3c84c04b8c4e2b19e3064fdf9a04e42a9a85ebcfa057ee960637b881",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/clear-dark.png",
+    "pixelHashBefore": "cfe3bca975ae70a73ecc101253b6bbce1a63d0398b440f71049611f819c9f8bb",
+    "pixelHashAfter": "cfe3bca975ae70a73ecc101253b6bbce1a63d0398b440f71049611f819c9f8bb",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/clear-dark.webp",
+    "pixelHashBefore": "792a67b4d7fce2c2f8ff8855dea276bfb420a1e0aa2280009a13d0b6cc6bfe39",
+    "pixelHashAfter": "792a67b4d7fce2c2f8ff8855dea276bfb420a1e0aa2280009a13d0b6cc6bfe39",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/clear-light.png",
+    "pixelHashBefore": "8b5446705c50aee6fab4629a02891b8813dcf7758c9033430cb8ea9fb573050f",
+    "pixelHashAfter": "8b5446705c50aee6fab4629a02891b8813dcf7758c9033430cb8ea9fb573050f",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/clear-light.webp",
+    "pixelHashBefore": "f3190ac6ff18fa720f7218469ac3c22fa7b40f214e3f9f2b30a8bb33bb1b0cc7",
+    "pixelHashAfter": "f3190ac6ff18fa720f7218469ac3c22fa7b40f214e3f9f2b30a8bb33bb1b0cc7",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/codex-dark.png",
+    "pixelHashBefore": "3b72ddd86fb1608facea1c5b3e049563f8c4886adb3e106698be4ad26ec1435e",
+    "pixelHashAfter": "3b72ddd86fb1608facea1c5b3e049563f8c4886adb3e106698be4ad26ec1435e",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/codex-dark.webp",
+    "pixelHashBefore": "4906a08126522f6fdc02e1dcf647e34cae6256df694a6a57cd394fcce4f70784",
+    "pixelHashAfter": "4906a08126522f6fdc02e1dcf647e34cae6256df694a6a57cd394fcce4f70784",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/codex-light.png",
+    "pixelHashBefore": "bdfc03b71550f824cbaeeecf14ca38ee1c241c1e70e52b3dc587aa100607e025",
+    "pixelHashAfter": "bdfc03b71550f824cbaeeecf14ca38ee1c241c1e70e52b3dc587aa100607e025",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/codex-light.webp",
+    "pixelHashBefore": "2aac980f49b1c00f82d0766de0846e908c7d644e87125c9e3ac2cc49579b2a26",
+    "pixelHashAfter": "2aac980f49b1c00f82d0766de0846e908c7d644e87125c9e3ac2cc49579b2a26",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/collections-dark.png",
+    "pixelHashBefore": "d49c8bdd02c6cc44951583174bcc57a8d3b1dfd0beef4afa7cb9d583524f70be",
+    "pixelHashAfter": "d49c8bdd02c6cc44951583174bcc57a8d3b1dfd0beef4afa7cb9d583524f70be",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/collections-dark.webp",
+    "pixelHashBefore": "4b4d05d96af5c0623ee75d7c527cb2222fb9d1518aeeb5916e13431ee09753a8",
+    "pixelHashAfter": "4b4d05d96af5c0623ee75d7c527cb2222fb9d1518aeeb5916e13431ee09753a8",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/collections-light.png",
+    "pixelHashBefore": "6c8ab1f6539c0acbc3a94635246d19be75d3e7f39bce2265655c868380254c22",
+    "pixelHashAfter": "6c8ab1f6539c0acbc3a94635246d19be75d3e7f39bce2265655c868380254c22",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/collections-light.webp",
+    "pixelHashBefore": "a754d5468c9b3dd4390998bc8b31b316e879d5d30f5333a94fe6a364959b3f44",
+    "pixelHashAfter": "a754d5468c9b3dd4390998bc8b31b316e879d5d30f5333a94fe6a364959b3f44",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/council-dark.png",
+    "pixelHashBefore": "8f87e02e2e3236e680917e5b8ff7f761d7a63472aee233233b9f44fba15214ed",
+    "pixelHashAfter": "8f87e02e2e3236e680917e5b8ff7f761d7a63472aee233233b9f44fba15214ed",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/council-dark.webp",
+    "pixelHashBefore": "d046fc7791266bf048156feb394eb1ed3448cb49179e8050c58d7972b48b161d",
+    "pixelHashAfter": "d046fc7791266bf048156feb394eb1ed3448cb49179e8050c58d7972b48b161d",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/council-light.png",
+    "pixelHashBefore": "9aa9bd4dcfc701ecc5a547abb5cf89fe8966c15b62ad86dac6e665cf2c64abfe",
+    "pixelHashAfter": "9aa9bd4dcfc701ecc5a547abb5cf89fe8966c15b62ad86dac6e665cf2c64abfe",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/council-light.webp",
+    "pixelHashBefore": "76e47069219e0396860c5a9548a782c9604dc1eab0762b12c443d35827c43a58",
+    "pixelHashAfter": "76e47069219e0396860c5a9548a782c9604dc1eab0762b12c443d35827c43a58",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/court-update-dark.png",
+    "pixelHashBefore": "19ccef16ee85142c26c9024557ee0b11f0225708cfc37ba593e985b9bd336ca8",
+    "pixelHashAfter": "19ccef16ee85142c26c9024557ee0b11f0225708cfc37ba593e985b9bd336ca8",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/court-update-dark.webp",
+    "pixelHashBefore": "514c5641347411682a656357e953d906e5b75ba10cf55ec32040dfbf3d0d89f2",
+    "pixelHashAfter": "514c5641347411682a656357e953d906e5b75ba10cf55ec32040dfbf3d0d89f2",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/court-update-light.png",
+    "pixelHashBefore": "a1332dea5f33568254a7b409c961c6da968ed44f9181d6a0af460873fd42c04d",
+    "pixelHashAfter": "a1332dea5f33568254a7b409c961c6da968ed44f9181d6a0af460873fd42c04d",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/court-update-light.webp",
+    "pixelHashBefore": "d4eb1d934cc4f97d5e8fef8b901ddac4a3e82301cef77d3459bad5329a2eb691",
+    "pixelHashAfter": "d4eb1d934cc4f97d5e8fef8b901ddac4a3e82301cef77d3459bad5329a2eb691",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/courts-dark.png",
+    "pixelHashBefore": "c356bbf146be3d3f66ec984262f76b8fb0699f784d91de279b67cdf1248dcbbb",
+    "pixelHashAfter": "c356bbf146be3d3f66ec984262f76b8fb0699f784d91de279b67cdf1248dcbbb",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/courts-dark.webp",
+    "pixelHashBefore": "daa85d671599520c99c7ba9023ad3126b5dfef80a567b7cf741066ac1b62e3f2",
+    "pixelHashAfter": "daa85d671599520c99c7ba9023ad3126b5dfef80a567b7cf741066ac1b62e3f2",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/courts-light.png",
+    "pixelHashBefore": "60b58f8e57871f3f2a473dcf0321a12366873df992e6103f57dfe47902dbd6b8",
+    "pixelHashAfter": "60b58f8e57871f3f2a473dcf0321a12366873df992e6103f57dfe47902dbd6b8",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/courts-light.webp",
+    "pixelHashBefore": "f55081431064c8cc44fd0cda81e6c8d78a166807b7e0ae09e7ea15da4391f789",
+    "pixelHashAfter": "f55081431064c8cc44fd0cda81e6c8d78a166807b7e0ae09e7ea15da4391f789",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/dashboard-dark.png",
+    "pixelHashBefore": "5eb3f64631cb6d4fb35a7b43ee51fdbcce1ebbf2d606e47dfdc79f99219ecca5",
+    "pixelHashAfter": "5eb3f64631cb6d4fb35a7b43ee51fdbcce1ebbf2d606e47dfdc79f99219ecca5",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/dashboard-dark.webp",
+    "pixelHashBefore": "cc17f05812b8d40f8022a53e702a6d0ae000e5b861b89805b25db30415feb971",
+    "pixelHashAfter": "cc17f05812b8d40f8022a53e702a6d0ae000e5b861b89805b25db30415feb971",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/dashboard-light.png",
+    "pixelHashBefore": "84ffdb5b302bb088d5246b6dddb374b1313ab5de85ec4b7579a02148e3f2e59e",
+    "pixelHashAfter": "84ffdb5b302bb088d5246b6dddb374b1313ab5de85ec4b7579a02148e3f2e59e",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/dashboard-light.webp",
+    "pixelHashBefore": "af4b9869bcee3668a3362a5697038526b77316827dec005eaa6ae9675bc4135b",
+    "pixelHashAfter": "af4b9869bcee3668a3362a5697038526b77316827dec005eaa6ae9675bc4135b",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/data-tools-dark.png",
+    "pixelHashBefore": "73f338116dc02ea46215987398be3b47f080ec21f3b5badedc078a68362aeef7",
+    "pixelHashAfter": "73f338116dc02ea46215987398be3b47f080ec21f3b5badedc078a68362aeef7",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/data-tools-dark.webp",
+    "pixelHashBefore": "8084e7d1d704cf0bf393e45d87a771012d744c69a20b725d9799327753752835",
+    "pixelHashAfter": "8084e7d1d704cf0bf393e45d87a771012d744c69a20b725d9799327753752835",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/data-tools-light.png",
+    "pixelHashBefore": "b9d38f05d9e95541f20f57f737705315d2a50341f17ea9f2be5b53f025d2fcaf",
+    "pixelHashAfter": "b9d38f05d9e95541f20f57f737705315d2a50341f17ea9f2be5b53f025d2fcaf",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/data-tools-light.webp",
+    "pixelHashBefore": "a859043bd19743bc6949511c8476ca3110aa0ddabd339a37e27612be8d2872da",
+    "pixelHashAfter": "a859043bd19743bc6949511c8476ca3110aa0ddabd339a37e27612be8d2872da",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/dictionary-dark.png",
+    "pixelHashBefore": "7e3c81c4483875ce81e11f8bf332b2581db666672b2044f4a2a3ca0e21d2e2f2",
+    "pixelHashAfter": "7e3c81c4483875ce81e11f8bf332b2581db666672b2044f4a2a3ca0e21d2e2f2",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/dictionary-dark.webp",
+    "pixelHashBefore": "766912af808c190280391ff1ecfb04f35e83c59cddcc0e30f1f7d88d9934159f",
+    "pixelHashAfter": "766912af808c190280391ff1ecfb04f35e83c59cddcc0e30f1f7d88d9934159f",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/dictionary-light.png",
+    "pixelHashBefore": "3182b09d0c4ca2effdd5feb2550ffafc9dd0944e99ea57b3cdb0aae5053dc623",
+    "pixelHashAfter": "3182b09d0c4ca2effdd5feb2550ffafc9dd0944e99ea57b3cdb0aae5053dc623",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/dictionary-light.webp",
+    "pixelHashBefore": "39c39189335aa60435e9f5784ad3c4433c7def0cc3cd8b4c717f19745a7fbcb6",
+    "pixelHashAfter": "39c39189335aa60435e9f5784ad3c4433c7def0cc3cd8b4c717f19745a7fbcb6",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/empty-dark.png",
+    "pixelHashBefore": "83ff4fdfd8e21c7e598a555961659a75ed4a61854d40f657f5019fe082bfc31d",
+    "pixelHashAfter": "83ff4fdfd8e21c7e598a555961659a75ed4a61854d40f657f5019fe082bfc31d",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/empty-dark.webp",
+    "pixelHashBefore": "f23239f35ca866f7369c652051532d109acc533357c14749ddaa09585c769d3a",
+    "pixelHashAfter": "f23239f35ca866f7369c652051532d109acc533357c14749ddaa09585c769d3a",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/empty-light.png",
+    "pixelHashBefore": "25cb0cb6d585e321224749206765a5008ffd76de1033535fc100857f8c9996a8",
+    "pixelHashAfter": "25cb0cb6d585e321224749206765a5008ffd76de1033535fc100857f8c9996a8",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/empty-light.webp",
+    "pixelHashBefore": "92797f87f7083bf336a355940b8a76a41f3edc825861920e4ecd202b69f5bac1",
+    "pixelHashAfter": "92797f87f7083bf336a355940b8a76a41f3edc825861920e4ecd202b69f5bac1",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/filter-dark.png",
+    "pixelHashBefore": "0525635a504d221e1bd5c83224881fec6ffe26d0c75e60e1a9f33ab2b6759853",
+    "pixelHashAfter": "0525635a504d221e1bd5c83224881fec6ffe26d0c75e60e1a9f33ab2b6759853",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/filter-dark.webp",
+    "pixelHashBefore": "d766f5d85d656ce0542f9464a749d8435d23c0bc04e92d6076a408adfa8ffc8e",
+    "pixelHashAfter": "d766f5d85d656ce0542f9464a749d8435d23c0bc04e92d6076a408adfa8ffc8e",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/filter-light.png",
+    "pixelHashBefore": "e56a656054a145d23b3f1c3ec56376322fdc402c6412dac741c45eaee021823c",
+    "pixelHashAfter": "e56a656054a145d23b3f1c3ec56376322fdc402c6412dac741c45eaee021823c",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/filter-light.webp",
+    "pixelHashBefore": "245e576c10b5f0280ba0e9ef0a1e51682779d2256b92d493b219ac8779c5a279",
+    "pixelHashAfter": "245e576c10b5f0280ba0e9ef0a1e51682779d2256b92d493b219ac8779c5a279",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/government-dark.png",
+    "pixelHashBefore": "420b4efa193184109f4544a2ef4bc83bc3b6ce68bf38ced0b9c94a9fffd25c72",
+    "pixelHashAfter": "420b4efa193184109f4544a2ef4bc83bc3b6ce68bf38ced0b9c94a9fffd25c72",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/government-dark.webp",
+    "pixelHashBefore": "5043148193014b1d1e1685912d03ca89634d1da00be180e3a43c5b266c151c64",
+    "pixelHashAfter": "5043148193014b1d1e1685912d03ca89634d1da00be180e3a43c5b266c151c64",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/government-light.png",
+    "pixelHashBefore": "378ab5de13701fb9c77850f52bec8e9197b0bca4908057da28d05f73009a0ee7",
+    "pixelHashAfter": "378ab5de13701fb9c77850f52bec8e9197b0bca4908057da28d05f73009a0ee7",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/government-light.webp",
+    "pixelHashBefore": "ad58e1c2b3b9fad83f4a9e7906b68d54ffa5a66a9085b05bd2582ca37347bdd6",
+    "pixelHashAfter": "ad58e1c2b3b9fad83f4a9e7906b68d54ffa5a66a9085b05bd2582ca37347bdd6",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/guided-search-dark.png",
+    "pixelHashBefore": "0a5ec75c1d84ffe786bf436a3e93ee8b19e47848012d3481365b252c9e34316f",
+    "pixelHashAfter": "0a5ec75c1d84ffe786bf436a3e93ee8b19e47848012d3481365b252c9e34316f",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/guided-search-dark.webp",
+    "pixelHashBefore": "dd9e419ae449dd72968e76b9f4f5f147d211f0aac58e0f0a229b38712e77e0bf",
+    "pixelHashAfter": "dd9e419ae449dd72968e76b9f4f5f147d211f0aac58e0f0a229b38712e77e0bf",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/guided-search-light.png",
+    "pixelHashBefore": "0d2136f4ab794a8a092cc397cc3e792b220049ab10e552a6f8e7a966ef499351",
+    "pixelHashAfter": "0d2136f4ab794a8a092cc397cc3e792b220049ab10e552a6f8e7a966ef499351",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/guided-search-light.webp",
+    "pixelHashBefore": "fd7fdc4729bfdfe421d9ac9dd98c38b20b438b9eac4286ff0364231017db08a6",
+    "pixelHashAfter": "fd7fdc4729bfdfe421d9ac9dd98c38b20b438b9eac4286ff0364231017db08a6",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/judges-dark.png",
+    "pixelHashBefore": "1d9cb8fef0db9be90d3cdd1fa984aab5070b734e8ad3073f56ae3b604dfffa3d",
+    "pixelHashAfter": "1d9cb8fef0db9be90d3cdd1fa984aab5070b734e8ad3073f56ae3b604dfffa3d",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/judges-dark.webp",
+    "pixelHashBefore": "25224d8b9d9dbbb395c7c5c89e013368d0031b5f7de66dadad0aac8822b29d7a",
+    "pixelHashAfter": "25224d8b9d9dbbb395c7c5c89e013368d0031b5f7de66dadad0aac8822b29d7a",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/judges-light.png",
+    "pixelHashBefore": "c0165c7f47c9494fa4286e44ae5fe5a703bdb97778d24d86fcfc05ca97281ea3",
+    "pixelHashAfter": "c0165c7f47c9494fa4286e44ae5fe5a703bdb97778d24d86fcfc05ca97281ea3",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/judges-light.webp",
+    "pixelHashBefore": "e6c1943ab4a4ed5c9d77aa730dd88880c5b2667d8391a062a4239c319788ea4e",
+    "pixelHashAfter": "e6c1943ab4a4ed5c9d77aa730dd88880c5b2667d8391a062a4239c319788ea4e",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/legislation-dark.png",
+    "pixelHashBefore": "b04b69d4078ffabea62c8f41798befc9f9482787cbe0a092d9a934fad207f516",
+    "pixelHashAfter": "b04b69d4078ffabea62c8f41798befc9f9482787cbe0a092d9a934fad207f516",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/legislation-dark.webp",
+    "pixelHashBefore": "1b2035cf81adcb677a3a82394b7607c267b8f3cc6048d133a05b9bcf26a6dad2",
+    "pixelHashAfter": "1b2035cf81adcb677a3a82394b7607c267b8f3cc6048d133a05b9bcf26a6dad2",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/legislation-light.png",
+    "pixelHashBefore": "40e423591579efd610b7252c4374a0c1033ca12e50052cc85e46106ea1b5ab47",
+    "pixelHashAfter": "40e423591579efd610b7252c4374a0c1033ca12e50052cc85e46106ea1b5ab47",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/legislation-light.webp",
+    "pixelHashBefore": "d34164c016f2509aa6a8492109df6944cda52b78b9873fec5a14bb661e2facfb",
+    "pixelHashAfter": "d34164c016f2509aa6a8492109df6944cda52b78b9873fec5a14bb661e2facfb",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/news-dark.png",
+    "pixelHashBefore": "be7ee09cf1e5e0668eeeb2985350070793d5eb56955982accd62cc7bf225654b",
+    "pixelHashAfter": "be7ee09cf1e5e0668eeeb2985350070793d5eb56955982accd62cc7bf225654b",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/news-dark.webp",
+    "pixelHashBefore": "01662075bb550e327f069108344dcdf8eb45ba237c497da08cc75463ddb51322",
+    "pixelHashAfter": "01662075bb550e327f069108344dcdf8eb45ba237c497da08cc75463ddb51322",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/news-light.png",
+    "pixelHashBefore": "ca661fce0e8efc887b0d4088aa58453ff14f0e435dd5be36fe0f0f7c0c85685d",
+    "pixelHashAfter": "ca661fce0e8efc887b0d4088aa58453ff14f0e435dd5be36fe0f0f7c0c85685d",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/news-light.webp",
+    "pixelHashBefore": "247b3c58b0184607142f7d8555511bfce8cbdb570f1d69e58a27f1270f1925ea",
+    "pixelHashAfter": "247b3c58b0184607142f7d8555511bfce8cbdb570f1d69e58a27f1270f1925ea",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/original-dark.png",
+    "pixelHashBefore": "b7b5654fdcf5ee3243db146abe9ec830cc5bfcc89e8f301df6ce46edcd3a40c2",
+    "pixelHashAfter": "b7b5654fdcf5ee3243db146abe9ec830cc5bfcc89e8f301df6ce46edcd3a40c2",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/original-dark.webp",
+    "pixelHashBefore": "8a1e68e9014914bf82a43f6618556983f4fe64e8257845e13e2d929c70101115",
+    "pixelHashAfter": "8a1e68e9014914bf82a43f6618556983f4fe64e8257845e13e2d929c70101115",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/original-light.png",
+    "pixelHashBefore": "654bc264a770555a164eab3b1a3960691700d301af201581d3db6ef84ee58fd5",
+    "pixelHashAfter": "654bc264a770555a164eab3b1a3960691700d301af201581d3db6ef84ee58fd5",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/original-light.webp",
+    "pixelHashBefore": "e932c94473d03c8240348b76e8c8be5cce801f3f553ce16987b4303b456ab430",
+    "pixelHashAfter": "e932c94473d03c8240348b76e8c8be5cce801f3f553ce16987b4303b456ab430",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/research-dark.png",
+    "pixelHashBefore": "bedf54fc7c6003455f277c6c3f1fb7b95b69f7543014c0d46cbc93ad27648ea9",
+    "pixelHashAfter": "bedf54fc7c6003455f277c6c3f1fb7b95b69f7543014c0d46cbc93ad27648ea9",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/research-dark.webp",
+    "pixelHashBefore": "90c451adcc1d562f1be6fe5feea20447a43564cd00776a3fab5f2d24bae2bb42",
+    "pixelHashAfter": "90c451adcc1d562f1be6fe5feea20447a43564cd00776a3fab5f2d24bae2bb42",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/research-light.png",
+    "pixelHashBefore": "343e0c989076fa64b478dffe284c7d8ccd7ff1c0daea27340fe888d32a5d8a5f",
+    "pixelHashAfter": "343e0c989076fa64b478dffe284c7d8ccd7ff1c0daea27340fe888d32a5d8a5f",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/research-light.webp",
+    "pixelHashBefore": "e581efb15412980c848bc0990496453a1bfe00a78ba95b4bf64b85e50e972c71",
+    "pixelHashAfter": "e581efb15412980c848bc0990496453a1bfe00a78ba95b4bf64b85e50e972c71",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/saved-searches-dark.png",
+    "pixelHashBefore": "0a12d28a87e4746e4063c30f6de19ade0a7728dab87b00661bc67b7464e9b08d",
+    "pixelHashAfter": "0a12d28a87e4746e4063c30f6de19ade0a7728dab87b00661bc67b7464e9b08d",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/saved-searches-dark.webp",
+    "pixelHashBefore": "8a4d0bd3e1a92cfaa6891099d7057bb6a9755ad22cd6413970ec35f606c43b5f",
+    "pixelHashAfter": "8a4d0bd3e1a92cfaa6891099d7057bb6a9755ad22cd6413970ec35f606c43b5f",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/saved-searches-light.png",
+    "pixelHashBefore": "7184ca6de78393109015b8d7f986078a252db6c668a96e5035fc38e0501d58d6",
+    "pixelHashAfter": "7184ca6de78393109015b8d7f986078a252db6c668a96e5035fc38e0501d58d6",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/saved-searches-light.webp",
+    "pixelHashBefore": "cf7cf7a85d2dab9238db17a4716a380a146350c0371349394ff1915b1c5e9c14",
+    "pixelHashAfter": "cf7cf7a85d2dab9238db17a4716a380a146350c0371349394ff1915b1c5e9c14",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/scope-dark.png",
+    "pixelHashBefore": "cc998a6671dc54ff4d8a9f1616c1e64f8e06229ef7a5ae974af609aee9e3b2a4",
+    "pixelHashAfter": "cc998a6671dc54ff4d8a9f1616c1e64f8e06229ef7a5ae974af609aee9e3b2a4",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/scope-dark.webp",
+    "pixelHashBefore": "8581f168d1155a0a5f0109979ba469c187d2c5859480afab8cc9aef3580c2ff4",
+    "pixelHashAfter": "8581f168d1155a0a5f0109979ba469c187d2c5859480afab8cc9aef3580c2ff4",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/scope-light.png",
+    "pixelHashBefore": "b6c54fa416212e2bf50e6c471d1ef3347cf315b9bc9b11541b6ee5a5279f2fe5",
+    "pixelHashAfter": "b6c54fa416212e2bf50e6c471d1ef3347cf315b9bc9b11541b6ee5a5279f2fe5",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/scope-light.webp",
+    "pixelHashBefore": "9981d89ab05d037495f3f19de5f35d3709e4a1b156dbf6ac12f877eaf391690f",
+    "pixelHashAfter": "9981d89ab05d037495f3f19de5f35d3709e4a1b156dbf6ac12f877eaf391690f",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/search-dark.png",
+    "pixelHashBefore": "20df8e05ee224853a762da85316f8fa7e0509a84bd74124b1c6324c2fe768bc6",
+    "pixelHashAfter": "20df8e05ee224853a762da85316f8fa7e0509a84bd74124b1c6324c2fe768bc6",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/search-dark.webp",
+    "pixelHashBefore": "e5f1ece9cf96ccaf0eb64a3c98e3928d0d527fa6ae9bfd333ad4a81322d435ed",
+    "pixelHashAfter": "e5f1ece9cf96ccaf0eb64a3c98e3928d0d527fa6ae9bfd333ad4a81322d435ed",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/search-light.png",
+    "pixelHashBefore": "cfd50bd87c90dda66315a6fa22e8eef0bbf6aa2b5673b76e5aed540cc9bd346b",
+    "pixelHashAfter": "cfd50bd87c90dda66315a6fa22e8eef0bbf6aa2b5673b76e5aed540cc9bd346b",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/search-light.webp",
+    "pixelHashBefore": "6e424b4a412e6007dd9b11ca54af61bc53cc8cd89148d5da2252eb4826d12d82",
+    "pixelHashAfter": "6e424b4a412e6007dd9b11ca54af61bc53cc8cd89148d5da2252eb4826d12d82",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/semantic-search-dark.png",
+    "pixelHashBefore": "ac7182fd628cf37ecf46fc6e39aafe0d744bc308c362df5634f31d96006d715c",
+    "pixelHashAfter": "ac7182fd628cf37ecf46fc6e39aafe0d744bc308c362df5634f31d96006d715c",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/semantic-search-dark.webp",
+    "pixelHashBefore": "7933d89bafadb99c2680445414ab58ada6ac53c539f5d719bc1a1f9f954b0592",
+    "pixelHashAfter": "7933d89bafadb99c2680445414ab58ada6ac53c539f5d719bc1a1f9f954b0592",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/semantic-search-light.png",
+    "pixelHashBefore": "4340327eeb6f16ad95f014307af30b9fdc4c4312dcf6327f6ba13bcf7ad5e927",
+    "pixelHashAfter": "4340327eeb6f16ad95f014307af30b9fdc4c4312dcf6327f6ba13bcf7ad5e927",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/semantic-search-light.webp",
+    "pixelHashBefore": "c4a218b5b56e45768e94577db4a534ffe4030b3a8ea795a8130417598aaebf4a",
+    "pixelHashAfter": "c4a218b5b56e45768e94577db4a534ffe4030b3a8ea795a8130417598aaebf4a",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/source-check-dark.png",
+    "pixelHashBefore": "398404c4382466927723b02352ddf47597e159ef3311cf16f1827fdd86740fec",
+    "pixelHashAfter": "398404c4382466927723b02352ddf47597e159ef3311cf16f1827fdd86740fec",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/source-check-dark.webp",
+    "pixelHashBefore": "ff14d10429bf6eb89f7ecc263fb1d8a0f71ad90d0bdfa123dff5c6270aeb9b3d",
+    "pixelHashAfter": "ff14d10429bf6eb89f7ecc263fb1d8a0f71ad90d0bdfa123dff5c6270aeb9b3d",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/source-check-light.png",
+    "pixelHashBefore": "0dc0ec65c198e9625c8a2d7f9f707118a38d1ffef9e31d6fcdefc284a2d77f26",
+    "pixelHashAfter": "0dc0ec65c198e9625c8a2d7f9f707118a38d1ffef9e31d6fcdefc284a2d77f26",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/source-check-light.webp",
+    "pixelHashBefore": "f61e1f6ab3ec5daab125e3bd7af4e22916aee01359e4c4252854caa9c5100c4a",
+    "pixelHashAfter": "f61e1f6ab3ec5daab125e3bd7af4e22916aee01359e4c4252854caa9c5100c4a",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/summary-dark.png",
+    "pixelHashBefore": "70ad63a5b1444729262a20e2166e964ca6b28c202018a8ba61b1b65dd855903c",
+    "pixelHashAfter": "70ad63a5b1444729262a20e2166e964ca6b28c202018a8ba61b1b65dd855903c",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/summary-dark.webp",
+    "pixelHashBefore": "74ed69fd97fd77092aebb4c9ea82753b904f192c18f4177c8dc0732d8390f9d1",
+    "pixelHashAfter": "74ed69fd97fd77092aebb4c9ea82753b904f192c18f4177c8dc0732d8390f9d1",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/summary-light.png",
+    "pixelHashBefore": "e5635d514c8901f15b3f12fd99794c2cecce5166833b210ed7deea27bf67141e",
+    "pixelHashAfter": "e5635d514c8901f15b3f12fd99794c2cecce5166833b210ed7deea27bf67141e",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/summary-light.webp",
+    "pixelHashBefore": "9dd986533c50be8a17736d86b66c839ae826f9ae7f74a3891057e7c96ed9a099",
+    "pixelHashAfter": "9dd986533c50be8a17736d86b66c839ae826f9ae7f74a3891057e7c96ed9a099",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/taxonomy-dark.png",
+    "pixelHashBefore": "117a59fdb28275fe63e31f744bdccca2e21ec24319640ea95293236fb90a9ec4",
+    "pixelHashAfter": "117a59fdb28275fe63e31f744bdccca2e21ec24319640ea95293236fb90a9ec4",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/taxonomy-dark.webp",
+    "pixelHashBefore": "30c7e4e6efa0486a9df9f94631e557c749aba7567ea0e5c064b551796e074fbf",
+    "pixelHashAfter": "30c7e4e6efa0486a9df9f94631e557c749aba7567ea0e5c064b551796e074fbf",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/taxonomy-light.png",
+    "pixelHashBefore": "21ab0214ebd5447931c2bf9d162a12f391dec9cfb22a2bbc8d61a7ac2911a2e0",
+    "pixelHashAfter": "21ab0214ebd5447931c2bf9d162a12f391dec9cfb22a2bbc8d61a7ac2911a2e0",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/taxonomy-light.webp",
+    "pixelHashBefore": "7f23c1c06b833e4634baac08bbfd7602d9c18b308c3ef8a4fe4e85e4210e0305",
+    "pixelHashAfter": "7f23c1c06b833e4634baac08bbfd7602d9c18b308c3ef8a4fe4e85e4210e0305",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/tribunal-dark.png",
+    "pixelHashBefore": "b56a94be49ec3b9772d5637f2445ef7ba97eac2dc070b338edf9a6ceb6ebc621",
+    "pixelHashAfter": "b56a94be49ec3b9772d5637f2445ef7ba97eac2dc070b338edf9a6ceb6ebc621",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/tribunal-dark.webp",
+    "pixelHashBefore": "4eff7faae989fc76c7f5cf33b1eea3712f7ce84b9ebe867424edf32504645ada",
+    "pixelHashAfter": "4eff7faae989fc76c7f5cf33b1eea3712f7ce84b9ebe867424edf32504645ada",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/tribunal-light.png",
+    "pixelHashBefore": "2be6c7c965d43b8cc3af1ebffb3900459a92fbb60e92a36d425f41aa37c93388",
+    "pixelHashAfter": "2be6c7c965d43b8cc3af1ebffb3900459a92fbb60e92a36d425f41aa37c93388",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/tribunal-light.webp",
+    "pixelHashBefore": "83023b4d05f114d1a5cc8e2443450e7c7d2452d6197a2aff66e8e2b18775b1a2",
+    "pixelHashAfter": "83023b4d05f114d1a5cc8e2443450e7c7d2452d6197a2aff66e8e2b18775b1a2",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-light.png",
+    "pixelHashBefore": "c120366248ba8d5e9d564980d2f3bbd09e15fd7c6a283941376d252879bf2618",
+    "pixelHashAfter": "c120366248ba8d5e9d564980d2f3bbd09e15fd7c6a283941376d252879bf2618",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp",
+    "pixelHashBefore": "d6f85130877d61633943de0cf390b69cf9745ea3445a1dd8d6dfe54aba3371d9",
+    "pixelHashAfter": "d6f85130877d61633943de0cf390b69cf9745ea3445a1dd8d6dfe54aba3371d9",
+    "unchanged": true
+  },
+  {
+    "path": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-dark.png",
+    "pixelHashBefore": "3d1d039d04b56c16222e88f5a6df1962c297c6f35943242c759ab7688b34c80e",
+    "pixelHashAfter": "3d1d039d04b56c16222e88f5a6df1962c297c6f35943242c759ab7688b34c80e",
+    "unchanged": true
+  },
+  {
+    "path": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp",
+    "pixelHashBefore": "7549f8a669aaa7e538af162720218fa1ebbdf234dff0f7ce5f947e49739823eb",
+    "pixelHashAfter": "7549f8a669aaa7e538af162720218fa1ebbdf234dff0f7ce5f947e49739823eb",
+    "unchanged": true
+  }
+]

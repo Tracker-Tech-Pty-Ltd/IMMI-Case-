@@ -1,0 +1,463 @@
+{
+  "images": [
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/codex-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/codex-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/dashboard-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/dashboard-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/cases-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/cases-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/analytics-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/analytics-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/judges-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/judges-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/news-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/news-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/collections-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/collections-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/saved-searches-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/saved-searches-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/taxonomy-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/taxonomy-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/guided-search-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/guided-search-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/semantic-search-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/semantic-search-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/council-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/council-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/data-tools-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/data-tools-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/courts-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/courts-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/legislation-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/legislation-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/dictionary-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/dictionary-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/source-check-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/source-check-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/search-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/search-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/filter-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/filter-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/government-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/government-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/document-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/document-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/summary-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/summary-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/court-update-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/court-update-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/summary-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/summary-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/government-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/government-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/summary-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/summary-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/tribunal-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/tribunal-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/summary-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/summary-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/calendar-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/calendar-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/original-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/original-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/scope-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/scope-dark.webp",
+      "visible": false
+    },
+    {
+      "loaded": true,
+      "src": "/assets/legal-codex-stickers/research-light.webp",
+      "visible": true
+    },
+    {
+      "loaded": false,
+      "src": "/assets/legal-codex-stickers/research-dark.webp",
+      "visible": false
+    }
+  ],
+  "overflow": false,
+  "rects": [
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 911.31494140625,
+        "height": 911.31494140625,
+        "width": 191.9915771484375,
+        "x": 0,
+        "y": 0
+      },
+      "selector": ".codex-sidebar"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 56.98904037475586,
+        "height": 56.98904037475586,
+        "width": 930.33251953125,
+        "x": 191.9915771484375,
+        "y": 0
+      },
+      "selector": ".codex-topbar"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 941.8959617614746,
+        "height": 884.9069213867188,
+        "width": 930.33251953125,
+        "x": 191.9915771484375,
+        "y": 56.98904037475586
+      },
+      "selector": ".codex-main"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 149.97450256347656,
+        "height": 72.99629974365234,
+        "width": 886.3563232421875,
+        "x": 215.97857666015625,
+        "y": 76.97820281982422
+      },
+      "selector": ".news-header"
+    },
+    {
+      "font": "\"Crimson Text\", PMingLiU, MingLiU, \"Songti TC\", Georgia, \"Times New Roman\", serif",
+      "rect": {
+        "bottom": 121.97373962402344,
+        "height": 44.99553680419922,
+        "width": 565.17578125,
+        "x": 215.97857666015625,
+        "y": 76.97820281982422
+      },
+      "selector": "h1"
+    },
+    {
+      "font": "\"Crimson Text\", PMingLiU, MingLiU, \"Songti TC\", Georgia, \"Times New Roman\", serif",
+      "rect": {
+        "bottom": 253.9500274658203,
+        "height": 87.98419189453125,
+        "width": 886.3563232421875,
+        "x": 215.97857666015625,
+        "y": 165.96583557128906
+      },
+      "selector": ".news-filters"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 493.9315490722656,
+        "height": 223.99017333984375,
+        "width": 611.5411376953125,
+        "x": 215.97857666015625,
+        "y": 269.9413757324219
+      },
+      "selector": ".news-feature"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 454.9407348632813,
+        "height": 139.98788452148438,
+        "width": 103.991455078125,
+        "x": 702.5197143554688,
+        "y": 314.9528503417969
+      },
+      "selector": ".news-document"
+    },
+    {
+      "font": "\"Crimson Text\", PMingLiU, MingLiU, \"Songti TC\", Georgia, \"Times New Roman\", serif",
+      "rect": {
+        "bottom": 546.9386787414551,
+        "height": 37.01579666137695,
+        "width": 611.5411376953125,
+        "x": 215.97857666015625,
+        "y": 509.9228820800781
+      },
+      "selector": "#news-latest-heading"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 657.9382705688477,
+        "height": 110.9996109008789,
+        "width": 611.5411376953125,
+        "x": 215.97857666015625,
+        "y": 546.9386596679688
+      },
+      "selector": ".news-list-entry"
+    },
+    {
+      "font": "\"Crimson Text\", PMingLiU, MingLiU, \"Songti TC\", Georgia, \"Times New Roman\", serif",
+      "rect": {
+        "bottom": 917.9089660644532,
+        "height": 43.992095947265625,
+        "width": 611.5411376953125,
+        "x": 215.97857666015625,
+        "y": 873.9168701171875
+      },
+      "selector": ".codex-pagination"
+    },
+    {
+      "font": "Merriweather, Georgia, serif",
+      "rect": {
+        "bottom": 647.6649780273438,
+        "height": 377.7236022949219,
+        "width": 254.8260498046875,
+        "x": 847.5088500976562,
+        "y": 269.9413757324219
+      },
+      "selector": ".news-tools"
+    }
+  ],
+  "viewport": [
+    1127,
+    911
+  ]
+}

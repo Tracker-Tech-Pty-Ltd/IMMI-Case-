@@ -89,6 +89,7 @@ vi.mock("@/components/analytics/VisaFamiliesSection", () => ({
 }));
 
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
+import { MemoryRouter } from "react-router-dom";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -96,10 +97,12 @@ function makeQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-function renderPage() {
+function renderPage(entry = "/analytics") {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
-      <AnalyticsPage />
+      <MemoryRouter initialEntries={[entry]}>
+        <AnalyticsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -137,6 +140,13 @@ describe("AnalyticsPage – filter integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseAnalyticsFilterOptions.mockReturnValue(idleFilterOptions());
+  });
+
+  it("keeps the linked dashboard scope in every analytics section", () => {
+    renderPage("/analytics?court=FCA&year_from=2020&year_to=2024");
+    const section = screen.getByTestId("visa-families");
+    expect(JSON.parse(section.getAttribute("data-filters") ?? "{}"))
+      .toMatchObject({ court: "FCA", yearFrom: 2020, yearTo: 2024 });
   });
 
   // 1. Page renders the filter scope section

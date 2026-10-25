@@ -162,12 +162,15 @@ def populated_dir(tmp_path, sample_cases):
 @pytest.fixture
 def app(populated_dir):
     """Flask test app backed by populated_dir data (CSRF disabled for general tests)."""
-    from immi_case_downloader.webapp import create_app
+    from immi_case_downloader.webapp import close_app, create_app
 
     application = create_app(str(populated_dir))
     application.config["TESTING"] = True
     application.config["WTF_CSRF_ENABLED"] = False
-    return application
+    try:
+        yield application
+    finally:
+        close_app(application, wait=True)
 
 
 @pytest.fixture

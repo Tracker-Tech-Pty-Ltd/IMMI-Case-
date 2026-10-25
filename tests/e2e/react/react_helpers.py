@@ -23,6 +23,7 @@ REACT_ROUTES = {
     "download": "/download",
     "jobs": "/jobs",
     "pipeline": "/pipeline",
+    "data_tools": "/data-tools",
     "legislations": "/legislations",
     "data_dictionary": "/data-dictionary",
     "design_tokens": "/design-tokens",
@@ -41,6 +42,7 @@ SMOKE_PAGES = [
     ("download", "/download"),
     ("jobs", "/jobs"),
     ("pipeline", "/pipeline"),
+    ("data_tools", "/data-tools"),
     ("legislations", "/legislations"),
     ("data_dictionary", "/data-dictionary"),
     ("design_tokens", "/design-tokens"),
@@ -80,11 +82,13 @@ SIDEBAR_NAV_ITEMS = [
     ("Cases", "/cases"),
     ("Collections", "/collections"),
     ("Saved Searches", "/saved-searches"),
-    ("Download", "/download"),  # Matches en.json nav.download
-    ("Pipeline", "/pipeline"),  # Matches en.json nav.pipeline
-    ("Legislations", "/legislations"),  # Added in 2026-02-20
+    ("Search Taxonomy", "/taxonomy"),
+    ("Guided Search", "/guided-search"),
+    ("Semantic Search", "/search/semantic"),
+    ("LLM IMMI Council", "/llm-council"),
+    ("Data Tools", "/data-tools"),
+    ("Legislations", "/legislations"),
     ("Data Dictionary", "/data-dictionary"),
-    ("Design Tokens", "/design-tokens"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -92,9 +96,9 @@ SIDEBAR_NAV_ITEMS = [
 # ---------------------------------------------------------------------------
 
 KEYBOARD_SHORTCUTS = {
-    "d": "/",
-    "c": "/cases",
-    "p": "/pipeline",
+    "g d": "/",
+    "g c": "/cases",
+    "g t": "/data-tools",
 }
 
 # ---------------------------------------------------------------------------
@@ -170,8 +174,11 @@ def click_mobile_menu(page: Page):
 
 
 def close_mobile_menu(page: Page):
-    """Close the mobile navigation drawer."""
-    page.get_by_role("dialog", name="IMMI-Case").get_by_label("Close menu").click()
+    """Close the mobile drawer and wait for its exit animation to finish."""
+    drawer = page.get_by_role("dialog", name="IMMI-Case", exact=True)
+    drawer.get_by_label("Close menu", exact=True).click()
+    # Radix keeps the dialog mounted while its exit animation is running.
+    drawer.wait_for(state="hidden", timeout=5000)
 
 
 def get_toast_text(page: Page, timeout: int = 5000) -> str:

@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  GraduationCap,
-  Briefcase,
   Calendar,
   ExternalLink,
   Globe,
@@ -11,10 +9,11 @@ import {
   User,
   MapPin,
   Scale,
-  BookMarked,
   AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { CodexDisclosure } from "@/components/ui/CodexDisclosure";
 import type { JudgeProfile, JudgeBio } from "@/types/case";
 import { formatCourtTypeLabel } from "@/lib/display";
 
@@ -102,7 +101,11 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
   const courtTypeLabel = formatCourtTypeLabel(profile.court_type, t);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="codex-judge-hero rounded-lg border border-border bg-card p-4">
+      <p className="codex-profile-label">
+        <CodexSticker id="judges" />
+        {t("judges.profile_label", { defaultValue: "Historical case profile" })}
+      </p>
       {/* Top section: avatar + name + role */}
       <div className="flex gap-4">
         <div className="shrink-0">
@@ -125,7 +128,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
           )}
         </div>
 
-        <div className="flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           {isLoading ? (
             <div className="space-y-2">
               <div className="h-5 w-3/4 animate-pulse rounded bg-border" />
@@ -177,7 +180,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
       </div>
 
       {/* Stats row */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="codex-judge-metrics mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat
           label={t("judges.total_cases")}
           value={profile.judge.total_cases.toLocaleString()}
@@ -204,11 +207,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
 
       {/* Education */}
       {bio.found && bio.education && bio.education.length > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-text">
-            <GraduationCap className="h-3.5 w-3.5" />
-            {t("judges.education")}
-          </div>
+        <CodexDisclosure title={t("judges.education", { defaultValue: "Education" })} sticker="dictionary">
           <ul className="mt-1.5 space-y-0.5 text-sm text-foreground">
             {bio.education.map((edu) => (
               <li key={edu} className="flex items-start gap-2">
@@ -217,16 +216,12 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
               </li>
             ))}
           </ul>
-        </div>
+        </CodexDisclosure>
       )}
 
       {/* Career History */}
       {careerItems.length > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-text">
-            <Briefcase className="h-3.5 w-3.5" />
-            {t("judges.career_history")}
-          </div>
+        <CodexDisclosure title={t("judges.career_history", { defaultValue: "Career history" })} sticker="calendar">
           {careerItems.length === 1 ? (
             <p className="mt-1.5 text-sm text-foreground">{careerItems[0]}</p>
           ) : (
@@ -239,7 +234,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
               ))}
             </ul>
           )}
-        </div>
+        </CodexDisclosure>
       )}
 
       {/* Current Role Description */}
@@ -257,11 +252,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
 
       {/* Notable Cases */}
       {bio.found && bio.notable_cases && bio.notable_cases.length > 0 && (
-        <div className="mt-4">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-text">
-            <BookMarked className="h-3.5 w-3.5" />
-            {t("judges.notable_cases", { defaultValue: "Notable Cases" })}
-          </div>
+        <CodexDisclosure title={t("judges.notable_cases", { defaultValue: "Notable cases" })} sticker="cases">
           <div className="mt-2 space-y-3">
             {bio.notable_cases.map((nc) => (
               <div
@@ -282,7 +273,7 @@ export function JudgeHero({ profile, bio, isLoading }: JudgeHeroProps) {
               </div>
             ))}
           </div>
-        </div>
+        </CodexDisclosure>
       )}
 
       {/* Social Media / Online Profiles */}

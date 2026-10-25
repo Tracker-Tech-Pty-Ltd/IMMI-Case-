@@ -41,7 +41,7 @@ export function CasesFilters({
   return (
     <>
       {/* Primary Filters */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 font-data">
         <select
           value={filters.court ?? ""}
           onChange={(e) => onUpdateFilter("court", e.target.value)}
@@ -81,7 +81,7 @@ export function CasesFilters({
             </option>
           ))}
         </select>
-        <div className="relative min-w-[160px] flex-1 sm:flex-none">
+        <div className="relative min-w-0 basis-full sm:min-w-64 sm:flex-1 sm:basis-auto">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-text" />
           <input
             key={filters.keyword ?? ""}

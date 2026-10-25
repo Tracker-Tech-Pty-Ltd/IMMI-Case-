@@ -1,0 +1,31 @@
+{
+  "search": {
+    "articles": 1,
+    "overflow": false,
+    "title": "法院更新庭審逐字稿申請方式",
+    "url": "?q=%E9%80%90%E5%AD%97%E7%A8%BF"
+  },
+  "summary": {
+    "open": true,
+    "overflow": false,
+    "text": "閱讀摘要: 法院更新庭審逐字稿申請方式表單適用於該日期之前或之後進行的庭審。公告說明供應商分配與付款安排，並提供官方訂購表單連結；IMMI-Case 不會代為提交逐字稿申請。來源核對 2026年10月16日"
+  },
+  "pagination": {
+    "articleCount": 4,
+    "pagination": "顯示第 4–6 筆，共 7 筆123",
+    "url": "?page=2"
+  },
+  "mobileTools": {
+    "links": [
+      {
+        "text": "回到案例資料庫",
+        "visible": true
+      },
+      {
+        "text": "查看歷史數據",
+        "visible": true
+      }
+    ],
+    "open": true
+  }
+}

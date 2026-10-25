@@ -24,6 +24,7 @@ downloaded_cases/
 
 # Environment
 .env
+.immi-native-*.toml
 
 # OS
 .DS_Store

@@ -1,0 +1,120 @@
+
+> frontend@0.0.0 build:cloudflare
+> npm run tokens && tsc -b && vite build --outDir dist --emptyOutDir
+
+
+> frontend@0.0.0 tokens
+> tsx scripts/build-tokens.ts
+
+✓ tokens.css generated
+✓ tokens.ts generated
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 2947 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                        1.00 kB │ gzip:   0.48 kB
+dist/assets/research-codex-CIC8E3O3.css                6.63 kB │ gzip:   1.44 kB
+dist/assets/detail-codex-OR3keWRw.css                  8.65 kB │ gzip:   1.77 kB
+dist/assets/index-BSZvYVFt.css                       109.28 kB │ gzip:  19.43 kB
+dist/assets/chart-tooltip-helpers-CCHRDxwo.js          0.09 kB │ gzip:   0.10 kB
+dist/assets/minus-CEbXlTj6.js                          0.12 kB │ gzip:   0.13 kB
+dist/assets/check-Duu3c9Vb.js                          0.12 kB │ gzip:   0.14 kB
+dist/assets/chevron-up-X4UUOIO7.js                     0.13 kB │ gzip:   0.14 kB
+dist/assets/chevron-down-DehSJ-q3.js                   0.13 kB │ gzip:   0.14 kB
+dist/assets/chevron-left-1vAzNvFT.js                   0.13 kB │ gzip:   0.14 kB
+dist/assets/chevron-right-o6SHsqOy.js                  0.13 kB │ gzip:   0.14 kB
+dist/assets/plus-BEITKwCL.js                           0.15 kB │ gzip:   0.15 kB
+dist/assets/clock-B6UfhHhl.js                          0.17 kB │ gzip:   0.16 kB
+dist/assets/arrow-left-CRtELM93.js                     0.17 kB │ gzip:   0.16 kB
+dist/assets/arrow-right-a_vcgp8F.js                    0.17 kB │ gzip:   0.16 kB
+dist/assets/arrow-down-right-DOhfak_x.js               0.17 kB │ gzip:   0.16 kB
+dist/assets/circle-check-DPlpKIyi.js                   0.17 kB │ gzip:   0.17 kB
+dist/assets/user-DFoo46iT.js                           0.19 kB │ gzip:   0.18 kB
+dist/assets/info-BS0n7VV_.js                           0.20 kB │ gzip:   0.18 kB
+dist/assets/rotate-ccw-B14j0v-c.js                     0.20 kB │ gzip:   0.18 kB
+dist/assets/briefcase-t5Yln6xA.js                      0.22 kB │ gzip:   0.20 kB
+dist/assets/git-branch-BiUWPvzz.js                     0.23 kB │ gzip:   0.19 kB
+dist/assets/copy-CbuMV-Fc.js                           0.23 kB │ gzip:   0.21 kB
+dist/assets/download-PxTwjsa0.js                       0.23 kB │ gzip:   0.19 kB
+dist/assets/globe-wU93W0Yh.js                          0.24 kB │ gzip:   0.19 kB
+dist/assets/database-DlzXfGxr.js                       0.24 kB │ gzip:   0.20 kB
+dist/assets/download-blob-Csa2RqIT.js                  0.24 kB │ gzip:   0.21 kB
+dist/assets/circle-alert-CgLGODHF.js                   0.25 kB │ gzip:   0.19 kB
+dist/assets/chart-column-B8Nr6gyd.js                   0.25 kB │ gzip:   0.19 kB
+dist/assets/external-link-DDNfg0Hp.js                  0.25 kB │ gzip:   0.20 kB
+dist/assets/map-pin-B8WgP7t7.js                        0.26 kB │ gzip:   0.22 kB
+dist/assets/EmptyState-BAoVoFnC.js                     0.26 kB │ gzip:   0.19 kB
+dist/assets/calendar-D7-_0Cbe.js                       0.26 kB │ gzip:   0.20 kB
+dist/assets/git-compare-D7MC9-HD.js                    0.28 kB │ gzip:   0.21 kB
+dist/assets/constants-BFiAA_Wk.js                      0.29 kB │ gzip:   0.17 kB
+dist/assets/hash-BL9kAU4I.js                           0.30 kB │ gzip:   0.19 kB
+dist/assets/square-pen-Bl54Ognw.js                     0.32 kB │ gzip:   0.24 kB
+dist/assets/tag-Bdj3vFDV.js                            0.32 kB │ gzip:   0.25 kB
+dist/assets/use-stats-CBi0ML6o.js                      0.32 kB │ gzip:   0.22 kB
+dist/assets/save-XC_lwr65.js                           0.33 kB │ gzip:   0.23 kB
+dist/assets/trash-2-7cQ8JMRD.js                        0.33 kB │ gzip:   0.22 kB
+dist/assets/ChartTooltip-CbYrH4Az.js                   0.35 kB │ gzip:   0.25 kB
+dist/assets/minimize-2-ucKU_qpP.js                     0.43 kB │ gzip:   0.25 kB
+dist/assets/sparkles-PFOnNGld.js                       0.50 kB │ gzip:   0.28 kB
+dist/assets/display-BhIPFw-7.js                        0.56 kB │ gzip:   0.31 kB
+dist/assets/list-d3DA2AT1.js                           0.60 kB │ gzip:   0.29 kB
+dist/assets/use-legislations-yfNUAEOa.js               0.62 kB │ gzip:   0.34 kB
+dist/assets/analytics-scope-C0U2pp1G.js                0.65 kB │ gzip:   0.36 kB
+dist/assets/Breadcrumb-Bv7fnfDt.js                     0.71 kB │ gzip:   0.43 kB
+dist/assets/use-judges-rn7Yv25B.js                     0.73 kB │ gzip:   0.36 kB
+dist/assets/ApiErrorState-CuKZX99l.js                  0.73 kB │ gzip:   0.47 kB
+dist/assets/StatCard-CkzzprVh.js                       0.78 kB │ gzip:   0.42 kB
+dist/assets/SearchTaxonomyPage-Dh88s16U.js             0.78 kB │ gzip:   0.44 kB
+dist/assets/CaseMutationsDisabledNotice-DZbuUhg_.js    0.86 kB │ gzip:   0.54 kB
+dist/assets/BookmarkButton-lufkDOii.js                 0.97 kB │ gzip:   0.54 kB
+dist/assets/tokens-D_bOn_bz.js                         0.97 kB │ gzip:   0.52 kB
+dist/assets/CourtBadge-Bq-ECI-B.js                     1.01 kB │ gzip:   0.52 kB
+dist/assets/NatureBadge-Ae5E5Gx6.js                    1.01 kB │ gzip:   0.53 kB
+dist/assets/CodexFilterRail-BfKFGoux.js                1.18 kB │ gzip:   0.66 kB
+dist/assets/PageHeader-BYE52EPw.js                     1.20 kB │ gzip:   0.53 kB
+dist/assets/CodexSectionNav-eCENaAF_.js                1.55 kB │ gzip:   0.73 kB
+dist/assets/ConfirmModal-da74L5k-.js                   1.95 kB │ gzip:   0.84 kB
+dist/assets/CaseCard-Bc1XQmwb.js                       2.21 kB │ gzip:   0.92 kB
+dist/assets/SavedSearchesPage-IJOiKloK.js              2.23 kB │ gzip:   1.14 kB
+dist/assets/Pagination-BPwSOYka.js                     2.29 kB │ gzip:   0.95 kB
+dist/assets/LoginPage-y9VkQv7Q.js                      2.32 kB │ gzip:   1.17 kB
+dist/assets/use-llm-council-sessions-D2yL5kWR.js       2.67 kB │ gzip:   1.13 kB
+dist/assets/OutcomeBadge-LkQf5SHN.js                   2.72 kB │ gzip:   0.91 kB
+dist/assets/AnalyticsFilters-jKCAtlfb.js               2.77 kB │ gzip:   0.95 kB
+dist/assets/CaseComparePage-C9PJ5Wm9.js                4.68 kB │ gzip:   1.78 kB
+dist/assets/CollectionEditor-B1EP3lZe.js               4.73 kB │ gzip:   1.59 kB
+dist/assets/CollectionsPage-DqKRdImq.js                4.96 kB │ gzip:   1.64 kB
+dist/assets/SavedSearchCard-CVhs0hXA.js                4.97 kB │ gzip:   1.89 kB
+dist/assets/LlmCouncilSessionsPage-D37qv4OQ.js         5.02 kB │ gzip:   1.98 kB
+dist/assets/DataDictionaryPage-BodAVmjP.js             5.54 kB │ gzip:   1.87 kB
+dist/assets/SemanticSearchPage-VS-XgPos.js             5.69 kB │ gzip:   2.20 kB
+dist/assets/CaseAddPage-CPflcoSb.js                    7.00 kB │ gzip:   2.24 kB
+dist/assets/LegislationsPage-DnlrsehR.js               7.01 kB │ gzip:   2.51 kB
+dist/assets/CollectionDetailPage-BIidmB6x.js           7.55 kB │ gzip:   2.89 kB
+dist/assets/SavedSearchPanel-BF4mRO1e.js               7.72 kB │ gzip:   2.63 kB
+dist/assets/AdminPipelineRunsPage-BNQw0rzm.js          8.65 kB │ gzip:   2.53 kB
+dist/assets/CaseEditPage-ZS9B5_By.js                   8.67 kB │ gzip:   2.79 kB
+dist/assets/JudgeComparePage-UUsdqFm0.js               9.46 kB │ gzip:   3.34 kB
+dist/assets/confetti.module-C2jkTI5u.js               10.70 kB │ gzip:   4.29 kB
+dist/assets/JudgeProfilesPage-hN-XiaIM.js             14.13 kB │ gzip:   4.21 kB
+dist/assets/DataToolsPage-i1VMT5r8.js                 15.25 kB │ gzip:   3.92 kB
+dist/assets/GuidedSearchPage-C5aM0WxU.js              18.30 kB │ gzip:   4.59 kB
+dist/assets/LegislationDetailPage-BMOo0tWI.js         18.50 kB │ gzip:   5.88 kB
+dist/assets/CasesPage-Cug7p_R5.js                     25.69 kB │ gzip:   7.39 kB
+dist/assets/CaseDetailPage-v3dD-kj-.js                25.81 kB │ gzip:   7.90 kB
+dist/assets/CourtLineagePage-ssy0I49S.js              26.40 kB │ gzip:   7.42 kB
+dist/assets/JudgeDetailPage-CvZruhAI.js               26.66 kB │ gzip:   6.47 kB
+dist/assets/NewsPage-B9UTlYUf.js                      28.18 kB │ gzip:   9.36 kB
+dist/assets/query-CVaASUXx.js                         35.27 kB │ gzip:  10.40 kB
+dist/assets/DashboardPage-BQ_RI8q3.js                 35.80 kB │ gzip:   8.69 kB
+dist/assets/dnd-Hd1hg0nv.js                           45.44 kB │ gzip:  15.21 kB
+dist/assets/i18n-Diq9BY4f.js                          56.32 kB │ gzip:  18.42 kB
+dist/assets/zh-TW-JHz5NPRW.js                         58.03 kB │ gzip:  21.39 kB
+dist/assets/DesignTokensPage-Bn3f19A0.js              58.17 kB │ gzip:  15.54 kB
+dist/assets/AnalyticsPage-DmIyxI6r.js                 68.54 kB │ gzip:  16.66 kB
+dist/assets/LlmCouncilPage-I54m9izC.js               222.02 kB │ gzip:  64.91 kB
+dist/assets/index-CIoh_dgA.js                        222.47 kB │ gzip:  69.55 kB
+dist/assets/vendor-Ba2z923H.js                       290.16 kB │ gzip:  91.97 kB
+dist/assets/charts-e4Wfszy3.js                       458.79 kB │ gzip: 130.28 kB
+✓ built in 9.72s

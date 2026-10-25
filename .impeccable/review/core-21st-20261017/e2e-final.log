@@ -1,0 +1,299 @@
+..........F
+=================================== FAILURES ===================================
+_______________ TestQuickActions.test_pipeline_action[chromium] ________________
+tests/e2e/react/test_react_dashboard.py:100: in test_pipeline_action
+    expect(react_page).to_have_url(re.compile(r"/analytics$"))
+E   AssertionError: Page URL expected to be 're.compile('/analytics$')'
+E   Actual value: http://127.0.0.1:5194/analytics?year_from=2000&year_to=2026 
+E   Call log:
+E     - Expect "to_have_url" with timeout 5000ms
+E       13 × locator resolved to <html lang="en-US">…</html>
+E          - unexpected value "http://127.0.0.1:5194/analytics?year_from=2000&year_to=2026"
+E   
+E   Aria snapshot:
+E   - link "Skip to main content":
+E     - /url: "#main-content"
+E   - complementary:
+E     - text: IMMI-Case
+E     - navigation "Main navigation":
+E       - paragraph: Browse
+E       - link "Dashboard":
+E         - /url: /
+E       - link "Cases":
+E         - /url: /cases
+E       - link "Analytics":
+E         - /url: /analytics
+E       - link "Judge Profiles":
+E         - /url: /judge-profiles
+E       - link "News updates":
+E         - /url: /news
+E       - paragraph: Workspace
+E       - link "Collections":
+E         - /url: /collections
+E       - link "Saved Searches":
+E         - /url: /saved-searches
+E       - paragraph: Search
+E       - link "Search Taxonomy":
+E         - /url: /taxonomy
+E       - link "Guided Search":
+E         - /url: /guided-search
+E       - link "Semantic Search":
+E         - /url: /search/semantic
+E       - link "LLM IMMI Council":
+E         - /url: /llm-council
+E       - paragraph: Data Tools
+E       - link "Data Tools":
+E         - /url: /data-tools
+E       - paragraph: Reference
+E       - link "Court Lineage":
+E         - /url: /court-lineage
+E       - link "Legislations":
+E         - /url: /legislations
+E       - link "Data Dictionary":
+E         - /url: /data-dictionary
+E     - link "Sign in":
+E       - /url: /login
+E   - banner:
+E     - button "Search": Search... /
+E     - button "Toggle language": 中文
+E     - switch "Switch to dark mode"
+E   - main:
+E     - heading "Analytics" [level=1]
+E     - paragraph: Case Insights & Trends
+E     - text: All Courts • 2000–2026
+E     - heading "Filter Scope" [level=2]
+E     - paragraph: Set court, time range, and advanced filters before reading chart insights.
+E     - heading "Year / Court" [level=3]
+E     - button "All Time" [pressed]
+E     - button "Last 5 Years"
+E     - button "Last 10 Years"
+E     - button "2020–2026"
+E     - text: "|"
+E     - combobox "Year From":
+E       - option "2000" [selected]
+E       - option "2001"
+E       - option "2002"
+E       - option "2003"
+E       - option "2004"
+E       - option "2005"
+E       - option "2006"
+E       - option "2007"
+E       - option "2008"
+E       - option "2009"
+E       - option "2010"
+E       - option "2011"
+E       - option "2012"
+E       - option "2013"
+E       - option "2014"
+E       - option "2015"
+E       - option "2016"
+E       - option "2017"
+E       - option "2018"
+E       - option "2019"
+E       - option "2020"
+E       - option "2021"
+E       - option "2022"
+E       - option "2023"
+E       - option "2024"
+E       - option "2025"
+E       - option "2026"
+E     - text: –
+E     - combobox "Year To":
+E       - option "2000"
+E       - option "2001"
+E       - option "2002"
+E       - option "2003"
+E       - option "2004"
+E       - option "2005"
+E       - option "2006"
+E       - option "2007"
+E       - option "2008"
+E       - option "2009"
+E       - option "2010"
+E       - option "2011"
+E       - option "2012"
+E       - option "2013"
+E       - option "2014"
+E       - option "2015"
+E       - option "2016"
+E       - option "2017"
+E       - option "2018"
+E       - option "2019"
+E       - option "2020"
+E       - option "2021"
+E       - option "2022"
+E       - option "2023"
+E       - option "2024"
+E       - option "2025"
+E       - option "2026" [selected]
+E     - button "All Courts" [pressed]
+E     - button "AATA"
+E     - button "ARTA"
+E     - button "FCA"
+E     - button "FCCA"
+E     - button "FedCFamC2G"
+E     - button "HCA"
+E     - button "MRTA"
+E     - button "RRTA"
+E     - button "FMCA"
+E     - heading "Advanced Filters" [level=3]
+E     - button "Advanced Filters Only options with data in the current scope are shown.":
+E       - paragraph: Advanced Filters
+E       - paragraph: Only options with data in the current scope are shown.
+E     - navigation "Analysis chapters":
+E       - link "Historical outcome overview":
+E         - /url: "#analytics-history"
+E       - link "Outcome Snapshot":
+E         - /url: "#analytics-outcomes"
+E       - link "Flow & Timing Analysis":
+E         - /url: "#analytics-flows"
+E       - link "Concept Intelligence":
+E         - /url: "#analytics-concepts"
+E       - link "Visa Family Analysis":
+E         - /url: "#analytics-visas"
+E     - paragraph: Matching Cases
+E     - paragraph: "10"
+E     - paragraph: Top Outcome
+E     - paragraph: Dismissed
+E     - paragraph: 30% of cases
+E     - paragraph: Top Case Nature
+E     - paragraph: Appeal
+E     - paragraph: 20% of cases
+E     - heading "Historical outcome overview" [level=2]
+E     - paragraph: Review observed outcomes before exploring trends and case details.
+E     - heading "Historical outcome analysis" [level=2]
+E     - paragraph: Explore the outcomes of historical cases matching your selected criteria.
+E     - text: Visa Subclass
+E     - combobox "Visa Subclass":
+E       - option "All" [selected]
+E     - text: Case Nature
+E     - combobox "Case Nature":
+E       - option "All" [selected]
+E       - option "Appeal"
+E       - option "Constitutional"
+E       - option "Detention Review"
+E       - option "Judicial Review"
+E       - option "Refugee Status"
+E       - option "Visa Cancellation"
+E       - option "Visa Refusal"
+E     - text: Legal Concepts
+E     - button "Character Test"
+E     - button "Complementary Protection"
+E     - button "Jurisdictional Error"
+E     - button "Procedural Fairness"
+E     - button "Judicial Review"
+E     - button "Jurisdiction"
+E     - button "Genuine Relationship"
+E     - paragraph: Historical favourable outcome share
+E     - paragraph: 40.0%
+E     - paragraph: 10 matching cases
+E     - paragraph: Based on 10 matching historical cases. This is not a prediction for an individual case. Small or incomplete samples limit what can be inferred.
+E     - text: N=10 • Low Confidence
+E     - button "Confidence information"
+E     - button "Deep Dive"
+E     - 'img "Score 40 out of 100: Historical share"': "40"
+E     - text: Historical share
+E     - paragraph: Outcome Funnel
+E     - 'img "Wins: 4 (40.0%), Losses: 6 (60.0%)"': "Wins: 4 Losses: 6 40% 60%"
+E     - paragraph: Top Concept Lift
+E     - text: Character Test 0.0% Complementary Protection 100.0% Jurisdictional Error 100.0% Procedural Fairness 100.0% Judicial Review 0.0% Jurisdiction 0.0%
+E     - paragraph: Historical favourable share trend
+E     - application: 2022 2023 2024 0 20 40 60 80
+E     - paragraph: Top Concept Combinations
+E     - paragraph: No co-occurrence data for current filters
+E     - heading "Outcome Snapshot" [level=2]
+E     - paragraph: Review outcomes by court, year, and case profile to quickly identify where patterns diverge.
+E     - heading "Outcome Rate by Court" [level=3]
+E     - list:
+E       - listitem:
+E         - img "Affirmed legend icon"
+E         - text: Affirmed
+E       - listitem:
+E         - img "Allowed legend icon"
+E         - text: Allowed
+E       - listitem:
+E         - img "Dismissed legend icon"
+E         - text: Dismissed
+E       - listitem:
+E         - img "Granted legend icon"
+E         - text: Granted
+E       - listitem:
+E         - img "Remitted legend icon"
+E         - text: Remitted
+E       - listitem:
+E         - img "Set Aside legend icon"
+E         - text: Set Aside
+E     - application: 0% 25% 50% 75% 100% AATA FCA FCCA FedCFamC2G HCA
+E     - heading "Affirmed Rate Trend" [level=3]
+E     - list:
+E       - listitem:
+E         - img "Affirmed Rate legend icon"
+E         - text: Affirmed Rate
+E       - listitem:
+E         - img "Historical applicant-favourable share legend icon"
+E         - text: Historical applicant-favourable share
+E     - application
+E     - paragraph: Historical affirmed share = tribunal upholds decision | Historical applicant-favourable share = Set Aside + Remitted
+E     - heading "Affirmed Rate by Visa Subclass" [level=3]
+E     - text: No subclass outcome data for current filters
+E     - heading "Most Active Judges / Members" [level=3]
+E     - img "Bar chart of most active judges by case count":
+E       - text: Most Active Judges
+E       - link "View All":
+E         - /url: /judge-profiles
+E       - application: Gageler Gordon Simon HarryPete… Gleeson Jj JudgeSuzanne Jo… Smith Justice Jillian… Judge StewartBr… Lee Taylor Adams Roberts 2 2 2 2 1 1 1 1 1 1 1 1
+E     - heading "Legal Concepts Frequency" [level=3]
+E     - img "Bar chart of top legal concepts by case count":
+E       - application: Character Test ComplementaryPr… JurisdictionalE… ProceduralFairn… Judicial Review Jurisdiction GenuineRelation… 1 1 1 1 1 1 1
+E     - heading "Case Nature × Outcome Matrix" [level=3]
+E     - button "% of row"
+E     - text: Affirmed Allowed Dismissed Granted Remitted Set Aside Visa Refusal 1 – – – 1 – Judicial Review – 1 1 – – – Appeal – – 2 – – – Refugee Status – – – – – 1 Visa Cancellation 1 – – – – – Detention Review – – – 1 – – Constitutional – 1 – – – –
+E     - heading "Flow & Timing Analysis" [level=2]
+E     - paragraph: Inspect how cases move between stages and how monthly signals shift over time.
+E     - heading "Case Flow (Court → Nature → Outcome)" [level=3]
+E     - img "Flow diagram showing case nature and outcome distribution":
+E       - text: Court Case Nature Outcome
+E       - button "Table View"
+E       - application: AATA FCA FCCA FedCFamC2G HCA Appeal Constitutional Detention Review Judicial Review Refugee Status Visa Cancellation Visa Refusal Affirmed Allowed Dismissed Granted Remitted Set Aside
+E     - heading "Monthly Trends & Policy Events" [level=3]
+E     - text: No monthly trend data for current filters
+E     - heading "Concept Intelligence" [level=2]
+E     - paragraph: Identify legal concepts that correlate with better outcomes and how they evolve over time.
+E     - heading "Concept Effectiveness" [level=3]
+E     - application: "-1.50 -0.75 0.00 +0.75 +1.50 Character Test ComplementaryProtection Procedural Fairness Jurisdictional Error Judicial Review Jurisdiction GenuineRelationship"
+E     - heading "Concept Effectiveness by Court" [level=3]
+E     - list:
+E       - listitem:
+E         - img "AATA legend icon"
+E         - text: AATA
+E       - listitem:
+E         - img "FCA legend icon"
+E         - text: FCA
+E       - listitem:
+E         - img "FedCFamC2G legend icon"
+E         - text: FedCFamC2G
+E     - application: 0% 25% 50% 75% 100% Character Test ComplementaryProtection Procedural Fairness Jurisdictional Error Judicial Review Jurisdiction GenuineRelationship
+E     - heading "Legal Concept Co-occurrence" [level=3]
+E     - text: Character Test Complementary Protection Procedural Fairness Jurisdictional Error Judicial Review Jurisdiction Genuine Relationship Character Test — - - - - - - Complementary Protection - — - - - - - Procedural Fairness - - — - - - - Jurisdictional Error - - - — - - - Judicial Review - - - - — - - Jurisdiction - - - - - — - Genuine Relationship - - - - - - —
+E     - heading "Concept Trends" [level=3]
+E     - button "Character Test"
+E     - button "Complementary Protection"
+E     - button "Genuine Relationship"
+E     - button "Judicial Review"
+E     - button "Jurisdiction"
+E     - button "Jurisdictional Error"
+E     - application: 2023 2024 0% 25% 50% 75% 100%
+E     - heading "Emerging Concepts" [level=3]
+E     - paragraph: Emerging
+E     - text: Character Test (100.0%) Complementary Protection (100.0%) Procedural Fairness (100.0%) Jurisdictional Error (100.0%) Judicial Review (100.0%) Jurisdiction (100.0%) Genuine Relationship (100.0%)
+E     - heading "Visa Family Analysis" [level=2]
+E     - paragraph: Compare observed historical outcomes across visa family groups.
+E     - heading "Cases by Visa Family" [level=3]
+E     - text: No visa family data available for current filters
+E     - heading "Historical favourable shares by family" [level=3]
+E     - text: No visa family data available for current filters
+E   - region "Notifications alt+T"
+=========================== short test summary info ============================
+FAILED tests/e2e/react/test_react_dashboard.py::TestQuickActions::test_pipeline_action[chromium]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 10 passed in 22.91s

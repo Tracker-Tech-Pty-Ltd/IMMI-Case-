@@ -1,0 +1,428 @@
+{
+  "tool": "built-in image_gen",
+  "count": 30,
+  "variants": 60,
+  "transparent": true,
+  "assets": [
+    {
+      "id": "codex",
+      "index": 0,
+      "subject": "a closed navy legal codex with amber bookmark ribbon",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a closed navy legal codex with amber bookmark ribbon. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a closed navy legal codex with amber bookmark ribbon. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "dashboard",
+      "index": 1,
+      "subject": "a small architectural reading desk with an open index ledger",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a small architectural reading desk with an open index ledger. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a small architectural reading desk with an open index ledger. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "cases",
+      "index": 2,
+      "subject": "three upright case file folders with a simple folded document",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three upright case file folders with a simple folded document. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three upright case file folders with a simple folded document. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "analytics",
+      "index": 3,
+      "subject": "a tiny scholarly chart with three vertical ink bars and an amber ruler",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tiny scholarly chart with three vertical ink bars and an amber ruler. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tiny scholarly chart with three vertical ink bars and an amber ruler. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "judges",
+      "index": 4,
+      "subject": "a judicial bench and restrained balance scale",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a judicial bench and restrained balance scale. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a judicial bench and restrained balance scale. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "news",
+      "index": 5,
+      "subject": "a folded newspaper with abstract unreadable rules and an amber tab",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a folded newspaper with abstract unreadable rules and an amber tab. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a folded newspaper with abstract unreadable rules and an amber tab. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "collections",
+      "index": 6,
+      "subject": "a tied folio with a ribbon bookmark",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tied folio with a ribbon bookmark. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tied folio with a ribbon bookmark. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "saved-searches",
+      "index": 7,
+      "subject": "a brass magnifying glass resting on a bookmarked index card",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a brass magnifying glass resting on a bookmarked index card. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a brass magnifying glass resting on a bookmarked index card. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "taxonomy",
+      "index": 8,
+      "subject": "three connected index cards forming an archival classification tree",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three connected index cards forming an archival classification tree. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three connected index cards forming an archival classification tree. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "guided-search",
+      "index": 9,
+      "subject": "an amber compass resting on a small folded paper map",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an amber compass resting on a small folded paper map. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an amber compass resting on a small folded paper map. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "semantic-search",
+      "index": 10,
+      "subject": "a magnifying glass over two overlapping abstract text leaves",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a magnifying glass over two overlapping abstract text leaves. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a magnifying glass over two overlapping abstract text leaves. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "council",
+      "index": 11,
+      "subject": "three scholarly folios arranged around a small round consultation table",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three scholarly folios arranged around a small round consultation table. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three scholarly folios arranged around a small round consultation table. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "data-tools",
+      "index": 12,
+      "subject": "three archive drawers with a brass calibration tool",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three archive drawers with a brass calibration tool. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three archive drawers with a brass calibration tool. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "courts",
+      "index": 13,
+      "subject": "a classical Australian court facade with three columns",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a classical Australian court facade with three columns. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a classical Australian court facade with three columns. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "legislation",
+      "index": 14,
+      "subject": "two statute books and a modest brass page clip",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: two statute books and a modest brass page clip. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: two statute books and a modest brass page clip. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "dictionary",
+      "index": 15,
+      "subject": "an open reference dictionary with amber thumb tabs",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "shared navigation",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open reference dictionary with amber thumb tabs. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open reference dictionary with amber thumb tabs. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "document",
+      "index": 16,
+      "subject": "one upright folded official document with abstract navy rules and an amber seal without insignia",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news illustration and category",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: one upright folded official document with abstract navy rules and an amber seal without insignia. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: one upright folded official document with abstract navy rules and an amber seal without insignia. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "government",
+      "index": 17,
+      "subject": "an official correspondence envelope with a small blank circular seal",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news illustration and category",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an official correspondence envelope with a small blank circular seal. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an official correspondence envelope with a small blank circular seal. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "tribunal",
+      "index": 18,
+      "subject": "a small hearing desk with two document stacks",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news illustration and category",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a small hearing desk with two document stacks. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a small hearing desk with two document stacks. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "court-update",
+      "index": 19,
+      "subject": "a legal decision folio with a subtle balance motif",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news illustration and category",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a legal decision folio with a subtle balance motif. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a legal decision folio with a subtle balance motif. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "source-check",
+      "index": 20,
+      "subject": "a magnifying glass over a source document with one small amber check",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "reading verification tools",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a magnifying glass over a source document with one small amber check. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a magnifying glass over a source document with one small amber check. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "calendar",
+      "index": 21,
+      "subject": "a tear-off paper calendar with an abstract date grid and amber binding",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "reading verification tools",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tear-off paper calendar with an abstract date grid and amber binding. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a tear-off paper calendar with an abstract date grid and amber binding. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "scope",
+      "index": 22,
+      "subject": "a brass divider measuring the boundaries of a paper document",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "reading verification tools",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a brass divider measuring the boundaries of a paper document. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a brass divider measuring the boundaries of a paper document. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "research",
+      "index": 23,
+      "subject": "an open codex and a single amber bookmark ribbon",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "reading verification tools",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open codex and a single amber bookmark ribbon. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open codex and a single amber bookmark ribbon. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "search",
+      "index": 24,
+      "subject": "a slender brass magnifying glass with navy handle",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a slender brass magnifying glass with navy handle. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a slender brass magnifying glass with navy handle. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "filter",
+      "index": 25,
+      "subject": "three small archival sorting trays descending in width",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three small archival sorting trays descending in width. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: three small archival sorting trays descending in width. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "clear",
+      "index": 26,
+      "subject": "a soft archival brush sweeping a blank index card",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a soft archival brush sweeping a blank index card. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a soft archival brush sweeping a blank index card. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "original",
+      "index": 27,
+      "subject": "an original folded document with a small outbound arrow formed from brass",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an original folded document with a small outbound arrow formed from brass. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an original folded document with a small outbound arrow formed from brass. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "summary",
+      "index": 28,
+      "subject": "a paper abstract with three bold horizontal rules and a folded lower corner",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a paper abstract with three bold horizontal rules and a folded lower corner. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: a paper abstract with three bold horizontal rules and a folded lower corner. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    },
+    {
+      "id": "empty",
+      "index": 29,
+      "subject": "an open archive box with one blank card and a small magnifying glass",
+      "modes": [
+        "light",
+        "dark"
+      ],
+      "usage": "news controls and empty state",
+      "prompts": {
+        "light": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open archive box with one blank card and a small magnifying glass. LIGHT MODE twin: navy #1b2838 ink and pale warm ivory paper with restrained amber #d4a017 detail, readable against warm white #f5f4f1.",
+        "dark": "Use case: stylized-concept. Asset type: production UI sticker for the Legal Codex Australian immigration research website. Create ONE isolated object, centered, square composition, occupying about 80% of canvas. Style: refined engraved editorial cut-paper miniature, restrained academic legal stationery, crisp simple silhouette readable at 24-72px, subtle dimensional paper layering, no cartoon face, no people. Flat cutout with fine realistic paper edges, no rectangular backplate, no ground plane, no background, no border frame, no text, no letters, no numerals, no watermark, no logo or government insignia. TRUE transparent alpha background, not a checkerboard. Subject: an open archive box with one blank card and a small magnifying glass. DARK MODE twin: warm ivory #f5f4f1 paper edges and light silver-blue engraved lines with restrained amber #d4a017 detail and navy inset, readable against dark navy #111820."
+      }
+    }
+  ]
+}

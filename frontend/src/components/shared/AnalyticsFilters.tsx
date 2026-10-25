@@ -48,7 +48,7 @@ export function AnalyticsFilters({
   const isCustom = !TIME_PRESETS.some(isPresetActive);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 font-data">
       {/* Timeframe presets */}
       <div className="flex flex-wrap items-center gap-1.5">
         {TIME_PRESETS.map((preset) => (
@@ -57,14 +57,20 @@ export function AnalyticsFilters({
             key={preset.label}
             onClick={() => onYearRangeChange(preset.from, preset.to)}
             className={cn(
-              "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              "codex-control cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors",
               isPresetActive(preset)
-                ? "bg-accent text-white"
+                ? "bg-accent text-on-solid"
                 : "bg-surface text-muted-text hover:bg-accent-muted hover:text-accent",
             )}
             aria-pressed={isPresetActive(preset)}
           >
-            {preset.label}
+            {preset === TIME_PRESETS[0]
+              ? t("filters.preset_all_time", { defaultValue: "All Time" })
+              : preset === TIME_PRESETS[1]
+                ? t("filters.preset_last_5y", { defaultValue: "Last 5 Years" })
+                : preset === TIME_PRESETS[2]
+                  ? t("filters.preset_last_10y", { defaultValue: "Last 10 Years" })
+                  : preset.label}
           </button>
         ))}
         {/* Custom year pickers — keep separator + selects as a single wrapping unit */}
@@ -72,9 +78,9 @@ export function AnalyticsFilters({
         <span className="hidden text-xs text-muted-text sm:inline">|</span>
           <select
             value={yearFrom}
-            onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
+            onChange={(e) => onYearRangeChange(Number(e.target.value), Math.max(Number(e.target.value), yearTo))}
             className={cn(
-              "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
+              "codex-control rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground",
               isCustom && "border-accent",
             )}
             aria-label={t("filters.year_from")}
@@ -90,9 +96,9 @@ export function AnalyticsFilters({
           <span className="text-xs text-muted-text">&ndash;</span>
           <select
             value={yearTo}
-            onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
+            onChange={(e) => onYearRangeChange(Math.min(yearFrom, Number(e.target.value)), Number(e.target.value))}
             className={cn(
-              "rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground",
+              "codex-control rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground",
               isCustom && "border-accent",
             )}
             aria-label={t("filters.year_to")}
@@ -114,9 +120,9 @@ export function AnalyticsFilters({
           type="button"
           onClick={() => onCourtChange("")}
           className={cn(
-            "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "codex-control cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors",
             !court
-              ? "bg-accent text-white"
+              ? "bg-accent text-on-solid"
               : "bg-surface text-muted-text hover:bg-accent-muted hover:text-accent",
           )}
           aria-pressed={!court}
@@ -129,9 +135,9 @@ export function AnalyticsFilters({
             key={c}
             onClick={() => onCourtChange(court === c ? "" : c)}
             className={cn(
-              "cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              "codex-control cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors",
               court === c
-                ? "bg-accent text-white"
+                ? "bg-accent text-on-solid"
                 : "bg-surface text-muted-text hover:bg-accent-muted hover:text-accent",
             )}
             aria-pressed={court === c}

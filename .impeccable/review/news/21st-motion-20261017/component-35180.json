@@ -1,0 +1,28 @@
+{
+  "component": {
+    "id": 35180,
+    "componentId": 19675,
+    "authorUserId": "user_registry_kevingirelli_1790903224160",
+    "name": "Spotlight",
+    "demoName": "Default",
+    "description": "A soft radial light that follows the pointer across a card or surface, with an optional lit edge ring, for highlighting hoverable panels.",
+    "previewUrl": "https://cdn.21st.dev/user_registry_kevingirelli_1790903224160/spotlight/default/preview.1791207448218.webp",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/kevingirelli/spotlight?api_key=$API_KEY_21ST\"",
+    "componentCode": "\"use client\";\n\nimport { Slot, Slottable } from \"@radix-ui/react-slot\";\nimport {\n  useEffect,\n  useRef,\n  type ComponentProps,\n  type CSSProperties,\n} from \"react\";\n\nimport { cn } from \"@/lib/utils\";\n\n// Two masks, one clipped to the content box: \"exclude\" keeps only the\n// padding, which is the 1px ring.\nconst RING_MASK =\n  \"linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)\";\n\nconst lightClassName = cn(\n  \"pointer-events-none absolute inset-0 -z-10 rounded-[inherit] opacity-0\",\n  \"transition-opacity duration-300 motion-reduce:transition-none\",\n  \"group-focus-within/spotlight:opacity-100 group-hover/spotlight:opacity-100\",\n);\n\ninterface SpotlightProps extends ComponentProps<\"div\"> {\n  /** Light the single child element, e.g. a Card, instead of wrapping it in a div. */\n  asChild?: boolean;\n  /** Radius of the light, in px. */\n  size?: number;\n  /** Colour of the light: any CSS colour, including theme variables. */\n  color?: string;\n  /** Also light the part of the edge nearest the pointer. */\n  ring?: boolean;\n}\n\n/**\n * A soft light that follows the pointer across a surface, and along its edge.\n * It sits behind the content (the element becomes its own stacking context)\n * and only updates two CSS variables per frame, so nothing re-renders. Touch\n * screens skip it; keyboard focus inside lights it where the pointer last was.\n *\n * @example\n * <Spotlight asChild>\n *   <Card>…</Card>\n * </Spotlight>\n */\nfunction Spotlight({\n  asChild = false,\n  size = 320,\n  color = \"var(--foreground)\",\n  ring = true,\n  className,\n  children,\n  onPointerMove,\n  ...props\n}: SpotlightProps) {\n  const frame = useRef(0);\n\n  useEffect(() => () => cancelAnimationFrame(frame.current), []);\n\n  const Comp = asChild ? Slot : \"div\";\n  const circle = `${size}px circle at var(--spotlight-x, 50%) var(--spotlight-y, 50%)`;\n  const ringStyle: CSSProperties = {\n    background: `radial-gradient(${circle}, color-mix(in oklab, ${color} 45%, transparent), transparent 60%)`,\n    mask: RING_MASK,\n    maskComposite: \"exclude\",\n    WebkitMask: RING_MASK,\n    WebkitMaskComposite: \"xor\",\n  };\n\n  return (\n    <Comp\n      data-slot=\"spotlight\"\n      className={cn(\"group/spotlight relative isolate\", className)}\n      onPointerMove={(event) => {\n        onPointerMove?.(event);\n        if (event.pointerType === \"touch\") return;\n        const target = event.currentTarget;\n        const { clientX, clientY } = event;\n        cancelAnimationFrame(frame.current);\n        frame.current = requestAnimationFrame(() => {\n          const bounds = target.getBoundingClientRect();\n          target.style.setProperty(\n            \"--spotlight-x\",\n            `${clientX - bounds.left}px`,\n          );\n          target.style.setProperty(\n            \"--spotlight-y\",\n            `${clientY - bounds.top}px`,\n          );\n        });\n      }}\n      {...props}\n    >\n      <span\n        aria-hidden=\"true\"\n        data-slot=\"spotlight-light\"\n        className={lightClassName}\n        style={{\n          background: `radial-gradient(${circle}, color-mix(in oklab, ${color} 10%, transparent), transparent 70%)`,\n        }}\n      />\n      {ring ? (\n        <span\n          aria-hidden=\"true\"\n          data-slot=\"spotlight-ring\"\n          className={cn(lightClassName, \"-inset-px p-px\")}\n          style={ringStyle}\n        />\n      ) : null}\n      <Slottable>{children}</Slottable>\n    </Comp>\n  );\n}\n\nexport { Spotlight, type SpotlightProps };\n\nexport default Spotlight;\n",
+    "demoCode": "import { Spotlight } from \"@/components/ui/spotlight\";\n\nexport default function SpotlightDemo() {\n  return (\n    <div className=\"flex w-full items-center justify-center p-10\">\n      <Spotlight\n        asChild\n        className=\"w-80 rounded-xl border bg-card p-6 text-card-foreground shadow-sm\"\n      >\n        <div>\n          <h3 className=\"text-lg font-semibold\">Move your cursor here</h3>\n          <p className=\"mt-2 text-sm text-muted-foreground\">\n            The light follows it, and so does the edge.\n          </p>\n        </div>\n      </Spotlight>\n    </div>\n  );\n}\n",
+    "registryDependencies": {
+      "filesWithRegistry": {},
+      "npmDependencies": {}
+    },
+    "isPublic": true,
+    "registryTeamId": null,
+    "registryUserId": "user_registry_kevingirelli_1790903224160"
+  },
+  "quota": {
+    "tier": "paid",
+    "remaining": null,
+    "perDay": null,
+    "resetAt": null,
+    "upgradeUrl": null
+  }
+}

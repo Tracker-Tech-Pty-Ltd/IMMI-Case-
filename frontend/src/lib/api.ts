@@ -38,6 +38,11 @@ export function setApiAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+/** Other response formats (Council JSON/SSE) must use this tab's identity too. */
+export function getApiAccessToken(): string | null {
+  return accessToken;
+}
+
 const API_TIMEOUT_MS = 20_000;
 const ANALYTICS_TIMEOUT_MS = 15_000;
 const ANALYTICS_HEAVY_TIMEOUT_MS = 20_000;
@@ -1466,7 +1471,9 @@ async function postCollectionExportOnce(
 export async function exportCollection(
   payload: CollectionExportPayload,
 ): Promise<string> {
-  let { res, generation } = await postCollectionExportOnce(payload);
+  const firstAttempt = await postCollectionExportOnce(payload);
+  let res = firstAttempt.res;
+  const generation = firstAttempt.generation;
   if (!res.ok && res.status === 403) {
     const body = await res.clone().json().catch(() => ({}) as { code?: string });
     if (body.code === "csrf" || body.code === "csrf_expired") {

@@ -31,13 +31,13 @@ export function TagInputModal({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--color-overlay)]/65 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Overlay className="codex-overlay fixed inset-0 z-50 bg-overlay/65" />
         <Dialog.Content
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             inputRef.current?.focus();
           }}
-          className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-lg focus:outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          className="codex-modal codex-dialog fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card p-6 shadow-lg focus:outline-none"
         >
           <div className="flex items-start gap-3">
             <div className="rounded-full bg-accent/10 p-2">
@@ -57,6 +57,7 @@ export function TagInputModal({
             <input
               ref={inputRef}
               type="text"
+              aria-label={t("modals.tag_input_title", { defaultValue: "Add a tag" })}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
@@ -76,7 +77,7 @@ export function TagInputModal({
             )}
           </div>
 
-          <div className="mt-6 flex justify-end gap-2">
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
             <button
               onClick={onCancel}
               className="rounded-md border border-border px-4 py-2 text-sm text-foreground hover:bg-surface"
@@ -90,7 +91,7 @@ export function TagInputModal({
                 setValue("");
               }}
               disabled={!trimmed}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-light disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-solid hover:bg-accent-hover disabled:opacity-50"
             >
               {t("modals.tag_input_confirm")}
             </button>

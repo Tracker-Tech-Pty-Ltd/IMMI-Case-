@@ -26,11 +26,11 @@ REACT_DIR = Path(os.path.dirname(pkg.__file__)) / "static" / "react"
 OUTSIDE_MARKER = "PLAN045-OUTSIDE-THE-BUILD-DIRECTORY"
 
 
-def _make_app():
+def _make_app(output_dir):
     from immi_case_downloader.web import create_app
 
     with patch.dict(os.environ, {"SECRET_KEY": "test-key"}):
-        app = create_app(backend="csv")
+        app = create_app(output_dir=str(output_dir), backend="csv")
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     return app
@@ -78,23 +78,23 @@ def react_build(tmp_path):
             shutil.rmtree(missing_root, ignore_errors=True)
 
 
-def test_serves_a_file_inside_the_build_directory(react_build):
+def test_serves_a_file_inside_the_build_directory(react_build, tmp_path):
     """The guard must not break the legitimate case it wraps."""
-    response = _make_app().test_client().get("/plan045-asset.js")
+    response = _make_app(tmp_path).test_client().get("/plan045-asset.js")
     assert response.status_code == 200
     assert b"INSIDE-THE-BUILD" in response.data
 
 
-def test_rejects_a_symlink_that_escapes_the_build_directory(react_build):
+def test_rejects_a_symlink_that_escapes_the_build_directory(react_build, tmp_path):
     """Before the Step 5 guard this returned 200 with the outside file's bytes."""
-    response = _make_app().test_client().get("/plan045-escape.js")
+    response = _make_app(tmp_path).test_client().get("/plan045-escape.js")
     assert response.status_code == 404
     assert OUTSIDE_MARKER.encode() not in response.data
 
 
-def test_encoded_traversal_never_serves_a_file_outside_the_build(react_build):
+def test_encoded_traversal_never_serves_a_file_outside_the_build(react_build, tmp_path):
     """Defence in depth: Werkzeug normalises most of these, the guard covers the rest."""
-    client = _make_app().test_client()
+    client = _make_app(tmp_path).test_client()
     for path in ("/../plan045-escape.js", "/%2e%2e%2fplan045-escape.js", "/a/../../setup.py"):
         response = client.get(path)
         assert response.status_code != 500

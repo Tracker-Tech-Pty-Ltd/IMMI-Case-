@@ -1352,10 +1352,21 @@ def _case_source_header(source_text: str) -> tuple[dict[str, str], str, bool]:
     separator = re.search(r"(?m)^={10,}\s*$", source_text)
     header = source_text[:separator.start()] if separator else "\n".join(source_text.splitlines()[:20])
     metadata: dict[str, str] = {}
-    for line in header.splitlines():
+    lines = header.splitlines()
+    for index, line in enumerate(lines):
         match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
         if match and match[2].strip():
-            metadata.setdefault(match[1].casefold(), match[2].strip())
+            key, value = match[1].casefold(), match[2].strip()
+            citation_pattern = r"\[\d{4}\]\s+[A-Za-z][A-Za-z0-9&.]*\s+\d+\b"
+            if key == "citation" and not re.fullmatch(citation_pattern, value):
+                if index + 1 < len(lines):
+                    continuation = lines[index + 1].strip()
+                    continuation_pattern = r"(?:[A-Za-z][A-Za-z0-9&.]*\s+)?\d{1,6}"
+                    combined = " ".join((value, continuation))
+                    if (re.fullmatch(continuation_pattern, continuation)
+                            and re.fullmatch(citation_pattern, combined)):
+                        value = combined
+            metadata.setdefault(key, value)
     body = source_text[separator.end():] if separator else ""
     return metadata, body, separator is not None
 
@@ -1455,12 +1466,21 @@ def _validate_linked_case_visa_approval(
 ) -> None:
     """Validate a visa value supported by a linked judgment in the same matter."""
     metadata, body, has_separator = _case_source_header(source_text)
+    linked_source_quote_review = (
+        evidence.get("method") == "manual_linked_case_source_quote_review"
+    )
+    identity_alias_review = (
+        linked_source_quote_review and assessment.source_status == "identity_conflict"
+    )
     if (
         not has_separator
         or metadata.get("citation") != row["citation"]
         or metadata.get("url") != row["url"]
         or row["citation"] not in metadata.get("title", "")
-        or assessment.source_status != "checked"
+        or (
+            assessment.source_status != "checked"
+            and not identity_alias_review
+        )
         or "visa_type" in assessment.values
         or "visa_type" in assessment.not_applicable
     ):
@@ -1476,9 +1496,6 @@ def _validate_linked_case_visa_approval(
         raise ValueError("Linked visa approval is missing the appealed citation")
     same_proceeding = evidence.get("method") == "manual_same_proceeding_visa_review"
     lower_court_link = evidence.get("method") == "manual_lower_court_linked_visa_review"
-    linked_source_quote_review = (
-        evidence.get("method") == "manual_linked_case_source_quote_review"
-    )
     if not same_proceeding and not lower_court_link:
         appeal_heading = (
             r"(?is)\b(?:Appeal\s+from|Application\s+for\s+"
@@ -1512,8 +1529,7 @@ def _validate_linked_case_visa_approval(
     if len(parent_rows) != 1:
         raise ValueError("Appealed case is missing or its citation is ambiguous")
     parent = parent_rows[0]
-    if (not lower_court_link
-            and _case_title_key(row["title"]) != _case_title_key(parent["title"])):
+    if not lower_court_link:
         target_party = _case_primary_party_key(row["title"])
         parent_party = _case_primary_party_key(parent["title"])
         ignored_party_words = {
@@ -1565,11 +1581,14 @@ def _validate_linked_case_visa_approval(
         body_caption_matches_parent = bool(
             body_caption_party and body_caption_party == parent_party
         )
-        if (
-            (not target_party or target_party != parent_party)
-            and not shared_named_party
-            and not body_caption_matches_parent
-        ):
+        if identity_alias_review and not body_caption_matches_parent:
+            raise ValueError(
+                "Identity-conflicted source requires a court caption naming the appealed party"
+            )
+        title_matches = _case_title_key(row["title"]) == _case_title_key(parent["title"])
+        same_named_party = target_party and target_party == parent_party
+        if (not title_matches and not same_named_party
+                and not shared_named_party and not body_caption_matches_parent):
             raise ValueError(
                 "Linked visa approval requires the same case title or named applicant"
             )
@@ -1580,6 +1599,21 @@ def _validate_linked_case_visa_approval(
             r".{0,180}?\bgiven\s+by\s+"
             r"([A-Z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)*\s+(?:FM|J))\b",
             target_quote,
+        )
+        dated_lower_appeal = None if lower_appeal else re.search(
+            r"(?i)\b(?:application\s+for\s+leave\s+to\s+)?appeal\s+from\s+"
+            r"a\s+judgment\s+of\s+Federal\s+Magistrate\s+"
+            r"([A-Z][A-Za-z'.-]*(?:\s+[A-Z][A-Za-z'.-]*)*)\s+given\s+on\s+"
+            r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
+            target_quote,
+        )
+        lower_court_name = (
+            lower_appeal[1] if lower_appeal else
+            "Federal Magistrates Court" if dated_lower_appeal else ""
+        )
+        lower_judge = (
+            lower_appeal[2] if lower_appeal else
+            f"{dated_lower_appeal[1]} FM" if dated_lower_appeal else ""
         )
         expected_parent_court = {
             "federal magistrates court": "FMCA",
@@ -1602,14 +1636,17 @@ def _validate_linked_case_visa_approval(
         target_mask = masked_applicant(row)
         parent_mask = masked_applicant(parent)
         if (
-            not lower_appeal
+            not lower_court_name
             or row["court_code"] != "FCA"
-            or expected_parent_court.get(lower_appeal[1].casefold()) != parent["court_code"]
+            or expected_parent_court.get(lower_court_name.casefold()) != parent["court_code"]
             or not target_mask
             or target_mask != parent_mask
             or not parent["judges"]
-            or normalized_judge(lower_appeal[2]) != normalized_judge(parent["judges"])
-            or not re.search(r"\bREFUGEE REVIEW TRIBUNAL\b", body, re.I)
+            or normalized_judge(lower_judge) != normalized_judge(parent["judges"])
+                or (
+                    not dated_lower_appeal
+                    and not re.search(r"\bREFUGEE REVIEW TRIBUNAL\b", body, re.I)
+                )
         ):
             raise ValueError(
                 "Unnumbered lower-court link requires the same masked applicant, "
@@ -1620,8 +1657,14 @@ def _validate_linked_case_visa_approval(
             parent_date = parsed_case_date(parent["date"])
         except (TypeError, ValueError) as exc:
             raise ValueError("Unnumbered lower-court link requires parseable judgment dates") from exc
+        linked_judgment_date = parent_date
+        if dated_lower_appeal:
+            try:
+                linked_judgment_date = parsed_case_date(dated_lower_appeal[2])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Dated lower-court link requires a parseable cited judgment date") from exc
         if (
-            parent_date >= target_date
+            linked_judgment_date >= target_date
             or not re.search(r"(?<![A-Z0-9])" + re.escape(target_mask) + r"(?![A-Z0-9])", body, re.I)
         ):
             raise ValueError(
@@ -1636,7 +1679,7 @@ def _validate_linked_case_visa_approval(
             for candidate in matching_lower_cases
             if masked_applicant(candidate) == target_mask
             and normalized_judge(str(candidate["judges"] or ""))
-            == normalized_judge(lower_appeal[2])
+            == normalized_judge(lower_judge)
         }
         if matching_citations != {parent["citation"]}:
             raise ValueError(
@@ -1668,6 +1711,38 @@ def _validate_linked_case_visa_approval(
         or parent["citation"] not in linked_metadata.get("title", "")
     ):
         raise ValueError("Appealed-case source identity does not match the saved case")
+    if lower_court_link and dated_lower_appeal:
+        parent_source_title_date = re.search(
+            r"\((\d{1,2}\s+[A-Za-z]+\s+\d{4})\)\s*$",
+            linked_metadata.get("title", ""),
+            re.I,
+        )
+        normalized_linked_body = " ".join(linked_body.split())
+        delivered_date = re.search(
+            r"(?i)\bDelivered on:\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
+            normalized_linked_body,
+        )
+        judge_date = re.search(
+            r"(?i)\b" + re.escape(lower_judge)
+            + r"\s+(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
+            normalized_linked_body,
+        )
+        parent_source_body_date = delivered_date or judge_date
+        if not parent_source_title_date or not parent_source_body_date:
+            raise ValueError(
+                "Dated lower-court link requires the quoted judgment date to match the parent source"
+            )
+        try:
+            parent_title_date = parsed_case_date(parent_source_title_date[1])
+            parent_body_date = parsed_case_date(parent_source_body_date[1])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Dated lower-court link requires parseable dates in the parent source"
+            ) from exc
+        if parent_title_date != linked_judgment_date or parent_body_date != linked_judgment_date:
+            raise ValueError(
+                "Dated lower-court link requires the quoted judgment date to match the parent source"
+            )
     if lower_court_link and (
         not re.search(r"\bREFUGEE REVIEW TRIBUNAL\b", linked_body, re.I)
         or not re.search(

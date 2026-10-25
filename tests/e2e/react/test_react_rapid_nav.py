@@ -8,6 +8,7 @@ Verifies that rapid sidebar clicking does not cause:
 """
 
 import pytest
+from playwright.sync_api import expect
 
 from .react_helpers import (
     SIDEBAR_NAV_ITEMS,
@@ -29,7 +30,7 @@ class TestRapidNavigation:
         for label, _ in SIDEBAR_NAV_ITEMS:
             click_sidebar_link(react_page, label)
 
-        # After cycling, we should be on the last page (Design Tokens)
+        # After cycling, the current sidebar's last page is Data Dictionary.
         wait_for_loading_gone(react_page)
         assert react_page.locator("#root").is_visible()
         assert_no_js_errors(react_page)
@@ -40,7 +41,7 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Verify data is loaded initially
-        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
+        expect(react_page.get_by_text("Total Cases", exact=True)).to_be_visible()
 
         # Navigate away
         click_sidebar_link(react_page, "Cases")
@@ -49,7 +50,7 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Dashboard should show stat cards, NOT the "Welcome" empty state
-        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
+        expect(react_page.get_by_text("Total Cases", exact=True)).to_be_visible()
         welcome = react_page.get_by_text("Welcome to IMMI-Case", exact=True)
         assert welcome.count() == 0 or not welcome.is_visible()
 
@@ -69,7 +70,7 @@ class TestRapidNavigation:
         wait_for_loading_gone(react_page)
 
         # Must show real data, not the welcome screen
-        assert react_page.get_by_text("Total Cases", exact=True).is_visible()
+        expect(react_page.get_by_text("Total Cases", exact=True)).to_be_visible()
         assert_no_js_errors(react_page)
 
     @pytest.mark.parametrize(

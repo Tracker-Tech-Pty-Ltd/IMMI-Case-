@@ -1,0 +1,742 @@
+{
+  "tool": "comp-diff",
+  "version": 1,
+  "createdAt": "2026-10-16T04:49:24.569Z",
+  "label": "wide-round1",
+  "comp": ".impeccable/mocks/news-updates-approved-desktop.png",
+  "build": ".impeccable/review/news/wide-round1/desktop.png",
+  "spec": ".impeccable/build/spec.json",
+  "compSize": "1127x911",
+  "buildSize": "1440x1399",
+  "align": "top",
+  "overall": 0.7656,
+  "verdict": "drift",
+  "scores": {
+    "overall": 0.7656,
+    "structure": 0.641,
+    "color": 0.9482,
+    "colorIntersection": 0.9176,
+    "paletteMatch": 0.9646,
+    "detail": 0.6684,
+    "detailRaw": 0.7413,
+    "detailAdded": 0.1458,
+    "bands": 0.9143
+  },
+  "palette": {
+    "comp": [
+      {
+        "hex": "#f7f7f7",
+        "coverage": 0.9463
+      },
+      {
+        "hex": "#b1b9c2",
+        "coverage": 0.0176
+      },
+      {
+        "hex": "#7a8594",
+        "coverage": 0.0171
+      },
+      {
+        "hex": "#f8e6c8",
+        "coverage": 0.0073
+      },
+      {
+        "hex": "#4d5971",
+        "coverage": 0.006
+      },
+      {
+        "hex": "#102040",
+        "coverage": 0.0057
+      }
+    ],
+    "build": [
+      {
+        "hex": "#f7f7f7",
+        "coverage": 0.9691
+      },
+      {
+        "hex": "#cac7c2",
+        "coverage": 0.0152
+      },
+      {
+        "hex": "#7a7a88",
+        "coverage": 0.0051
+      },
+      {
+        "hex": "#c9e2ec",
+        "coverage": 0.0037
+      },
+      {
+        "hex": "#a5a8b4",
+        "coverage": 0.0035
+      },
+      {
+        "hex": "#584808",
+        "coverage": 0.0034
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "sidebar",
+      "x": 0,
+      "y": 0,
+      "w": 0.1721,
+      "h": 1,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.7825,
+        "structure": 0.7453,
+        "color": 0.9369,
+        "colorIntersection": 0.9118,
+        "paletteMatch": 0.9504,
+        "detail": 0.5966,
+        "detailRaw": 0.5966,
+        "detailAdded": 0,
+        "bands": 0.9217
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 20,
+          "w": 154,
+          "h": 869
+        },
+        "build": {
+          "x": 19,
+          "y": 44,
+          "w": 144,
+          "h": 716
+        }
+      }
+    },
+    {
+      "id": "topbar",
+      "x": 0.1721,
+      "y": 0,
+      "w": 0.8279,
+      "h": 0.0626,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5845,
+        "structure": 0.9549,
+        "color": 0.9096,
+        "colorIntersection": 0.8499,
+        "paletteMatch": 0.9418,
+        "detail": 0.0916,
+        "detailRaw": 0.2009,
+        "detailAdded": 0.2188,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 32,
+          "y": 0,
+          "w": 900,
+          "h": 40
+        },
+        "build": {
+          "x": 10,
+          "y": 28,
+          "w": 908,
+          "h": 29
+        }
+      }
+    },
+    {
+      "id": "page-title",
+      "x": 0.1917,
+      "y": 0.0834,
+      "w": 0.1375,
+      "h": 0.0439,
+      "kind": "text",
+      "score": {
+        "overall": 0.3438,
+        "structure": 0.1867,
+        "color": 0.7485,
+        "colorIntersection": 0.6693,
+        "paletteMatch": 0.7911,
+        "detail": 0.2016,
+        "detailRaw": 0.285,
+        "detailAdded": 0.1667,
+        "bands": 0.3314
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 6,
+          "w": 149,
+          "h": 35
+        },
+        "build": {
+          "x": 0,
+          "y": 26,
+          "w": 136,
+          "h": 22
+        }
+      }
+    },
+    {
+      "id": "filters",
+      "x": 0.1917,
+      "y": 0.1789,
+      "w": 0.7915,
+      "h": 0.09,
+      "kind": "control",
+      "score": {
+        "overall": 0.6856,
+        "structure": 0.7375,
+        "color": 0.8894,
+        "colorIntersection": 0.8342,
+        "paletteMatch": 0.9192,
+        "detail": 0.2122,
+        "detailRaw": 0.3945,
+        "detailAdded": 0.3646,
+        "bands": 0.3333
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 0,
+          "w": 796,
+          "h": 73
+        },
+        "build": {
+          "x": 0,
+          "y": 20,
+          "w": 892,
+          "h": 62
+        }
+      }
+    },
+    {
+      "id": "featured-title",
+      "x": 0.2067,
+      "y": 0.3392,
+      "w": 0.2413,
+      "h": 0.0395,
+      "kind": "text",
+      "score": {
+        "overall": 0.4356,
+        "structure": 0.3142,
+        "color": 0.8379,
+        "colorIntersection": 0.7583,
+        "paletteMatch": 0.8808,
+        "detail": 0.3658,
+        "detailRaw": 0.4752,
+        "detailAdded": 0.2188,
+        "bands": 0.1417
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 8,
+          "w": 259,
+          "h": 31
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 228,
+          "h": 46
+        }
+      }
+    },
+    {
+      "id": "featured-summary",
+      "x": 0.2067,
+      "y": 0.4237,
+      "w": 0.4064,
+      "h": 0.0604,
+      "kind": "text",
+      "score": {
+        "overall": 0.641,
+        "structure": 0.7265,
+        "color": 0.8973,
+        "colorIntersection": 0.8573,
+        "paletteMatch": 0.9188,
+        "detail": 0.3563,
+        "detailRaw": 0.4657,
+        "detailAdded": 0.2188,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 4,
+          "w": 328,
+          "h": 47
+        },
+        "build": {
+          "x": 0,
+          "y": 12,
+          "w": 429,
+          "h": 38
+        }
+      }
+    },
+    {
+      "id": "featured-document",
+      "x": 0.6264,
+      "y": 0.3392,
+      "w": 0.0914,
+      "h": 0.1537,
+      "kind": "image",
+      "score": {
+        "overall": 0.6303,
+        "structure": 0.8551,
+        "color": 0.8556,
+        "colorIntersection": 0.7066,
+        "paletteMatch": 0.9358,
+        "detail": 0.4308,
+        "detailRaw": 0.4829,
+        "detailAdded": 0.1042,
+        "bands": 0.6
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": null,
+        "build": null
+      }
+    },
+    {
+      "id": "featured-action",
+      "x": 0.2067,
+      "y": 0.494,
+      "w": 0.071,
+      "h": 0.0263,
+      "kind": "control",
+      "score": {
+        "overall": 0.6306,
+        "structure": 0.6508,
+        "color": 0.8697,
+        "colorIntersection": 0.8115,
+        "paletteMatch": 0.901,
+        "detail": 0.1666,
+        "detailRaw": 0.2344,
+        "detailAdded": 0.1354,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 14,
+          "w": 78,
+          "h": 14
+        },
+        "build": {
+          "x": 0,
+          "y": 23,
+          "w": 68,
+          "h": 14
+        }
+      }
+    },
+    {
+      "id": "list-heading",
+      "x": 0.1925,
+      "y": 0.5488,
+      "w": 0.1012,
+      "h": 0.0329,
+      "kind": "text",
+      "score": {
+        "overall": 0.5272,
+        "structure": 0.4629,
+        "color": 0.8552,
+        "colorIntersection": 0.7785,
+        "paletteMatch": 0.8964,
+        "detail": 0.2129,
+        "detailRaw": 0.3275,
+        "detailAdded": 0.2292,
+        "bands": 0.5
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 14,
+          "w": 84,
+          "h": 20
+        },
+        "build": {
+          "x": 0,
+          "y": 26,
+          "w": 88,
+          "h": 22
+        }
+      }
+    },
+    {
+      "id": "list-first",
+      "x": 0.1925,
+      "y": 0.5928,
+      "w": 0.543,
+      "h": 0.1153,
+      "kind": "text",
+      "score": {
+        "overall": 0.688,
+        "structure": 0.6601,
+        "color": 0.8935,
+        "colorIntersection": 0.8285,
+        "paletteMatch": 0.9285,
+        "detail": 0.4525,
+        "detailRaw": 0.5619,
+        "detailAdded": 0.2188,
+        "bands": 0.6667
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 16,
+          "w": 591,
+          "h": 71
+        },
+        "build": {
+          "x": 5,
+          "y": 18,
+          "w": 605,
+          "h": 87
+        }
+      }
+    },
+    {
+      "id": "list-second",
+      "x": 0.1925,
+      "y": 0.7091,
+      "w": 0.543,
+      "h": 0.1175,
+      "kind": "text",
+      "score": {
+        "overall": 0.809,
+        "structure": 0.8039,
+        "color": 0.9173,
+        "colorIntersection": 0.8656,
+        "paletteMatch": 0.9452,
+        "detail": 0.6134,
+        "detailRaw": 0.6707,
+        "detailAdded": 0.1146,
+        "bands": 0.8571
+      },
+      "verdict": "match",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 17,
+          "w": 591,
+          "h": 72
+        },
+        "build": {
+          "x": 3,
+          "y": 0,
+          "w": 607,
+          "h": 88
+        }
+      }
+    },
+    {
+      "id": "list-third",
+      "x": 0.1925,
+      "y": 0.8277,
+      "w": 0.543,
+      "h": 0.1142,
+      "kind": "text",
+      "score": {
+        "overall": 0.7824,
+        "structure": 0.7677,
+        "color": 0.9068,
+        "colorIntersection": 0.8396,
+        "paletteMatch": 0.943,
+        "detail": 0.6431,
+        "detailRaw": 0.716,
+        "detailAdded": 0.1458,
+        "bands": 0.7543
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 15,
+          "w": 591,
+          "h": 70
+        },
+        "build": {
+          "x": 3,
+          "y": 16,
+          "w": 607,
+          "h": 69
+        }
+      }
+    },
+    {
+      "id": "verification",
+      "x": 0.7702,
+      "y": 0.3074,
+      "w": 0.1988,
+      "h": 0.2086,
+      "kind": "text",
+      "score": {
+        "overall": 0.5864,
+        "structure": 0.5233,
+        "color": 0.9028,
+        "colorIntersection": 0.852,
+        "paletteMatch": 0.9302,
+        "detail": 0.1091,
+        "detailRaw": 0.2393,
+        "detailAdded": 0.2604,
+        "bands": 0.8273
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 3,
+          "w": 212,
+          "h": 179
+        },
+        "build": {
+          "x": 3,
+          "y": 23,
+          "w": 204,
+          "h": 167
+        }
+      }
+    },
+    {
+      "id": "research",
+      "x": 0.772,
+      "y": 0.5554,
+      "w": 0.1952,
+      "h": 0.1142,
+      "kind": "control",
+      "score": {
+        "overall": 0.7074,
+        "structure": 0.7467,
+        "color": 0.9169,
+        "colorIntersection": 0.8839,
+        "paletteMatch": 0.9347,
+        "detail": 0.2523,
+        "detailRaw": 0.3669,
+        "detailAdded": 0.2292,
+        "bands": 0.625
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 2,
+          "w": 127,
+          "h": 92
+        },
+        "build": {
+          "x": 1,
+          "y": 13,
+          "w": 124,
+          "h": 87
+        }
+      }
+    },
+    {
+      "id": "pagination",
+      "x": 0.1925,
+      "y": 0.9385,
+      "w": 0.543,
+      "h": 0.0615,
+      "kind": "control",
+      "score": {
+        "overall": 0.8181,
+        "structure": 0.955,
+        "color": 0.9767,
+        "colorIntersection": 0.9603,
+        "paletteMatch": 0.9855,
+        "detail": 0.2327,
+        "detailRaw": 0.3369,
+        "detailAdded": 0.2083,
+        "bands": 1
+      },
+      "verdict": "match",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 22,
+          "w": 579,
+          "h": 12
+        },
+        "build": {
+          "x": 14,
+          "y": 20,
+          "w": 581,
+          "h": 36
+        }
+      }
+    },
+    {
+      "id": "page-subtitle",
+      "x": 0.1917,
+      "y": 0.1328,
+      "w": 0.5768,
+      "h": 0.0329,
+      "kind": "text",
+      "score": {
+        "overall": 0.6648,
+        "structure": 0.8638,
+        "color": 0.9279,
+        "colorIntersection": 0.8696,
+        "paletteMatch": 0.9592,
+        "detail": 0.0061,
+        "detailRaw": 0.152,
+        "detailAdded": 0.2917,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 0,
+          "w": 377,
+          "h": 30
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 648,
+          "h": 48
+        }
+      }
+    },
+    {
+      "id": "featured-card",
+      "x": 0.1917,
+      "y": 0.2898,
+      "w": 0.5448,
+      "h": 0.2437,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.6288,
+        "structure": 0.7133,
+        "color": 0.9494,
+        "colorIntersection": 0.9139,
+        "paletteMatch": 0.9686,
+        "detail": 0.3957,
+        "detailRaw": 0.5155,
+        "detailAdded": 0.2396,
+        "bands": 0.2857
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 18,
+          "y": 19,
+          "w": 536,
+          "h": 183
+        },
+        "build": {
+          "x": 3,
+          "y": 0,
+          "w": 599,
+          "h": 211
+        }
+      }
+    },
+    {
+      "id": "support-card",
+      "x": 0.7524,
+      "y": 0.2898,
+      "w": 0.2307,
+      "h": 0.4007,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.752,
+        "structure": 0.62,
+        "color": 0.9385,
+        "colorIntersection": 0.9169,
+        "paletteMatch": 0.9501,
+        "detail": 0.6017,
+        "detailRaw": 0.6434,
+        "detailAdded": 0.0833,
+        "bands": 1
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 21,
+          "y": 19,
+          "w": 212,
+          "h": 317
+        },
+        "build": {
+          "x": 23,
+          "y": 39,
+          "w": 204,
+          "h": 303
+        }
+      }
+    },
+    {
+      "id": "editorial-note",
+      "x": 0.7524,
+      "y": 0.7069,
+      "w": 0.2307,
+      "h": 0.0494,
+      "kind": "text",
+      "score": {
+        "overall": 0.5527,
+        "structure": 0.7491,
+        "color": 0.606,
+        "colorIntersection": 0.3397,
+        "paletteMatch": 0.7493,
+        "detail": 0.1776,
+        "detailRaw": 0.2193,
+        "detailAdded": 0.0833,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 13,
+          "y": 15,
+          "w": 223,
+          "h": 19
+        },
+        "build": {
+          "x": 14,
+          "y": 24,
+          "w": 232,
+          "h": 15
+        }
+      }
+    }
+  ],
+  "files": {
+    "sideBySide": "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/side-by-side.png",
+    "heatmap": "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/heatmap.png",
+    "regionFiles": [
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/sidebar.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/topbar.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/page-title.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/filters.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/featured-title.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/featured-summary.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/featured-document.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/featured-action.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/list-heading.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/list-first.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/list-second.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/list-third.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/verification.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/research.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/pagination.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/page-subtitle.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/featured-card.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/support-card.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/wide-round1/diff/regions/editorial-note.png"
+    ]
+  }
+}

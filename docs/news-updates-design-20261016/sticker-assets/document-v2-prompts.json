@@ -1,0 +1,26 @@
+{
+  "assets": [
+    {
+      "id": "document",
+      "mode": "light",
+      "source": "C:\\Users\\PC\\.codex\\generated_images\\01a14153-a335-7021-91d8-1c52e01bcfde\\exec-7e133b9b-f31a-4a16-8b6c-6255e6ec6a60.png",
+      "prompt": "Use-case: logo-brand / transparent UI sticker. Create ONE isolated document UI sticker for the Legal Codex Australian migration research website, LIGHT MODE. A SINGLE front-facing upright sheet of paper, right upper corner folded down, exactly THREE short straight horizontal text-like bars within the sheet. Simple matte pale cool-gray material, broad rounded-gray outline and bars (#bfc6cc family), subtly lighter gray paper face. Very flat frontal view, no perspective, no second sheet, no book spine, no certificate, no seal, no map, no lettering. Calm academic visual language. Native TRANSPARENT background including all surrounding canvas; no backdrop rectangle, no checkerboard, no shadow, no white sticker halo. Center the complete sheet with generous transparent margins, sheet width about two thirds of square canvas and height about 85 percent, all edges intact. This is a small readable UI pictogram, retain clean broad silhouettes and three separate bars. No text or watermark.",
+      "original": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-light.png",
+      "path": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp",
+      "generatedFileSha256": "cf887b43c29db9454f1bca775a5ae03762a8c544fefa0917ec145ff7a3ed5b51",
+      "originalFileSha256": "3A257152DB17EC9868E0433D9F47373382B5025C42775AC5E3CBAC6BB3E6F9F5",
+      "webFileSha256": "ED4BE5C24DBD3C51521D94F6923F9DB482020F4AA3ADC449C150CF3CD5046E59"
+    },
+    {
+      "id": "document",
+      "mode": "dark",
+      "source": "C:\\Users\\PC\\.codex\\generated_images\\01a14153-a335-7021-91d8-1c52e01bcfde\\exec-8b2c8968-0c10-420a-b113-9dac54ae69b8.png",
+      "prompt": "Use-case: logo-brand / transparent UI sticker. Create ONE isolated document UI sticker for the Legal Codex Australian migration research website, DARK MODE twin. A SINGLE front-facing upright sheet of paper, right upper corner folded down, exactly THREE short straight horizontal text-like bars within the sheet. Simple matte graphite-blue paper face (#34465a family), broad rounded light cool-gray outline and bars (#bfcad6 family), subtle warm-gray folded corner. Very flat frontal view, no perspective, no second sheet, no book spine, no certificate, no seal, no map, no lettering. Calm academic visual language. Native TRANSPARENT background including all surrounding canvas; no backdrop rectangle, no checkerboard, no shadow, no white sticker halo. Center the complete sheet with generous transparent margins, sheet width about two thirds of square canvas and height about 85 percent, all edges intact. This is a small readable UI pictogram, retain clean broad silhouettes and three separate bars. No text or watermark.",
+      "original": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-dark.png",
+      "path": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp",
+      "generatedFileSha256": "4f362c5c9e79618e405996ac92d865028143114cd4c13ef03b1383789252c350",
+      "originalFileSha256": "8C432B32A2DADDC3F19EF30B04D1C357406EA056015E7DB6F78D2277C1DEC1E1",
+      "webFileSha256": "6188271459F3D33184126969DD80478B2C0AA5D622A0F3A1F531DF8D5A6C6F34"
+    }
+  ]
+}

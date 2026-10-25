@@ -93,6 +93,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
       <div className="mb-1 flex flex-wrap items-center gap-x-1.5 text-xs font-medium text-muted-text">
         <span>{t("analytics.visa_subclass")}</span>
         <select
+          aria-label={t("analytics.visa_subclass", { defaultValue: "Visa subclass" })}
           value={visaSubclass}
           onChange={(e) => setVisaSubclass(e.target.value)}
           className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
@@ -107,6 +108,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
 
         <span className="ml-2">{t("analytics.case_nature")}</span>
         <select
+          aria-label={t("analytics.case_nature", { defaultValue: "Case nature" })}
           value={caseNature}
           onChange={(e) => setCaseNature(e.target.value)}
           className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
@@ -128,10 +130,11 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
                 key={concept.name}
                 type="button"
                 onClick={() => toggleConcept(concept.name)}
+                aria-pressed={active}
                 className={cn(
                   "rounded-full px-2 py-1 text-xs",
                   active
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-on-solid"
                     : "bg-surface text-muted-text hover:bg-accent-muted hover:text-accent",
                 )}
               >
@@ -188,6 +191,12 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
                 {data.query.total_matching.toLocaleString()}{" "}
                 {t("analytics.matching_cases")}
               </p>
+              <p className="mt-2 text-sm leading-relaxed text-secondary-text">
+                {t("analytics.historical_result_limit", {
+                  defaultValue: "Based on {{count}} matching historical cases. This is not a prediction for an individual case. Small or incomplete samples limit what can be inferred.",
+                  count: data.query.total_matching,
+                })}
+              </p>
               <div className="mt-2 flex items-center gap-2">
                 <ConfidenceBadge totalMatching={data.query.total_matching} />
                 <button
@@ -204,15 +213,7 @@ export function SuccessRateCalculator({ filters }: SuccessRateCalculatorProps) {
             <div className="flex items-center justify-center rounded-md border border-border p-3">
               <RiskGauge
                 score={data.success_rate.overall}
-                label={
-                  data.success_rate.overall >= 65
-                    ? t("analytics.favourable", { defaultValue: "Favourable" })
-                    : data.success_rate.overall >= 40
-                      ? t("analytics.moderate", { defaultValue: "Moderate" })
-                      : t("analytics.unfavourable", {
-                          defaultValue: "Unfavourable",
-                        })
-                }
+                label={t("analytics.historical_share", { defaultValue: "Historical share" })}
               />
             </div>
 

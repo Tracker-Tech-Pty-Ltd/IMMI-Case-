@@ -1,0 +1,34 @@
+[
+  {
+    "mode": "light",
+    "originalSize": [
+      1145,
+      1374
+    ],
+    "webSize": [
+      213,
+      256
+    ],
+    "transparentPixelRatio": 0.4744595513688399,
+    "alphaRange": [
+      0,
+      255
+    ]
+  },
+  {
+    "mode": "dark",
+    "originalSize": [
+      1145,
+      1374
+    ],
+    "webSize": [
+      213,
+      256
+    ],
+    "transparentPixelRatio": 0.47232572478277174,
+    "alphaRange": [
+      0,
+      255
+    ]
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "surface": "judges",
+  "mobile": true,
+  "dark": true,
+  "no_horizontal_overflow": true,
+  "keyboard": "passed",
+  "errors": []
+}

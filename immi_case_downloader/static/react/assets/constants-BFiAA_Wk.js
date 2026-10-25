@@ -1,0 +1,1 @@
+const a=["var(--color-chart-1)","var(--color-chart-3)","var(--color-chart-2)","var(--color-chart-5)","var(--color-chart-6)","var(--color-chart-7)"];function c(r){return r>=35?"bg-success/15 text-success":r>=20?"bg-warning/15 text-warning":"bg-danger/15 text-danger"}export{a as O,c as a};

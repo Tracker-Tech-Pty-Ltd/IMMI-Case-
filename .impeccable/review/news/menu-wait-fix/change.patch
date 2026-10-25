@@ -1,0 +1,18 @@
+diff --git a/.impeccable/review/news/menu-wait-fix/react_helpers.before.py b/tests/e2e/react/react_helpers.py
+index 5fbba59..d42d677 100644
+--- a/.impeccable/review/news/menu-wait-fix/react_helpers.before.py
++++ b/tests/e2e/react/react_helpers.py
+@@ -174,8 +174,11 @@ def click_mobile_menu(page: Page):
+ 
+ 
+ def close_mobile_menu(page: Page):
+-    """Close the mobile navigation drawer."""
+-    page.get_by_role("dialog", name="IMMI-Case").get_by_label("Close menu").click()
++    """Close the mobile drawer and wait for its exit animation to finish."""
++    drawer = page.get_by_role("dialog", name="IMMI-Case", exact=True)
++    drawer.get_by_label("Close menu", exact=True).click()
++    # Radix keeps the dialog mounted while its exit animation is running.
++    drawer.wait_for(state="hidden", timeout=5000)
+ 
+ 
+ def get_toast_text(page: Page, timeout: int = 5000) -> str:

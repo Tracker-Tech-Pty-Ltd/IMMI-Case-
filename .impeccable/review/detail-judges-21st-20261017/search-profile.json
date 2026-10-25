@@ -1,0 +1,26 @@
+[
+  {
+    "type": "component",
+    "id": 9890,
+    "name": "Profile Card",
+    "description": "A compact, hover-to-expand profile microcard with elastic motion, glowing avatar, and GitHub link support, designed for clean light/dark interfaces.",
+    "previewUrl": "https://cdn.21st.dev/daiwiikharihar/profile-card/default/preview.1787916129232-5f16bfa1-8904-4e99-89de-fc76485b0e30.png",
+    "videoUrl": "https://cdn.21st.dev/daiwiikharihar/profile-card/default/video.1787916129232-5f16bfa1-8904-4e99-89de-fc76485b0e30.mp4",
+    "author": "daiwiikharihar",
+    "authorImage": "https://vucvdpamtrjkzmubwlts.supabase.co/storage/v1/object/public/users/user_332oxzW8MyPod4IDIdKq9rbPYuk/avatar.jpeg",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/daiwiikharihar/profile-card?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@daiwiikharihar/components/profile-card"
+  },
+  {
+    "type": "component",
+    "id": 4314,
+    "name": "Profile Card",
+    "description": "Clean identity showcase. Features a rounded, shadowed layout to highlight user details in a minimal, floating style. Ideal for portfolios, team sections, or contact cards on modern websites.",
+    "previewUrl": "https://cdn.21st.dev/ravikatiyar162/profile-card-1/default/preview.1753187505877.png",
+    "videoUrl": "https://cdn.21st.dev/ravikatiyar162/profile-card-1/default/video.1753187505877.mp4",
+    "author": "ravikatiyar162",
+    "authorImage": "https://vucvdpamtrjkzmubwlts.supabase.co/storage/v1/object/public/users/user_2zMtrqo9RMaaIn4f8F2z3oeY497/avatar.png",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/ravikatiyar162/profile-card-1?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@ravikatiyar162/components/profile-card-1"
+  }
+]

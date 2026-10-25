@@ -1083,7 +1083,7 @@ def _outcome(text: str) -> Evidence | None:
             # A following bullet is a continuation of that summary, not an
             # operative DECISION section.
             if not re.match(
-                r"^(?:\(?\d+\)?[.)]?\s+|(?:the\s+)?"
+                r"^(?:\(\s*\d+\s*\)\s*|\(?\d+\)?[.)]?\s+|(?:the\s+)?"
                 r"(?:tribunal|court|application|appeal|proceedings?|matter|"
                 r"decision|orders?|motion|leave|costs)\b)",
                 first_content,

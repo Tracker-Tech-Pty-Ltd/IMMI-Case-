@@ -10,6 +10,12 @@ import type { AuthState, AuthTenant, AuthUser } from "@/lib/auth";
 import { clearAuthCookies, parseJwtPayload } from "@/lib/auth";
 import { setApiAccessToken } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
+import {
+  withAuthCookieLock,
+  getSharedRefreshRotationId,
+  clearSharedRefreshRotationId,
+  fetchAuthJson,
+} from "@/lib/auth-cookie-coordination";
 
 /** Backoff for transient refresh failures (network down, sleep/wake, Worker
  *  cold start). After the last one is exhausted we sign the user out for real
@@ -40,10 +46,11 @@ function newRotationId(): string {
   try {
     return crypto.randomUUID();
   } catch {
-    // randomUUID needs a secure context; a non-crypto id is still fine here
-    // because this value only has to be unique per client, not unguessable
-    // to us — the server never treats it as a credential on its own.
-    return `${Date.now().toString(16)}-0000-4000-8000-${Math.floor(Math.random() * 1e12).toString(16).padStart(12, "0")}`.slice(0, 36);
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 }
 
@@ -86,6 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshInFlightRef = useRef<Promise<boolean> | null>(null);
 
   const activeTenantIdRef = useRef<string | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
 
   const scheduleRefresh = useCallback((token: string) => {
     const payload = parseJwtPayload(token);
@@ -113,6 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: false,
     }));
     clearAuthCookies();
+    accessTokenRef.current = null;
     setApiAccessToken(null);
   }, []);
 
@@ -133,59 +142,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const runRefresh = useCallback(async (): Promise<boolean> => {
-    // A refresh POST consumes the presented token, so a retry after a lost
-    // response replays an already-rotated one and the server reads that as
-    // theft — a transient blip would revoke the whole family. Stamping the
-    // logical rotation and reusing that stamp across retries lets the server
-    // recognise the retry as the same rotation and re-serve its successor.
-    if (!rotationIdRef.current) rotationIdRef.current = newRotationId();
-    const headers: Record<string, string> = {
-      "X-Refresh-Rotation-Id": rotationIdRef.current,
-    };
-    // Without this the server picks the first membership and silently reverts
-    // a workspace switch on the next silent refresh.
-    const activeTenantId = activeTenantIdRef.current ?? readStoredTenantId();
-    if (activeTenantId) headers["X-Active-Tenant-Id"] = activeTenantId;
     try {
-      const res = await fetch("/api/v1/auth/refresh", {
-        method: "POST",
-        credentials: "include", // sends httpOnly refresh cookie
-        headers,
-      });
-      if (!res.ok) {
-        // A cold-starting or rate-limited Worker must not end the session.
-        if (isTransientRefreshStatus(res.status) && scheduleRefreshRetry()) {
-          return false;
+      return await withAuthCookieLock(async () => {
+        const activeTenantId = activeTenantIdRef.current ?? readStoredTenantId();
+        // Another tab may have renewed the cookie while this one waited for
+        // the lock. Adopt that result instead of consuming the cookie again.
+        const { response: me, data: current } = await fetchAuthJson<RefreshResponseBody>(
+          "/api/v1/auth/me", { credentials: "include" },
+        );
+        let data: RefreshResponseBody | null = null;
+        let rotated = false;
+        if (me.ok && current) {
+          const payload = current.access_token ? parseJwtPayload(current.access_token) : null;
+          if (
+            current.access_token && current.access_token !== accessTokenRef.current &&
+            typeof payload?.exp === "number" && payload.exp * 1000 > Date.now() + 60_000 &&
+            (!activeTenantId || current.tenant?.id === activeTenantId)
+          ) data = current;
+        } else if (me.status !== 401 && me.status !== 403) {
+          throw new Error("Session status is temporarily unavailable");
         }
+
+        if (!data) {
+          rotationIdRef.current = getSharedRefreshRotationId(rotationIdRef.current ?? newRotationId());
+          const headers: Record<string, string> = { "X-Refresh-Rotation-Id": rotationIdRef.current };
+          if (activeTenantId) headers["X-Active-Tenant-Id"] = activeTenantId;
+          const { response: res, data: renewed } = await fetchAuthJson<RefreshResponseBody>("/api/v1/auth/refresh", {
+            method: "POST",
+            credentials: "include",
+            headers,
+          });
+          if (!res.ok) {
+            if (isTransientRefreshStatus(res.status) && scheduleRefreshRetry()) return false;
+            clearSharedRefreshRotationId();
+            rotationIdRef.current = null;
+            clearSession();
+            return false;
+          }
+          data = renewed;
+          rotated = true;
+        }
+
+        if (!data?.access_token) throw new Error("Refresh response is missing an access token");
+        // /me proves only that the ACCESS cookie changed. A tenant switch
+        // can do that without replacing the refresh cookie whose earlier
+        // rotation response was lost, so only a successful rotation clears
+        // the shared retry id.
+        if (rotated) clearSharedRefreshRotationId();
+        refreshRetryCountRef.current = 0;
         rotationIdRef.current = null;
-        clearSession();
-        return false;
-      }
-      const data: RefreshResponseBody = await res.json();
-      refreshRetryCountRef.current = 0;
-      rotationIdRef.current = null;
-      if (data.tenant?.id) {
-        activeTenantIdRef.current = data.tenant.id;
-        storeTenantId(data.tenant.id);
-      }
-      setState((s) => ({
-        ...s,
-        accessToken: data.access_token ?? null,
-        // The refresh response now carries the identity, so a client that
-        // recovered from a failed bootstrap is not left signed-in with a
-        // null user. Keep whatever we already had when it does not.
-        user: data.user ?? s.user,
-        tenant: data.tenant ?? s.tenant,
-        tenants: data.tenants ?? s.tenants,
-        isAuthenticated: true,
-      }));
-      setApiAccessToken(data.access_token ?? null);
-      if (data.access_token) scheduleRefresh(data.access_token);
-      return true;
+        if (data.tenant?.id) {
+          activeTenantIdRef.current = data.tenant.id;
+          storeTenantId(data.tenant.id);
+        }
+        const snapshot = data;
+        setState((s) => ({
+          ...s,
+          accessToken: snapshot.access_token ?? null,
+          user: snapshot.user ?? s.user,
+          tenant: snapshot.tenant ?? s.tenant,
+          tenants: snapshot.tenants ?? s.tenants,
+          isAuthenticated: true,
+        }));
+        accessTokenRef.current = data.access_token;
+        setApiAccessToken(accessTokenRef.current);
+        scheduleRefresh(data.access_token);
+        return true;
+      });
     } catch {
-      // No HTTP status at all (offline, DNS, TLS). The rotation may or may not
-      // have committed, which is exactly why rotationIdRef is kept: the retry
-      // must be the *same* rotation, never a fresh one.
+      // Coordination and network failures never fall back to an unlocked
+      // POST. A rotation may already have committed, so retries keep its id.
       if (scheduleRefreshRetry()) return false;
       rotationIdRef.current = null;
       clearSession();
@@ -233,6 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               isLoading: false,
             });
             setApiAccessToken(data.access_token);
+            accessTokenRef.current = data.access_token;
             scheduleRefresh(data.access_token);
             return;
           }
@@ -240,25 +267,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Access cookie expired — try silent refresh before giving up.
           const refreshed = await refresh();
           if (refreshed) {
-            // The refresh response carries only access_token; re-read /auth/me
-            // so user/tenant/tenants are populated. Without this the app runs
-            // as `isAuthenticated: true` with a null user.
-            const me = await fetch("/api/v1/auth/me", {
-              credentials: "include",
-            }).catch(() => null);
-            if (me?.ok) {
-              const meData = await me.json().catch(() => null);
-              if (meData?.user) {
-                setState((s) => ({
-                  ...s,
-                  user: meData.user,
-                  tenant: meData.tenant,
-                  tenants: meData.tenants || [],
-                  isLoading: false,
-                }));
-                return;
-              }
-            }
+            // runRefresh committed one complete identity/token snapshot while
+            // holding the lock. A cookie-only /me here could read another
+            // tab's later workspace switch and split that snapshot again.
             setState((s) => ({ ...s, isLoading: false }));
             return;
           }
@@ -273,33 +284,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (telegramData: Record<string, string>) => {
-      const res = await fetch("/api/v1/auth/telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(telegramData),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || "Login failed");
-      }
-      const data = await res.json();
-      if (data.tenant?.id) {
-        activeTenantIdRef.current = data.tenant.id;
-        storeTenantId(data.tenant.id);
-      }
-      setState({
-        user: data.user,
-        tenant: data.tenant,
-        tenants: data.tenants || [data.tenant],
-        accessToken: data.access_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-      if (data.access_token) {
+      await withAuthCookieLock(async () => {
+        const { response: res, data } = await fetchAuthJson<RefreshResponseBody & { error?: string }>("/api/v1/auth/telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(telegramData),
+        });
+        if (!res.ok || !data?.access_token) throw new Error(data?.error || "Login failed");
+        clearSharedRefreshRotationId();
+        refreshRetryCountRef.current = 0;
+        rotationIdRef.current = null;
+        if (data.tenant?.id) {
+          activeTenantIdRef.current = data.tenant.id;
+          storeTenantId(data.tenant.id);
+        }
+        setState({
+          user: data.user ?? null,
+          tenant: data.tenant ?? null,
+          tenants: data.tenants ?? (data.tenant ? [data.tenant] : []),
+          accessToken: data.access_token,
+          isAuthenticated: true,
+          isLoading: false,
+        });
         setApiAccessToken(data.access_token);
+        accessTokenRef.current = data.access_token;
         scheduleRefresh(data.access_token);
-      }
+      });
     },
     [scheduleRefresh],
   );
@@ -309,65 +320,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // sign-out is retryable — but only if we surface it. Dropping local state
     // regardless would leave the session live server-side while the UI claims
     // the user is signed out, with nothing left to press.
-    const res = await fetch("/api/v1/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => null);
-    if (res && !res.ok) {
-      throw new Error("Sign out failed. Please try again.");
-    }
-    clearAuthCookies();
-    clearTimeout(refreshTimerRef.current);
-    setApiAccessToken(null);
-    rotationIdRef.current = null;
-    activeTenantIdRef.current = null;
-    storeTenantId(null);
-    queryClient.clear();
-    setState({
-      user: null,
-      tenant: null,
-      tenants: [],
-      accessToken: null,
-      isAuthenticated: false,
-      isLoading: false,
+    await withAuthCookieLock(async () => {
+      const result = await fetchAuthJson("/api/v1/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => null);
+      if (!result?.response.ok) throw new Error("Sign out failed. Please try again.");
+      clearSharedRefreshRotationId();
+      clearAuthCookies();
+      clearTimeout(refreshTimerRef.current);
+      setApiAccessToken(null);
+      accessTokenRef.current = null;
+      rotationIdRef.current = null;
+      activeTenantIdRef.current = null;
+      storeTenantId(null);
+      queryClient.clear();
+      setState({
+        user: null,
+        tenant: null,
+        tenants: [],
+        accessToken: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
     });
   }, []);
 
   const switchTenant = useCallback(
     async (tenantId: string) => {
-      const res = await fetch("/api/v1/auth/switch-tenant", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${state.accessToken}`,
-        },
-        credentials: "include",
-        body: JSON.stringify({ tenant_id: tenantId }),
+      await withAuthCookieLock(async () => {
+        const { response: res, data } = await fetchAuthJson<RefreshResponseBody>("/api/v1/auth/switch-tenant", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessTokenRef.current}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({ tenant_id: tenantId }),
+        });
+        if (!res.ok || !data?.access_token) throw new Error("Failed to switch tenant");
+        // Cancel old-tenant reads before dropping their cached data.
+        await queryClient.cancelQueries();
+        queryClient.clear();
+        if (data.tenant?.id) {
+          activeTenantIdRef.current = data.tenant.id;
+          storeTenantId(data.tenant.id);
+        }
+        setState((s) => ({
+          ...s,
+          tenant: data.tenant ?? s.tenant,
+          tenants: data.tenants ?? s.tenants,
+          accessToken: data.access_token ?? null,
+        }));
+        if (data.access_token) {
+          setApiAccessToken(data.access_token);
+          accessTokenRef.current = data.access_token;
+          scheduleRefresh(data.access_token);
+        }
       });
-      if (!res.ok) throw new Error("Failed to switch tenant");
-      const data = await res.json();
-      // Every server-derived cache entry belongs to the tenant that was active
-      // when it was fetched. Cancel first so a slow in-flight response for the
-      // old workspace cannot land after the swap, then drop the entries — the
-      // Council list is private per tenant and was rendering across the switch.
-      await queryClient.cancelQueries();
-      queryClient.clear();
-      if (data.tenant?.id) {
-        activeTenantIdRef.current = data.tenant.id;
-        storeTenantId(data.tenant.id);
-      }
-      setState((s) => ({
-        ...s,
-        tenant: data.tenant,
-        tenants: data.tenants ?? s.tenants,
-        accessToken: data.access_token,
-      }));
-      if (data.access_token) {
-        setApiAccessToken(data.access_token);
-        scheduleRefresh(data.access_token);
-      }
     },
-    [state.accessToken, scheduleRefresh],
+    [scheduleRefresh],
   );
 
   return (

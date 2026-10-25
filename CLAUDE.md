@@ -15,15 +15,15 @@ make install      # Install all Python + Node dependencies
 make api          # Flask API only (http://localhost:8080)
 make ui           # Vite dev server only (http://localhost:5173, HMR)
 make build        # Build React frontend → immi_case_downloader/static/react/
-make test         # All tests: Python unit + frontend Vitest + Worker Vitest
+make test         # Python unit + frontend Vitest + both Worker suites
 make test-py      # Python unit tests only (excludes E2E)
 make test-fe      # Frontend Vitest tests only
 make test-workers # Worker Vitest tests only (workers/__tests__)
-make test-e2e     # Playwright E2E (requires running server)
+make test-e2e     # Playwright E2E with its own seeded local fixture server
 make coverage     # Python unit tests with HTML coverage report
-make lint         # Ruff lint Python source
+make lint         # Ruff (Python) + ESLint (frontend)
 make typecheck    # TypeScript type check (tsc --noEmit)
-make migrate      # Push pending Supabase migrations (supabase db push)
+make migrate      # Show migration locations; legacy Supabase push is manual
 
 # Run a single Python test file
 python3 -m pytest tests/test_models.py -x
@@ -123,7 +123,7 @@ immi_case_downloader/
 
 frontend/             → React SPA (Vite 7 + React 19 + TypeScript 5.9 + Tailwind v4)
   src/
-    pages/            → 26 pages (authoritative list: ls frontend/src/pages/):
+    pages/            → 27 pages (authoritative list: ls frontend/src/pages/):
                         DashboardPage, CasesPage, CaseDetailPage, CaseEditPage,
                         CaseAddPage, CaseComparePage, AnalyticsPage,
                         JudgeProfilesPage, JudgeDetailPage, JudgeComparePage,
@@ -132,7 +132,7 @@ frontend/             → React SPA (Vite 7 + React 19 + TypeScript 5.9 + Tailwi
                         GuidedSearchPage, SemanticSearchPage, SavedSearchesPage,
                         LlmCouncilPage, LlmCouncilSessionsPage, DataDictionaryPage,
                         SearchTaxonomyPage, DataToolsPage,
-                        AdminPipelineRunsPage, LoginPage, DesignTokensPage
+                        AdminPipelineRunsPage, LoginPage, DesignTokensPage, NewsPage
     components/       → Shared (Breadcrumb, CourtBadge, ConfirmModal, etc.) + layout
     hooks/            → TanStack Query hooks (use-cases, use-stats, use-theme,
                         use-keyboard, use-legislations, etc.)
@@ -243,7 +243,7 @@ Request → Cloudflare Worker (cloudflare-native.js)
 
 **Adding a new GET endpoint?** Implement it as a D1 query in `workers/case-api/cloudflare.js` (or the relevant `storage/cloudflare.js` store method). There is no Flask to fall back to — an unhandled route is a real 503, not a soft degrade.
 
-**Critical**: `env.IMMI_CATALOG_DB` / `IMMI_ACCOUNT_DB` / `IMMI_OPS_DB` are D1 bindings, not Postgres connections — there is no per-request client to construct and no Hyperdrive pooler in this stack. Mutations go through `CASE_MUTATION_QUEUE` (`handleCaseMutationQueue` in `cloudflare-native.js`) with a dead-letter queue (`immi-case-mutation-dlq`) for poison messages.
+**Critical**: `env.IMMI_CATALOG_DB` / `IMMI_ACCOUNT_DB` / `IMMI_OPS_DB` are D1 bindings, not Postgres connections — there is no per-request client to construct and no Hyperdrive pooler in this stack. Case writes and vector submissions are serialized per case through `CASE_MUTATION_COORDINATOR` (`CaseMutationDO`); imported rows, relations and text chunks commit in one D1 batch. `CASE_MUTATION_QUEUE` (`handleCaseMutationQueue` in `cloudflare-native.js`) carries indexing and retired-source cleanup, with a dead-letter queue (`immi-case-mutation-dlq`) for poison messages. Source uploads use generation-specific keys; cleanup must never delete a live pointer. The coordinator durably records retired pointers and retries enqueueing them with an alarm.
 
 ### Data Flow
 
@@ -346,7 +346,7 @@ Request → Cloudflare Worker (cloudflare-native.js)
 - **Worker custom domain syntax**: `[[routes]]` + `pattern = "host"` + `custom_domain = true`. **NOT** `[[custom_domains]]` (invalid). `pattern = "host/*"` only works if DNS already exists.
 - **CI must `npm ci` before `wrangler deploy`** — `workers/cloudflare-native.js` has its own dependency set; verify with the checked-in `package.json`, not assumptions carried over from the deleted `proxy.js`.
 - **SPA basename** — `resolveRouterBasename()` in `frontend/src/lib/router.ts` auto-detects `/` vs `/app/`. SPA serving is Workers Static Assets (`[assets]` binding `ASSETS` in `wrangler.toml`, `not_found_handling = "single-page-application"`), not a Flask fallback.
-- **No Flask Durable Object** — the `flask-v15`/`getSqlAsUser`/Hyperdrive era is gone from production; the only Durable Objects are `AuthNonce` and `CouncilSessionDO` (`wrangler.toml` `[[durable_objects.bindings]]`).
+- **No Flask Durable Object** — the `flask-v15`/`getSqlAsUser`/Hyperdrive era is gone from production. Durable Objects are `AuthNonce`, `CouncilSessionDO` and the per-case `CaseMutationDO` (`CASE_MUTATION_COORDINATOR`). Operator main-Worker configs must include the new local binding and the `case-mutation-coordinator-v1` SQLite migration before a future deploy; the native config gate rejects missing bindings or migrations.
 - **Testing fresh domains**: macOS DNS cache lies — use `curl --resolve host:443:<CF_IP>` to bypass; flush with `sudo dscacheutil -flushcache`
 - **austlii-scraper Worker**: separate deploy in `workers/austlii-scraper/`, cron-triggered only (commit `d0972db` — HTTP trigger endpoints and its `AUTH_TOKEN` secret were removed). Production case ingestion is now an external VPS crawler POSTing to the main Worker via `CRAWLER_WRITE_TOKEN` (commit `abe5b02`).
 - **Emergency rollback path**: `workers/austlii-scraper/scripts/rollback_run.ts` still targets legacy Supabase (`HYPERDRIVE_SERVICE_URL` / `DATABASE_URL` / `SUPABASE_DB_URL`) intentionally — it is a break-glass script for the old stack, not evidence that Supabase is still in the live path.
@@ -438,29 +438,30 @@ LLM-assisted extraction (`extract_structured_fields_llm.py`) requires `ANTHROPIC
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **IMMI-Case-** (15277 symbols, 34869 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **IMMI-Case-**. Use `list` / `status` for current index counts and freshness; avoid treating a count copied into documentation as live evidence.
 
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+> Index stale? Run `node ../IMMI-Case-review-evidence-20261016/gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `../IMMI-Case-review-evidence-20261016/gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node ../IMMI-Case-review-evidence-20261016/gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`; report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node ../IMMI-Case-review-evidence-20261016/gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "main"})` or `node ../IMMI-Case-review-evidence-20261016/gitnexus/run.cjs detect-changes --scope compare --base-ref "main" --repo .`.
+- MUST warn on HIGH/CRITICAL `risk` pre-edit; never use `riskSharedAxes` to waive a HIGH/CRITICAL `risk` warning. Compare File/symbol: MCP File omits axes; Graph-RAG expands File.
+- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
+- **MUST use `query({search_query: "concept"})` for concepts/flows, `context({name: "symbolName"})` for a named symbol, or `impact` for blast radius, on read-only callers, dependencies, imports, or execution flow.** Graph first; text search only for empty/`UNKNOWN`/literals.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER edit a function, class, or method before MCP/CLI impact analysis.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
 - NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
+- NEVER commit before MCP/CLI graph change analysis.
 
 ## Resources
 
 | Resource | Use for |
-|----------|---------|
+| --- | --- |
 | `gitnexus://repo/IMMI-Case-/context` | Codebase overview, check index freshness |
 | `gitnexus://repo/IMMI-Case-/clusters` | All functional areas |
 | `gitnexus://repo/IMMI-Case-/processes` | All execution flows |
@@ -469,12 +470,12 @@ This project is indexed by GitNexus as **IMMI-Case-** (15277 symbols, 34869 rela
 ## CLI
 
 | Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->

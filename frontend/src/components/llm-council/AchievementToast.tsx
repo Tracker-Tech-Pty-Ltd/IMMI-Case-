@@ -40,10 +40,10 @@ export function AchievementToast({
       role="status"
       aria-live="polite"
       data-testid={`achievement-toast-${achievement.id}`}
-      className={`pointer-events-auto flex items-start gap-3 rounded-xl border-2 border-accent bg-card px-4 py-3 shadow-lg transition-all duration-300 ${
+      className={`codex-achievement pointer-events-auto flex items-start gap-3 rounded-xl border border-accent bg-card px-4 py-3 shadow-lg transition-[transform,opacity] duration-300 ${
         exiting
           ? "translate-x-full opacity-0"
-          : "animate-[councilToastIn_0.4s_cubic-bezier(0.34,1.56,0.64,1)_both]"
+          : "animate-[councilToastIn_0.4s_ease-out_both]"
       }`}
       style={{
         background:

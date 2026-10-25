@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="5.469" timestamp="2026-10-16T16:27:05.934327+11:00" hostname="U9"><testcase classname="tests.e2e.react.test_react_navigation.TestMobileDrawer" name="test_close_mobile_drawer[chromium]" time="3.991" /></testsuite></testsuites>

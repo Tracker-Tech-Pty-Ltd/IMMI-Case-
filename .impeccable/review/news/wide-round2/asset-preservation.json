@@ -1,0 +1,302 @@
+[
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-dark.webp",
+    "Hash": "DCC5F4D9877F0DDF0428937F395712514187346D6F93B8381B471C9037B1D47C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-light.webp",
+    "Hash": "B1F5985ABB4FDD760FCE68375A5771F9331A3933B212FB9E4BC867EC85DBD5A2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-dark.webp",
+    "Hash": "643A495A006EF00E248C4D38E13EC6A4E4097B17AC8182C0B9C85B5C231BDB84",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-light.webp",
+    "Hash": "D0C8F49F8E1C3D64C764B6738761ED7B84B9BD2DD7BC16DF9D94E77285E53A0C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-dark.webp",
+    "Hash": "B98455CA3B44EC9CA91FA0FEB50E654129F6514AC02625CEA134D5E2AA37E712",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-light.webp",
+    "Hash": "BE4171CAACB10890DED7599939383D1D625FDB75142B6E9C4884212ED0EA12F4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-dark.webp",
+    "Hash": "E6130F834DC44BC99CE03DBA792DF2CCB7E7788BA310A119388299EA2C2B0C2F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-light.webp",
+    "Hash": "148DEE1CEBC92BD9BC42BC75D013CDCF24F748481401517914244E174874A1E7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-dark.webp",
+    "Hash": "BEF055F4AD924C8B399F287FD1A79A16DC1203D899E5500D8E2CB4481B639AFC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-light.webp",
+    "Hash": "B5EB07F93ABD6062931979CD3DF87AF3402A0C386B300B625B621798F0FAE827",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-dark.webp",
+    "Hash": "7CD8F6C4C4107B4168B045C591CE91419FBC5144B92427C70BEB1F59FDDD4EFD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-light.webp",
+    "Hash": "231B06CB4F2F65474C31DD7B11E87112029346A60EF50E25AF33705702601C5F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-dark.webp",
+    "Hash": "457E9303039ED98638DC789723684067E69CCB9DD468A8EE8B40027214602447",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-light.webp",
+    "Hash": "7A3623759B7BAC2C41948BD1534AE7243F6F62A563F88A798F2EB074FF2A39B5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-dark.webp",
+    "Hash": "37423FB3C39B1686CE4B6FB8FEFB049D2DEB06409B2F46A18E72CD031FE004A8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-light.webp",
+    "Hash": "C9926AC709CD1612E09E7174ABFD434923C837971E4A29D47E368FC5692C354A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-dark.webp",
+    "Hash": "C75A4414D3C5BE268E87B33FEBFD53106270EFFA45FB21A9F6E34759AA5C945D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-light.webp",
+    "Hash": "79B58C9213096ACD578E7CA9A0F6229C89F103BD418A62E212D69AEC3F17CDCF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-dark.webp",
+    "Hash": "6B5B7BD81F72717126FB01E83D239D46EA2BF345F77DF86E050B8F5504D71CBF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-light.webp",
+    "Hash": "2CD5FBB4AD05001FE04A089693E212D6C3C7FA76AB8023C8087784415D874637",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-dark.webp",
+    "Hash": "DC482A785D208333EC47B93CC467ECA987201BD8083FFADE56A558F2816EE7BF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-light.webp",
+    "Hash": "B958DBF1C16A2FBEF3FA79D4B733DEE93D01B0FB6FD126FE5DA8F6D744533662",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-dark.webp",
+    "Hash": "A6BAB9D10FAAAEAF5B82C3A35D5E159E628DE9C316D720BED6F91640F7BAC17F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-light.webp",
+    "Hash": "8034B077DC866D2684D3A4068A8E2C3FFFFF385C5D702E7F57E91CF9FFE5D8BA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-dark.webp",
+    "Hash": "25CF6685A0783CA161B9AF13540A3313E94716BD98BD1EF9D53D17157E7F2DDA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-light.webp",
+    "Hash": "F71D832D09C0141C1E7B614B53D4A008E6D723DD3466C2D1E24BE67ED6E17402",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-dark.webp",
+    "Hash": "8C3F7667B6A89883399B4519CC674FBA6F047E414EA2BCCAB2A6C34666B42459",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-light.webp",
+    "Hash": "D04D1F805236DD398CD27B1789BD65DBC69C0F0CB2FE519D0FCF482C9AAF1D45",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-dark.webp",
+    "Hash": "F8F3A3F65855C0AF82594553738FD566F1D07418E9B83E85C63385511EB60C92",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-light.webp",
+    "Hash": "F6F07D1A6DACA7AC131FDECD8C42C8EB79E563890F15CEEAD23F4AD47EBFB291",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-dark.webp",
+    "Hash": "75F474F58707EEAA90E8768CFA9E7CE58F8283C8F3784DDAA531BC2763F788BB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-light.webp",
+    "Hash": "C3EC439B9A011A52577939DE76B5728DE0D8E4D3F8C5E0C3F85C31920ACDACD4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-dark.webp",
+    "Hash": "207B2E09C9EFB38E54065D9ED6B34395F9C9F7978F5EEDFAE95DAA953FE8E5D9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-light.webp",
+    "Hash": "0ED4E55AA8EED1D3243E949019C672A929EA4227C97D71238E021BB8249103A0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-dark.webp",
+    "Hash": "9682A5526AE212EA7DAC34B22F78EE3E7D915E1DEE179AED6173900BAEA5CFB4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-light.webp",
+    "Hash": "7A6B733E0931C403FEA3373387ED64FA9ADC863D5C7678CA21EA7FD1D231BEEE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-dark.webp",
+    "Hash": "1C25ABDAD126B34680C22F97E3BC1C8CC227A8AD5194C119A4280C1CD51AEC9F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-light.webp",
+    "Hash": "5F7BA525C68C74FB434FF655F932D91FE5180F56451984BF295A1162576C3BC9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-dark.webp",
+    "Hash": "EC1875EE9450381FD9868A85827477019F1A88D994C3B6F1E03185EF8B1D3201",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-light.webp",
+    "Hash": "748C35A25696EFBACB533D83B41B2D87C001B37B2C9DB5D70959F1D0C9F5A652",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-dark.webp",
+    "Hash": "B29D197FDB900273FA7FE207A7308CA43005A6438AAD85155F5D3572DB73ED67",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-light.webp",
+    "Hash": "38587E9E573E30DC3FCA13C00383191E2ADD51A6A11617B0855DD68F6BFD7E48",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-dark.webp",
+    "Hash": "58EBCC57E7E7F3790EFC0CB0A7D5D0917EFDDC6D360F81635A1C5B9B0D81EF80",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-light.webp",
+    "Hash": "84EC24D7E1093C789F3F157A0AA83A7BC9BF99210012573117A2CB49C67D08FF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-dark.webp",
+    "Hash": "7DC9B1B3065488A6CF26E50ED53D0DFB7513CC4417205F6C2016D772CCCCF86E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-light.webp",
+    "Hash": "67AAFD29DCA2EE928286722356D9F14FEF5181AF1B298FC20CAE49C008AAB6EF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-dark.webp",
+    "Hash": "7F7F94A573A3BE412E3F749B2FAF50B21191DE144E692ECE4B92F42A2EEDF079",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-light.webp",
+    "Hash": "6DDF2DD87B17D53D9461FEC087B6126EA422EAFCB61383B3AB3CB34984D0D4F0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-dark.webp",
+    "Hash": "206E8896ABE11411BE4AEB3C6CC298E9B3E6C5B201D8383174F53270ABEDD47E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-light.webp",
+    "Hash": "C8FDB71D8EB28A5F827DAAB39FCBB5C98150B3C8F3C6568ADDA0023353AE5B39",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-dark.webp",
+    "Hash": "7051BF3CF216A7028229D296F3FDD95E2B691D4B08A766E04E6A5D31B325C114",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-light.webp",
+    "Hash": "89B07688B6B01C8C73FD1BCEE51BAABAE088F9A9622FB24F028F2FBFD77CC4E6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-dark.webp",
+    "Hash": "F6A16AFABFEC68A4812B450C647B10889089975F24CEC9E5A28BFB193493C8AE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-light.webp",
+    "Hash": "0C0FA70935053DA69AB9D1531EA13073118D6E172E0FEBB84C6A70E2B8C8B7BD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-dark.webp",
+    "Hash": "4F2A27210E4B326952A6FF52DD6668E9CBD9A00E29C768B8BC5673249D5D9A43",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-light.webp",
+    "Hash": "0651D8E12602426968C7BF8AF72E9D6CCAB9969A7458A98DB33DFA2328B7B447",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-dark.webp",
+    "Hash": "D0213C46886CB18ACA37A0159779A92105421FC187F65293F8EC59BD9BE776AD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-light.webp",
+    "Hash": "7297C221D04F15586CD56CA6ABF54E2273CE13A6A2726AFDC6488DA12D3FB746",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp",
+    "Hash": "ED4BE5C24DBD3C51521D94F6923F9DB482020F4AA3ADC449C150CF3CD5046E59",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp",
+    "Hash": "6188271459F3D33184126969DD80478B2C0AA5D622A0F3A1F531DF8D5A6C6F34",
+    "Unchanged": true
+  }
+]

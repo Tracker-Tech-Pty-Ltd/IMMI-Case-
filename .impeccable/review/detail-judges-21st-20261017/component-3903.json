@@ -1,0 +1,36 @@
+{
+  "component": {
+    "id": 3903,
+    "componentId": 3172,
+    "authorUserId": "user_2uAqrF8oLIpxBVD9ZqYRYLfhKZ1",
+    "name": "Tabs",
+    "demoName": "Secondary",
+    "description": "Display tab content.",
+    "previewUrl": "https://cdn.21st.dev/user_2uAqrF8oLIpxBVD9ZqYRYLfhKZ1/tabs-1/secondary/preview.1786987763406.webp",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/shugar/tabs-1?api_key=$API_KEY_21ST\"",
+    "componentCode": "import React from \"react\";\nimport { Tooltip } from \"@/components/ui/tooltip-1\";\nimport clsx from \"clsx\";\n\ntype TTabVariant = \"primary\" | \"secondary\";\n\nexport interface ITab {\n  title?: string;\n  value: string;\n  disabled?: boolean;\n  icon?: string;\n  tooltip?: string;\n}\n\ninterface TabsProps {\n  selected: string;\n  setSelected: React.Dispatch<React.SetStateAction<string>>;\n  tabs: ITab[];\n  disabled?: boolean;\n  variant?: TTabVariant;\n}\n\ninterface TabProps extends ITab {\n  selected: string;\n  setSelected: React.Dispatch<React.SetStateAction<string>>;\n  variant: TTabVariant;\n}\n\nconst getClasses = (isSelected: boolean, disabled: boolean, variant: TTabVariant) => {\n  let classes = `relative overflow-visible box-border font-sans text-sm flex gap-0.5 duration-100 ${disabled ? \"cursor-not-allowed\" : \"cursor-pointer\"}`;\n  if (isSelected) {\n    if (variant === \"primary\") {\n      classes += \" border-b-2 border-gray-1000 -mb-0.5\";\n    } else if (variant === \"secondary\") {\n      classes += \" bg-gray-1000\";\n    }\n  } else {\n    if (variant === \"secondary\") {\n      if (disabled) {\n        classes += \" bg-gray-200\";\n      } else {\n        classes += \" bg-gray-alpha-200\";\n      }\n    }\n  }\n  if (variant === \"primary\") {\n    classes += \" pb-[5px] hover:text-gray-1000\";\n  } else if (variant === \"secondary\") {\n    classes += \" h-6 rounded-md text-[13px] px-1.5 items-center\";\n  }\n  if (disabled) {\n    classes += isSelected ? \" text-gray-1000\" : \" text-gray-900\";\n  } else {\n    if (variant === \"primary\") {\n      classes += isSelected ? \" text-gray-1000\" : \" text-gray-900\";\n    } else {\n      classes += isSelected ? \" text-background-100\" : \" text-gray-1000\";\n    }\n  }\n\n  return classes;\n};\n\nconst Tab = ({\n  selected,\n  setSelected,\n  title,\n  value,\n  disabled = false,\n  icon,\n  variant\n}: TabProps) => {\n  if (!title && !icon) {\n    return;\n  }\n\n  return (\n    <div\n      className={getClasses(selected === value, disabled, variant)}\n      onClick={() => {\n        if (!disabled) {\n          setSelected(value);\n        }\n      }}\n    >\n      {icon && <img src={icon} alt={title} width={16} height={16} />}\n      <div>{title}</div>\n    </div>\n  );\n};\n\nexport const Tabs = ({\n  selected,\n  setSelected,\n  tabs,\n  disabled = false,\n  variant = \"primary\"\n}: TabsProps) => {\n  return (\n    <div className={clsx(\n      \"flex\",\n      disabled && \"cursor-not-allowed\",\n      variant === \"primary\" ? \"gap-6 pb-[1px] border-b border-accents-2\" : \"gap-2\"\n    )}>\n      {tabs.map((tab) => tab.tooltip ? (\n        <Tooltip text={tab.tooltip}>\n          <Tab\n            key={tab.value}\n            selected={selected}\n            setSelected={setSelected}\n            disabled={disabled || tab.disabled}\n            variant={variant}\n            {...tab}\n          />\n        </Tooltip>\n      ) : (\n        <Tab\n          key={tab.value}\n          selected={selected}\n          setSelected={setSelected}\n          disabled={disabled || tab.disabled}\n          variant={variant}\n          {...tab}\n        />\n      ))}\n    </div>\n  );\n};",
+    "demoCode": "import { useState } from \"react\";\nimport { ITab, Tabs } from \"@/components/ui/tabs-1\";\n\nconst disabledTabs: ITab[] = [\n  {\n    title: \"Apple\",\n    value: \"apple\"\n  },\n  {\n    title: \"Orange\",\n    value: \"orange\"\n  },\n  {\n    title: \"Disabled\",\n    value: \"disabled\",\n    disabled: true,\n    tooltip: \"Disabled tooltip\"\n  }\n];\n\nexport default function SecondaryDemo() {\n  const [selected, setSelected] = useState<string>(\"apple\");\n  return <Tabs\n          selected={selected}\n          setSelected={setSelected}\n          tabs={disabledTabs}\n          variant=\"secondary\"\n        />;\n}\n",
+    "registryDependencies": {
+      "filesWithRegistry": {
+        "/components/ui/tooltip-1.tsx": {
+          "code": "import React, { useMemo } from \"react\";\nimport { PlacesType, Tooltip as ReactTooltip } from \"react-tooltip\";\nimport clsx from \"clsx\";\n\nconst types = {\n  success: \"!bg-success !text-white\",\n  warning: \"!bg-warning !text-black\",\n  error: \"!bg-error !text-white\",\n  violet: \"!bg-violet !text-white\",\n  default: \"!bg-geist-foreground !text-background-100\"\n};\n\ninterface TooltipProps {\n  children: React.ReactNode;\n  text: React.ReactNode;\n  position?: \"top\" | \"bottom\" | \"left\" | \"right\";\n  delay?: boolean;\n  boxAlign?: \"left\" | \"right\" | \"center\";\n  type?: keyof typeof types;\n  tip?: boolean;\n  center?: boolean;\n  className?: string;\n}\n\nexport const Tooltip = ({\n  children,\n  text,\n  position = \"top\",\n  delay = true,\n  boxAlign = \"center\",\n  type = \"default\",\n  tip = true,\n  center = true,\n  className\n}: TooltipProps) => {\n  const id = useMemo(() => {\n    const chars = \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\";\n    return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(\"\");\n  }, []);\n\n  return (\n    <div>\n      <div id={id} className={clsx(\"font-sans\", className)}>\n        {children}\n      </div>\n      <ReactTooltip\n        anchorSelect={`#${id}`}\n        place={`${position}${{ left: \"-start\", right: \"-end\", center: \"\" }[boxAlign]}` as PlacesType}\n        delayShow={delay ? 500 : 0}\n        opacity={1}\n        noArrow={!tip}\n        className={clsx(\n          \"!font-sans !text-[13px] !max-w-52 !rounded-lg\",\n          types[type],\n          center ? \" text-center\" : \" text-start\"\n        )}\n      >\n        {text}\n      </ReactTooltip>\n    </div>\n  );\n};",
+          "registry": "ui"
+        }
+      },
+      "npmDependencies": {
+        "clsx": "latest",
+        "react-tooltip": "latest"
+      }
+    },
+    "isPublic": true,
+    "registryTeamId": null,
+    "registryUserId": "user_2uAqrF8oLIpxBVD9ZqYRYLfhKZ1"
+  },
+  "quota": {
+    "tier": "paid",
+    "remaining": null,
+    "perDay": null,
+    "resetAt": null,
+    "upgradeUrl": null
+  }
+}

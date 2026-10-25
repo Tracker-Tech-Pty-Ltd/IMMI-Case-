@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
 import { act, render, screen } from "@testing-library/react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import "./helpers/auth-lock";
 
 // ---------------------------------------------------------------------------
 // Synthetic JWT construction — same shape as __tests__/auth/auth-utils.test.ts.

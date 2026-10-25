@@ -8,6 +8,8 @@
  * — addTurn / getSession / deleteSession read it back.
  */
 
+import { getApiAccessToken } from "@/lib/api";
+
 // ---------------------------------------------------------------------------
 // Types — mirror handlers.js JSON shapes
 // ---------------------------------------------------------------------------
@@ -156,12 +158,14 @@ async function councilFetch(
   }, timeoutMs);
 
   try {
+    const accessToken = getApiAccessToken();
     const res = await fetch(url, {
       method,
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...headers,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
       body,
       signal: controller.signal,

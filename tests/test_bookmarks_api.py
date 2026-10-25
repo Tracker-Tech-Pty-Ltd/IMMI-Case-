@@ -53,14 +53,15 @@ def _mock_repo(cases_by_id: Mapping[str, ImmigrationCase | None]) -> MagicMock:
 
 
 @pytest.fixture
-def client():
+def client(tmp_path):
     """Flask test client with bookmarks blueprint registered and CSRF disabled."""
-    from immi_case_downloader.web import create_app
+    from immi_case_downloader.web import close_app, create_app
 
-    app = create_app()
+    app = create_app(output_dir=str(tmp_path), backend="csv")
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     yield app.test_client()
+    close_app(app, wait=True)
     repo = app.config.get("REPO")
     if repo and hasattr(repo, "close"):
         repo.close()

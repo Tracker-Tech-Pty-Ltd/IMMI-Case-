@@ -1,0 +1,170 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/mnt/d/Dev/Projects/IMMI-Case-/frontend[39m
+
+ [32m✓[39m __tests__/i18n-hardcoded.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 1052[2mms[22m[39m
+     [33m[2m✓[22m[39m every t("...") key used in src/ is defined in en.json [33m 414[2mms[22m[39m
+     [33m[2m✓[22m[39m no new hardcoded aria-label / title / placeholder literals [33m 304[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-hardcoded-colors.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 206[2mms[22m[39m
+ [32m✓[39m __tests__/llm-council-page.test.tsx [2m([22m[2m27 tests[22m[2m)[22m[33m 784[2mms[22m[39m
+ [32m✓[39m __tests__/llm-council-thread.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[33m 495[2mms[22m[39m
+ [32m✓[39m __tests__/court-sparkline-grid.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 427[2mms[22m[39m
+[90mstderr[2m | __tests__/render-perf-measured.test.tsx[2m > [22m[2mDashboardPage chart re-renders (FEPERF-07)[2m > [22m[2mtoggling chart/table view does not re-render the chart components
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+[90mstderr[2m | __tests__/render-perf-measured.test.tsx[2m > [22m[2mDashboardPage chart re-renders (FEPERF-07)[2m > [22m[2mchanging the underlying stats does re-render the charts with a new identity
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+ [32m✓[39m __tests__/render-perf-measured.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 465[2mms[22m[39m
+ [32m✓[39m __tests__/analytics-charts-tokens.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[33m 316[2mms[22m[39m
+ [32m✓[39m __tests__/use-llm-council-sessions.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 990[2mms[22m[39m
+ [32m✓[39m __tests__/court-chart.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 309[2mms[22m[39m
+ [32m✓[39m __tests__/monthly-trends.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 199[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-lint-baseline.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 11696[2mms[22m[39m
+     [33m[2m✓[22m[39m the set of jsx-a11y violations is exactly the recorded baseline [33m 11693[2mms[22m[39m
+ [32m✓[39m __tests__/system-pages.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 193[2mms[22m[39m
+ [32m✓[39m __tests__/legal-concepts-chart.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 268[2mms[22m[39m
+ [32m✓[39m __tests__/legislation-detail.test.tsx [2m([22m[2m19 tests[22m[2m)[22m[32m 265[2mms[22m[39m
+ [32m✓[39m __tests__/case-edit-private-notes.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 141[2mms[22m[39m
+ [32m✓[39m __tests__/cases-page.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[32m 174[2mms[22m[39m
+ [32m✓[39m __tests__/analytics-filter-integration.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 334[2mms[22m[39m
+[90mstderr[2m | __tests__/llm-council-sessions-page.test.tsx[2m > [22m[2mLlmCouncilSessionsPage[2m > [22m[2minvoking the captured onError handler shows a user-visible error toast
+[22m[39m[llm-council] session delete failed Error: D1_ERROR: no such table
+    at [90m/mnt/d/Dev/Projects/IMMI-Case-/frontend/[39m__tests__/llm-council-sessions-page.test.tsx:325:13
+    at file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:20
+
+ [32m✓[39m __tests__/case-detail-error-state.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 125[2mms[22m[39m
+ [32m✓[39m __tests__/llm-council-sessions-page.test.tsx [2m([22m[2m24 tests[22m[2m)[22m[32m 272[2mms[22m[39m
+ [32m✓[39m __tests__/nature-chart.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 248[2mms[22m[39m
+ [32m✓[39m __tests__/legislations.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 269[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-form-labels.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 147[2mms[22m[39m
+ [32m✓[39m __tests__/session-list-item-stale-closure.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 169[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-controls-and-tables.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 93[2mms[22m[39m
+ [32m✓[39m __tests__/subclass-chart.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 286[2mms[22m[39m
+ [32m✓[39m __tests__/advanced-filter-panel.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[32m 272[2mms[22m[39m
+ [32m✓[39m __tests__/concept-trend-chart.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 307[2mms[22m[39m
+ [32m✓[39m __tests__/data-tools-poll-errors.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 161[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-components.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 224[2mms[22m[39m
+ [32m✓[39m __tests__/global-search-debounce.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 138[2mms[22m[39m
+ [32m✓[39m __tests__/success-rate-deep-modal.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 205[2mms[22m[39m
+ [32m✓[39m __tests__/case-detail-council-link.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 138[2mms[22m[39m
+ [32m✓[39m __tests__/flow-sankey.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 180[2mms[22m[39m
+ [32m✓[39m __tests__/session-delete-error.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 143[2mms[22m[39m
+ [32m✓[39m __tests__/case-detail-page.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 147[2mms[22m[39m
+ [32m✓[39m __tests__/case-add-page-mutations-disabled.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 144[2mms[22m[39m
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m顯示案件總數統計當資料載入完成
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m顯示歡迎空狀態當沒有案件存在
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+ [32m✓[39m __tests__/nature-outcome-heatmap.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m顯示 Dashboard 標題當資料成功載入
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m顯示報告生成日期標籤
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m渲染圖表區段標題當資料可用
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+[90mstderr[2m | __tests__/dashboard-page.test.tsx[2m > [22m[2mDashboardPage[2m > [22m[2m渲染篩選器元件
+[22m[39m[Dashboard] non-raw chart sources detected [ [ [32m'year'[39m, { status: [32m'fallback'[39m, dataset: [32m'years'[39m, pointCount: [33m2[39m } ] ]
+
+ [32m✓[39m __tests__/dashboard-page.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 131[2mms[22m[39m
+ [32m✓[39m __tests__/streaming-council-view.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[32m 109[2mms[22m[39m
+ [32m✓[39m __tests__/analytics-insights-panel.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 75[2mms[22m[39m
+Error: Not implemented: navigation (except hash changes)
+    at module.exports (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at navigateFetch (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/window/navigation.js:77:3)
+    at exports.navigate (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/window/navigation.js:55:3)
+    at Timeout._onTimeout (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/nodes/HTMLHyperlinkElementUtils-impl.js:81:7)
+    at listOnTimeout (node:internal/timers:585:17)
+    at processTimers (node:internal/timers:521:7) undefined
+Error: Not implemented: navigation (except hash changes)
+    at module.exports (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at navigateFetch (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/window/navigation.js:77:3)
+    at exports.navigate (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/window/navigation.js:55:3)
+    at Timeout._onTimeout (/root/.cache/immi-case-ui-20261016/node_modules/jsdom/lib/jsdom/living/nodes/HTMLHyperlinkElementUtils-impl.js:81:7)
+    at listOnTimeout (node:internal/timers:585:17)
+    at processTimers (node:internal/timers:521:7) undefined
+ [32m✓[39m __tests__/router-open-redirect.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 121[2mms[22m[39m
+ [32m✓[39m __tests__/similar-cases-panel.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[32m 132[2mms[22m[39m
+ [32m✓[39m __tests__/outcome-funnel-chart.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[32m 81[2mms[22m[39m
+ [32m✓[39m __tests__/judge-pages.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[32m 108[2mms[22m[39m
+ [32m✓[39m __tests__/outcome-stacked-bar.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 87[2mms[22m[39m
+ [32m✓[39m __tests__/collection-pages.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 91[2mms[22m[39m
+ [32m✓[39m __tests__/analytics-sample-size.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m __tests__/council-stream-error-state.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 97[2mms[22m[39m
+ [32m✓[39m __tests__/news-page.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 341[2mms[22m[39m
+ [32m✓[39m __tests__/cases-page-font.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+ [32m✓[39m __tests__/query-cache-correctness.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 189[2mms[22m[39m
+ [32m✓[39m __tests__/auth-refresh-recovery.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m __tests__/a11y-mobile-nav.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 212[2mms[22m[39m
+ [32m✓[39m __tests__/admin-pipeline-runs.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 63[2mms[22m[39m
+ [32m✓[39m __tests__/risk-gauge-baseline.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m __tests__/route-error-boundary.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m __tests__/route-guards.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m __tests__/theme-preset.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m __tests__/auth-cross-tab.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m __tests__/risk-gauge.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m __tests__/concept-cooccurrence-heatmap.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m __tests__/tenant-cache-isolation.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+ [32m✓[39m __tests__/hooks/use-theme-preset.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m __tests__/cases-table-responsive.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32m✓[39m __tests__/hooks/use-auth.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m __tests__/token-contrast.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m __tests__/render-perf-guards.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+[90mstderr[2m | src/lib/__tests__/saved-searches.test.ts[2m > [22m[2msaved-searches edge cases[2m > [22m[2mloadSavedSearches - corrupted data handling[2m > [22m[2mreturns empty array for corrupted JSON
+[22m[39mFailed to load saved searches: SyntaxError: Unexpected token 'i', "invalid json{{{" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at loadSavedSearches [90m(/mnt/d/Dev/Projects/IMMI-Case-/frontend/[39msrc/lib/saved-searches.ts:76:25[90m)[39m
+    at [90m/mnt/d/Dev/Projects/IMMI-Case-/frontend/[39msrc/lib/__tests__/saved-searches.test.ts:44:22
+    at file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10)
+    at file:///root/.cache/immi-case-ui-20261016/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+
+[90mstderr[2m | src/lib/__tests__/saved-searches.test.ts[2m > [22m[2msaved-searches edge cases[2m > [22m[2mloadSavedSearches - corrupted data handling[2m > [22m[2mreturns empty array for non-array data
+[22m[39mSaved searches data is corrupted and has been reset
+
+[90mstderr[2m | src/lib/__tests__/saved-searches.test.ts[2m > [22m[2msaved-searches edge cases[2m > [22m[2mloadSavedSearches - corrupted data handling[2m > [22m[2mfilters out invalid entries
+[22m[39mRemoved 4 invalid saved search entries
+
+[90mstderr[2m | src/lib/__tests__/saved-searches.test.ts[2m > [22m[2msaved-searches edge cases[2m > [22m[2mloadSavedSearches - corrupted data handling[2m > [22m[2mlimits to 50 searches even if more are stored
+[22m[39mRemoved 10 invalid saved search entries
+
+ [32m✓[39m src/lib/__tests__/saved-searches.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m __tests__/hooks/use-keyboard.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m __tests__/use-debounced-value.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m __tests__/variable-shadowing.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m __tests__/css-tokens.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m __tests__/council-workspace-auth.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m __tests__/download-blob.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m __tests__/api-csrf-lifecycle.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m __tests__/api-llm-council.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m __tests__/dashboard-api-fallback.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m __tests__/api-taxonomy-normalization.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m __tests__/council-celebrations.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m __tests__/auth/auth-utils.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m __tests__/saved-search-share-url.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m __tests__/api-case-mutations-disabled.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m __tests__/news.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m __tests__/color.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m __tests__/analytics-scope.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m __tests__/use-bookmarks-storage.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m __tests__/dashboard-insights.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m __tests__/field-completeness.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m __tests__/use-cases-cursor.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m __tests__/router-basename.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m __tests__/trend-normalization.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m __tests__/tokens-data-font.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m92 passed[39m[22m[90m (92)[39m
+[2m      Tests [22m [1m[32m762 passed[39m[22m[90m (762)[39m
+[2m   Start at [22m 09:36:26
+[2m   Duration [22m 39.84s[2m (transform 6.07s, setup 7.69s, import 13.98s, tests 25.00s, environment 23.83s)[22m
+

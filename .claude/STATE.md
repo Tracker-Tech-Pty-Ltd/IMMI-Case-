@@ -1,5 +1,9 @@
 # IMMI-Case Worktree Closeout State
 
+## 2026-10-26 本機整合更新
+
+本次使用者已授權完成未提交工作、審查、測試及合併。最新盤點、衝突處理與驗證請讀 [工作樹整合紀錄](../docs/reviews/2026-10-26-worktree-integration.md)（由儲存庫根目錄為 `docs/reviews/2026-10-26-worktree-integration.md`）。六個舊工作樹已修復成本機路徑；下列 2026-08-28 的進度、測試數字及部署阻塞均為歷史紀錄，不代表目前線上狀態。本次不部署或推送。
+
 Updated: 2026-08-28 Australia/Melbourne
 
 ## 2026-08-28 52 份計畫實作 — 46/52 已合併 main

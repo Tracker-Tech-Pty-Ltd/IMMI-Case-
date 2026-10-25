@@ -1,0 +1,14 @@
+{
+  "approved": true,
+  "approvedAt": "2026-10-16",
+  "approval": "可以，就照這版開始製作新聞更新頁，沿用 Legal Codex 風格並保留現有資料與功能。新聞請使用可核對的真實來源，附上發布日期和原文連結。",
+  "source": "docs/news-updates-design-20261016/news-updates-v1.png",
+  "crop": [
+    30,
+    86,
+    1157,
+    997
+  ],
+  "promptSource": "docs/news-updates-design-20261016/PROMPT.md",
+  "note": "Desktop reference crop only; not a shipping page raster. Existing app shell is preserved; illustrative content replaced with verified source content as explicitly requested."
+}

@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import OUTPUT_DIR, CASES_CSV, CASES_JSON, TEXT_CASES_DIR
+from .atomic_file import replace_file
 from .csv_write_lock import csv_write_lock
 from .models import ImmigrationCase
 
@@ -69,7 +70,7 @@ def save_cases_csv(cases: list[ImmigrationCase], base_dir: str = OUTPUT_DIR):
 
     df = pd.DataFrame(rows, columns=CASE_FIELDS)
     df.to_csv(tmp_path, index=False, encoding="utf-8-sig")
-    os.replace(tmp_path, filepath)
+    replace_file(tmp_path, filepath)
 
     invalidate_cases_cache()
     logger.info(f"Saved {len(cases)} cases to {filepath}")
@@ -92,7 +93,7 @@ def save_cases_json(cases: list[ImmigrationCase], base_dir: str = OUTPUT_DIR):
 
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp_path, filepath)
+    replace_file(tmp_path, filepath)
 
     logger.info(f"Saved {len(cases)} cases to {filepath}")
     return filepath
@@ -315,6 +316,9 @@ ALLOWED_UPDATE_FIELDS = frozenset({
     "citation", "title", "court", "court_code", "date", "year", "url",
     "judges", "catchwords", "outcome", "visa_type", "legislation",
     "text_snippet", "user_notes", "tags", "case_nature", "legal_concepts",
+    "visa_subclass", "visa_class_code", "applicant_name", "respondent",
+    "country_of_origin", "visa_subclass_number", "hearing_date",
+    "is_represented", "representative",
 })
 
 

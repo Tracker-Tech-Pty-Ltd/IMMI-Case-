@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getApiAccessToken } from "@/lib/api";
 import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Search, Sparkles } from "lucide-react";
 import { playHaptic } from "@/lib/council-celebrations";
 
@@ -247,10 +248,14 @@ export function useCouncilStream(): UseCouncilStreamResult {
       }, 5_000);
 
       try {
+        const accessToken = getApiAccessToken();
         const res = await fetch("/api/v1/llm-council/stream", {
           method: "POST",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
           body: JSON.stringify(params),
           signal: controller.signal,
         });

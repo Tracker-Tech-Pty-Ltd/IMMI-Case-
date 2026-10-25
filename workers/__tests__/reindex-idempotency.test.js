@@ -9,11 +9,20 @@ vi.mock("../storage/pipeline_coordinator.js", () => ({
   splitFtsChunks: (text) => [text],
 }));
 
-import worker from "../cloudflare-native.js";
+import worker, { CaseMutationDO } from "../cloudflare-native.js";
 
 const CASE_ID = "0123456789ab";
 const SHA = "a".repeat(64);
-const ENV = { IMMI_STORAGE_MODE: "cloudflare" };
+const coordinators = new Map();
+const ENV = {
+  IMMI_STORAGE_MODE: "cloudflare",
+  CASE_MUTATION_COORDINATOR: {
+    getByName(name) {
+      if (!coordinators.has(name)) coordinators.set(name, new CaseMutationDO({}, ENV));
+      return coordinators.get(name);
+    },
+  },
+};
 
 /**
  * Stores whose caseStore actually remembers markSemanticReady(), so a second
@@ -30,6 +39,8 @@ function statefulStores({ semanticReady = 0, contentSha = SHA } = {}) {
     source: "austlii",
     visa_subclass: "482",
     content_sha256: contentSha,
+    content_key: `cases/${CASE_ID}/source/${contentSha}.txt`, content_size: 20,
+    vector_mutation_id: "pending:version-1",
     semantic_ready: semanticReady,
   };
   return {
@@ -41,7 +52,11 @@ function statefulStores({ semanticReady = 0, contentSha = SHA } = {}) {
     },
     caseStore: {
       getCase: vi.fn(async () => ({ ...row })),
-      markSemanticReady: vi.fn(async () => { row.semantic_ready = 1; }),
+      markSemanticReady: vi.fn(async (_id, mutation) => {
+        row.semantic_ready = 1;
+        row.vector_mutation_id = mutation;
+        return true;
+      }),
       rebuildAggregates: vi.fn(async () => undefined),
     },
     semanticIndex: {
@@ -69,7 +84,7 @@ function reindexMessage() {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); coordinators.clear(); });
 
 describe("case.reindex does not re-buy an embedding it already has", () => {
   // The defect: handleCaseMutationQueue runs every message, then does ONE
@@ -91,16 +106,15 @@ describe("case.reindex does not re-buy an embedding it already has", () => {
     expect(message.retry).not.toHaveBeenCalled();
   });
 
-  it("re-embeds when the stored content hash differs from the event", async () => {
+  it("keeps a completed current vector when a historical event has a different hash", async () => {
     const stores = statefulStores({ semanticReady: 1, contentSha: "b".repeat(64) });
     mockCreateStores.mockReturnValue(stores);
 
     await worker.queue({ messages: [reindexMessage()] }, ENV);
 
-    // semantic_ready alone is not proof: the row may have been re-ingested with
-    // new text. Only a hash match licenses the skip.
-    expect(stores.semanticIndex.embed).toHaveBeenCalledOnce();
-    expect(stores.semanticIndex.upsertCase).toHaveBeenCalledOnce();
+    // The event is obsolete. Only the live row decides what needs indexing.
+    expect(stores.semanticIndex.embed).not.toHaveBeenCalled();
+    expect(stores.semanticIndex.upsertCase).not.toHaveBeenCalled();
   });
 
   it("re-embeds when the case is not marked semantic-ready", async () => {
@@ -110,10 +124,10 @@ describe("case.reindex does not re-buy an embedding it already has", () => {
     await worker.queue({ messages: [reindexMessage()] }, ENV);
 
     expect(stores.semanticIndex.embed).toHaveBeenCalledOnce();
-    expect(stores.caseStore.markSemanticReady).toHaveBeenCalledWith(CASE_ID, "mutation-1");
+    expect(stores.caseStore.markSemanticReady).toHaveBeenCalledWith(CASE_ID, "mutation-1", expect.objectContaining({ vector_mutation_id: "pending:version-1" }));
   });
 
-  it("re-embeds when the event carries no content hash to compare", async () => {
+  it("does not re-buy a completed current version when an event omits its old hash", async () => {
     const stores = statefulStores({ semanticReady: 1 });
     mockCreateStores.mockReturnValue(stores);
     const message = reindexMessage();
@@ -121,7 +135,7 @@ describe("case.reindex does not re-buy an embedding it already has", () => {
 
     await worker.queue({ messages: [message] }, ENV);
 
-    expect(stores.semanticIndex.embed).toHaveBeenCalledOnce();
+    expect(stores.semanticIndex.embed).not.toHaveBeenCalled();
   });
 
   // The scenario the review named, played out across two real deliveries.

@@ -262,7 +262,7 @@ describe("LegislationsPage", () => {
 
     renderWithProviders(<LegislationsPage />, "/legislations");
 
-    const paginationContainer = screen.queryByRole("navigation");
+    const paginationContainer = screen.queryByRole("navigation", { name: "Pagination" });
     expect(paginationContainer).toBeInTheDocument();
   });
 

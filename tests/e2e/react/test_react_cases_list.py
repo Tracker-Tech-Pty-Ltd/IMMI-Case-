@@ -1,6 +1,7 @@
 """Cases list page tests: table/card views, filters, pagination, batch bar."""
 
 import re
+from playwright.sync_api import expect
 
 from .react_helpers import (
     react_navigate,
@@ -112,9 +113,12 @@ class TestFilters:
         react_page.locator("select").first.select_option("FCA")
         react_page.wait_for_load_state("networkidle")
         wait_for_loading_gone(react_page)
-        # Should have fewer than 10 results
+        # keepPreviousData retains old rows until the filtered response arrives.
+        # The isolated fixture has exactly two FCA cases.
         rows = react_page.locator("tbody tr")
-        assert rows.count() < 10
+        expect(rows).to_have_count(2)
+        for row in rows.all():
+            expect(row.locator("td").nth(3)).to_contain_text("FCA")
 
     def test_year_filter_present(self, react_page):
         react_navigate(react_page, "/cases")

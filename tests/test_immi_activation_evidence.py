@@ -250,7 +250,10 @@ def test_activation_evidence_requires_immutable_release_identity() -> None:
         raise AssertionError("expected non-immutable git identity to block activation")
 
 
-def test_activation_evidence_binds_packet_to_supplied_native_configs(tmp_path) -> None:
+def test_activation_evidence_binds_packet_to_supplied_native_configs(tmp_path, monkeypatch) -> None:
+    # This test isolates resource/config binding; real Git identity and dirty
+    # checkout rejection are exercised in test_native_deploy_release.py.
+    monkeypatch.setattr("scripts.check_immi_activation_evidence._validate_source_identity", lambda release: None)
     main_config = tmp_path / "main.toml"
     pipeline_config = tmp_path / "pipeline.toml"
     evidence = _evidence()

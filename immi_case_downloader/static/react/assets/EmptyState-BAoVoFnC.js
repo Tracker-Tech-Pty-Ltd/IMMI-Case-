@@ -1,0 +1,1 @@
+import{j as s}from"./vendor-Ba2z923H.js";import{z as n}from"./index-CIoh_dgA.js";function u({icon:t,title:r,description:e,action:o,className:a,contained:m=!0}){return s.jsx(n,{title:r,description:e,icon:t,action:o,contained:m,className:a})}export{u as E};

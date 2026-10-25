@@ -1,0 +1,42 @@
+
+  GitNexus Impact (1.6.12)
+{
+  "target": {
+    "id": "Function:frontend/src/pages/NewsPage.tsx:NewsReadingTools",
+    "name": "NewsReadingTools",
+    "type": "Function",
+    "filePath": "frontend/src/pages/NewsPage.tsx"
+  },
+  "direction": "upstream",
+  "impactedCount": 1,
+  "risk": "LOW",
+  "riskSharedAxes": "LOW",
+  "riskScale": {
+    "comparableAcrossKinds": true,
+    "unusedAxes": []
+  },
+  "epistemic": "exact",
+  "summary": {
+    "direct": 1,
+    "processes_affected": 0,
+    "modules_affected": 0
+  },
+  "byDepthCounts": {
+    "1": 1
+  },
+  "affected_processes": [],
+  "affected_modules": [],
+  "byDepth": {
+    "1": [
+      {
+        "depth": 1,
+        "id": "Function:frontend/src/pages/NewsPage.tsx:NewsPage",
+        "name": "NewsPage",
+        "filePath": "frontend/src/pages/NewsPage.tsx",
+        "relationType": "CALLS",
+        "confidence": 0.85,
+        "processes": []
+      }
+    ]
+  }
+}

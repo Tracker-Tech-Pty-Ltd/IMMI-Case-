@@ -36,7 +36,8 @@ def test_transform_and_reconcile_read_chunked_export_parts(tmp_path: Path) -> No
 def test_transform_builds_d1_r2_mirrors_and_row_manifests(tmp_path: Path) -> None:
     snapshot = tmp_path / "snapshot"
     (snapshot / "artifacts" / "cases").mkdir(parents=True)
-    (snapshot / "artifacts" / "cases" / f"{CASE_ID}.txt").write_text("The canonical case text", encoding="utf-8")
+    case_text = "The canonical case text\n第二行判決理由\n"
+    (snapshot / "artifacts" / "cases" / f"{CASE_ID}.txt").write_bytes(case_text.encode("utf-8"))
     write_rows(snapshot, "immigration_cases", [{
         "case_id": CASE_ID,
         "citation": "[2026] FCA 1",
@@ -94,7 +95,7 @@ def test_transform_builds_d1_r2_mirrors_and_row_manifests(tmp_path: Path) -> Non
         assert catalog.execute("SELECT visa_outcome_reason, legal_test_applied FROM cases").fetchone() == (
             "Procedural fairness", "Natural justice"
         )
-        assert (output / "r2" / row[1]).read_text(encoding="utf-8") == "The canonical case text"
+        assert (output / "r2" / row[1]).read_bytes() == case_text.encode("utf-8")
         assert catalog.execute("SELECT COUNT(*) FROM case_text_fts").fetchone()[0] == 1
         assert catalog.execute("SELECT COUNT(*) FROM case_judges").fetchone()[0] == 1
         assert catalog.execute("SELECT COUNT(*) FROM case_concepts").fetchone()[0] == 2

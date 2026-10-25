@@ -8,20 +8,24 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface TopbarProps {
   onMenuClick: () => void;
+  menuOpen?: boolean;
   onSearchClick?: () => void;
 }
 
-export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
+export function Topbar({ onMenuClick, onSearchClick, menuOpen = false }: TopbarProps) {
   const { t, i18n } = useTranslation();
   const isZhTW = i18n.language === "zh-TW";
   const { isAuthenticated } = useAuth();
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-sm">
-      <div className="flex items-center gap-3">
+    <header className="codex-topbar sticky top-0 z-20 border-b border-border-light bg-card px-4">
+      <div className="flex min-w-0 items-center gap-2 lg:hidden">
         <button
           onClick={onMenuClick}
-          className="rounded-md p-1.5 text-muted-text hover:bg-surface hover:text-foreground lg:hidden"
+          data-mobile-menu-trigger
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? "codex-mobile-navigation" : undefined}
+          className="codex-icon-button rounded-md text-muted-text hover:bg-surface hover:text-foreground"
           aria-label={t("common.menu", { defaultValue: "Toggle menu" })}
         >
           <Menu className="h-5 w-5" />
@@ -31,27 +35,19 @@ export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
         </span>
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* Mobile search trigger */}
-        <button
-          onClick={onSearchClick}
-          className="rounded-md p-1.5 text-muted-text hover:bg-surface hover:text-foreground sm:hidden"
-          aria-label={t("common.search", { defaultValue: "Search" })}
-        >
-          <Search className="h-5 w-5" />
-        </button>
-
+      <div className="codex-topbar-actions flex min-w-0 items-center gap-2 font-data">
         {/* Search trigger */}
         <button
           onClick={onSearchClick}
+          data-global-search-trigger
           className={cn(
-            "hidden w-64 items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 text-sm text-muted-text transition-colors hover:border-accent sm:flex",
+            "codex-search-trigger flex min-w-0 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm text-muted-text transition-colors hover:border-accent",
           )}
           aria-label={t("common.search", { defaultValue: "Search" })}
         >
-          <Search className="h-3.5 w-3.5" />
-          <span>{t("common.search_placeholder")}</span>
-          <kbd className="ml-auto rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-text">
+          <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="hidden truncate sm:inline">{t("common.search_placeholder", { defaultValue: "Search cases…" })}</span>
+          <kbd className="ml-auto hidden rounded bg-card px-1.5 py-0.5 font-mono text-xs text-muted-text md:inline">
             /
           </kbd>
         </button>
@@ -59,8 +55,9 @@ export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
         {/* Language toggle — same height as search bar (py-1.5) */}
         <button
           onClick={() => i18n.changeLanguage(isZhTW ? "en" : "zh-TW")}
-          className="rounded-full border border-border px-4 py-1.5 text-sm font-medium text-muted-text transition-colors hover:bg-surface hover:text-foreground"
+          className="codex-control shrink-0 rounded-md border border-border px-3 text-sm font-medium text-muted-text transition-colors hover:bg-surface hover:text-foreground"
           title={t("common.toggle_language")}
+          aria-label={t("common.toggle_language", { defaultValue: "Toggle language" })}
         >
           {isZhTW ? "EN" : "中文"}
         </button>
@@ -72,7 +69,7 @@ export function Topbar({ onMenuClick, onSearchClick }: TopbarProps) {
         {!isAuthenticated && (
           <Link
             to="/login"
-            className="lg:hidden rounded-full border border-border px-4 py-1.5 text-sm font-medium text-muted-text transition-colors hover:bg-surface hover:text-foreground"
+            className="codex-control flex shrink-0 items-center rounded-md border border-border px-3 text-sm font-medium text-muted-text transition-colors hover:bg-surface hover:text-foreground lg:hidden"
           >
             {t("auth.sign_in", "Sign in")}
           </Link>

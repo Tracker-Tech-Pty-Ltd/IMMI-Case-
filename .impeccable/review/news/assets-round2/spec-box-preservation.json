@@ -1,0 +1,97 @@
+[
+  {
+    "id": "sidebar",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "topbar",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "page-title",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "filters",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "featured-title",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "featured-summary",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "featured-document",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "featured-action",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "list-heading",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "list-first",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "list-second",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "list-third",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "verification",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "research",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "pagination",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "page-subtitle",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "featured-card",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "support-card",
+    "boxSame": true,
+    "pxSame": true
+  },
+  {
+    "id": "editorial-note",
+    "boxSame": true,
+    "pxSame": true
+  }
+]

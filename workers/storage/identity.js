@@ -438,6 +438,18 @@ export class CloudflareIdentityStore {
       `).bind(now, next.jti, now, previousJti, previousUserId, now),
     ]);
     if (changeCount(result[0]) !== 1 || changeCount(result[1]) !== 1) {
+      // A timed-out client may retry while the first request is still running.
+      // Both requests then read the active parent before the winning CAS. The
+      // same rotation proof derives the same successor, so re-read committed
+      // state before treating this overlap as token theft.
+      const previous = await this.db.prepare(`
+        SELECT jti, user_id, family_id, expires_at, revoked_at, revoked_reason, replaced_by_jti
+        FROM immi_refresh_sessions WHERE jti = ? AND user_id = ? LIMIT 1
+      `).bind(previousJti, previousUserId).first();
+      if (previous?.revoked_at && previous.family_id === next.familyId) {
+        const replayed = await this.#resolveRotationReplay(previous, previousUserId, next.jti);
+        if (replayed?.family_id === next.familyId) return;
+      }
       // Losing the compare-and-swap means someone else rotated this exact jti
       // between our read and our write. Letting the loser fail with a bare 401
       // left the *winner's* successor alive, so a thief who simply won the race
@@ -445,9 +457,8 @@ export class CloudflareIdentityStore {
       // revocation this design promises never fired. Revoke the family here so
       // the outcome does not depend on who won.
       //
-      // The benign same-client case never reaches this branch: an idempotent
-      // retry recomputes the same successor jti and is served by the replay
-      // path in loadRefreshAuthSnapshot without rotating at all.
+      // A different proof, expired successor or revoked successor still fails
+      // closed; no timing-based grace period weakens reuse detection.
       await this.revokeRefreshFamily({
         familyId: next.familyId,
         userId: previousUserId,

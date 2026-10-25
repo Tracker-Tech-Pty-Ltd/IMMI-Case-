@@ -8,7 +8,7 @@ export function PageLoader() {
     <div className="flex items-center justify-center py-20">
       <StatePanel
         tone="loading"
-        icon={<LoaderCircle className="h-5 w-5 animate-spin" />}
+        icon={<div className="animate-spin" aria-hidden="true"><LoaderCircle className="h-5 w-5" /></div>}
         title={t("common.loading", { defaultValue: "Loading" })}
         description={t("common.loading_message", {
           defaultValue: "Preparing the latest data and interface state.",

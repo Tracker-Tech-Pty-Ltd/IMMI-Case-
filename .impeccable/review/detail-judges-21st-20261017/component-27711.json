@@ -1,0 +1,36 @@
+{
+  "component": {
+    "id": 27711,
+    "componentId": 14193,
+    "authorUserId": "user_38qAOtph5HovpSn2yjNYXjbTOm2",
+    "name": "Animated Line Accordion",
+    "demoName": "Default",
+    "description": "An FAQ-style accordion whose active item gets a rounded highlighted background and animated plus/minus icon when expanded.",
+    "previewUrl": "https://cdn.21st.dev/user_38qAOtph5HovpSn2yjNYXjbTOm2/accordion-09/default/preview.1790718767676.webp",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/shadcnspace/accordion-09?api_key=$API_KEY_21ST\"",
+    "componentCode": "import {\n  Accordion,\n  AccordionContent,\n  AccordionItem,\n  AccordionTrigger,\n} from \"@/components/ui/accordion-09-utils/accordion\";\nimport { cn } from \"@/lib/utils\";\nimport { MinusIcon, PlusIcon } from \"lucide-react\";\n\nconst items = [\n  {\n    value: \"billing\",\n    trigger: \"How does billing work?\",\n    content:\n      \"We offer monthly and annual subscription plans. Billing is charged at the beginning of each cycle, and you can cancel anytime. All plans include automatic backups, 24/7 support, and unlimited team members.\",\n  },\n  {\n    value: \"security\",\n    trigger: \"Is my data secure?\",\n    content:\n      \"Yes. We use end-to-end encryption, SOC 2 Type II compliance, and regular third-party security audits. All data is encrypted at rest and in transit using industry-standard protocols.\",\n  },\n  {\n    value: \"integration\",\n    trigger: \"What integrations do you support?\",\n    content:\n      \"We integrate with 500+ popular tools including Slack, Zapier, Salesforce, HubSpot, and more. You can also build custom integrations using our REST API and webhooks.\",\n  },\n  {\n    value: \"support\",\n    trigger: \"How do I contact customer support?\",\n    content:\n      \"Our support team is available 24/7. You can reach out to us via live chat, email, or by submitting a ticket through your dashboard. Priority support is available for Enterprise plans.\",\n  },\n];\n\nexport default function AccordionBorders() {\n  return (\n    <Accordion\n      className=\"max-w-lg rounded-xl overflow-hidden\"\n      defaultValue={[\"billing\"]}\n    >\n      {items.map((item, index) => (\n        <AccordionItem\n          key={item.value}\n          value={item.value}\n          className={cn(\n            \"border-0! rounded-none my-0 bg-muted data-[state=open]:rounded-lg transition-all duration-700 ease-in-out [[data-state=open]+&]:rounded-t-lg [&:has(+[data-state=open])]:rounded-b-lg py-2\",\n            index === 0\n              ? \"data-[state=open]:mt-0 data-[state=open]:mb-4\"\n              : index === items.length - 1\n                ? \"data-[state=open]:mt-4 data-[state=open]:mb-0\"\n                : \"data-[state=open]:my-4\",\n          )}\n        >\n          <AccordionTrigger className=\"font-medium hover:no-underline text-base px-5 **:data-[slot=accordion-trigger-icon]:hidden cursor-pointer\">\n            {item.trigger}\n            <PlusIcon className=\"w-4 h-4 shrink-0 group-aria-expanded/accordion-trigger:hidden\" />\n            <MinusIcon className=\"w-4 h-4 shrink-0 hidden group-aria-expanded/accordion-trigger:inline\" />\n          </AccordionTrigger>\n          <AccordionContent className=\"text-muted-foreground px-5\">\n            {item.content}\n          </AccordionContent>\n        </AccordionItem>\n      ))}\n    </Accordion>\n  );\n}\n",
+    "demoCode": "import AccordionAnimatedLine from \"@/components/ui/accordion-09\";\n\nexport default function AccordionAnimatedLineDemo() {\n  return (\n    <div className=\"flex w-full items-center justify-center p-10\">\n      <AccordionAnimatedLine />\n    </div>\n  );\n}\n",
+    "registryDependencies": {
+      "filesWithRegistry": {
+        "/components/ui/accordion.tsx": {
+          "code": "\"use client\"\n\nimport * as React from \"react\"\nimport * as AccordionPrimitive from \"@radix-ui/react-accordion\"\nimport { ChevronDown } from \"lucide-react\"\n\nimport { cn } from \"@/lib/utils\"\n\nconst Accordion = AccordionPrimitive.Root\n\nconst AccordionItem = React.forwardRef<\n  React.ElementRef<typeof AccordionPrimitive.Item>,\n  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Item>\n>(({ className, ...props }, ref) => (\n  <AccordionPrimitive.Item\n    ref={ref}\n    className={cn(\"border-b\", className)}\n    {...props}\n  />\n))\nAccordionItem.displayName = \"AccordionItem\"\n\nconst AccordionTrigger = React.forwardRef<\n  React.ElementRef<typeof AccordionPrimitive.Trigger>,\n  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger>\n>(({ className, children, ...props }, ref) => (\n  <AccordionPrimitive.Header className=\"flex\">\n    <AccordionPrimitive.Trigger\n      ref={ref}\n      className={cn(\n        \"flex flex-1 items-center justify-between py-4 font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180\",\n        className,\n      )}\n      {...props}\n    >\n      {children}\n      <ChevronDown className=\"h-4 w-4 shrink-0 transition-transform duration-200\" />\n    </AccordionPrimitive.Trigger>\n  </AccordionPrimitive.Header>\n))\nAccordionTrigger.displayName = AccordionPrimitive.Trigger.displayName\n\nconst AccordionContent = React.forwardRef<\n  React.ElementRef<typeof AccordionPrimitive.Content>,\n  React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content>\n>(({ className, children, ...props }, ref) => (\n  <AccordionPrimitive.Content\n    ref={ref}\n    className=\"overflow-hidden text-sm transition-all data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down\"\n    {...props}\n  >\n    <div className={cn(\"pb-4 pt-0\", className)}>{children}</div>\n  </AccordionPrimitive.Content>\n))\n\nAccordionContent.displayName = AccordionPrimitive.Content.displayName\n\nexport { Accordion, AccordionItem, AccordionTrigger, AccordionContent }\n",
+          "registry": "ui"
+        }
+      },
+      "npmDependencies": {
+        "lucide-react": "latest",
+        "@radix-ui/react-accordion": "latest"
+      }
+    },
+    "isPublic": true,
+    "registryTeamId": null,
+    "registryUserId": "user_38qAOtph5HovpSn2yjNYXjbTOm2"
+  },
+  "quota": {
+    "tier": "paid",
+    "remaining": null,
+    "perDay": null,
+    "resetAt": null,
+    "upgradeUrl": null
+  }
+}

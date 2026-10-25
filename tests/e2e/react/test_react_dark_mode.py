@@ -57,9 +57,8 @@ class TestDarkModeDashboard:
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
         main = react_page.locator("main")
-        assert main.get_by_text("Download", exact=True).is_visible()
-        assert main.get_by_text("Pipeline", exact=True).is_visible()
-        assert main.get_by_text("Export CSV", exact=True).is_visible()
+        for label in ["Guided Search", "Analytics", "Data Tools"]:
+            assert main.get_by_role("button", name=label, exact=True).is_visible()
 
 
 class TestDarkModeAnalytics:
@@ -106,8 +105,8 @@ class TestDarkModeNavigation:
         wait_for_loading_gone(react_page)
         _enable_dark_mode(react_page)
 
-        for label in ["Analytics", "Cases", "Download", "Pipeline",
-                       "Data Dictionary", "Design Tokens", "Dashboard"]:
+        for label in ["Analytics", "Cases", "Data Tools", "Guided Search",
+                       "Data Dictionary", "Dashboard"]:
             click_sidebar_link(react_page, label)
             wait_for_loading_gone(react_page)
 

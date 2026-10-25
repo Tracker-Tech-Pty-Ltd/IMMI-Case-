@@ -1,0 +1,6 @@
+{
+  "checked": "2026-10-16",
+  "method": "Computed visible text and ancestor-composited backgrounds after theme settled. Exclude closed details content. AA 4.5:1 normal, 3:1 large. Native picker and placeholder are outside this check.",
+  "light": [],
+  "dark": []
+}

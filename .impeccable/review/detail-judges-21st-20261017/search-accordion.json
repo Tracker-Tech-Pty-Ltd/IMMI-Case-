@@ -1,0 +1,26 @@
+[
+  {
+    "type": "component",
+    "id": 24393,
+    "name": "Accordion",
+    "description": "An interactive Accordion component with smooth expand/collapse animations.",
+    "previewUrl": "https://cdn.21st.dev/saurabh-2607/accordion/default/preview.1786534460779-97484f3b-0c8c-48ef-8b8b-87f79b96e241.png",
+    "videoUrl": null,
+    "author": "saurabh-2607",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ29vZ2xlL2ltZ18zSEsyYVg4R2U4NXhoTlRmeHUzRno3MDRzSkoifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/saurabh-2607/accordion?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@saurabh-2607/components/accordion"
+  },
+  {
+    "type": "component",
+    "id": 27711,
+    "name": "Animated Line Accordion",
+    "description": "An FAQ-style accordion whose active item gets a rounded highlighted background and animated plus/minus icon when expanded.",
+    "previewUrl": "https://cdn.21st.dev/user_38qAOtph5HovpSn2yjNYXjbTOm2/accordion-09/default/preview.1790718767676.webp",
+    "videoUrl": "https://cdn.21st.dev/user_38qAOtph5HovpSn2yjNYXjbTOm2/accordion-09/default/video.1790718762659.mp4",
+    "author": "shadcnspace",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ29vZ2xlL2ltZ18zOHFBT3VLQWpSb3c5SjlUdGttSGhYZnBiZ28ifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/shadcnspace/accordion-09?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@shadcnspace/components/accordion-09"
+  }
+]

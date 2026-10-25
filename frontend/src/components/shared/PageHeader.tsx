@@ -21,14 +21,9 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("codex-page-header space-y-3", className)}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
-          {eyebrow ? (
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
-              {eyebrow}
-            </p>
-          ) : null}
           <div className="flex items-start gap-3">
             {icon ? (
               <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent-muted text-accent">
@@ -39,6 +34,9 @@ export function PageHeader({
               <h1 className="break-words font-heading text-[clamp(1.5rem,4vw,2.75rem)] font-semibold leading-tight tracking-tight text-foreground">
                 {title}
               </h1>
+              {eyebrow ? (
+                <p className="font-data text-xs text-muted-text">{eyebrow}</p>
+              ) : null}
               {description ? (
                 <p className="max-w-3xl text-sm leading-6 text-secondary-text">
                   {description}

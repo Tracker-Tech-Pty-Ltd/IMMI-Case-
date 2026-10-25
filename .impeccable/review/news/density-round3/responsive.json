@@ -1,0 +1,156 @@
+[
+  {
+    "height": 845,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 2087.776985168457,
+    "width": 320
+  },
+  {
+    "height": 845,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 1777.650276184082,
+    "width": 390
+  },
+  {
+    "height": 720,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 1522.1552810668943,
+    "width": 540
+  },
+  {
+    "height": 1024,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 1138.1242980957031,
+    "width": 768
+  },
+  {
+    "height": 390,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 1138.1242980957031,
+    "width": 845
+  },
+  {
+    "height": 768,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 1186.9584045410156,
+    "width": 1024
+  },
+  {
+    "height": 911,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 999.697296142578,
+    "width": 1127
+  },
+  {
+    "height": 800,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 954.208038330078,
+    "width": 1280
+  },
+  {
+    "height": 900,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 954.208038330078,
+    "width": 1440
+  },
+  {
+    "height": 1080,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 931.463348388672,
+    "width": 1920
+  },
+  {
+    "height": 1440,
+    "lang": "en-AU",
+    "overflow": false,
+    "paginationBottom": 931.463348388672,
+    "width": 2560
+  },
+  {
+    "height": 845,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 1666.889533996582,
+    "width": 320
+  },
+  {
+    "height": 845,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 1551.398323059082,
+    "width": 390
+  },
+  {
+    "height": 720,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 1393.667121887207,
+    "width": 540
+  },
+  {
+    "height": 1024,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 1047.1457214355469,
+    "width": 768
+  },
+  {
+    "height": 390,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 1047.1457214355469,
+    "width": 845
+  },
+  {
+    "height": 768,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 908.718719482422,
+    "width": 1024
+  },
+  {
+    "height": 911,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 885.9740905761719,
+    "width": 1127
+  },
+  {
+    "height": 800,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 863.2294616699219,
+    "width": 1280
+  },
+  {
+    "height": 900,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 863.2294616699219,
+    "width": 1440
+  },
+  {
+    "height": 1080,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 863.2294616699219,
+    "width": 1920
+  },
+  {
+    "height": 1440,
+    "lang": "zh-Hant-AU",
+    "overflow": false,
+    "paginationBottom": 863.2294616699219,
+    "width": 2560
+  }
+]

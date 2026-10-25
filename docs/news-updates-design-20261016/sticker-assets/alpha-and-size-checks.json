@@ -1,0 +1,1022 @@
+[
+  {
+    "id": "analytics",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5895475785302026,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18046,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/analytics-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/analytics-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "analytics",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5909326200814491,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 12648,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/analytics-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/analytics-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "calendar",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.41533249900159996,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 20464,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/calendar-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/calendar-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "calendar",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.31663461611837335,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19550,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/calendar-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/calendar-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "cases",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.35321230435811146,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19388,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/cases-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/cases-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "cases",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.32161962104042185,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 22532,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/cases-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/cases-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "clear",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.6084395961630915,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18916,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/clear-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/clear-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "clear",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.6094551661159568,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 15916,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/clear-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/clear-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "codex",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.44893088528193037,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 24324,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/codex-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/codex-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "codex",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5520859565180894,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18348,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/codex-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/codex-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "collections",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.506121400354591,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21842,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/collections-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/collections-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "collections",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.46541211663347143,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21588,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/collections-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/collections-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "council",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4170043420861855,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 24422,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/council-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/council-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "council",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4958830307608953,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21586,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/council-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/council-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "court-update",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.35022537131577675,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19738,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/court-update-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/court-update-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "court-update",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3909969755474666,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18326,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/court-update-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/court-update-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "courts",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4102317559884923,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21194,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/courts-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/courts-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "courts",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3485942273401352,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 22172,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/courts-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/courts-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "dashboard",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5680889733395399,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 25948,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/dashboard-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/dashboard-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "dashboard",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.606608772184194,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21374,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/dashboard-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/dashboard-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "data-tools",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3384048238618876,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 24216,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/data-tools-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/data-tools-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "data-tools",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4707106318791033,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 20746,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/data-tools-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/data-tools-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "dictionary",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3914020588661737,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 20674,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/dictionary-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/dictionary-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "dictionary",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.42200651694481967,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 22634,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/dictionary-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/dictionary-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "empty",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3899922162954145,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18960,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/empty-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/empty-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "empty",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.38158403475703906,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 17730,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/empty-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/empty-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "filter",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4283727478766512,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 20800,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/filter-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/filter-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "filter",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.41462980344874073,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 14854,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/filter-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/filter-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "government",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.391389976318206,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 13226,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/government-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/government-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "government",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4048683765379812,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 12160,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/government-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/government-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "guided-search",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5159953857385234,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 25838,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/guided-search-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/guided-search-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "guided-search",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.46531672809688424,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 25648,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/guided-search-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/guided-search-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "judges",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5057506569090553,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 22300,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/judges-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/judges-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "judges",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5162065123661699,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 23566,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/judges-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/judges-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "legislation",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5111509199270469,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21748,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/legislation-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/legislation-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "legislation",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5062962793383342,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19558,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/legislation-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/legislation-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "news",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5459569250805715,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19964,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/news-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/news-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "news",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4148784495674448,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 24380,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/news-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/news-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "original",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5334762889534987,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19080,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/original-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/original-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "original",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5086301188668351,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 14434,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/original-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/original-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "research",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4276312609855798,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 17926,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/research-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/research-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "research",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.43073393211897365,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 17114,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/research-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/research-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "saved-searches",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5350921707632863,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18818,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/saved-searches-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/saved-searches-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "saved-searches",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5482596043537872,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19844,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/saved-searches-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/saved-searches-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "scope",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5675916811021319,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 27162,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/scope-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/scope-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "scope",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.6047677734280605,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19684,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/scope-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/scope-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "search",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.7135418653927845,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 19046,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/search-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/search-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "search",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.7482232295251686,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 15328,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/search-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/search-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "semantic-search",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5426431273195312,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 17898,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/semantic-search-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/semantic-search-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "semantic-search",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4485804913908666,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 21270,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/semantic-search-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/semantic-search-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "source-check",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5354425646543501,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 16848,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/source-check-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/source-check-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "source-check",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5196824706394084,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 16352,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/source-check-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/source-check-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "summary",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.4926722526193692,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 13110,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/summary-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/summary-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "summary",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.3957098051784529,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 11094,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/summary-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/summary-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "taxonomy",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5679770507899443,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18746,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/taxonomy-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/taxonomy-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "taxonomy",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5297981069826952,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 14700,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/taxonomy-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/taxonomy-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "tribunal",
+    "mode": "dark",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.45616006450808766,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 18158,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/tribunal-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/tribunal-dark.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "tribunal",
+    "mode": "light",
+    "originalSize": [
+      1254,
+      1254
+    ],
+    "transparentPixelRatio": 0.5811018775007695,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 13494,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/tribunal-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/tribunal-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "document",
+    "mode": "light",
+    "originalSize": [
+      1145,
+      1374
+    ],
+    "transparentPixelRatio": 0.4744595513688399,
+    "webSize": [
+      213,
+      256
+    ],
+    "webBytes": 5148,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-light.png",
+    "web": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp",
+    "hashesMatch": true
+  },
+  {
+    "id": "document",
+    "mode": "dark",
+    "originalSize": [
+      1145,
+      1374
+    ],
+    "transparentPixelRatio": 0.47232572478277174,
+    "webSize": [
+      213,
+      256
+    ],
+    "webBytes": 8294,
+    "original": "docs/news-updates-design-20261016/sticker-assets/originals/document-v2-dark.png",
+    "web": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp",
+    "hashesMatch": true
+  }
+]

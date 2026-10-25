@@ -1,0 +1,242 @@
+[
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/analytics-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/analytics-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/calendar-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/calendar-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/cases-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/cases-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/clear-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/clear-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/codex-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/codex-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/collections-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/collections-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/council-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/council-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/court-update-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/court-update-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/courts-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/courts-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/dashboard-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/dashboard-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/data-tools-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/data-tools-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/dictionary-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/dictionary-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/empty-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/empty-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/filter-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/filter-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/government-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/government-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/guided-search-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/guided-search-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/judges-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/judges-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/legislation-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/legislation-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/news-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/news-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/original-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/original-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/research-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/research-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/saved-searches-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/saved-searches-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/scope-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/scope-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/search-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/search-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/semantic-search-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/semantic-search-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/source-check-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/source-check-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/summary-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/summary-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/taxonomy-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/taxonomy-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/tribunal-dark.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/tribunal-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/document-v2-light.webp",
+    "Matches": true
+  },
+  {
+    "Path": "frontend/dist/assets/legal-codex-stickers/document-v2-dark.webp",
+    "Matches": true
+  }
+]

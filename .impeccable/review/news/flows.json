@@ -1,0 +1,75 @@
+{
+  "tribunal": {
+    "articles": 3,
+    "count": "共 3 則消息",
+    "url": "?category=tribunal"
+  },
+  "crossLanguageSearch": {
+    "count": "共 1 則消息",
+    "title": "ART 發布審裁程序的生成式 AI 指引",
+    "url": "?category=tribunal&q=%E7%94%9F%E6%88%90%E5%BC%8F"
+  },
+  "summary": {
+    "checkedDate": "2026-10-16",
+    "open": true
+  },
+  "nativeDate": {
+    "count": "共 0 則消息",
+    "dates": [
+      "2026-10-16",
+      ""
+    ],
+    "url": "?source=art&from=2026-10-16"
+  },
+  "page2": {
+    "items": [
+      "ART 公告申請費用調整",
+      "法院更新庭審逐字稿申請方式",
+      "ART 說明學生簽證覆核程序變更"
+    ],
+    "url": "?page=2"
+  },
+  "restored": {
+    "url": "?page=2"
+  },
+  "back": {
+    "url": ""
+  },
+  "combined": {
+    "articles": [
+      "ART 發布審裁程序的生成式 AI 指引",
+      "ART 公告申請費用調整",
+      "ART 說明學生簽證覆核程序變更"
+    ],
+    "count": "共 3 則消息",
+    "dates": [
+      "2026-06-01",
+      "2026-08-31"
+    ],
+    "url": "?source=art&from=2026-06-01&to=2026-08-31"
+  },
+  "empty": true,
+  "caseReturn": {
+    "hasCaseTable": true,
+    "heading": "案例",
+    "path": "/cases"
+  },
+  "mobileNav": {
+    "count": 15,
+    "focusInside": true,
+    "news": "新聞更新",
+    "closedFocusRestored": true
+  },
+  "englishDark": {
+    "dark": true,
+    "documentWidth": 1122,
+    "heading": "News updates",
+    "results": "8 updates",
+    "width": 1127
+  },
+  "englishMobile": {
+    "documentWidth": 385,
+    "heading": "News updates",
+    "width": 390
+  }
+}

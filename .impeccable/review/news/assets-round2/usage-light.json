@@ -1,0 +1,152 @@
+[
+  {
+    "id": "codex",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/codex-light.webp"
+  },
+  {
+    "id": "dashboard",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/dashboard-light.webp"
+  },
+  {
+    "id": "cases",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/cases-light.webp"
+  },
+  {
+    "id": "analytics",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/analytics-light.webp"
+  },
+  {
+    "id": "judges",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/judges-light.webp"
+  },
+  {
+    "id": "news",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/news-light.webp"
+  },
+  {
+    "id": "collections",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/collections-light.webp"
+  },
+  {
+    "id": "saved-searches",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/saved-searches-light.webp"
+  },
+  {
+    "id": "taxonomy",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/taxonomy-light.webp"
+  },
+  {
+    "id": "guided-search",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/guided-search-light.webp"
+  },
+  {
+    "id": "semantic-search",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/semantic-search-light.webp"
+  },
+  {
+    "id": "council",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/council-light.webp"
+  },
+  {
+    "id": "data-tools",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/data-tools-light.webp"
+  },
+  {
+    "id": "courts",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/courts-light.webp"
+  },
+  {
+    "id": "legislation",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/legislation-light.webp"
+  },
+  {
+    "id": "dictionary",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/dictionary-light.webp"
+  },
+  {
+    "id": "source-check",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/source-check-light.webp"
+  },
+  {
+    "id": "search",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/search-light.webp"
+  },
+  {
+    "id": "calendar",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/calendar-light.webp"
+  },
+  {
+    "id": "filter",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/filter-light.webp"
+  },
+  {
+    "id": "clear",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/clear-light.webp"
+  },
+  {
+    "id": "empty",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/empty-light.webp"
+  },
+  {
+    "id": "research",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/research-light.webp"
+  },
+  {
+    "id": "scope",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/scope-light.webp"
+  },
+  {
+    "id": "government",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/government-light.webp"
+  },
+  {
+    "id": "document",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/document-v2-light.webp"
+  },
+  {
+    "id": "original",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/original-light.webp"
+  },
+  {
+    "id": "summary",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/summary-light.webp"
+  },
+  {
+    "id": "court-update",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/court-update-light.webp"
+  },
+  {
+    "id": "tribunal",
+    "loaded": true,
+    "src": "/assets/legal-codex-stickers/tribunal-light.webp"
+  }
+]

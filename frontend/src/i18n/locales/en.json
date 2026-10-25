@@ -27,11 +27,13 @@
     "data_dictionary": "Data Dictionary",
     "design_tokens": "Design Tokens",
     "legislations": "Legislations",
-    "collections": "Collections"
+    "collections": "Collections",
+    "workspace": "Workspace",
+    "news": "News updates"
   },
   "nav_descriptions": {
     "dashboard": "Stats, charts & recent cases",
-    "analytics": "Win rates, trends & insights",
+    "analytics": "Historical outcomes, trends & insights",
     "judge_profiles": "Approval rates by judge",
     "court_lineage": "Court succession since 2000",
     "cases": "Browse all 149,000+ decisions",
@@ -47,7 +49,8 @@
     "jobs": "Monitor background tasks",
     "legislations": "Australian immigration law",
     "data_dictionary": "Field definitions & schema",
-    "design_tokens": "Visual design variables"
+    "design_tokens": "Visual design variables",
+    "news": "Verified official announcements"
   },
   "common": {
     "search": "Search",
@@ -91,7 +94,13 @@
     "close_menu": "Close menu",
     "skip_to_content": "Skip to main content",
     "clear": "Clear",
-    "loading_message": "Preparing the latest data and interface state."
+    "loading_message": "Preparing the latest data and interface state.",
+    "main_navigation": "Main navigation",
+    "breadcrumb": "Breadcrumb",
+    "search_min_chars": "Enter at least 2 characters to search by title or citation.",
+    "search_loading": "Searching cases…",
+    "search_failed": "Search is temporarily unavailable. Please try again.",
+    "search_refine_hint": "Try a shorter title, a surname or a case citation."
   },
   "buttons": {
     "browse_cases": "Browse Cases",
@@ -198,6 +207,7 @@
     "peak_year": "Peak: {{year}}"
   },
   "cases": {
+    "view_mode": "Case display",
     "title": "Cases",
     "add_new": "Add New Case",
     "case_details": "Case Details",
@@ -259,6 +269,7 @@
     "similarity_score": "Similarity score"
   },
   "case_detail": {
+    "sections_label": "Case chapters",
     "loading": "Loading case...",
     "copy_citation": "Copy citation",
     "catchwords": "Catchwords",
@@ -283,7 +294,10 @@
     "all_sources": "All Sources",
     "all_tags": "All Tags",
     "date": "Date",
-    "remove_filter": "Remove filter"
+    "remove_filter": "Remove filter",
+    "preset_all_time": "All Time",
+    "preset_last_5y": "Last 5 Years",
+    "preset_last_10y": "Last 10 Years"
   },
   "pagination": {
     "showing": "Showing {{start}}-{{end}} of {{total}}",
@@ -291,7 +305,8 @@
     "ellipsis": "...",
     "previous_page": "Go to previous page",
     "next_page": "Go to next page",
-    "page_number": "Go to page {{page}}"
+    "page_number": "Go to page {{page}}",
+    "navigation": "Pagination"
   },
   "outcomes": {
     "remitted": "Remitted",
@@ -317,6 +332,9 @@
     "pending": "Pending"
   },
   "judges": {
+    "sections_label": "Judge profile chapters",
+    "view_mode": "Judge display",
+    "profile_label": "Historical case profile",
     "title": "Judge Profiles",
     "subtitle": "Explore approval rates, workload, and case composition by judge/member.",
     "judge_profile": "Judge Profile",
@@ -472,20 +490,21 @@
     "filter_sorted_by": "Sorted by {{field}} ({{direction}})"
   },
   "analytics": {
+    "sections_label": "Analysis chapters",
     "title": "Analytics",
     "subtitle": "Case Insights & Trends",
     "filters_scope_title": "Filter Scope",
     "filters_scope_desc": "Set court, time range, and advanced filters before reading chart insights.",
     "reset_all_filters": "Reset Filters",
     "keyboard_shortcuts": "Keyboard: press r to reset all analytics filters",
-    "quick_estimate_title": "Quick Estimate",
-    "quick_estimate_desc": "Start with a fast success-rate estimate, then drill into structural and trend analysis below.",
-    "success_rate_calculator": "Success Rate Calculator",
-    "success_calculator_desc": "Estimate historical success rate by court, visa subclass, case nature, and legal concepts",
+    "quick_estimate_title": "Historical outcome overview",
+    "quick_estimate_desc": "Review observed outcomes before exploring trends and case details.",
+    "success_rate_calculator": "Historical outcome analysis",
+    "success_calculator_desc": "Explore the outcomes of historical cases matching your selected criteria.",
     "outcome_snapshot": "Outcome Snapshot",
     "outcome_snapshot_desc": "Review outcomes by court, year, and case profile to quickly identify where patterns diverge.",
-    "applicant_win_rate": "Applicant Win Rate",
-    "success_rate": "Success Rate",
+    "applicant_win_rate": "Historical applicant-favourable share",
+    "success_rate": "Historical favourable outcome share",
     "calculate": "Calculate",
     "enter_court": "Enter court code",
     "enter_visa_subclass": "Enter visa subclass",
@@ -493,9 +512,9 @@
     "outcome_by_court": "Outcome by Court",
     "outcome_by_subclass": "Outcome by Visa Subclass",
     "outcome_trends": "Outcome Trends",
-    "outcome_trends_desc": "Success rate trends by applicant wins vs. court affirmations",
+    "outcome_trends_desc": "Historical shares of applicant-favourable outcomes and court affirmations",
     "legal_concepts": "Legal Concepts by Outcome",
-    "top_judges": "Top Judges by Win Rate",
+    "top_judges": "Judges by historical favourable outcome share",
     "concept_heatmap": "Nature-Outcome Correlation",
     "concept_cooccurrence": "Legal Concept Co-occurrence",
     "concept_cooccurrence_desc": "Cases where multiple legal concepts appear together",
@@ -507,7 +526,7 @@
     "concept_effectiveness": "Concept Effectiveness",
     "concept_effectiveness_desc": "Lift impact of legal concepts on case outcomes",
     "concept_trends": "Concept Trends",
-    "concept_trends_desc": "Win rate evolution for key legal concepts",
+    "concept_trends_desc": "Historical outcome shares for cases containing key legal concepts",
     "concept_combos": "Common Concept Combinations",
     "common_combinations_desc": "Most effective concept pairings with lift metrics",
     "outcome_rate_by_court": "Outcome Rate by Court",
@@ -527,7 +546,7 @@
     "concept_intelligence_desc": "Identify legal concepts that correlate with better outcomes and how they evolve over time.",
     "concept_by_court": "Concept Effectiveness by Court",
     "lift_delta": "Lift Delta",
-    "win_rate": "Win Rate",
+    "win_rate": "Historical favourable share",
     "rate": "Rate",
     "trend": "Trend",
     "frequency": "Frequency",
@@ -538,7 +557,7 @@
     "confidence": "confidence",
     "outcome_funnel": "Outcome Funnel",
     "top_concept_lift": "Top Concept Lift",
-    "win_trend": "Win Trend",
+    "win_trend": "Historical favourable share trend",
     "top_concept_combinations": "Top Concept Combinations",
     "concepts_col": "Concepts",
     "cases_col": "Cases",
@@ -575,13 +594,13 @@
     "unfavourable": "Unfavourable",
     "total": "Total",
     "advanced_filters": "Advanced Filters",
-    "deep_analysis_title": "Success Rate Deep Analysis",
+    "deep_analysis_title": "Historical Outcome Deep Analysis",
     "visa_families": "Visa Family Analysis",
-    "visa_families_desc": "Success rates aggregated by visa family grouping. Compare outcomes across visa categories.",
+    "visa_families_desc": "Compare observed historical outcomes across visa family groups.",
     "visa_family_volume": "Cases by Visa Family",
-    "visa_family_win_rates": "Win Rates by Family",
+    "visa_family_win_rates": "Historical favourable shares by family",
     "sort_by_volume": "Sort by Volume",
-    "sort_by_win_rate": "Sort by Win Rate",
+    "sort_by_win_rate": "Sort by historical favourable share",
     "family": "Family",
     "total_cases": "Total Cases",
     "cases": "Cases",
@@ -596,12 +615,12 @@
     "insights_top_nature_label": "Top Case Nature",
     "insights_top_visa_label": "Top Visa Class",
     "insights_of_cases": "of cases",
-    "deep_analysis_description": "Success rate analysis",
+    "deep_analysis_description": "Historical outcome analysis",
     "flow_cases": "Cases",
     "flow_sankey_aria": "Flow diagram showing case nature and outcome distribution",
     "flow_source": "Source",
     "flow_target": "Target",
-    "judge_profile_hint": "Win rate data on Judge Profile page",
+    "judge_profile_hint": "Historical outcome data on the Judge Profile page",
     "legal_concepts_aria": "Bar chart of top legal concepts by case count",
     "legend": "Legend",
     "losses": "Losses",
@@ -613,11 +632,13 @@
     "show_pct": "% of row",
     "table_view": "Table View",
     "top_judges_aria": "Bar chart of most active judges by case count",
-    "trend_legend_note": "Affirmed Rate = tribunal upholds decision | Applicant Win Rate = Set Aside + Remitted",
+    "trend_legend_note": "Historical affirmed share = tribunal upholds decision | Historical applicant-favourable share = Set Aside + Remitted",
     "vs_avg": "vs avg",
     "wins": "Wins",
     "concept_combo_caption": "Legal concept combinations",
-    "risk_gauge_aria": "Score {{score}} out of 100: {{label}}"
+    "risk_gauge_aria": "Score {{score}} out of 100: {{label}}",
+    "historical_share": "Historical share",
+    "historical_result_limit": "Based on {{count}} matching historical cases. This is not a prediction for an individual case. Small or incomplete samples limit what can be inferred."
   },
   "lineage": {
     "title": "Court Lineage Timeline",
@@ -1379,6 +1400,7 @@
   },
   "auth": {
     "logout": "Sign out",
+    "logout_failed": "Sign out failed. Please try again.",
     "sign_in": "Sign in"
   },
   "semantic_search": {
@@ -1399,5 +1421,55 @@
     "description": "Australian immigration tribunal case research platform. Sign in with Telegram to save searches and collections.",
     "telegram_failed": "Telegram sign-in failed. Please try again.",
     "public_access_note": "All cases are publicly accessible without login. Login is only required to save searches and collections."
+  },
+  "news": {
+    "title": "News updates",
+    "brand_subtitle": "Australian Immigration Case Research",
+    "previous": "Previous",
+    "next": "Next",
+    "choose_page": "Choose news page",
+    "page_status": "Page {{page}} of {{total}}",
+    "editorial_summary": "Manually curated · Reading notes",
+    "subtitle": "Follow Australian migration announcements, Tribunal news and court updates.",
+    "curated": "Curated selection · Last source check",
+    "official": "Official sources",
+    "filters": "Filter news",
+    "search": "Search news titles or sources",
+    "categories": "News categories",
+    "all": "All",
+    "category": {
+      "government": "Government",
+      "tribunal": "Tribunal news",
+      "courts": "Court updates"
+    },
+    "date_from": "Published from",
+    "date_range": "Publication date",
+    "tools_title": "Source checks and research",
+    "date_to": "Published through",
+    "source": "Source",
+    "all_sources": "All sources",
+    "results_count": "{{count}} updates",
+    "results_count_one": "{{count}} update",
+    "results_count_other": "{{count}} updates",
+    "clear": "Clear filters",
+    "featured": "Selected update",
+    "published": "Published",
+    "verified": "Source checked",
+    "original": "View original",
+    "original_named": "Open original: {{title}} (new tab)",
+    "read_summary": "Read summary",
+    "latest": "Latest updates",
+    "no_results": "No updates match these filters",
+    "no_results_hint": "Try another keyword, a wider date range or clear the filters.",
+    "reading_tools": "Reading and research",
+    "verify_title": "Check the original source",
+    "verify_intro": "After reading a summary, open the original to check its date and scope.",
+    "check_date": "Confirm the publication date",
+    "check_source": "Read the original source",
+    "check_scope": "Distinguish announcements from case outcomes",
+    "research": "Continue your research",
+    "cases_link": "Return to case database",
+    "analytics_link": "View historical data",
+    "editorial_note": "This is a manually checked selection, not a live or exhaustive news feed. Summaries are independently written; the original announcement controls. News does not predict individual case outcomes."
   }
 }

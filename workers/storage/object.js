@@ -15,7 +15,9 @@ const JUDGE_PHOTO_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
 function contentKeyFor({ kind, caseId, tenantId, sessionId, turnId, checksum, extension }) {
   assertSha256(checksum);
-  if (kind === "case") return `cases/${assertCaseId(caseId)}/source/${checksum}.${extension || "txt"}`;
+  // Never reuse a deleted object's address, even for identical replacement
+  // text. A delayed cleanup can then delete only its own upload generation.
+  if (kind === "case") return `cases/${assertCaseId(caseId)}/source/${checksum}-${crypto.randomUUID()}.${extension || "txt"}`;
   if (kind === "council") return `council/${tenantId}/${sessionId}/${turnId}.${extension || "json"}`;
   if (kind === "import") return `imports/${sessionId}/${caseId}/${turnId}.${extension || "ndjson"}`;
   throw new StorageBoundaryError(`Unsupported object kind: ${kind}`, { code: "invalid_object_kind", status: 400 });
@@ -61,6 +63,12 @@ export class CloudflareObjectStore {
       body,
       contentType,
     });
+  }
+
+  async hasVerifiedCaseSource(pointer) {
+    const checked = assertObjectPointer(pointer, "cases");
+    const head = await this.bucket.head(checked.key);
+    return Boolean(head && head.size === checked.size && head.customMetadata?.sha256 === checked.sha256);
   }
 
   async putCouncilPayload({ auth, sessionId, turnId, payload }) {

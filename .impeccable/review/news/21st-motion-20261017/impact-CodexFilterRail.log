@@ -1,0 +1,11 @@
+
+  GitNexus Impact (1.6.12)
+{
+  "error": "Target 'CodexFilterRail' not found",
+  "target": {
+    "name": "CodexFilterRail"
+  },
+  "direction": "upstream",
+  "impactedCount": null,
+  "risk": "UNKNOWN"
+}

@@ -20,18 +20,22 @@ import { NatureBreakdownChart } from "@/components/judges/NatureBreakdownChart";
 import { ConceptEffectivenessTable } from "@/components/judges/ConceptEffectivenessTable";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { PageLoader } from "@/components/shared/PageLoader";
+import { ArrowLeft } from "lucide-react";
+import { CodexSectionNav } from "@/components/ui/CodexSectionNav";
+import type { CodexStickerId } from "@/lib/codex-stickers";
+import "@/styles/detail-codex.css";
 import { useJudgeProfile, useJudgeBio } from "@/hooks/use-judges";
 
 const SECTION_NAV = [
-  { id: "section-outcomes", key: "judges.section_outcomes" },
-  { id: "section-trend", key: "judges.section_trend" },
-  { id: "section-court", key: "judges.section_court" },
-  { id: "section-visa", key: "judges.section_visa" },
-  { id: "section-nature", key: "judges.section_nature" },
-  { id: "section-representation", key: "judges.section_representation" },
-  { id: "section-country", key: "judges.section_country" },
-  { id: "section-concepts", key: "judges.section_concepts" },
-  { id: "section-recent", key: "judges.section_recent" },
+  { id: "section-outcomes", key: "judges.section_outcomes", sticker: "summary" },
+  { id: "section-trend", key: "judges.section_trend", sticker: "analytics" },
+  { id: "section-court", key: "judges.section_court", sticker: "courts" },
+  { id: "section-visa", key: "judges.section_visa", sticker: "taxonomy" },
+  { id: "section-nature", key: "judges.section_nature", sticker: "cases" },
+  { id: "section-representation", key: "judges.section_representation", sticker: "council" },
+  { id: "section-country", key: "judges.section_country", sticker: "scope" },
+  { id: "section-concepts", key: "judges.section_concepts", sticker: "research" },
+  { id: "section-recent", key: "judges.section_recent", sticker: "calendar" },
 ] as const;
 
 export function JudgeDetailPage() {
@@ -91,12 +95,13 @@ export function JudgeDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="codex-detail-page codex-judge-detail space-y-4">
       <div className="flex items-center justify-between">
         <Link
           to="/judge-profiles"
-          className="text-sm font-medium text-accent hover:underline"
+          className="codex-back-link inline-flex items-center gap-2 text-sm font-medium text-accent hover:underline"
         >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {t("judges.back_to_profiles")}
         </Link>
       </div>
@@ -107,19 +112,7 @@ export function JudgeDetailPage() {
         isLoading={bioLoading}
       />
 
-      <nav className="sticky top-0 z-10 -mx-4 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur-sm">
-        <div className="flex gap-4 whitespace-nowrap text-xs font-medium text-muted-text">
-          {SECTION_NAV.map((s) => (
-            <a
-              key={s.id}
-              href={`#${s.id}`}
-              className="transition-colors hover:text-accent"
-            >
-              {t(s.key)}
-            </a>
-          ))}
-        </div>
-      </nav>
+      <CodexSectionNav key={decodedName} label={t("judges.sections_label", { defaultValue: "Judge profile chapters" })} sections={SECTION_NAV.map((s) => ({ id: s.id, label: t(s.key, { defaultValue: s.key.split("_").at(-1) }), sticker: s.sticker as CodexStickerId }))} />
 
       {data.recent_3yr_trend.length > 0 && (
         <section className="rounded-lg border border-border bg-card p-4">
@@ -147,7 +140,7 @@ export function JudgeDetailPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section
-          id="section-outcomes"
+          id="section-outcomes" tabIndex={-1}
           className="scroll-mt-12 rounded-lg border border-border bg-card p-4"
         >
           <h2 className="mb-3 text-base font-semibold text-foreground">
@@ -157,7 +150,7 @@ export function JudgeDetailPage() {
         </section>
 
         <section
-          id="section-trend"
+          id="section-trend" tabIndex={-1}
           className="scroll-mt-12 rounded-lg border border-border bg-card p-4"
         >
           <h2 className="mb-3 text-base font-semibold text-foreground">
@@ -196,8 +189,8 @@ export function JudgeDetailPage() {
                 <Area
                   type="monotone"
                   dataKey="approval_rate"
-                  stroke="#1a5276"
-                  fill="#1a527640"
+                  stroke="var(--color-chart-1)"
+                  fill="var(--color-accent-muted)"
                   strokeWidth={2}
                 />
               </AreaChart>
@@ -211,13 +204,13 @@ export function JudgeDetailPage() {
       </div>
 
       {/* Court Comparison */}
-      <div id="section-court" className="scroll-mt-12">
+      <div id="section-court" tabIndex={-1} className="scroll-mt-12">
         <CourtComparisonCard data={data.court_comparison} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section
-          id="section-visa"
+          id="section-visa" tabIndex={-1}
           className="scroll-mt-12 rounded-lg border border-border bg-card p-4"
         >
           <h2 className="mb-3 text-base font-semibold text-foreground">
@@ -227,7 +220,7 @@ export function JudgeDetailPage() {
         </section>
 
         <section
-          id="section-nature"
+          id="section-nature" tabIndex={-1}
           className="scroll-mt-12 rounded-lg border border-border bg-card p-4"
         >
           <h2 className="mb-3 text-base font-semibold text-foreground">
@@ -238,16 +231,16 @@ export function JudgeDetailPage() {
       </div>
 
       {/* Representation Analysis */}
-      <div id="section-representation" className="scroll-mt-12">
+      <div id="section-representation" tabIndex={-1} className="scroll-mt-12">
         <RepresentationCard data={data.representation_analysis} />
       </div>
 
       {/* Country of Origin */}
-      <div id="section-country" className="scroll-mt-12">
+      <div id="section-country" tabIndex={-1} className="scroll-mt-12">
         <CountryOriginChart data={data.country_breakdown} />
       </div>
 
-      <section id="section-concepts" className="scroll-mt-12">
+      <section id="section-concepts" tabIndex={-1} className="scroll-mt-12">
         <h2 className="mb-3 text-base font-semibold text-foreground">
           {t("judges.concept_effectiveness")}
         </h2>
@@ -255,7 +248,7 @@ export function JudgeDetailPage() {
       </section>
 
       <section
-        id="section-recent"
+        id="section-recent" tabIndex={-1}
         className="scroll-mt-12 rounded-lg border border-border bg-card p-4"
       >
         <h2 className="mb-3 text-base font-semibold text-foreground">

@@ -20,6 +20,10 @@ vi.mock("@/hooks/use-saved-searches", () => ({
   useSavedSearches: () => ({ savedSearches: [] }),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: null, isAuthenticated: false }),
+}));
+
 function renderNav(open: boolean, onClose: () => void) {
   return render(
     <MemoryRouter>

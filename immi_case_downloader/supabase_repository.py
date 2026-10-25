@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client, ClientOptions
 
 from .models import ImmigrationCase
-from .storage import CASE_FIELDS
+from .storage import ALLOWED_UPDATE_FIELDS, CASE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,6 @@ def _get_hyperdrive_conn():
     except Exception:
         logger.exception("Failed to open Hyperdrive connection; falling back to REST")
         return None
-
-# Fields that can be updated via the web interface (CWE-915 prevention).
-ALLOWED_UPDATE_FIELDS = frozenset({
-    "citation", "title", "court", "court_code", "date", "year", "url",
-    "judges", "catchwords", "outcome", "visa_type", "legislation",
-    "text_snippet", "user_notes", "tags", "case_nature", "legal_concepts",
-})
 
 # Columns safe for ORDER BY (prevent SQL injection via sort parameter).
 ALLOWED_SORT_COLUMNS = frozenset({

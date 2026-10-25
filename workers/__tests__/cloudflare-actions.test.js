@@ -29,7 +29,7 @@ function stores() {
   return {
     identityStore: { assertMembership: vi.fn(async (claims) => ({ ...claims, role: "owner" })) },
     caseStore: {
-      guidedPrecedents: vi.fn(async () => ({ total: 1, results: [{ case_id: "0123456789ab", title: "Example" }] })),
+      guidedPrecedents: vi.fn(async () => ({ total: 1, results: [{ case_id: "0123456789ab", title: "Example", user_notes: "private note" }] })),
       guidedJudge: vi.fn(async () => ({ name: "Justice Example", case_count: 7 })),
       findByIds: vi.fn(async () => [{ case_id: "0123456789ab", citation: "<unsafe>", title: "Example", court_code: "FCA" }]),
     },
@@ -53,7 +53,9 @@ describe("Cloudflare-native safe POST actions", () => {
       { IMMI_STORAGE_MODE: "cloudflare" },
     );
     expect(response.status).toBe(200);
-    expect((await response.json()).meta).toMatchObject({ total_results: 1, returned_results: 1 });
+    const body = await response.json();
+    expect(body.meta).toMatchObject({ total_results: 1, returned_results: 1 });
+    expect(body.results[0]).not.toHaveProperty("user_notes");
     expect(current.caseStore.guidedPrecedents).toHaveBeenCalledWith(expect.objectContaining({ visaSubclass: "866" }));
   });
 

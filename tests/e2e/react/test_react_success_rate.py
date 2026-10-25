@@ -1,5 +1,7 @@
 """E2E tests for Success Rate Calculator on Analytics page."""
 
+from playwright.sync_api import expect
+
 from .react_helpers import react_navigate, wait_for_loading_gone, assert_no_js_errors
 
 
@@ -7,7 +9,7 @@ class TestSuccessRateCalculator:
     def test_calculator_section_visible_on_analytics(self, react_page):
         react_navigate(react_page, "/analytics")
         wait_for_loading_gone(react_page)
-        assert react_page.get_by_role("heading", name="Success Rate Calculator").is_visible()
+        expect(react_page.get_by_role("heading", name="Historical outcome analysis")).to_be_visible()
 
     def test_calculator_shows_success_rate_number(self, react_page):
         react_navigate(react_page, "/analytics")

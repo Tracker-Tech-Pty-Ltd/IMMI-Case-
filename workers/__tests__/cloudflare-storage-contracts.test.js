@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -61,6 +61,7 @@ function env() {
 
 function workerSourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === "node_modules") return [];
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return workerSourceFiles(path);
     return entry.name.endsWith(".js") ? [path] : [];
@@ -94,7 +95,7 @@ describe("Cloudflare storage contracts", () => {
   it("keeps Cloudflare data bindings inside the storage boundary", () => {
     const bindingPattern = /\benv\.(IMMI_CATALOG_DB|IMMI_ACCOUNT_DB|IMMI_OPS_DB|IMMI_CONTENT|CASE_VECTORS|AI)\b/;
     const leaks = workerSourceFiles(fileURLToPath(new URL("..", import.meta.url)))
-      .filter((path) => !path.includes("/__tests__/") && !path.includes("/storage/"))
+      .filter((path) => !path.includes(`${sep}__tests__${sep}`) && !path.includes(`${sep}storage${sep}`))
       .filter((path) => bindingPattern.test(readFileSync(path, "utf8")));
     expect(leaks).toEqual([]);
   });
@@ -201,7 +202,7 @@ describe("Cloudflare store factory", () => {
       textChunks: ["Example case text"],
     });
     const insert = value.IMMI_CATALOG_DB.calls.find((statement) => statement.sql.includes("INSERT INTO cases"));
-    expect(insert.params).toHaveLength(35);
+    expect(insert.params).toHaveLength(36);
     expect(insert.params).toContain("Federal Court of Australia");
     expect(insert.params).toContain("Natural justice denied");
     expect(insert.params).toContain("procedural fairness");

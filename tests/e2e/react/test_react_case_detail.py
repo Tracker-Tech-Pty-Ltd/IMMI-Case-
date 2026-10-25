@@ -125,5 +125,6 @@ class TestActionButtons:
     def test_breadcrumb_visible(self, react_page):
         """Case detail shows breadcrumb with 'Cases' link instead of Back button."""
         _navigate_to_seed_case(react_page)
-        breadcrumb = react_page.locator("main nav").filter(has_text="Cases")
+        breadcrumb = react_page.get_by_role("navigation", name="Breadcrumb", exact=True)
         assert breadcrumb.is_visible()
+        assert breadcrumb.get_by_role("link", name="Cases", exact=True).get_attribute("href") == "/cases"

@@ -1,0 +1,25 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ TestMobileDrawer.test_close_mobile_drawer[chromium] ______________
+
+self = <tests.e2e.react.test_react_navigation.TestMobileDrawer object at 0x7760ee36a0f0>
+react_mobile = <Page url='http://127.0.0.1:5194/'>
+
+    def test_close_mobile_drawer(self, react_mobile):
+        react_navigate(react_mobile, "/")
+        wait_for_loading_gone(react_mobile)
+        click_mobile_menu(react_mobile)
+        close_mobile_menu(react_mobile)
+        # Drawer should be gone
+        drawer = react_mobile.locator(".fixed.inset-y-0.left-0")
+>       assert drawer.count() == 0 or not drawer.is_visible()
+E       AssertionError: assert (1 == 0 or not True)
+E        +  where 1 = count()
+E        +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:5194/'> selector='.fixed.inset-y-0.left-0'>.count
+E        +  and   True = is_visible()
+E        +    where is_visible = <Locator frame=<Frame name= url='http://127.0.0.1:5194/'> selector='.fixed.inset-y-0.left-0'>.is_visible
+
+tests/e2e/react/test_react_navigation.py:93: AssertionError
+=========================== short test summary info ============================
+FAILED tests/e2e/react/test_react_navigation.py::TestMobileDrawer::test_close_mobile_drawer[chromium]
+1 failed in 5.32s

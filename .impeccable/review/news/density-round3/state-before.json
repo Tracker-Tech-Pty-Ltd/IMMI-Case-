@@ -1,0 +1,334 @@
+{
+  "tool": "build-phase",
+  "version": 2,
+  "startedAt": "2026-10-15T22:28:20.482Z",
+  "comp": ".impeccable/mocks/news-updates-approved-desktop.png",
+  "direction": null,
+  "breakpoint": "1127x911",
+  "artifact": null,
+  "phase": "hero",
+  "phases": {
+    "comps": {
+      "status": "skipped",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [
+        {
+          "at": "2026-10-15T22:28:20.482Z",
+          "text": "started with an approved comp; the comp round happened before this state (surface round or manual)"
+        }
+      ],
+      "gate": null,
+      "forced": null
+    },
+    "spec": {
+      "status": "closed",
+      "openedAt": "2026-10-15T22:28:20.482Z",
+      "closedAt": "2026-10-15T22:34:22.392Z",
+      "attempts": 3,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "15 regions, 0 plates, 8 text regions measured",
+        "at": "2026-10-15T22:34:22.392Z"
+      },
+      "forced": null
+    },
+    "plates": {
+      "status": "closed",
+      "openedAt": "2026-10-15T22:34:22.392Z",
+      "closedAt": "2026-10-15T22:34:22.451Z",
+      "attempts": 1,
+      "notes": [],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no plates owed",
+        "at": "2026-10-15T22:34:22.451Z"
+      },
+      "forced": null
+    },
+    "hero": {
+      "status": "open",
+      "openedAt": "2026-10-15T22:34:22.451Z",
+      "closedAt": null,
+      "attempts": 2,
+      "notes": [
+        {
+          "at": "2026-10-15T23:11:30.865Z",
+          "text": "Finish review fix batch: align full list content, combine metadata/actions, compact date/source controls, increase title scale, collapse mobile tools. Correct comp boxes measured against the approved crop, independently of build; pinned Legal Codex font takes precedence over catalog suggestions."
+        },
+        {
+          "at": "2026-10-15T23:31:54.890Z",
+          "text": "Two fix batches and same-reviewer verdict passes completed. UI findings 1,2,3,4,5,7 resolved; 6 partial: hero 64.6%/final66.1%, no force. Final captures and documentation complete. Awaiting user choice to accept declared layout differences or continue first-viewport fidelity; no deployment."
+        },
+        {
+          "at": "2026-10-16T02:05:09.267Z",
+          "text": "User explicitly requested one more first-viewport density round on 2026-10-16. Compact only the news page desktop feature card, group featured/category labels, reduce desktop spacing; retain full copy and 44px controls. Existing case data, shell, tokens and sources unchanged."
+        }
+      ],
+      "gate": {
+        "ok": false,
+        "reasons": [
+          "hero overall 64.6% < 72% (structure 47%, color 94%, detail 51%)",
+          "region topbar is missing (detail 5%, structure 96%): the comp shows material the build does not",
+          "region page-title is missing (detail 11%, structure 22%): the comp shows material the build does not",
+          "region featured-title is missing (detail 7%, structure 31%): the comp shows material the build does not",
+          "region featured-document is missing (detail 0%, structure 84%): the comp shows material the build does not",
+          "region featured-action is missing (detail 5%, structure 68%): the comp shows material the build does not",
+          "region list-heading is missing (detail 0%, structure 57%): the comp shows material the build does not",
+          "region list-first is missing (detail 0%, structure 57%): the comp shows material the build does not",
+          "control research drifts to 59% (structure 58%, color 91%): its chrome differs from the comp's; open .impeccable/review/diff/hero/regions/research.png and match the border, fill, radius, chevron or arrow, and label size",
+          "READINGS, each one CSS edit (8 of 14, the rest after these):",
+          "text featured-summary: cap height 25.3px in the build, 13px in the comp (+95%); set font-size so the cap height renders at 13px",
+          "text list-third: cap height 11.7px in the build, 17.9px in the comp (-35%); set font-size so the cap height renders at 17.9px",
+          "text featured-summary: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape",
+          "text list-first: 1 line in the build, 3 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape",
+          "text verification: 2 lines in the build, 5 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape",
+          "text page-title: ink is #b6b8bb in the build, #0b1d3f in the comp; use the comp's colour",
+          "text featured-title: ink is #747480 in the build, #0d203e in the comp; use the comp's colour",
+          "text list-heading: ink is #81898a in the build, #101d39 in the comp; use the comp's colour",
+          "the build carries ink in 12 grid cells where the comp is calm (H0, I2, F3, G3, E5, F5, G5, G7, G8, I8, J8, F9); nothing exists on the page that the comp does not show (a kicker, an extra nav item, a divider, a second row of controls); remove it or name it in a stated decision after the hero passes"
+        ],
+        "summary": "hero 65% (drift)",
+        "score": 0.646,
+        "verdict": "drift",
+        "report": ".impeccable/review/diff/hero/report.json",
+        "sideBySide": "D:/Dev/Projects/IMMI-Case-/.impeccable/review/diff/hero/side-by-side.png",
+        "worst": [
+          "page-title missing 36%",
+          "featured-title missing 37%",
+          "featured-document missing 51%"
+        ],
+        "worstIds": [
+          "page-title",
+          "featured-title",
+          "featured-document"
+        ],
+        "worstCrops": [
+          {
+            "id": "page-title",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.358,
+              "structure": 0.216,
+              "color": 0.6802,
+              "colorIntersection": 0.6389,
+              "paletteMatch": 0.7024,
+              "detail": 0.111,
+              "detailRaw": 0.1474,
+              "detailAdded": 0.0729,
+              "bands": 0.6333
+            },
+            "file": ".impeccable/review/diff/hero/regions/page-title.png"
+          },
+          {
+            "id": "featured-title",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.367,
+              "structure": 0.3109,
+              "color": 0.7323,
+              "colorIntersection": 0.6955,
+              "paletteMatch": 0.7522,
+              "detail": 0.0734,
+              "detailRaw": 0.1306,
+              "detailAdded": 0.1146,
+              "bands": 0.175
+            },
+            "file": ".impeccable/review/diff/hero/regions/featured-title.png"
+          },
+          {
+            "id": "featured-document",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.5126,
+              "structure": 0.8387,
+              "color": 0.516,
+              "colorIntersection": 0.025,
+              "paletteMatch": 0.7804,
+              "detail": 0,
+              "detailRaw": 0.0806,
+              "detailAdded": 0.2083,
+              "bands": 0.6
+            },
+            "file": ".impeccable/review/diff/hero/regions/featured-document.png"
+          }
+        ],
+        "advisories": [
+          "(advisory, unchanged for 3+ attempts) text list-second: 2 lines in the build, 3 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape",
+          "(advisory, unchanged for 3+ attempts) text list-second: its first line starts 17px higher than in the comp (0px vs 17px into the region box); the spacing above it is too small"
+        ],
+        "regionVerdicts": {
+          "sidebar": "drift",
+          "topbar": "missing",
+          "page-title": "missing",
+          "filters": "drift",
+          "featured-title": "missing",
+          "featured-summary": "drift",
+          "featured-document": "missing",
+          "featured-action": "missing",
+          "list-heading": "missing",
+          "list-first": "missing",
+          "list-second": "drift",
+          "list-third": "drift",
+          "verification": "drift",
+          "research": "drift",
+          "pagination": "drift",
+          "page-subtitle": "drift",
+          "featured-card": "drift",
+          "support-card": "drift",
+          "editorial-note": "drift"
+        },
+        "at": "2026-10-15T23:27:49.930Z"
+      },
+      "forced": null,
+      "readingsSeen": {
+        "text list-second: cap height 17.5px in the build, 13.4px in the comp (+31%); set font-size so the cap height renders at 13.4px": 2,
+        "text list-third: cap height 11px in the build, 18.9px in the comp (-42%); set font-size so the cap height renders at 18.9px": 2,
+        "text page-title: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 2,
+        "text page-title: ink is #5d6672 in the build, #b4bdc7 in the comp; use the comp's colour": 2,
+        "text featured-summary: its first line starts 28px lower than in the comp (28px vs 0px into the region box); the spacing above it is too large": 2,
+        "text list-heading: it starts 44px further right than in the comp": 2,
+        "text list-second: its first line starts 42px lower than in the comp (49px vs 7px into the region box); the spacing above it is too large": 2,
+        "chrome topbar: its rule sits 1px into the box in the comp and 7px in the build (+6px), so the strip is taller than the comp's; match the height, not only the position": 4,
+        "text featured-summary: cap height 24.7px in the build, 13px in the comp (+90%); set font-size so the cap height renders at 13px": 2,
+        "text page-subtitle: cap height 8.8px in the build, 16.7px in the comp (-47%); set font-size so the cap height renders at 16.7px": 2,
+        "text featured-summary: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 3,
+        "text list-first: 1 line in the build, 3 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 3,
+        "text list-second: 2 lines in the build, 3 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 4,
+        "text list-third: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 3,
+        "text verification: 2 lines in the build, 5 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 3,
+        "text featured-title: ink is #888888 in the build, #0d203e in the comp; use the comp's colour": 2,
+        "text list-heading: ink is #8f6868 in the build, #101d39 in the comp; use the comp's colour": 2,
+        "text list-first: ink is #1a2a3a in the build, #9ea5b2 in the comp; use the comp's colour": 2,
+        "text list-third: ink is #f8ebbc in the build, #8b95a1 in the comp; use the comp's colour": 2,
+        "text page-subtitle: ink is #bdc1ca in the build, #727e90 in the comp; use the comp's colour": 2,
+        "text list-first: its first line starts 31px lower than in the comp (47px vs 16px into the region box); the spacing above it is too large": 2,
+        "text list-second: its first line starts 17px higher than in the comp (0px vs 17px into the region box); the spacing above it is too small": 4,
+        "text verification: its first line starts 83px lower than in the comp (86px vs 3px into the region box); the spacing above it is too large": 2,
+        "text page-subtitle: its first line starts 17px lower than in the comp (21px vs 4px into the region box); the spacing above it is too large": 2,
+        "control filters: its rule sits 36px into the box in the comp and 45px in the build (+9px), so the strip is taller than the comp's; match the height, not only the position": 2,
+        "control pagination: its ink is 44px tall in the build and 12px in the comp (+32px); match the height, not only the position": 2,
+        "text list-second: cap height 20.1px in the build, 16.1px in the comp (+25%); set font-size so the cap height renders at 16.1px": 1,
+        "text list-first: 2 lines in the build, 3 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 1,
+        "text page-title: ink is #67686c in the build, #0b1d3f in the comp; use the comp's colour": 1,
+        "text list-heading: ink is #b0b2b6 in the build, #101d39 in the comp; use the comp's colour": 1,
+        "text list-third: ink is #4e566b in the build, #8b95a1 in the comp; use the comp's colour": 1,
+        "text list-first: its first line starts 16px higher than in the comp (0px vs 16px into the region box); the spacing above it is too small": 2,
+        "control filters: its rule sits 36px into the box in the comp and 12px in the build (-24px), so the strip is shorter than the comp's; match the height, not only the position": 1,
+        "text featured-summary: cap height 25.3px in the build, 13px in the comp (+95%); set font-size so the cap height renders at 13px": 1,
+        "text list-third: cap height 11.7px in the build, 17.9px in the comp (-35%); set font-size so the cap height renders at 17.9px": 1,
+        "text page-title: ink is #b6b8bb in the build, #0b1d3f in the comp; use the comp's colour": 1,
+        "text featured-title: ink is #747480 in the build, #0d203e in the comp; use the comp's colour": 1,
+        "text list-heading: ink is #81898a in the build, #101d39 in the comp; use the comp's colour": 1,
+        "text list-first: ink is #202d3d in the build, #9ea5b2 in the comp; use the comp's colour": 1,
+        "text page-subtitle: ink is #192635 in the build, #727e90 in the comp; use the comp's colour": 1,
+        "chrome topbar: its rule sits 1px into the box in the comp and 51px in the build (+50px), so the strip is taller than the comp's; match the height, not only the position": 1,
+        "control filters: its rule sits 36px into the box in the comp and 56px in the build (+20px), so the strip is taller than the comp's; match the height, not only the position": 1,
+        "control pagination: its ink is 46px tall in the build and 12px in the comp (+34px); match the height, not only the position": 1
+      },
+      "records": 4,
+      "history": [
+        {
+          "at": "2026-10-15T22:52:57.225Z",
+          "score": 0.6556,
+          "worstIds": [
+            "list-first",
+            "filters",
+            "list-third"
+          ],
+          "regionVerdicts": {
+            "sidebar": "drift",
+            "topbar": "drift",
+            "page-title": "drift",
+            "filters": "contradicted",
+            "featured-title": "missing",
+            "featured-summary": "missing",
+            "featured-document": "missing",
+            "featured-action": "drift",
+            "list-heading": "drift",
+            "list-first": "missing",
+            "list-second": "contradicted",
+            "list-third": "missing",
+            "verification": "missing",
+            "research": "drift",
+            "pagination": "missing"
+          },
+          "artifactHash": null
+        },
+        {
+          "at": "2026-10-15T23:12:25.386Z",
+          "score": 0.635,
+          "worstIds": [
+            "featured-title",
+            "page-title",
+            "featured-card"
+          ],
+          "regionVerdicts": {
+            "sidebar": "drift",
+            "topbar": "drift",
+            "page-title": "contradicted",
+            "filters": "drift",
+            "featured-title": "missing",
+            "featured-summary": "drift",
+            "featured-document": "drift",
+            "featured-action": "missing",
+            "list-heading": "missing",
+            "list-first": "missing",
+            "list-second": "drift",
+            "list-third": "missing",
+            "verification": "drift",
+            "research": "drift",
+            "pagination": "drift",
+            "page-subtitle": "missing",
+            "featured-card": "drift",
+            "support-card": "drift",
+            "editorial-note": "missing"
+          },
+          "artifactHash": null
+        }
+      ]
+    },
+    "sections": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "motion": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "responsive": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    },
+    "review": {
+      "status": "pending",
+      "openedAt": null,
+      "closedAt": null,
+      "attempts": 0,
+      "notes": [],
+      "gate": null,
+      "forced": null
+    }
+  },
+  "finish": null,
+  "plates": {}
+}

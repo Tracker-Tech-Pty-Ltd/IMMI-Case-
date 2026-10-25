@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { List, LayoutGrid, FileText } from "lucide-react";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { CodexFilterRail } from "@/components/ui/CodexFilterRail";
+import "@/styles/research-codex.css";
 import { useCases, useFilterOptions, useBatchCases } from "@/hooks/use-cases";
 import { isCaseMutationsDisabledError } from "@/lib/api";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
@@ -365,9 +368,10 @@ export function CasesPage() {
   const hasActiveFilterSet = activeFilters.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="codex-research-page codex-cases space-y-4">
       {/* Header */}
       <PageHeader
+        icon={<CodexSticker id="cases" className="codex-page-emblem" />}
         title={t("cases.title")}
         description={t("cases.page_subtitle", {
           defaultValue:
@@ -380,6 +384,7 @@ export function CasesPage() {
         }
         actions={
           <>
+            <CodexFilterRail activeKey={viewMode} className="codex-view-rail flex gap-1" aria-label={t("cases.view_mode", { defaultValue: "Case display" })}>
             <button
               type="button"
               onClick={() => {
@@ -400,7 +405,7 @@ export function CasesPage() {
               title={t("cases.table_view", { defaultValue: "Table view" })}
               aria-pressed={viewMode === "table"}
             >
-              <List className="h-4 w-4" />
+              <span><List className="h-4 w-4" aria-hidden="true" /></span>
             </button>
             <button
               type="button"
@@ -422,13 +427,14 @@ export function CasesPage() {
               title={t("cases.card_view", { defaultValue: "Card view" })}
               aria-pressed={viewMode === "cards"}
             >
-              <LayoutGrid className="h-4 w-4" />
+              <span><LayoutGrid className="h-4 w-4" aria-hidden="true" /></span>
             </button>
+            </CodexFilterRail>
             <button
               type="button"
               onClick={() => navigate("/cases/add")}
               aria-keyshortcuts="A"
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-light"
+              className="codex-control rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-solid hover:bg-accent-hover"
             >
               {t("buttons.add_case")}
             </button>
@@ -437,6 +443,7 @@ export function CasesPage() {
       />
 
       {/* Filters */}
+      <section className="codex-research-filters" aria-label={t("filters.filter", { defaultValue: "Filters" })}>
       <CasesFilters
         filters={filters}
         filterOpts={filterOpts}
@@ -446,6 +453,7 @@ export function CasesPage() {
         onSaveSearch={() => setShowSaveModal(true)}
         keywordInputRef={keywordInputRef}
       />
+      </section>
 
       {isFilterOptionsError && (
         <ApiErrorState
@@ -572,6 +580,7 @@ export function CasesPage() {
 
       {/* Table / Cards view */}
       {!isLoading && cases.length > 0 && (
+        <div key={viewMode} className="codex-view-content codex-case-results">
         <CasesTable
           cases={cases}
           viewMode={viewMode}
@@ -582,6 +591,7 @@ export function CasesPage() {
           onToggleAll={toggleAll}
           onSetFocusedIdx={setFocusedIdx}
         />
+        </div>
       )}
 
       {/* Pagination */}

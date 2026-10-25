@@ -1,0 +1,1527 @@
+[
+  {
+    "Path": "frontend/src/App.tsx",
+    "Hash": "03EECA844CB5F182306CEB45BBCD4E8887B3F3A6314CB0980F8EA1720523A580",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/index.css",
+    "Hash": "A91E9BDF9C41E4E99A1998275E74D91C7340F6CAEEC8AD20D56F4CE3048156C3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/main.tsx",
+    "Hash": "B7433581B97A39676FF04383A1D208AAAAA7BFCCDF16DB51415929819ECFDB10",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/AdvancedFilterPanel.tsx",
+    "Hash": "C5A0996015DE1BBAFBB10C583EAB669742D6A815F8526A08102207A390CDCB96",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/AnalyticsInsightsPanel.tsx",
+    "Hash": "A6046E08435E5DA7F625BA17F55704A8A09C8B4734727B0F7677C0D07B68FD6C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ChartCard.tsx",
+    "Hash": "4F47B9BDA68219414B3D67F2EB16DE000300C170419E8676C57C3DAA627D06E0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptComboTable.tsx",
+    "Hash": "7FDF419EFF3CA389DD260135F5B0565F9377CBC12C7F51A3FDE9352E5EC93463",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptCooccurrenceHeatmap.tsx",
+    "Hash": "CB3C4260D9A3053772CC2D15C4A10C834E9028EC7A5FFB110B66B2D5525BF970",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptCourtBreakdown.tsx",
+    "Hash": "A1B541D6C9D7B4B07D8544CDF438F82E2D9F8A5C08BFB9A93BC39A304535357B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptEffectivenessChart.tsx",
+    "Hash": "0C243198A15A4AE27B3F0379413FD37E577135C64EFFCED44782DBAA710D67B0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptIntelligenceSection.tsx",
+    "Hash": "5EDB4A0DDC103B09C05106FA621BC778AE8FAAC2F1F991C7F9A27CBEA1D53C0E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConceptTrendChart.tsx",
+    "Hash": "33A637EB75E195B5B3B818D3AB7DC045081BC12B07362136B295D591BE637513",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/ConfidenceBadge.tsx",
+    "Hash": "57015BDA66E84DC92972332438B901C8553B503AED11D899E1F1B007D42F8DE5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/EmergingConceptsBadges.tsx",
+    "Hash": "316F2C16AA928C5529AC1BB7C857E01141DA3D2EDCDEFF3780E4402BD8F15EC8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/FlowSankeyChart.tsx",
+    "Hash": "F45B196F266A527807EEAD70570E33A86019D2D7EB42C7753927635BFB11B832",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/FlowTrendsSection.tsx",
+    "Hash": "AD5112A7D0CB1BF210B9741C70CEE5A5EA6EE1BC008D6F7F29556089948DDDC8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/LegalConceptsChart.tsx",
+    "Hash": "D1E647D38D50302E2D1236E3816160780C6C42E7F2603C14F9062398FE63BBBC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/MonthlyTrendsChart.tsx",
+    "Hash": "A16845B1C050114137FF80E7B1070B34F42846446824EEF1F29C98E28C4BB902",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/NatureOutcomeHeatmap.tsx",
+    "Hash": "3F3B10DF99A7DEDC855DF9E6618CD5BA8EB4128953947B3A6D11F7297C9754B8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/OutcomeAnalysisSection.tsx",
+    "Hash": "4E1165DC8F07ACC2B51870F7F84C16695B682F009D71DF8474ABE444893DA1B9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/OutcomeByCourtChart.tsx",
+    "Hash": "B47945672C2CB9CCB94BF34505AA7C03260182808B759619FEC4A1C8EC5519AB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/OutcomeBySubclassChart.tsx",
+    "Hash": "2B9899309E8AB7BE57604F666E6C1417B34F52C7C564F3277893B8D940BED5CE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/OutcomeFunnelChart.tsx",
+    "Hash": "8B53F3003CBDB9C12AE5D331C6E64EEBE2C6E5F374D31FB8526EB673244CAB9A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/OutcomeTrendChart.tsx",
+    "Hash": "5FEFF70BD12B0DD9D2C8A9DB59E391DB21475448A75ED561B934AC291765F87B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/RiskGauge.tsx",
+    "Hash": "D1587EAA5392FA6998810C0899116AA8493F6843C9D3E386CCA5447DB29CD1AF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/SuccessRateCalculator.tsx",
+    "Hash": "21CD73A832968A94F0D0BD4403488A7F0B494AD4532F133934637BA2AB007944",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/SuccessRateDeepModal.tsx",
+    "Hash": "6FBB04FBE51E58C9952AAA571634ED1C5C50A00A267EAD784F86AAF1C3880610",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/TopJudgesChart.tsx",
+    "Hash": "52374E879AEA8C3F060DFFC22E989D6CA815521A9A338F32DDB2F51111694B27",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/analytics/VisaFamiliesSection.tsx",
+    "Hash": "A2AC003D85985B300A2ADBF658F4300D3A86218991FF38A14EF8688B7CE9EE2D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/auth/TelegramLoginButton.tsx",
+    "Hash": "391DE6CB9CF96FD29CB4BC7E3D55BC2294E37C75803C102FB11E937686A02E48",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/CaseCard.tsx",
+    "Hash": "81A3E13F811F33B3EEB7697CC3B15D0C7AE85EF2B4895A7C6AFC15F808D33FD8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/CasesBulkActions.tsx",
+    "Hash": "7E9A9ED6C2048618FA563A777A2938251BE2E036B538C0D092594A18042452FB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/CasesFilters.tsx",
+    "Hash": "73E84F7A885EAD2106367C9D0562183A58023B1AFDC8724383C6206C7FBDF332",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/CasesTable.tsx",
+    "Hash": "EE27BCF743D58C04DAAEA92F28D76D5E8FC8406CFAA9E3CD586EA2E26C4E9E0F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/CaseTextViewer.tsx",
+    "Hash": "88AF444435F0802DE58A95F1F46C09EFFDC192B94098152A1FC7E9CAFE5B9AE5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/cases/SimilarCasesPanel.tsx",
+    "Hash": "44E9AE49C8215A1C006FD4D8DB60318D358EDC3CDC4DEF9070163F9C0AE15B23",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/collections/CollectionCard.tsx",
+    "Hash": "FF240B6A14AD5B814D6B05737EF633DC69413B5BF8EA2F7B28DCF8CE9BED41C3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/collections/CollectionEditor.tsx",
+    "Hash": "C57CE12DD58B894FD4B8EC6F4139442ADEE8B309F5000CACF623155196592C19",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/collections/SortableCaseItem.tsx",
+    "Hash": "486316992AF235F166E948E0D4DA01823F889C7A49E46266F179BF17674354AA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/dashboard/CourtChart.tsx",
+    "Hash": "72D6E98B0CF0C663FADF0E03F9B2FB5B3746DEF25BD7CC0B067C39819226F286",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/dashboard/CourtSparklineGrid.tsx",
+    "Hash": "AE5B0F505F76ECAA2B0539FBFBF579E1DF62EE2937C101B16A392CB54CE45647",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/dashboard/NatureChart.tsx",
+    "Hash": "246910BE82580C3A6587B8AAEBDC1840018A1177BEFAA2CA77289B8F7CA45141",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/dashboard/StatCard.tsx",
+    "Hash": "56348081997B2AC534CE9C71DCD562C587DCCE0FEC28E6DDD20459F555F11E62",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/dashboard/SubclassChart.tsx",
+    "Hash": "A8E44702C6C76E8714C7A57B2B7961D0C1A2D1BB782010DB0D7379F6A92298F2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/ComparisonTable.tsx",
+    "Hash": "A7D374CB2E2845189A31DBC9FA470561D6A59193B85AA0421538FE23C7C53E35",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/ConceptEffectivenessTable.tsx",
+    "Hash": "7D4A2D16A41DD5FF7C8AFFF69058DDA78B9783556DE6CB6668241A705C189078",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/constants.ts",
+    "Hash": "203277EDE247162921B009488F2B958A2138B4C389D79F751FA9A1DD7256A93C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/CountryOriginChart.tsx",
+    "Hash": "3C1C49CFF4E98C6A7E6002D0618BD1AC8A2BA4218C9C61484B94E76D874EE2CD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/CourtComparisonCard.tsx",
+    "Hash": "ED77716A75C8DF4B354B7215C38121F674076C9F98CC30EB902F85ABC4E05CF3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/JudgeCard.tsx",
+    "Hash": "6751A13BAFCCE033DAA64FF589CE074CE9DD9A333A3414EA41D7382A429BC430",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/JudgeCompareCard.tsx",
+    "Hash": "F42BF14AAD54F75049AA75F4A14D6E483A626932E100293655C0CF3E04743225",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/JudgeHero.tsx",
+    "Hash": "43BCB1D043920D37CD82E2A9FE6A607CCCC88CADC8A6CD5EEFCB8613FB986C1E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/JudgeLeaderboard.tsx",
+    "Hash": "21F09C1DA12F1A69BB1CCE78759125EDCF2856FA8B42238E6499726D20D77AD6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/NatureBreakdownChart.tsx",
+    "Hash": "A2EF67432BE2E95554C19337822F2C2126F110F7EA42EC3A7EB2E4FE62DA8141",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/RepresentationCard.tsx",
+    "Hash": "BA9B35E4CE37364E5E4306062379AABEDD921BB83655F0029CEE0E5059786895",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/judges/VisaBreakdownChart.tsx",
+    "Hash": "31BBCCF659721219A02607237D70E54788210C7310A5AE0BEF3F8EA7D4BA6BC6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/AppLayout.tsx",
+    "Hash": "BDED2CAC727A63178F30E6A7DB1B67F197BBD3DC981A4E46BDA0A261CD76D661",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/CelestialToggle.tsx",
+    "Hash": "AAA7801D45FB406F3B8C1B1DA408652C7BB62A87731EFDE90EE17B2D0DD8AA02",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/MobileNav.tsx",
+    "Hash": "C268AECF373F344DACB4C869E2138D0380F848BA6DA5A3E741D934420CAEFCC3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/nav-config.ts",
+    "Hash": "39CD7192721FD5BC4B50783BB2C43543B370D01544E4A4A9DA50A469D205A00E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/Sidebar.tsx",
+    "Hash": "98B4A5BC2555179F012623A0124A4CA17EE5FF90FFDAB053ED59CB7153D0136C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/TenantSwitcher.tsx",
+    "Hash": "43EEA78731CE6F117C47A800D7190D11ACCDC78FB61C9113AA318A39E8A2C60F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/layout/Topbar.tsx",
+    "Hash": "20AB41AEFF14A2EDFB5611FD48C84C43625B14B38FDCAAF8DAE010C75CB17DE4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/legislation/LegislationTextViewer.tsx",
+    "Hash": "93091254A85B31D761D0B6F7C99AA476CD259B6A64A379F93762B32B6D7D2458",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/lineage/CourtVolumeTable.tsx",
+    "Hash": "B887A37FCB510C7F3518E50788F6F6A69C81C82AF91FBD51F7FBA19357A67CBC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/lineage/LineageExplainer.tsx",
+    "Hash": "8DCDADB372C3D37A88F8A24C04C9870D5BCABB751024FE2B986C10E01D5D94E7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/lineage/LineageFilters.tsx",
+    "Hash": "5B0EF5242493C27255B7AF6416EC35E9F33F7F0F10D0712849F86CAEDED879E3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/lineage/TimelineChart.tsx",
+    "Hash": "42F2086E5ED0153C61481BA6BE97ED7ECED0D2521051D614C9660CDAF7C96E0C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/llm-council/AchievementToast.tsx",
+    "Hash": "9344676447CEC4FD4B5D2178416CD7244F5255F67BDDE22FB4ED4EB115286A27",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/llm-council/session-list-item-helpers.ts",
+    "Hash": "A799E813D11D03AB296D70771CA405866AAB161FECB3D0C03898A0A10CEF7BB2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/llm-council/SessionListItem.tsx",
+    "Hash": "BEDFF4421E39FD3EF0F2174297E4490A9157193BBC48FCD11333B10A60CCBF4C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/llm-council/StreamingCouncilView.tsx",
+    "Hash": "CA302E0E89A43F41C53F51CBE55966D59B12DC42503C9CD3F1FB5D5018D450CC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/llm-council/TurnCard.tsx",
+    "Hash": "675D314A8EFB2AE30FC3EA86DCBC0E3DC5E734AEEDB5360F0F735A2C38AD7356",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/saved-searches/SavedSearchCard.tsx",
+    "Hash": "C6C321E4EA71896BA844D23E72CABFA11535965EE34977865690DA94796B7032",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/saved-searches/SavedSearchPanel.tsx",
+    "Hash": "8848A3237B6203BEA5C2857098C2036DE687FD847FD77F66BB1294438A7209D1",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/saved-searches/SaveSearchModal.tsx",
+    "Hash": "5516578366D6A4C243024675502DECF8CB5D1A0AD4B6F38541C8B46EC6BCE0E8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/AnalyticsFilters.tsx",
+    "Hash": "B9C8C6CFDF849EDA3C2FC17E1C329AF7E79B4DE3CED38DECD2681771382678A2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/ApiErrorState.tsx",
+    "Hash": "873F742354059CC467D36DFBB2CDBAF93BBB89AD40D27A08908B02167AAE25AD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/BookmarkButton.tsx",
+    "Hash": "F2AC5DA6580021A322515FA00A5A6AE271DECF24BF194EBDD04D8EBAC0BED0B5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/Breadcrumb.tsx",
+    "Hash": "0FA49C4D22BEC539FAA68EEA159950E15B907698E6D0F368838810B46A21C6EA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/CaseMutationsDisabledNotice.tsx",
+    "Hash": "32A09566CA61C342B9CC4A962FB132AD31DFA48B29BD2442E42F1F16FBEEB887",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/chart-tooltip-helpers.ts",
+    "Hash": "842C385EEDF711EDC1090D5816714DFDA6369C429E0B16A709D60274F1CA096C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/ChartTooltip.tsx",
+    "Hash": "F2DF213C7B9C9EDF599D160DB03DEF79D0B6CD58217A31F5A25F90906FB5DAB7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/CodexSticker.tsx",
+    "Hash": "477E228964394B007F1EBD312EAEF1286A0F94B4275D3BC28BE7B6620DDB8D93",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/ConfirmModal.tsx",
+    "Hash": "83C139ED49AF9C2D960B3F9AE03D03C329704C53CA54C9059346953031D85417",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/CourtBadge.tsx",
+    "Hash": "DB8195CBDFF0DC3247E0F6AEAD3C86D9A2695CA956C46F2972F9C9C9F49696B3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/EmptyState.tsx",
+    "Hash": "EE0F6D7C5060F48C35A10CFF059DD69E7A1F9FB7C6F95F81721DF27CA59FB3F9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/FilterPill.tsx",
+    "Hash": "F71738F58128D9E84900D9E8F4BC808EB8F1FEF69A3F9C333FE01202E7B2FB09",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/GlobalSearch.tsx",
+    "Hash": "C08BC66ABF0E9871E794BB17D6396050D90AF1486E2E5C78586FA4288EE84833",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/NatureBadge.tsx",
+    "Hash": "21DEDA6B96CCFEC0A068755A1B0665EEE6E12EE1420F96D1E96E682D5F5FC2BB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/NewsPagination.tsx",
+    "Hash": "A0B368F992A2155B8C2A755F19BCDF5915FFD00B7017BBE502EF61349B7DF496",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/OutcomeBadge.tsx",
+    "Hash": "AD18EF7DE2BB4F6D107135BA89B75CF545FB588FFB469AF77CADADC10DC60420",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/OutcomeStackedBar.tsx",
+    "Hash": "3D3F6C9C5C9E0C0CE683AEA8A683237FE8B41B020407EBA544FE38BD75123BDB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/PageHeader.tsx",
+    "Hash": "7A5AC28624C297971AEF644A8F9B7E9C1CC4D7F7B341D395334040F79A000D92",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/PageLoader.tsx",
+    "Hash": "63C1D403423E281F3099C79F0BF653574BC85D9A4D6142CCB139A2B2004DD25C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/Pagination.tsx",
+    "Hash": "999129FC2EF7B612413F28946E1BA1C30E20CC6D6C21C964027335F1F2B352C9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/RouteErrorBoundary.tsx",
+    "Hash": "BD547B237FDD00CEEF3CE528534555D0E87535839FCF04C2988283F9B5652634",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/StatePanel.tsx",
+    "Hash": "B55C3E767255C92D933F00DCBB1BF9359126F77D58B52B1EAD8FCCCC4A3388B2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/components/shared/TagInputModal.tsx",
+    "Hash": "07D751DA45EC63D69666F2FEC7874ACB7C9A84EE55658130228391F9F54D5E24",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/contexts/AuthContext.tsx",
+    "Hash": "9AA7934EDCA2F19BB980B76BAA8D0D4048FA751751E5D58579D33BD8FA38C63A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/data/news.json",
+    "Hash": "29B76C9EB5EBD412EC32952F133852E6043FF6C40AA5E9260D46E8DCA3542CF0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-analytics.ts",
+    "Hash": "C948F2F8909C26EDF7537409190EDE7E4FBC476E27DCF19491AEAF464CF5ACE2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-bookmarks.ts",
+    "Hash": "1E594D1DBD355E59E3FF156B13A796F014FEB4D89623EBA610DB6AA2B03F5ECC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-cases.ts",
+    "Hash": "BE4F1FC5F0B2C3483998DFEBF23051BAE34483EBF9A7ACE33F0B0588270007B6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-debounced-value.ts",
+    "Hash": "E631CD8ABC0006BBCDA06B72130417F63EE4C15C690890B97055EEB33D951172",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-judges.ts",
+    "Hash": "D0F838C04D1C6169351BDAA16991532B2060F293D7C403C4FBE74B8D48037872",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-keyboard.ts",
+    "Hash": "33A9E1A57E17A03EF32442000C75B4DD0928636BC2D8EA7D79B93F1ADFD54081",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-legislations.ts",
+    "Hash": "01E94BB3E4F730C3488F421149236CEE4ABFE0E2B2B4EED3A81741621AE1333E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-lineage-data.ts",
+    "Hash": "F710F9FAA7420B76139B70E003985F920EC529214BFF081C99BFA8643FE45723",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-llm-council-sessions.ts",
+    "Hash": "560B483601D990A6B902F1A549FCED28907E64DE4E0C231D5D7AF688423F5900",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-saved-searches.ts",
+    "Hash": "DE513F0EAEEE849F939B731363E03BD6B75D3B26976D0CD208CBF040651B0C4C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-semantic-search.ts",
+    "Hash": "4E72AC8EB3851C782167E82C41E70E107B50C751F02B808C9213FC114414EEEC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-similar-cases.ts",
+    "Hash": "FA77D120AD35D32FD43D59498DCB1BAEAAFA3215ED3E586B9DE0ECF9BCF36E2E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-stats.ts",
+    "Hash": "D8F63EC5C59EFD222FA331BD722F80AE0FC25EA3B8D2A5EE236A4D89870E71EE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-taxonomy.ts",
+    "Hash": "B8D25A06451E3FE8DB012DC21AD8DD5594CED1CD32FCDBC763E0042F39E9B60A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/use-theme-preset.ts",
+    "Hash": "9CC04EEC83EBECB4D2835C3E48AFCDA110672B575F6ACEA517666A38A4A51DB4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/hooks/__mocks__/use-legislations.ts",
+    "Hash": "2FA290FB3CDC1B9B22E3336CA54DC8FFEA63991C6FA55E94A0E6C18335A7FB0A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/i18n/index.ts",
+    "Hash": "DB94492540C2D8AAEE883B242FCC3DC1C1797FAB068FC0006FCD8075DA0EDBF4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/i18n/locales/en.json",
+    "Hash": "96A49EB2E9190A55162B61B2EE9D12DD35DA749B089073B633269DAF0653F3BD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/i18n/locales/zh-TW.json",
+    "Hash": "3E21791109089DA1E94B90403E2784419FA675DEFE6C87335D070B72C28B5DF7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/analytics-scope.ts",
+    "Hash": "F12CA484B41EAF5C6DF6F2E23570CD07D178B6702F2455622477B4F1F042BF6F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/api-llm-council.ts",
+    "Hash": "3C7A59F44826F6E687C277E3E430769C39875A253D595248E8CBA0092BEB7331",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/api.ts",
+    "Hash": "1AAA18C29DC7C75DB03894542197A856B8F41C5931EF7B804D4D8F71D8E9B0E5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/auth-cookie-coordination.ts",
+    "Hash": "A3749DC500173AA97DC19ED60797265767535F9BFB0BE2EAB13D92E3696CAEF0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/auth.ts",
+    "Hash": "FBD95BCDE77C219883E17FA55D93C45D7C52C492879F2B3D74A9FF01CFAA106A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/codex-stickers.ts",
+    "Hash": "FB2EE8288F225A7057DEEB26C8E24B6609022D18FE6977ECFE1261F6B933E178",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/color.ts",
+    "Hash": "CF035409AF1F99A60580AEDD20B24ACF99866EC3A1A5E1206226D2C668C8AB60",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/council-celebrations.ts",
+    "Hash": "6768745E0381646563956DC2FF27C35DB7C72CDED9B465A01F17FEA23960803B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/court-events.ts",
+    "Hash": "9C37317157366F9D97A0EC339114683A00A130CA39411C7F4C21B202337DFE82",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/dashboard-insights.ts",
+    "Hash": "72C64B6CF90298CE90AC8EF8F497E0B89E53E4DC7BEF5C7E977525F5CD27DDD0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/display.ts",
+    "Hash": "A4F0278E32DB2FDC6C0ACA3C0FB02690B9EE8BDA9646C8E3E56FA7264DF2E14C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/download-blob.ts",
+    "Hash": "13C33508AF1602E8E947F62A8263965FD3C6B4233C1E83062120B53E0FD00798",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/lineage-data.ts",
+    "Hash": "3597066D7675B2EA68F55F050CBF41560FC4CD5908A5C0824F5E1B60090FBED3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/lineage-transforms.ts",
+    "Hash": "0B40CAB081B76BE19BF2EC16AB69A695C6A4D42A374BAF2961FF2E7EDCE6647D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/news.ts",
+    "Hash": "84C7620EDCF5B270E3245A40FAFD5913C0B532D75357A43F2D6E35D8E9F9860F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/prefetch.ts",
+    "Hash": "6C6D4554291B36DD8A3F373B5781C681B83FA76CB065A664A8BE77413E6BA1FC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/query-client.ts",
+    "Hash": "959F42A9987D70BAF28480DC00E33B0E1E94AC54768C7E1B3AAAE02DFF78771E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/router.ts",
+    "Hash": "A9FEFF184DA7448EA45788F1D4955D5614CD30BF4B966CD5D4C15C503E49B679",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/saved-searches.ts",
+    "Hash": "9A531BDEA58A596363087F9490CAAEB07A7C46ECBEA95785549CA7AA3432D6E6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/trends.ts",
+    "Hash": "FCF4C2033DEC6C03CBFEF003655723D1D67C5C133976226511CC8ABF6014CE91",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/utils.ts",
+    "Hash": "51BBF14CD1F84F49AAB2E0DBEE420137015D56B6677BB439E83A908CD292CCE1",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/lib/__tests__/saved-searches.test.ts",
+    "Hash": "7900E60E52F29ACCFC380B6D96273EADF6FDCBB5D0D6AB73E6D82CF68E734660",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/AdminPipelineRunsPage.tsx",
+    "Hash": "73C3559FE349C61A3F964675E5821CD7BDA60249FD9914A0BBECE515EB9735B4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/AnalyticsPage.tsx",
+    "Hash": "BEDE9C379F0092F538D3075B056A55A90B10E4692B4266FA1DD55F25AC45A81D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CaseAddPage.tsx",
+    "Hash": "B89B6873B396173A15A30F402F94CD1EF4AD9610942B35C45C30DCCF68FCE10E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CaseComparePage.tsx",
+    "Hash": "91BD24C2FF70D150BB84FD2488AE3226ACC60B1111811A452FEC14694EA9BA67",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CaseDetailPage.tsx",
+    "Hash": "E9268251E354F43F5D507381748278A5BD872AFDA4B1BD038C713AFB6272826C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CaseEditPage.tsx",
+    "Hash": "2FC8B07567074C1E0F0DCBCD70C66979B5EBA927E5D3AAD414F4FC8FEB1BE88E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CasesPage.tsx",
+    "Hash": "E6B7F4BD2463B8D02B609D01826B507C21175044E666DAC951D49476AD929F1E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CollectionDetailPage.tsx",
+    "Hash": "B0B42D76AD1817ED753757E585A3A5C00EBB5FB59E94E46E6E7A55211CBD524A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CollectionsPage.tsx",
+    "Hash": "FE5F085941CF2A657E0D1F1CF77DAAB27DE5FA9C3A90CB1397591930B860FC03",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/CourtLineagePage.tsx",
+    "Hash": "09684AAA77303EB10675935F02349902ED45D0F1D599912B78C22C30A663092A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/DashboardPage.tsx",
+    "Hash": "4D5A9F1A70DC5CFDD4D66E7626626290B9BB4336F36D78ECD53C005E6AE069C0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/DataDictionaryPage.tsx",
+    "Hash": "42516CC9032896787F56E6695A7C592618C5D6508949F524F44D7C6B7BAF94ED",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/DataToolsPage.tsx",
+    "Hash": "AFB12332FD5034359D6818F222C171556108531CDE7C11A0E4D2D54CD7E72337",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/DesignTokensPage.tsx",
+    "Hash": "79DA80A24B473A67456D5631E97A79EFEB25D76DF3A17B5E4E5E3C14ECCF82B5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/GuidedSearchPage.tsx",
+    "Hash": "A1E56BA256354A264818B0C6CE8791276828E3033C6F74479060000A72ADA083",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/JudgeComparePage.tsx",
+    "Hash": "81E0BBC52B622A2598C40B9A4015F304598768A9147813789CF08BA7554AD7FC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/JudgeDetailPage.tsx",
+    "Hash": "0F1A047991F5DEF41B643C12B7C87EEFFAF15F0138F4E1869E199D896EA73C90",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/JudgeProfilesPage.tsx",
+    "Hash": "BDA37BFD976E198F9DC7BE0B558E90EFA83B8DBB223262FDAF45DE95B7C6D207",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/LegislationDetailPage.tsx",
+    "Hash": "C3B5050008C5F04723694B28A5457FE229FF5221294D65157643B2AB64BF3AA2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/LegislationsPage.tsx",
+    "Hash": "CE319334E78B79289A41BC0666DB7DC182CE1F760BFB846DC4D9E240CFE1F5B1",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/LlmCouncilPage.tsx",
+    "Hash": "FD9CCAF66E075BA84A3624CB0FF7CD8AB858E206BAA9E30E2AA47C5BF5D65BC5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/LlmCouncilSessionsPage.tsx",
+    "Hash": "8C2DE77F51691FCDEA3CAF172647B9BB52E895079E48C133E7CF9305160D21A7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/LoginPage.tsx",
+    "Hash": "DF4349FBAAAB3EE34A9C0AF7CF2EB22CC8CFF3F714647EA74EA920F5883E0B96",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/NewsPage.tsx",
+    "Hash": "27BEE8F67B158F0C0049E0C3412EF27EA7879CF7EA0500A00745396B5A572294",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/SavedSearchesPage.tsx",
+    "Hash": "85959BE5B86CBF6AC2E97AE1A894CD6D672397D11FC7FE7FFF50A9D6A9593E16",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/SearchTaxonomyPage.tsx",
+    "Hash": "0AB87BA37E2CAA3BBC8D4310ED963D3F6CAFC983A480C20CA081BAD2ADB8ED51",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/pages/SemanticSearchPage.tsx",
+    "Hash": "335CBC3E3109F337F0BEB28BC567BEA6A7B3DDC03441BA16871953DC53F09700",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/styles/news-codex.css",
+    "Hash": "0E88A548A7BD03576141F3EFE05F8A6BE5E23ED1BF67FC0B22036D6CDAFF71B7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/tokens/tokens.css",
+    "Hash": "67A45B2C008051C3C9EC48C7F097B33FD1E9914D861A9924126E4F17693F2F12",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/tokens/tokens.json",
+    "Hash": "ABB73433234346E148965D634FABFEC1E4C9622D042464BF9ACA9B1B31CA2841",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/tokens/tokens.ts",
+    "Hash": "70464CB7ED85B16F84E8D975D5168FFDBCB06F9AF53036A4840C6BEB9F2CA4BC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/types/bookmarks.ts",
+    "Hash": "DA1A45C086C18F83638F6159FB6C7D2183245102F2EAA91CA5BA5E8D122FD6A3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/types/case.ts",
+    "Hash": "B2E93A8410CE23649B8ECC8E3190E8AFD993C7AD2DE05AE12E22D8C45A9345A7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/src/__mocks__/legislations.ts",
+    "Hash": "419BEE16E6A8B25901A862923BEA2BFD4BFA440E9CBB68861EC568C49E26A536",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/_redirects",
+    "Hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/vite.svg",
+    "Hash": "4A748AFD443918BB16591C834C401DAE33E87861AB5DBAD0811C3A3B4A9214FB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-dark.webp",
+    "Hash": "DCC5F4D9877F0DDF0428937F395712514187346D6F93B8381B471C9037B1D47C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-dark.webp.json",
+    "Hash": "575B5563CB0B61C8ADBDA30403CC3146C98A07384D28787B0546BF70CA72F000",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-light.webp",
+    "Hash": "B1F5985ABB4FDD760FCE68375A5771F9331A3933B212FB9E4BC867EC85DBD5A2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/analytics-light.webp.json",
+    "Hash": "269AAA0E92F408D99504DBC74A84AE4450EEAEFC63BB954AFE56AF8D8ADB0904",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-dark.webp",
+    "Hash": "643A495A006EF00E248C4D38E13EC6A4E4097B17AC8182C0B9C85B5C231BDB84",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-dark.webp.json",
+    "Hash": "A2AEB0EC15136A08AB76D8E1E0D16E34A25BE3A3DE871320B897364952ABA201",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-light.webp",
+    "Hash": "D0C8F49F8E1C3D64C764B6738761ED7B84B9BD2DD7BC16DF9D94E77285E53A0C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/calendar-light.webp.json",
+    "Hash": "542F5FBC5E761C87C78C298D635E2D2F332851CB49AE9CF458AAFAB6CA2CCBE2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-dark.webp",
+    "Hash": "B98455CA3B44EC9CA91FA0FEB50E654129F6514AC02625CEA134D5E2AA37E712",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-dark.webp.json",
+    "Hash": "729A7B49E424537376F9C28398EE9CE1F2174A68B304730FDC8FB6991E438263",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-light.webp",
+    "Hash": "BE4171CAACB10890DED7599939383D1D625FDB75142B6E9C4884212ED0EA12F4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/cases-light.webp.json",
+    "Hash": "55C5C5A02535C683C06FBB10DB36FBE44CAB87A07712FBEA3CF22F06E3E78160",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/catalog.html",
+    "Hash": "88ACF3D9E9C2328780D6B553D908F019A4538639139334448F0EA353BA170CE8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-dark.webp",
+    "Hash": "E6130F834DC44BC99CE03DBA792DF2CCB7E7788BA310A119388299EA2C2B0C2F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-dark.webp.json",
+    "Hash": "0AC563041CB310DA74971045C410F6893DF8C54175CE5ADD85D0B3836C3903B2",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-light.webp",
+    "Hash": "148DEE1CEBC92BD9BC42BC75D013CDCF24F748481401517914244E174874A1E7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/clear-light.webp.json",
+    "Hash": "A615D962BE6E51F689093515E83903CEF8A53F0480269A96D960DEC5D9F2DA91",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-dark.webp",
+    "Hash": "BEF055F4AD924C8B399F287FD1A79A16DC1203D899E5500D8E2CB4481B639AFC",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-dark.webp.json",
+    "Hash": "0B05EDE963A54D214D708D86784C125111EE9AC914BF0C0B57876D6ECB2FA310",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-light.webp",
+    "Hash": "B5EB07F93ABD6062931979CD3DF87AF3402A0C386B300B625B621798F0FAE827",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/codex-light.webp.json",
+    "Hash": "D1D4971D4D87892C6596D0CAE8A9C8756A8F816263A23D224155F43920F6F16D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-dark.webp",
+    "Hash": "7CD8F6C4C4107B4168B045C591CE91419FBC5144B92427C70BEB1F59FDDD4EFD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-dark.webp.json",
+    "Hash": "1539F05C06693DEBEAE37A182B0D91D0C29D910E52FCEC4006ECB75C95461848",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-light.webp",
+    "Hash": "231B06CB4F2F65474C31DD7B11E87112029346A60EF50E25AF33705702601C5F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/collections-light.webp.json",
+    "Hash": "5EF91362307448ADA17F620FAB816C32D8AB25289B4062138A7B3AFCCA20147E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-dark.webp",
+    "Hash": "457E9303039ED98638DC789723684067E69CCB9DD468A8EE8B40027214602447",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-dark.webp.json",
+    "Hash": "EC832F62997459D0443643514C9C0D1A96E896B2126588F032F9633DCC8F8340",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-light.webp",
+    "Hash": "7A3623759B7BAC2C41948BD1534AE7243F6F62A563F88A798F2EB074FF2A39B5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/council-light.webp.json",
+    "Hash": "82FD12D05E69FEF8EAB4A489DB200B2D08964A0FEEFB9FF376ACEFF7420B4924",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-dark.webp",
+    "Hash": "37423FB3C39B1686CE4B6FB8FEFB049D2DEB06409B2F46A18E72CD031FE004A8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-dark.webp.json",
+    "Hash": "EFD1F68705EE7870EE219DFF524A7508430AD79505C013BB8219C8CFCA8687B1",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-light.webp",
+    "Hash": "C9926AC709CD1612E09E7174ABFD434923C837971E4A29D47E368FC5692C354A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/court-update-light.webp.json",
+    "Hash": "F7F72FFF18257FFAE2AD0532EFD18A13C02787AC82C4693D18A265CBAB0A1AA9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-dark.webp",
+    "Hash": "C75A4414D3C5BE268E87B33FEBFD53106270EFFA45FB21A9F6E34759AA5C945D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-dark.webp.json",
+    "Hash": "D9AAF44C5EDA9DFFEB0FEED24FB3EC6F5212D6610B9F9111BC2A920DBC284A4E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-light.webp",
+    "Hash": "79B58C9213096ACD578E7CA9A0F6229C89F103BD418A62E212D69AEC3F17CDCF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/courts-light.webp.json",
+    "Hash": "EB6C5C669CB5939FF8B9364B8BD9667323C5F9BC5649AE844C34078BDB75ECB5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-dark.webp",
+    "Hash": "6B5B7BD81F72717126FB01E83D239D46EA2BF345F77DF86E050B8F5504D71CBF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-dark.webp.json",
+    "Hash": "6871F6E76C5A2C0CFC8B18BE8E44248C9F302357FE8CDEF3557D5F4799F2E4B7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-light.webp",
+    "Hash": "2CD5FBB4AD05001FE04A089693E212D6C3C7FA76AB8023C8087784415D874637",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dashboard-light.webp.json",
+    "Hash": "F93A48A9B619A1F9D846A69946BB9C29301A528D5EECB99AA5C4A9E9402A1812",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-dark.webp",
+    "Hash": "DC482A785D208333EC47B93CC467ECA987201BD8083FFADE56A558F2816EE7BF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-dark.webp.json",
+    "Hash": "89467764B4CBD6A8CB56F0DC9473A6E2C6AD541584E51C89B1ABB8B34E57FD02",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-light.webp",
+    "Hash": "B958DBF1C16A2FBEF3FA79D4B733DEE93D01B0FB6FD126FE5DA8F6D744533662",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/data-tools-light.webp.json",
+    "Hash": "28D40047470F41829358A64F34DCA4870A683652C66AF3F42ECCC4D968074C94",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-dark.webp",
+    "Hash": "A6BAB9D10FAAAEAF5B82C3A35D5E159E628DE9C316D720BED6F91640F7BAC17F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-dark.webp.json",
+    "Hash": "2556E1DE0A66FD19172774A53BC3E9F2A3F0281D13D81590BBD3E388ADC4B786",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-light.webp",
+    "Hash": "8034B077DC866D2684D3A4068A8E2C3FFFFF385C5D702E7F57E91CF9FFE5D8BA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/dictionary-light.webp.json",
+    "Hash": "BE57FCDABA523DC4D4405A8B92B9CAEEDAAD839A227AB78C47C5D0E90132821A",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-dark.webp",
+    "Hash": "8767836C79E3B36E94A7600DC6AD2F36280062EC8F6981ABF3928010CCD49680",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-dark.webp.json",
+    "Hash": "41A284CBDEF060429EBBF37A71143EBA6B7C2B3988686B99D3B81A6E9C2F4B50",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-light.webp",
+    "Hash": "6C48F21693A5BB330AD799FFDFFFA8E49E3CEA7D974818104F4A13330182BBB8",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-light.webp.json",
+    "Hash": "71420971DE6C8EA3ABCD38CA305BB3BA10EF583FF27F6FA20AF31CBE4F4A5FA5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp",
+    "Hash": "6188271459F3D33184126969DD80478B2C0AA5D622A0F3A1F531DF8D5A6C6F34",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-dark.webp.json",
+    "Hash": "D2E08DDB1B3CCBCF7ED531B20F637185C14D97FB3960FE4616F2CE9AD7CE91A4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp",
+    "Hash": "ED4BE5C24DBD3C51521D94F6923F9DB482020F4AA3ADC449C150CF3CD5046E59",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/document-v2-light.webp.json",
+    "Hash": "CC94E76DC1BF4E88F2C0972F5DC059EAC25A3DC81CAE99838090D4AD5C76FC3B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-dark.webp",
+    "Hash": "25CF6685A0783CA161B9AF13540A3313E94716BD98BD1EF9D53D17157E7F2DDA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-dark.webp.json",
+    "Hash": "A09D2B07BEDC3C149DEA62BF6DA5E26F212E2DF091EB4417D6D2772360503141",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-light.webp",
+    "Hash": "F71D832D09C0141C1E7B614B53D4A008E6D723DD3466C2D1E24BE67ED6E17402",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/empty-light.webp.json",
+    "Hash": "58BE2B4214FC69A1323B1A455A4F9B8A8E3BB3B5F9BDD181FAE2D3DA6F9AE787",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-dark.webp",
+    "Hash": "8C3F7667B6A89883399B4519CC674FBA6F047E414EA2BCCAB2A6C34666B42459",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-dark.webp.json",
+    "Hash": "5DC9DB1EC8F840B46C63C9A3BC7EADBDB28994A6D6FBFBE7CD4C64A97AE57E3F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-light.webp",
+    "Hash": "D04D1F805236DD398CD27B1789BD65DBC69C0F0CB2FE519D0FCF482C9AAF1D45",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/filter-light.webp.json",
+    "Hash": "17B94F3854B774A550A6F97294F87B2D0F2495D5A055E72795C784152F407DC3",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-dark.webp",
+    "Hash": "F8F3A3F65855C0AF82594553738FD566F1D07418E9B83E85C63385511EB60C92",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-dark.webp.json",
+    "Hash": "3B6EFA680709E3785CA89A09EC7433B417BCF0A1994ACF5F22B1E840C641046E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-light.webp",
+    "Hash": "F6F07D1A6DACA7AC131FDECD8C42C8EB79E563890F15CEEAD23F4AD47EBFB291",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/government-light.webp.json",
+    "Hash": "CF67D750613591894E8ABFA058573B0A1C7E9325068633FFA874F8A48F1F8AF1",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-dark.webp",
+    "Hash": "75F474F58707EEAA90E8768CFA9E7CE58F8283C8F3784DDAA531BC2763F788BB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-dark.webp.json",
+    "Hash": "3192D9F3136F6AD6CE6EDB64B9C8D2748350E6227A61138A89F4CF26CFE7C474",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-light.webp",
+    "Hash": "C3EC439B9A011A52577939DE76B5728DE0D8E4D3F8C5E0C3F85C31920ACDACD4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/guided-search-light.webp.json",
+    "Hash": "FD46CDD2282A02EA38949E28F4955A9E3A62C48431A9424FAC5369A401E81BDB",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-dark.webp",
+    "Hash": "207B2E09C9EFB38E54065D9ED6B34395F9C9F7978F5EEDFAE95DAA953FE8E5D9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-dark.webp.json",
+    "Hash": "3CDD7FFBF31B910B143D757D4372AC9734DD7ECFD0279A0C4A08075465E55C09",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-light.webp",
+    "Hash": "0ED4E55AA8EED1D3243E949019C672A929EA4227C97D71238E021BB8249103A0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/judges-light.webp.json",
+    "Hash": "1D1BE49C029DD5BE2BB8D6BB0D05F8015A985B6292DD17B9EA1B283D36FC2BBD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-dark.webp",
+    "Hash": "9682A5526AE212EA7DAC34B22F78EE3E7D915E1DEE179AED6173900BAEA5CFB4",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-dark.webp.json",
+    "Hash": "97640D7C1B3CE990037444A62DD0F0DF4A1950F9F03133D7D44660B6EA0B6F9B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-light.webp",
+    "Hash": "7A6B733E0931C403FEA3373387ED64FA9ADC863D5C7678CA21EA7FD1D231BEEE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/legislation-light.webp.json",
+    "Hash": "64EC7F8B0643B0980AC259B006457005833F2A066B0879876FEE65B90797336C",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-dark.webp",
+    "Hash": "1C25ABDAD126B34680C22F97E3BC1C8CC227A8AD5194C119A4280C1CD51AEC9F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-dark.webp.json",
+    "Hash": "DAFE5D995EE39BBCC8F17C4055797C9DCB1526091ACEDDAB72E6990A6CAD2E7F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-light.webp",
+    "Hash": "5F7BA525C68C74FB434FF655F932D91FE5180F56451984BF295A1162576C3BC9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/news-light.webp.json",
+    "Hash": "1DE07BB57DC4DFF48BA444FED6BE9C2B78FFAE73D37C4E6080ACEC48FA15B813",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-dark.webp",
+    "Hash": "EC1875EE9450381FD9868A85827477019F1A88D994C3B6F1E03185EF8B1D3201",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-dark.webp.json",
+    "Hash": "C3B9090D9FF2C8033867E68420FC5D2178B8C81637B9C9DC7AA2CBCA09D667EA",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-light.webp",
+    "Hash": "748C35A25696EFBACB533D83B41B2D87C001B37B2C9DB5D70959F1D0C9F5A652",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/original-light.webp.json",
+    "Hash": "21D9073F23958B083BA273C0902C761772C7954D27CB2A66A0361B4820E46A60",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-dark.webp",
+    "Hash": "B29D197FDB900273FA7FE207A7308CA43005A6438AAD85155F5D3572DB73ED67",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-dark.webp.json",
+    "Hash": "0B2E2F9346EF92747FD95035EBF65492DCB56605D51EEF8636723E4D7DAA1C06",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-light.webp",
+    "Hash": "38587E9E573E30DC3FCA13C00383191E2ADD51A6A11617B0855DD68F6BFD7E48",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/research-light.webp.json",
+    "Hash": "3F0115C7B2927BD253AA271E5AC4B37B01E5F593A5D2AEB20D2CAAAB7670C0A0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-dark.webp",
+    "Hash": "58EBCC57E7E7F3790EFC0CB0A7D5D0917EFDDC6D360F81635A1C5B9B0D81EF80",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-dark.webp.json",
+    "Hash": "3E53D977C33DFDA347804FAD0B355BBAD46E548FA816DC3F0B2856E6A7167067",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-light.webp",
+    "Hash": "84EC24D7E1093C789F3F157A0AA83A7BC9BF99210012573117A2CB49C67D08FF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/saved-searches-light.webp.json",
+    "Hash": "35107899C2FE1FFF3E80677736DBA6937DFF2F3A0183C885A28FB434B563F884",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-dark.webp",
+    "Hash": "7DC9B1B3065488A6CF26E50ED53D0DFB7513CC4417205F6C2016D772CCCCF86E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-dark.webp.json",
+    "Hash": "43B471219593BF0E6400ED2C349EA4D80A0D40180423F635797DC67DFFD03C27",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-light.webp",
+    "Hash": "67AAFD29DCA2EE928286722356D9F14FEF5181AF1B298FC20CAE49C008AAB6EF",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/scope-light.webp.json",
+    "Hash": "6E76C1FBE88C71B338B89B09BA7AE420E9F10281B1A317E43E952DAC1618842D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-dark.webp",
+    "Hash": "7F7F94A573A3BE412E3F749B2FAF50B21191DE144E692ECE4B92F42A2EEDF079",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-dark.webp.json",
+    "Hash": "50CFBC643D445C0A5132EB71AEAD7D303FCFC7538064607A1838F6F1E0119FC6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-light.webp",
+    "Hash": "6DDF2DD87B17D53D9461FEC087B6126EA422EAFCB61383B3AB3CB34984D0D4F0",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/search-light.webp.json",
+    "Hash": "B32FBB0D99D30282C7F78F289686F546EA1FCC95FD293D904E12C13E9846E977",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-dark.webp",
+    "Hash": "206E8896ABE11411BE4AEB3C6CC298E9B3E6C5B201D8383174F53270ABEDD47E",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-dark.webp.json",
+    "Hash": "AB766C9BE5C36AE489EDF06CE4DABD188BE94FAF43E8DDB4899662F47D431A69",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-light.webp",
+    "Hash": "C8FDB71D8EB28A5F827DAAB39FCBB5C98150B3C8F3C6568ADDA0023353AE5B39",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/semantic-search-light.webp.json",
+    "Hash": "A30B9D278B86C6DC2FAE44B54DE43C0D008BBB009EFC1F1458DE4A29D14CFAC6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-dark.webp",
+    "Hash": "7051BF3CF216A7028229D296F3FDD95E2B691D4B08A766E04E6A5D31B325C114",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-dark.webp.json",
+    "Hash": "D3D30C81828E246CA9D4200E8E82D41610014BB428E18596DE644EFB95BAE6C9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-light.webp",
+    "Hash": "89B07688B6B01C8C73FD1BCEE51BAABAE088F9A9622FB24F028F2FBFD77CC4E6",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/source-check-light.webp.json",
+    "Hash": "4E011AE62E7F3B667BAD731A29BCDB61B88FD1E22396BCE89D7FBDEDD5935F5D",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-dark.webp",
+    "Hash": "F6A16AFABFEC68A4812B450C647B10889089975F24CEC9E5A28BFB193493C8AE",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-dark.webp.json",
+    "Hash": "7014E9DAFBCF15D615F1E9DCAAF0FA0FEE58B4AA16E818668CAC00D984401B49",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-light.webp",
+    "Hash": "0C0FA70935053DA69AB9D1531EA13073118D6E172E0FEBB84C6A70E2B8C8B7BD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/summary-light.webp.json",
+    "Hash": "3DCEFA102FF557F6C90AF39B20906B3C7C76D903ABAF97C1DD7C99EB9C83A2C9",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-dark.webp",
+    "Hash": "4F2A27210E4B326952A6FF52DD6668E9CBD9A00E29C768B8BC5673249D5D9A43",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-dark.webp.json",
+    "Hash": "039D2BCB37BF47686549BA3D763DD5CFEB6334DBB24953A9E468E3FFA774906B",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-light.webp",
+    "Hash": "0651D8E12602426968C7BF8AF72E9D6CCAB9969A7458A98DB33DFA2328B7B447",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/taxonomy-light.webp.json",
+    "Hash": "F10489EA33348635F76D3FDCE173FFFABF7B540C64CF430E076E2C339C89F6B5",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-dark.webp",
+    "Hash": "D0213C46886CB18ACA37A0159779A92105421FC187F65293F8EC59BD9BE776AD",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-dark.webp.json",
+    "Hash": "8AA07A2B27369B9A373AC1FC86CE053F6B571776C40BF7D5C70C401D0B20C8D7",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-light.webp",
+    "Hash": "7297C221D04F15586CD56CA6ABF54E2273CE13A6A2726AFDC6488DA12D3FB746",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/assets/legal-codex-stickers/tribunal-light.webp.json",
+    "Hash": "9E8D7280DC234FA9363FC6BF122D42E8857A57E272A636C52639D13EE3EC4533",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/fonts/codex-serif-tc-ui.woff2",
+    "Hash": "6BB8E0C48932483C9B93FE1E2077FEB9022711D2E11776D5D70C4EE496A8FF9F",
+    "Unchanged": true
+  },
+  {
+    "Path": "frontend/public/fonts/NotoSerifTC-OFL.txt",
+    "Hash": "5E0DA210FB04058A8C0087985D2D456B931C2579811A49655721D3CF0C36B6D6",
+    "Unchanged": true
+  }
+]

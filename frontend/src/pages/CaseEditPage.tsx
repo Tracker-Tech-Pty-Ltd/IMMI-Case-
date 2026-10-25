@@ -69,6 +69,9 @@ const EDITABLE_FIELDS = [
 function buildInitialForm(caseData: ImmigrationCase): Record<string, string> {
   const initial: Record<string, string> = {};
   for (const f of EDITABLE_FIELDS) {
+    // Public catalog responses deliberately withhold private annotations.
+    // Absence must stay absent so an unrelated edit cannot erase stored notes.
+    if (f === "user_notes" && !Object.hasOwn(caseData, f)) continue;
     initial[f] = String(caseData[f as keyof ImmigrationCase] ?? "");
   }
   return initial;
@@ -368,14 +371,14 @@ export function CaseEditPage() {
                 onChange={(v) => updateField("tags", v)}
                 placeholder={t("cases.tags_placeholder")}
               />
-              <div className="mt-4">
+              {Object.hasOwn(baseForm, "user_notes") && <div className="mt-4">
                 <TextareaField
                   label={t("case_detail.notes")}
                   value={form.user_notes}
                   onChange={(v) => updateField("user_notes", v)}
                   rows={8}
                 />
-              </div>
+              </div>}
             </div>
             {mutationsDisabled && <CaseMutationsDisabledNotice />}
             <div className="flex gap-2">

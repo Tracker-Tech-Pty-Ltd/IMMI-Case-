@@ -10,7 +10,15 @@ vi.mock("../storage/pipeline_coordinator.js", () => ({
   splitFtsChunks: (text) => [text],
 }));
 
-import worker from "../cloudflare-native.js";
+import worker, { CaseMutationDO } from "../cloudflare-native.js";
+
+const coordinators = new Map();
+vi.mock("../case-api/mutation_namespace.js", () => ({
+  getCaseMutationStub: (_env, id) => {
+    if (!coordinators.has(id)) coordinators.set(id, new CaseMutationDO({}, {}));
+    return coordinators.get(id);
+  },
+}));
 
 function stores() {
   return {
@@ -25,8 +33,12 @@ function stores() {
       deleteVerified: vi.fn(async () => undefined),
     },
     caseStore: {
-      getCase: vi.fn(async () => ({ case_id: "0123456789ab", title: "Example", citation: "[2026] FCA 1", court_code: "FCA", year: 2026, source: "austlii", visa_subclass: "482" })),
-      markSemanticReady: vi.fn(async () => undefined),
+      getCase: vi.fn(async (id) => ({
+        case_id: id, title: "Example", citation: "[2026] FCA 1", court_code: "FCA", year: 2026,
+        source: "austlii", visa_subclass: "482", semantic_ready: 0, vector_mutation_id: "pending:version-1",
+        content_key: `cases/${id}/source/${"a".repeat(64)}.txt`, content_sha256: "a".repeat(64), content_size: 20,
+      })),
+      markSemanticReady: vi.fn(async () => true),
       rebuildAggregates: vi.fn(async () => undefined),
     },
     semanticIndex: {
@@ -40,7 +52,7 @@ function stores() {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); coordinators.clear(); });
 
 describe("Cloudflare-native case mutation queue", () => {
   it("records a case mutation dead-letter payload in R2 and Ops D1", async () => {
@@ -76,9 +88,9 @@ describe("Cloudflare-native case mutation queue", () => {
       ack: vi.fn(), retry: vi.fn(),
     };
     await worker.queue({ messages: [message] }, { IMMI_STORAGE_MODE: "cloudflare" });
-    expect(current.objectStore.getVerifiedText).toHaveBeenCalledWith(expect.objectContaining({ contentType: "text/plain; charset=utf-8" }));
+    expect(current.objectStore.getVerifiedText).toHaveBeenCalledWith(expect.objectContaining({ contentType: "text/plain; charset=utf-8" }), { maxBytes: 16 * 1024 * 1024 });
     expect(current.semanticIndex.upsertCase).toHaveBeenCalledWith("0123456789ab", expect.any(Array), expect.objectContaining({ court_code: "FCA", year: 2026 }));
-    expect(current.caseStore.markSemanticReady).toHaveBeenCalledWith("0123456789ab", "mutation-1");
+    expect(current.caseStore.markSemanticReady).toHaveBeenCalledWith("0123456789ab", "mutation-1", expect.objectContaining({ vector_mutation_id: "pending:version-1" }));
     expect(current.caseStore.rebuildAggregates).toHaveBeenCalledOnce();
     expect(message.ack).toHaveBeenCalledOnce();
     expect(message.retry).not.toHaveBeenCalled();
@@ -133,6 +145,7 @@ describe("Cloudflare-native case mutation queue", () => {
 
   it("deletes a case source only through its validated R2 pointer", async () => {
     const current = stores();
+    current.caseStore.getCase.mockResolvedValue(null);
     mockCreateStores.mockReturnValue(current);
     const message = {
       body: {
@@ -156,6 +169,11 @@ describe("Cloudflare-native case mutation queue", () => {
 
   it("isolates a poison message from the rest of its batch", async () => {
     const current = stores();
+    const readCase = current.caseStore.getCase.getMockImplementation();
+    current.caseStore.getCase.mockImplementation(async (id) => ({
+      ...await readCase(id),
+      ...(id === "0123456789ad" ? { content_key: "poison" } : {}),
+    }));
     current.objectStore.getVerifiedText = vi.fn(async ({ key }) => {
       if (key === "poison") throw new Error("checksum mismatch");
       return "canonical case text";

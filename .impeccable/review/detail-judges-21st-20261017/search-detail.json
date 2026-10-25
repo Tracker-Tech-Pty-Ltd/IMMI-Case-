@@ -1,0 +1,26 @@
+[
+  {
+    "type": "component",
+    "id": 3903,
+    "name": "Tabs",
+    "description": "Display tab content.",
+    "previewUrl": "https://cdn.21st.dev/user_2uAqrF8oLIpxBVD9ZqYRYLfhKZ1/tabs-1/secondary/preview.1786987763406.webp",
+    "videoUrl": "https://cdn.21st.dev/user_2uAqrF8oLIpxBVD9ZqYRYLfhKZ1/tabs-1/secondary/video.1786987754699.mp4",
+    "author": "shugar",
+    "authorImage": "https://img.clerk.com/eyJ0eXBlIjoicHJveHkiLCJzcmMiOiJodHRwczovL2ltYWdlcy5jbGVyay5kZXYvb2F1dGhfZ2l0aHViL2ltZ18ydUFxckNKVkZJUFpGMDQ1cUQ0NnBHeTh0VDIifQ",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/shugar/tabs-1?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@shugar/components/tabs-1"
+  },
+  {
+    "type": "component",
+    "id": 8248,
+    "name": "Project Detail View",
+    "description": "Project Detail View\nA comprehensive view component designed to display the details of a project or a complex task. It includes sections for status, assignees, dates, tags, description, attachments, and a detailed task list. The component is built to be highly reusable and is styled using shadcn/ui theme variables for seamless light and dark mode support. It incorporates animations with framer-motion for a more dynamic user experience.",
+    "previewUrl": "https://cdn.21st.dev/kavikatiyar/project-detail-view/default/preview.1759027797164.png",
+    "videoUrl": "https://cdn.21st.dev/kavikatiyar/project-detail-view/default/video.1759027797164.mp4",
+    "author": "kavikatiyar",
+    "authorImage": "https://vucvdpamtrjkzmubwlts.supabase.co/storage/v1/object/public/users/user_32hbh6QoSVv3IJTJfaQWBLHRl6N/avatar.jpeg",
+    "installCommand": "npx shadcn@latest add \"https://21st.dev/r/kavikatiyar/project-detail-view?api_key=$API_KEY_21ST\"",
+    "url": "https://21st.dev/@kavikatiyar/components/project-detail-view"
+  }
+]

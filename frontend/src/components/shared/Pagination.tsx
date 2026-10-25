@@ -27,7 +27,7 @@ export function Pagination({
   const pages = getVisiblePages(currentPage, totalPages);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
+    <nav aria-label={t("pagination.navigation", { defaultValue: "Pagination" })} className="codex-pagination flex flex-wrap items-center justify-between gap-2 font-data">
       <p
         role="status"
         aria-live="polite"
@@ -35,12 +35,12 @@ export function Pagination({
       >
         {t("pagination.showing", { start, end, total: totalItems })}
       </p>
-      <div className="flex items-center gap-1">
+      <div className="flex max-w-full flex-wrap items-center gap-1">
         <button
           type="button"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
-          className="rounded-md border border-border p-1.5 text-muted-text hover:bg-surface disabled:opacity-40"
+          className="codex-icon-button rounded-md border border-border text-muted-text hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={t("pagination.previous_page", {
             defaultValue: "Go to previous page",
           })}
@@ -64,9 +64,9 @@ export function Pagination({
               type="button"
               onClick={() => onPageChange(p as number)}
               className={cn(
-                "min-w-[32px] rounded-md px-2 py-1.5 text-sm",
+                "codex-icon-button rounded-md px-2 text-sm transition-colors",
                 p === currentPage
-                  ? "bg-accent text-white font-medium"
+                  ? "bg-accent text-on-solid font-medium"
                   : "text-muted-text hover:bg-surface",
               )}
               aria-label={t("pagination.page_number", {
@@ -83,7 +83,7 @@ export function Pagination({
           type="button"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
-          className="rounded-md border border-border p-1.5 text-muted-text hover:bg-surface disabled:opacity-40"
+          className="codex-icon-button rounded-md border border-border text-muted-text hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
           aria-label={t("pagination.next_page", {
             defaultValue: "Go to next page",
           })}
@@ -94,7 +94,7 @@ export function Pagination({
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-    </div>
+    </nav>
   );
 }
 

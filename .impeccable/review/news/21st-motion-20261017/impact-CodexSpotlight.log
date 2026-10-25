@@ -1,0 +1,11 @@
+
+  GitNexus Impact (1.6.12)
+{
+  "error": "Target 'CodexSpotlight' not found",
+  "target": {
+    "name": "CodexSpotlight"
+  },
+  "direction": "upstream",
+  "impactedCount": null,
+  "risk": "UNKNOWN"
+}

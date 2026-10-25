@@ -7,16 +7,10 @@ import logging
 from datetime import datetime
 
 from .models import ImmigrationCase
-from .storage import CASE_FIELDS, TOP_VISA_SUBCLASS_LIMIT
+from .storage import ALLOWED_UPDATE_FIELDS, CASE_FIELDS, TOP_VISA_SUBCLASS_LIMIT
 
 logger = logging.getLogger(__name__)
 
-# Fields that can be updated via the web interface (CWE-915 prevention).
-ALLOWED_UPDATE_FIELDS = frozenset({
-    "citation", "title", "court", "court_code", "date", "year", "url",
-    "judges", "catchwords", "outcome", "visa_type", "legislation",
-    "text_snippet", "user_notes", "tags", "case_nature", "legal_concepts",
-})
 ALLOWED_SORT_COLUMNS = frozenset({
     "year", "date", "title", "court", "citation", "outcome",
     "visa_subclass_number", "applicant_name", "hearing_date", "case_id",

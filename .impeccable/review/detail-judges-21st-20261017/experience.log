@@ -1,0 +1,142 @@
+.F..F..F..F..                                                            [100%]
+=================================== FAILURES ===================================
+_ TestCodexDetailExperience.test_theme_layout_and_keyboard[chromium-desktop-light-judges] _
+tests/e2e/react/test_react_codex_detail_experience.py:37: in test_theme_layout_and_keyboard
+    expect(page.locator(".codex-judge-results")).to_contain_text("Judge Taylor")
+E   AssertionError: Locator expected to contain text 'Judge Taylor'
+E   Actual value: Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA- 
+E   Call log:
+E     - Expect "to_contain_text" locator(".codex-judge-results") with timeout 5000ms
+E     - waiting for locator(".codex-judge-results")
+E       5 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "查無符合篩選條件之法官。查無符合目前篩選條件之法官。清除篩選條件"
+E       9 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA-"
+E   
+E   Aria snapshot:
+E   - table:
+E     - rowgroup:
+E       - row "比較 法官／成員 審理案件數 核准率 在職期間 法院 主要簽證子類別":
+E         - columnheader "比較"
+E         - columnheader "法官／成員"
+E         - columnheader "審理案件數"
+E         - columnheader "核准率"
+E         - columnheader "在職期間"
+E         - columnheader "法院"
+E         - columnheader "主要簽證子類別"
+E     - rowgroup:
+E       - row "Judge Suzanne Jones 法官／成員":
+E         - cell "Compare Judge Suzanne Jones":
+E           - checkbox "Compare Judge Suzanne Jones"
+E         - cell "Judge Suzanne Jones"
+E         - cell "1"
+E         - cell "0.0%"
+E         - cell "2024 – 2024"
+E         - cell "AATA"
+E         - cell "-"
+E       - row "Judge Stewart Brown 法官／成員":
+E         - cell "Compare Judge Stewart Brown":
+E           - checkbox "Compare Judge Stewart Brown"
+E         - cell "Judge Stewart Brown"
+E         - cell "1"
+E         - cell "0.0%"
+E         - cell "2023 – 2023"
+E         - cell "FCA"
+E         - cell "-"
+_ TestCodexDetailExperience.test_theme_layout_and_keyboard[chromium-desktop-dark-judges] _
+tests/e2e/react/test_react_codex_detail_experience.py:37: in test_theme_layout_and_keyboard
+    expect(page.locator(".codex-judge-results")).to_contain_text("Judge Taylor")
+E   AssertionError: Locator expected to contain text 'Judge Taylor'
+E   Actual value: Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA- 
+E   Call log:
+E     - Expect "to_contain_text" locator(".codex-judge-results") with timeout 5000ms
+E     - waiting for locator(".codex-judge-results")
+E       5 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "查無符合篩選條件之法官。查無符合目前篩選條件之法官。清除篩選條件"
+E       9 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA-"
+E   
+E   Aria snapshot:
+E   - table:
+E     - rowgroup:
+E       - row "比較 法官／成員 審理案件數 核准率 在職期間 法院 主要簽證子類別":
+E         - columnheader "比較"
+E         - columnheader "法官／成員"
+E         - columnheader "審理案件數"
+E         - columnheader "核准率"
+E         - columnheader "在職期間"
+E         - columnheader "法院"
+E         - columnheader "主要簽證子類別"
+E     - rowgroup:
+E       - row "Judge Suzanne Jones 法官／成員":
+E         - cell "Compare Judge Suzanne Jones":
+E           - checkbox "Compare Judge Suzanne Jones"
+E         - cell "Judge Suzanne Jones"
+E         - cell "1"
+E         - cell "0.0%"
+E         - cell "2024 – 2024"
+E         - cell "AATA"
+E         - cell "-"
+E       - row "Judge Stewart Brown 法官／成員":
+E         - cell "Compare Judge Stewart Brown":
+E           - checkbox "Compare Judge Stewart Brown"
+E         - cell "Judge Stewart Brown"
+E         - cell "1"
+E         - cell "0.0%"
+E         - cell "2023 – 2023"
+E         - cell "FCA"
+E         - cell "-"
+_ TestCodexDetailExperience.test_theme_layout_and_keyboard[chromium-mobile-light-judges] _
+tests/e2e/react/test_react_codex_detail_experience.py:37: in test_theme_layout_and_keyboard
+    expect(page.locator(".codex-judge-results")).to_contain_text("Judge Taylor")
+E   AssertionError: Locator expected to contain text 'Judge Taylor'
+E   Actual value: Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA- 
+E   Call log:
+E     - Expect "to_contain_text" locator(".codex-judge-results") with timeout 5000ms
+E     - waiting for locator(".codex-judge-results")
+E       5 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "查無符合篩選條件之法官。查無符合目前篩選條件之法官。清除篩選條件"
+E       9 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA-"
+E   
+E   Aria snapshot:
+E   - paragraph: Judge Suzanne Jones
+E   - paragraph: AATA · 2024–2024
+E   - paragraph: "1"
+E   - paragraph: 審理案件數
+E   - text: 0.0%
+E   - paragraph: Judge Stewart Brown
+E   - paragraph: FCA · 2023–2023
+E   - paragraph: "1"
+E   - paragraph: 審理案件數
+E   - text: 0.0%
+_ TestCodexDetailExperience.test_theme_layout_and_keyboard[chromium-mobile-dark-judges] _
+tests/e2e/react/test_react_codex_detail_experience.py:37: in test_theme_layout_and_keyboard
+    expect(page.locator(".codex-judge-results")).to_contain_text("Judge Taylor")
+E   AssertionError: Locator expected to contain text 'Judge Taylor'
+E   Actual value: Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA- 
+E   Call log:
+E     - Expect "to_contain_text" locator(".codex-judge-results") with timeout 5000ms
+E     - waiting for locator(".codex-judge-results")
+E       5 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "查無符合篩選條件之法官。查無符合目前篩選條件之法官。清除篩選條件"
+E       9 × locator resolved to <div class="codex-judge-results">…</div>
+E         - unexpected value "Judge Suzanne JonesAATA · 2024–20241審理案件數0.0%Judge Stewart BrownFCA · 2023–20231審理案件數0.0%比較法官／成員審理案件數核准率在職期間法院主要簽證子類別Judge Suzanne Jones10.0%2024 – 2024AATA-Judge Stewart Brown10.0%2023 – 2023FCA-"
+E   
+E   Aria snapshot:
+E   - paragraph: Judge Suzanne Jones
+E   - paragraph: AATA · 2024–2024
+E   - paragraph: "1"
+E   - paragraph: 審理案件數
+E   - text: 0.0%
+E   - paragraph: Judge Stewart Brown
+E   - paragraph: FCA · 2023–2023
+E   - paragraph: "1"
+E   - paragraph: 審理案件數
+E   - text: 0.0%
+=========================== short test summary info ============================
+FAILED tests/e2e/react/test_react_codex_detail_experience.py::TestCodexDetailExperience::test_theme_layout_and_keyboard[chromium-desktop-light-judges]
+FAILED tests/e2e/react/test_react_codex_detail_experience.py::TestCodexDetailExperience::test_theme_layout_and_keyboard[chromium-desktop-dark-judges]
+FAILED tests/e2e/react/test_react_codex_detail_experience.py::TestCodexDetailExperience::test_theme_layout_and_keyboard[chromium-mobile-light-judges]
+FAILED tests/e2e/react/test_react_codex_detail_experience.py::TestCodexDetailExperience::test_theme_layout_and_keyboard[chromium-mobile-dark-judges]
+4 failed, 9 passed in 43.52s

@@ -1,6 +1,8 @@
 # Architecture (Production)
 
 **Last verified**: 2026-08-23
+
+**Local source review**: 2026-10-26. 本次本機整合未部署，也未重新查核正式服務；審查與測試範圍見 [整合紀錄](reviews/2026-10-26-worktree-integration.md)。目前程式新增 `CASE_MUTATION_COORDINATOR`／`CaseMutationDO`，同一案件的寫入與索引共用協調器；發布設定必須包含對應 SQLite migration。
 **Source of truth for**: how a request actually flows through IMMI-Case
 in production.
 
@@ -32,7 +34,7 @@ in production.
                               │ D1 (×3)  │ │   R2   │ │Vectorize│ │ Durable Objects│
                               │ catalog/ │ │ immi-  │ │ case-   │ │ AuthNonce,     │
                               │ account/ │ │content │ │ vectors │ │ CouncilSessionDO│
-                              │ ops      │ │        │ │         │ │                │
+                              │ ops      │ │        │ │         │ │ CaseMutationDO │
                               └──────────┘ └────────┘ └────────┘ └───────────────┘
 ```
 
@@ -45,7 +47,8 @@ in production.
   (`@cf/qwen/qwen3-embedding-0.6b`, 1024-dim) for semantic/related-case
   search.
 - **Writes** (`POST/PUT/DELETE /api/v1/cases*`): handled **in the Worker
-  itself** by `dispatchCloudflareCaseMutation`, gated by
+  itself** by `dispatchCloudflareCaseMutation`, serialized per case by
+  `CaseMutationDO` (`CASE_MUTATION_COORDINATOR`), gated by
   `IMMI_CASE_MUTATIONS_ENABLED` (fail-closed default `"false"`). Queued
   through `CASE_MUTATION_QUEUE` with a dead-letter queue
   (`immi-case-mutation-dlq`).

@@ -1,0 +1,192 @@
+{
+  "reviewedAt": "2026-10-16",
+  "sources": [
+    {
+      "id": "home-affairs",
+      "name": {
+        "en": "Home Affairs ministerial releases",
+        "zh-TW": "內政部部長新聞稿"
+      },
+      "url": "https://minister.homeaffairs.gov.au/Pages/Results.aspx"
+    },
+    {
+      "id": "art",
+      "name": {
+        "en": "Administrative Review Tribunal (ART)",
+        "zh-TW": "行政覆核審裁處（ART）"
+      },
+      "url": "https://www.art.gov.au/about/news-and-updates"
+    },
+    {
+      "id": "fcfcoa",
+      "name": {
+        "en": "Federal Circuit and Family Court (FCFCOA)",
+        "zh-TW": "聯邦巡迴及家事法院（FCFCOA）"
+      },
+      "url": "https://www.fcfcoa.gov.au/news-and-media-centre"
+    }
+  ],
+  "items": [
+    {
+      "id": "fcfcoa-language-access-2026",
+      "category": "courts",
+      "source": "fcfcoa",
+      "publishedAt": "2026-10-15",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.fcfcoa.gov.au/news-and-media-centre/media-releases/mr151026",
+      "content": {
+        "en": {
+          "title": "Court shares language access and inclusion initiatives",
+          "summary": "The Courts describe their FECCA conference contributions on language access, inclusion, and the intersection of migration and family violence.",
+          "details": "The announcement links to Migration Hubs, translated migration information and other access-to-justice resources. This is a court service announcement, rather than a new migration judgment."
+        },
+        "zh-TW": {
+          "title": "法院介紹語言支援與司法參與措施",
+          "summary": "法院於 FECCA 會議介紹語言支援、文化共融，以及移民與家庭暴力交會議題的司法服務。",
+          "details": "公告列出移民案件服務據點、翻譯資訊等官方資源。這是一則法院服務消息，並非新的移民裁決；可從原文開啟各項服務的連結。"
+        }
+      }
+    },
+    {
+      "id": "student-visa-reforms-2026",
+      "category": "government",
+      "source": "home-affairs",
+      "publishedAt": "2026-10-02",
+      "verifiedAt": "2026-10-16",
+      "featured": true,
+      "url": "https://minister.homeaffairs.gov.au/JulianHill/Pages/student-visa-integrity-reforms-take-effect-today.aspx",
+      "content": {
+        "en": {
+          "title": "Student visa reform announcement",
+          "summary": "A ministerial release covers onshore student applications, family settings and transfers between education providers.",
+          "details": "The announcement describes measures with different conditions and implementation dates, including a proposed transfer stream in 2027. Read the original for the scope and timing of each measure; this summary does not determine an individual applicant's eligibility."
+        },
+        "zh-TW": {
+          "title": "學生簽證改革公告",
+          "summary": "部長新聞稿說明境內學生簽證申請、隨行家屬與教育機構間轉學等安排。",
+          "details": "公告涵蓋適用條件與時程不同的措施，包括 2027 年的轉學簽證安排。請從原文逐項核對範圍與日期；此摘要不判斷個別申請人的資格。"
+        }
+      }
+    },
+    {
+      "id": "migration-policy-announcement-2026",
+      "category": "government",
+      "source": "home-affairs",
+      "publishedAt": "2026-09-17",
+      "verifiedAt": "2026-10-16",
+      "url": "https://minister.homeaffairs.gov.au/TonyBurke/Pages/migration-reform-end-rorts-bring-skills-australia-needs-strong-economy.aspx",
+      "content": {
+        "en": {
+          "title": "Minister outlines the next stage of migration policy",
+          "summary": "The statement outlines migration compliance, skilled visa processing priorities and student visa policy directions.",
+          "details": "The release sets out announced and planned measures across several programs. It should not be read as confirmation that every measure took effect on the publication date. Check the original and the relevant official program information for implementation details."
+        },
+        "zh-TW": {
+          "title": "部長說明下一階段移民政策方向",
+          "summary": "聲明列出移民合規、技能簽證優先處理與學生簽證等政策方向。",
+          "details": "新聞稿包含已宣布及規劃中的多項措施，不代表全部措施都於發布日生效。實施細節須核對原文及相關官方簽證資訊。"
+        }
+      }
+    },
+    {
+      "id": "art-generative-ai-2026",
+      "category": "tribunal",
+      "source": "art",
+      "publishedAt": "2026-08-24",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.art.gov.au/about/news-and-updates/new-generative-ai-practice-direction-available",
+      "content": {
+        "en": {
+          "title": "ART publishes guidance on generative AI in proceedings",
+          "summary": "A new practice direction addresses verification, explanation and disclosure when generative AI is used in Tribunal proceedings.",
+          "details": "The announcement also links to a checklist and updated common-procedures and expert-evidence directions. Read the applicable directions themselves for the requirements; the news summary introduces their scope."
+        },
+        "zh-TW": {
+          "title": "ART 發布審裁程序的生成式 AI 指引",
+          "summary": "新實務指引說明在審裁程序使用生成式 AI 時的核對、說明與揭露要求。",
+          "details": "公告同時提供使用清單，並連結更新後的一般程序與專家證據指引。這份摘要僅介紹公告範圍；具體要求應直接閱讀適用指引。"
+        }
+      }
+    },
+    {
+      "id": "art-fees-july-2026",
+      "category": "tribunal",
+      "source": "art",
+      "publishedAt": "2026-07-01",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.art.gov.au/about/news-and-updates/increased-application-fees-now-apply",
+      "content": {
+        "en": {
+          "title": "ART announces application fee increases",
+          "summary": "The Tribunal states that most review application fees increased from 1 July 2026.",
+          "details": "The announcement says the new fees apply to payments on or after that date, including applications lodged earlier. It links to the fee information and the relevant announcement; check those sources for the amount and any applicable arrangements."
+        },
+        "zh-TW": {
+          "title": "ART 公告申請費用調整",
+          "summary": "審裁處公告指出，多數覆核申請費自 2026 年 7 月 1 日起調整。",
+          "details": "公告說明，新費用適用於該日或之後支付的申請費，包括較早遞交的申請。原文連結至費用資訊及相關公告；金額與適用安排應由該等來源核對。"
+        }
+      }
+    },
+    {
+      "id": "fcfcoa-transcripts-june-2026",
+      "category": "courts",
+      "source": "fcfcoa",
+      "publishedAt": "2026-06-22",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.fcfcoa.gov.au/news-and-media-centre/updates-profession/recording-transcription-220626",
+      "content": {
+        "en": {
+          "title": "Court updates the transcript request process",
+          "summary": "The Courts announce a transcript order form for requests from 22 June 2026.",
+          "details": "The form covers proceedings heard before or after that date. The announcement explains allocation to transcript providers and payment arrangements, with a link to the official order form. No transcript request is submitted through IMMI-Case."
+        },
+        "zh-TW": {
+          "title": "法院更新庭審逐字稿申請方式",
+          "summary": "法院公告自 2026 年 6 月 22 日起，逐字稿申請須使用指定訂購表單。",
+          "details": "表單適用於該日期之前或之後進行的庭審。公告說明供應商分配與付款安排，並提供官方訂購表單連結；IMMI-Case 不會代為提交逐字稿申請。"
+        }
+      }
+    },
+    {
+      "id": "art-student-reviews-june-2026",
+      "category": "tribunal",
+      "source": "art",
+      "publishedAt": "2026-06-01",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.art.gov.au/about/news-and-updates/changes-conduct-student-visa-reviews",
+      "content": {
+        "en": {
+          "title": "ART explains changes to student visa reviews",
+          "summary": "The announcement explains when some student visa refusal reviews are decided without an oral hearing.",
+          "details": "It distinguishes reviews not yet assigned to a member, new applications, and cases with an existing hearing listing notice. The notice states that an already listed hearing will proceed as planned. Consult the original for the conditions and next steps."
+        },
+        "zh-TW": {
+          "title": "ART 說明學生簽證覆核程序變更",
+          "summary": "公告說明部分學生簽證拒簽覆核不舉行口頭聆訊的適用情況。",
+          "details": "原文區分尚未分配審裁成員、新提出的覆核與已收到聆訊排期通知的案件。公告指出，已收到排期通知的聆訊會按原計畫進行；其他條件與後續步驟請核對原文。"
+        }
+      }
+    },
+    {
+      "id": "fcfcoa-ai-practice-direction-2026",
+      "category": "courts",
+      "source": "fcfcoa",
+      "publishedAt": "2026-05-29",
+      "verifiedAt": "2026-10-16",
+      "url": "https://www.fcfcoa.gov.au/news-and-media-centre/updates-profession/pd-ai",
+      "content": {
+        "en": {
+          "title": "Court releases an artificial intelligence practice direction",
+          "summary": "The Courts publish guidance on responsible AI use by parties, lawyers and private experts.",
+          "details": "The announcement emphasises verification, accurate references, responsibility for filed material and confidentiality. It links to the practice direction, which should be read for the applicable requirements."
+        },
+        "zh-TW": {
+          "title": "法院發布人工智慧使用實務指引",
+          "summary": "法院發布當事人、律師及私人專家負責任使用 AI 的指引。",
+          "details": "公告重點包括核對產出、確認引註真實、對提交材料負責及保密要求。原文提供實務指引連結，具體要求應以適用指引核對。"
+        }
+      }
+    }
+  ]
+}

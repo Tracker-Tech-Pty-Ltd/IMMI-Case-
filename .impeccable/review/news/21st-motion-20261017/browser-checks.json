@@ -1,0 +1,98 @@
+{
+  "categoryTransition": [
+    {
+      "matrix": "matrix(1, 0, 0, 1, 149.927, 0)",
+      "ms": 0,
+      "running": 0
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 149.927, 0)",
+      "ms": 17,
+      "running": 0
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 149.927, 0)",
+      "ms": 51,
+      "running": 0
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 149.927, 0)",
+      "ms": 83,
+      "running": 0
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 149.927, 0)",
+      "ms": 116,
+      "running": 1
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 246.835, 0)",
+      "ms": 148,
+      "running": 1
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 309.005, 0)",
+      "ms": 181,
+      "running": 1
+    },
+    {
+      "matrix": "matrix(1, 0, 0, 1, 449.812, 0)",
+      "ms": 1197,
+      "running": 0
+    }
+  ],
+  "spotlight": {
+    "x": "707.7445678710938px",
+    "y": "124.99996948242188px",
+    "ringOpacity": "1",
+    "documentTilt": true
+  },
+  "reduced": {
+    "documentTransform": "none",
+    "matches": true,
+    "railDuration": "0s",
+    "spotlightOpacity": "0"
+  },
+  "mobile": {
+    "height": 2333,
+    "overflow": false,
+    "rail": "matrix(1, 0, 0, 1, 0, 0)",
+    "toolsOpen": false,
+    "width": 390,
+    "category": {
+      "dx": -0.000030517578125,
+      "dy": 0,
+      "overflow": false,
+      "selected": "法院動態",
+      "widthDelta": 0
+    },
+    "summary": {
+      "animation": "codex-news-read-in",
+      "fullText": "閱讀摘要: 法院介紹語言支援與司法參與措施公告列出移民案件服務據點、翻譯資訊等官方資源。這是一則法院服務消息，並非新的移民裁決；可從原文開啟各項服務的連結。來源核對 2026年10月16日",
+      "open": true
+    }
+  },
+  "wide": {
+    "cardOpacity": "0",
+    "fonts": "loaded",
+    "height": 1400,
+    "overflow": false,
+    "root": "20.4489px",
+    "width": 1440
+  },
+  "englishMobile": {
+    "focused": "Court updates",
+    "indicator": "matrix(1, 0, 0, 1, 0, 0)",
+    "overflow": false,
+    "selected": "Court updates",
+    "width": 390,
+    "settled": {
+      "dx": 0,
+      "dy": 0,
+      "overflow": false,
+      "transform": "matrix(1, 0, 0, 1, 0, 51.9878)",
+      "width": 390,
+      "widthDelta": -0.01593017578125
+    }
+  }
+}

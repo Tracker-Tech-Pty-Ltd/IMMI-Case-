@@ -1,0 +1,1 @@
+import{u as a,k as t}from"./query-CVaASUXx.js";import{I as r,J as s,K as u}from"./index-CIoh_dgA.js";function y(e){return a({queryKey:["stats",r(e)],queryFn:()=>s(e),staleTime:3e4,placeholderData:t})}function c(e){return a({queryKey:["trends",r(e)],queryFn:()=>u(e),staleTime:6e4,placeholderData:t})}export{c as a,y as u};

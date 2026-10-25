@@ -1,0 +1,322 @@
+[
+  {
+    "name": "analytics-mobile-dark",
+    "dark": true,
+    "heading": "數據分析",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics",
+    "visibleStickers": [
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/analytics-dark.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/summary-dark.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/courts-dark.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/calendar-dark.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/research-dark.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "analytics-mobile-light",
+    "dark": false,
+    "heading": "數據分析",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics",
+    "visibleStickers": [
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/analytics-light.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/summary-light.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/courts-light.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/calendar-light.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/research-light.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "cases-mobile-light",
+    "dark": false,
+    "heading": "案例",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "visibleStickers": [
+      {
+        "loaded": false,
+        "src": "/assets/legal-codex-stickers/cases-light.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "cases-mobile-dark",
+    "dark": true,
+    "heading": "案例",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "visibleStickers": [
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/cases-dark.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "dashboard-mobile-dark",
+    "dark": true,
+    "heading": "儀表板",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/",
+    "visibleStickers": [
+      {
+        "loaded": false,
+        "src": "/assets/legal-codex-stickers/dashboard-dark.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/cases-dark.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "dashboard-mobile-light",
+    "dark": false,
+    "heading": "儀表板",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/",
+    "visibleStickers": [
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/dashboard-light.webp"
+      },
+      {
+        "loaded": true,
+        "src": "/assets/legal-codex-stickers/cases-light.webp"
+      }
+    ],
+    "width": 390
+  },
+  {
+    "name": "chapter-normal-motion",
+    "focus": "analytics-concepts",
+    "hash": "#analytics-concepts",
+    "overflow": false,
+    "reduced": false,
+    "scrollBehavior": "auto",
+    "top": -147.26681518554688
+  },
+  {
+    "name": "chapter-fixed",
+    "chartVisibility": "visible",
+    "focus": "analytics-concepts",
+    "hash": "#analytics-concepts",
+    "overflow": false,
+    "top": 95.91615295410156
+  },
+  {
+    "name": "dashboard-light",
+    "brokenVisibleImages": 0,
+    "dark": false,
+    "heading": "儀表板",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/",
+    "width": 1547
+  },
+  {
+    "name": "dashboard-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "儀表板",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/",
+    "width": 1547
+  },
+  {
+    "name": "cases-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "案例",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "width": 1547
+  },
+  {
+    "name": "analytics-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "數據分析",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics",
+    "width": 1547
+  },
+  {
+    "name": "chapter-mobile-final",
+    "chapterTop": 143.82644653320312,
+    "focus": "analytics-concepts",
+    "headerBottom": 112.99056243896484,
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "name": "analytics-mobile-chapter",
+    "brokenVisibleImages": 0,
+    "dark": false,
+    "heading": "數據分析",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics#analytics-concepts",
+    "width": 390
+  },
+  {
+    "name": "analytics-mobile-light",
+    "brokenVisibleImages": 0,
+    "dark": false,
+    "heading": "數據分析",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics",
+    "width": 390
+  },
+  {
+    "name": "analytics-mobile-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "數據分析",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/analytics",
+    "width": 390
+  },
+  {
+    "name": "reduced-motion",
+    "contentAnimation": "none",
+    "pressed": "表格檢視",
+    "railTransition": "0s",
+    "reduced": true
+  },
+  {
+    "name": "cases-mobile-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "案例",
+    "height": 845,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "width": 390
+  },
+  {
+    "name": "cases-mobile-english",
+    "group": "Case display",
+    "heading": "Cases",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "name": "analytics-mobile-english",
+    "heading": "Analytics",
+    "links": [
+      {
+        "label": "01Historical outcome overview",
+        "within": true
+      },
+      {
+        "label": "02Outcome Snapshot",
+        "within": true
+      },
+      {
+        "label": "03Flow & Timing Analysis",
+        "within": true
+      },
+      {
+        "label": "04Concept Intelligence",
+        "within": true
+      },
+      {
+        "label": "05Visa Family Analysis",
+        "within": true
+      }
+    ],
+    "nav": "Analysis chapters",
+    "overflow": false,
+    "width": 390
+  },
+  {
+    "name": "cases-light",
+    "brokenVisibleImages": 0,
+    "dark": false,
+    "heading": "案例",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "width": 1547
+  },
+  {
+    "name": "cases-dark",
+    "brokenVisibleImages": 0,
+    "dark": true,
+    "heading": "案例",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/cases",
+    "width": 1547
+  },
+  {
+    "name": "dashboard-light",
+    "brokenVisibleImages": 0,
+    "dark": false,
+    "heading": "儀表板",
+    "height": 1019,
+    "overflow": false,
+    "url": "http://localhost:5194/",
+    "width": 1547
+  },
+  {
+    "name": "final-preview",
+    "dark": false,
+    "heading": "儀表板",
+    "loadedScripts": [
+      "/assets/index-CUU-Dumd.js"
+    ],
+    "metricCards": 4,
+    "overflow": false,
+    "reduced": false,
+    "url": "http://localhost:5194/"
+  }
+]

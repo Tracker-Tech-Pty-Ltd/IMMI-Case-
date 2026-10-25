@@ -1,0 +1,77 @@
+{
+  "links": [
+    {
+      "text": "儀表板",
+      "visible": false
+    },
+    {
+      "text": "案例",
+      "visible": false
+    },
+    {
+      "text": "數據分析",
+      "visible": false
+    },
+    {
+      "text": "法官檔案",
+      "visible": false
+    },
+    {
+      "text": "新聞更新",
+      "visible": false
+    },
+    {
+      "text": "案例收藏",
+      "visible": false
+    },
+    {
+      "text": "已儲存搜尋",
+      "visible": false
+    },
+    {
+      "text": "分類搜尋",
+      "visible": false
+    },
+    {
+      "text": "導引搜尋",
+      "visible": false
+    },
+    {
+      "text": "語意搜尋",
+      "visible": false
+    },
+    {
+      "text": "LLM 移民評議會",
+      "visible": false
+    },
+    {
+      "text": "數據工具",
+      "visible": false
+    },
+    {
+      "text": "法院沿革",
+      "visible": false
+    },
+    {
+      "text": "法律法規",
+      "visible": false
+    },
+    {
+      "text": "資料字典",
+      "visible": false
+    },
+    {
+      "text": "登入",
+      "visible": false
+    },
+    {
+      "text": "回到案例資料庫",
+      "visible": true
+    },
+    {
+      "text": "查看歷史數據",
+      "visible": true
+    }
+  ],
+  "open": true
+}

@@ -6,7 +6,12 @@ import {
   useCallback,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { RotateCcw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { parseAnalyticsScope } from "@/lib/analytics-scope";
+import { ArrowDownRight, RotateCcw } from "lucide-react";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import type { CodexStickerId } from "@/lib/codex-stickers";
+import "@/styles/research-codex.css";
 import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
 import { AdvancedFilterPanel } from "@/components/analytics/AdvancedFilterPanel";
 import { SuccessRateCalculator } from "@/components/analytics/SuccessRateCalculator";
@@ -44,20 +49,28 @@ const DEFAULT_OUTCOME_OPTIONS: AnalyticsFilterOption[] = OUTCOME_TYPES.map(
 export function AnalyticsPage() {
   const { t } = useTranslation();
   const [isPending, startTransition] = useTransition();
-  const [court, setCourt] = useState("");
-  const [yearFrom, setYearFrom] = useState(DEFAULT_YEAR_FROM);
-  const [yearTo, setYearTo] = useState(CURRENT_YEAR);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { court, yearFrom, yearTo } = parseAnalyticsScope(searchParams);
   const [selectedNatures, setSelectedNatures] = useState<string[]>([]);
   const [selectedSubclasses, setSelectedSubclasses] = useState<string[]>([]);
   const [selectedOutcomes, setSelectedOutcomes] = useState<string[]>([]);
 
   const handleCourtChange = (value: string) => {
-    startTransition(() => setCourt(value));
+    startTransition(() => setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set("court", value);
+      else next.delete("court");
+      return next;
+    }));
   };
   const handleYearRangeChange = (from: number, to: number) => {
     startTransition(() => {
-      setYearFrom(from);
-      setYearTo(to);
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("year_from", String(from));
+        next.set("year_to", String(to));
+        return next;
+      });
     });
   };
   const handleNaturesChange = (value: string[]) => {
@@ -71,14 +84,18 @@ export function AnalyticsPage() {
   };
   const resetAllFilters = useCallback(() => {
     startTransition(() => {
-      setCourt("");
-      setYearFrom(DEFAULT_YEAR_FROM);
-      setYearTo(CURRENT_YEAR);
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete("court");
+        next.delete("year_from");
+        next.delete("year_to");
+        return next;
+      });
       setSelectedNatures([]);
       setSelectedSubclasses([]);
       setSelectedOutcomes([]);
     });
-  }, [startTransition]);
+  }, [startTransition, setSearchParams]);
 
   const {
     data: analyticsFilterOptions,
@@ -170,13 +187,14 @@ export function AnalyticsPage() {
 
   return (
     <div
-      className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}
+      className={`codex-research-page codex-analytics space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}
     >
       <section
-        className="space-y-3 rounded-lg border border-border bg-card p-4"
+        className="codex-report-header space-y-3 rounded-lg border border-border bg-card p-4"
         data-testid="analytics-filter-scope"
       >
         <PageHeader
+          icon={<CodexSticker id="analytics" className="codex-page-emblem" />}
           title={t("analytics.title")}
           description={t("analytics.subtitle")}
           meta={<span>{scopeSummary}</span>}
@@ -256,12 +274,35 @@ export function AnalyticsPage() {
         )}
       </section>
 
+      <nav className="codex-chapter-nav" aria-label={t("analytics.sections_label", { defaultValue: "Analysis chapters" })}>
+        {([
+          ["history", t("analytics.quick_estimate_title", { defaultValue: "Historical outcomes" }), "summary"],
+          ["outcomes", t("analytics.outcome_snapshot", { defaultValue: "Outcome analysis" }), "courts"],
+          ["flows", t("analytics.flow_timing_analysis", { defaultValue: "Flow and timing" }), "calendar"],
+          ["concepts", t("analytics.concept_intelligence", { defaultValue: "Legal concepts" }), "research"],
+          ["visas", t("analytics.visa_families", { defaultValue: "Visa families" }), "taxonomy"],
+        ] satisfies [string, string, CodexStickerId][]).map(([id, label, sticker], index) => (
+          <a key={id} href={`#analytics-${id}`} onClick={() => {
+            // Let native hash navigation focus the chapter, then align after
+            // offscreen charts have exchanged estimated heights for real ones.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              document.getElementById(`analytics-${id}`)?.scrollIntoView({ block: "start", behavior: "instant" });
+            }));
+          }}>
+            <span className="codex-chapter-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            <CodexSticker id={sticker} />
+            <span className="codex-chapter-label">{label}</span>
+            <ArrowDownRight className="codex-chapter-arrow" aria-hidden="true" />
+          </a>
+        ))}
+      </nav>
+
       <AnalyticsInsightsPanel
         data={analyticsFilterOptions}
         isLoading={isFilterOptionsLoading}
       />
 
-      <section className="space-y-4" data-testid="analytics-success-estimate">
+      <section id="analytics-history" tabIndex={-1} className="codex-analysis-chapter space-y-4" data-testid="analytics-success-estimate">
         <div>
           <h2 className="font-semibold text-foreground">
             {t("analytics.quick_estimate_title")}
@@ -273,13 +314,13 @@ export function AnalyticsPage() {
         <SuccessRateCalculator filters={filters} />
       </section>
 
-      <OutcomeAnalysisSection filters={filters} />
+      <div id="analytics-outcomes" tabIndex={-1} className="codex-analysis-chapter"><OutcomeAnalysisSection filters={filters} /></div>
 
-      <FlowTrendsSection filters={filters} />
+      <div id="analytics-flows" tabIndex={-1} className="codex-analysis-chapter"><FlowTrendsSection filters={filters} /></div>
 
-      <ConceptIntelligenceSection filters={filters} />
+      <div id="analytics-concepts" tabIndex={-1} className="codex-analysis-chapter"><ConceptIntelligenceSection filters={filters} /></div>
 
-      <VisaFamiliesSection filters={filters} />
+      <div id="analytics-visas" tabIndex={-1} className="codex-analysis-chapter"><VisaFamiliesSection filters={filters} /></div>
     </div>
   );
 }

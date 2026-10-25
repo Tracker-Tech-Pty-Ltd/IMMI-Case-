@@ -147,6 +147,10 @@ export const tokens = {
     "fontFamily": {
       "heading": [
         "Crimson Text",
+        "Codex Serif TC",
+        "PMingLiU",
+        "MingLiU",
+        "Songti TC",
         "Georgia",
         "Times New Roman",
         "serif"
@@ -195,7 +199,8 @@ export const tokens = {
     "4": "1rem",
     "5": "1.25rem",
     "6": "1.5rem",
-    "8": "2rem"
+    "8": "2rem",
+    "11": "2.75rem"
   },
   "radius": {
     "sm": "0.670rem",
@@ -276,6 +281,7 @@ export const spacing = {
   "5": "1.25rem",
   "6": "1.5rem",
   "8": "2rem",
+  "11": "2.75rem",
 } as const
 
 export const radius = {

@@ -34,7 +34,7 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
     debouncedQuery.trim().length >= MIN_SEARCH_CHARS
       ? debouncedQuery.trim()
       : "";
-  const { data, isFetching } = useSearchCases(searchQuery, 8);
+  const { data, isFetching, isError, refetch } = useSearchCases(searchQuery, 8);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -56,12 +56,24 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
 
   return (
     <>
-      <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--color-overlay)]/65 backdrop-blur-sm" />
-      <Dialog.Content className="fixed inset-x-0 top-[15vh] z-50 mx-auto w-full max-w-lg px-4">
+      <Dialog.Overlay className="codex-overlay fixed inset-0 z-50 bg-overlay/65" />
+      <Dialog.Content
+        className="codex-dialog fixed inset-x-0 top-4 z-50 mx-auto w-full max-w-lg px-4 sm:top-[10vh]"
+        onCloseAutoFocus={(event) => {
+          const trigger = document.querySelector<HTMLButtonElement>("[data-global-search-trigger]");
+          if (trigger && trigger.getClientRects().length > 0) {
+            event.preventDefault();
+            trigger.focus();
+          }
+        }}
+      >
         <Dialog.Title className="sr-only">
           {t("common.search_cases", { defaultValue: "Search cases" })}
         </Dialog.Title>
-        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+        <Dialog.Description className="sr-only">
+          {t("common.search_min_chars", { defaultValue: "Enter at least 2 characters to search by title or citation." })}
+        </Dialog.Description>
+        <div className="codex-search-panel overflow-hidden rounded-lg border border-border bg-card shadow-lg">
           {/* Search input */}
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <Search className="h-4 w-4 text-muted-text" />
@@ -72,8 +84,10 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
               role="combobox"
               aria-expanded={isExpanded}
               aria-haspopup="listbox"
-              aria-controls="global-search-listbox"
+              aria-controls={hasResults ? "global-search-listbox" : undefined}
               aria-autocomplete="list"
+              aria-label={t("common.search_cases", { defaultValue: "Search cases" })}
+              aria-busy={isFetching}
               aria-activedescendant={
                 hasResults && cases[clampedActiveIdx]
                   ? `global-search-option-${cases[clampedActiveIdx].case_id}`
@@ -108,8 +122,10 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
               className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-text focus:outline-none"
             />
             <button
+              type="button"
               onClick={onClose}
-              className="text-muted-text hover:text-foreground"
+              className="codex-icon-button shrink-0 rounded-md text-muted-text hover:bg-surface hover:text-foreground"
+              aria-label={t("common.close", { defaultValue: "Close" })}
             >
               <X className="h-4 w-4" />
             </button>
@@ -120,7 +136,7 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
             <ul
               role="listbox"
               id="global-search-listbox"
-              className="max-h-80 overflow-y-auto p-2"
+              className="codex-search-results max-h-80 overflow-y-auto p-2"
             >
               {cases.map((c, idx) => (
                 <li key={c.case_id}>
@@ -155,19 +171,37 @@ function GlobalSearchDialog({ onClose }: GlobalSearchDialogProps) {
             </ul>
           )}
 
-          {searchQuery.length > 0 && !isFetching && cases.length === 0 && (
+          {(isFetching || (resultsAreStale && query.trim().length >= MIN_SEARCH_CHARS)) && (
+            <p role="status" className="px-4 py-3 text-sm text-muted-text">
+              {t("common.search_loading", { defaultValue: "Searching cases…" })}
+            </p>
+          )}
+          {query.trim().length < MIN_SEARCH_CHARS && (
+            <p className="p-4 text-sm text-muted-text">
+              {t("common.search_min_chars", { defaultValue: "Enter at least 2 characters to search by title or citation." })}
+            </p>
+          )}
+          {isError && !isFetching && !resultsAreStale && (
+            <div role="alert" className="space-y-2 p-4 text-sm">
+              <p>{t("common.search_failed", { defaultValue: "Search is temporarily unavailable. Please try again." })}</p>
+              <button type="button" onClick={() => void refetch()} className="codex-control rounded-md border border-border px-3 hover:bg-surface">
+                {t("common.retry", { defaultValue: "Retry" })}
+              </button>
+            </div>
+          )}
+          {searchQuery.length > 0 && !isFetching && !isError && !resultsAreStale && cases.length === 0 && (
             <div className="flex flex-col items-center gap-1 p-6 text-center">
               <p className="text-sm font-medium text-foreground">
                 {t("common.no_results")}
               </p>
               <p className="text-xs text-muted-text">
-                {t("tooltips.navigate_up_down")}
+                {t("common.search_refine_hint", { defaultValue: "Try a shorter title, a surname or a case citation." })}
               </p>
             </div>
           )}
 
           {/* Shortcuts hint */}
-          <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-muted-text">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-light px-4 py-2 font-data text-xs text-muted-text">
             <span>
               {hasResults
                 ? t("tooltips.navigate_up_down")

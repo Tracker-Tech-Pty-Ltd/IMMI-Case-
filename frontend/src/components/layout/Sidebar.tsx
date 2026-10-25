@@ -1,12 +1,15 @@
 import { NavLink, useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { FileText, Bookmark, BookmarkCheck, LogOut, LogIn } from "lucide-react";
+import { Bookmark, BookmarkCheck, LogOut, LogIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { prefetchRoute } from "@/lib/prefetch";
 import { useBookmarks } from "@/hooks/use-bookmarks";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
 import { APP_NAV_GROUPS } from "@/components/layout/nav-config";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { NAV_STICKERS } from "@/lib/codex-stickers";
 
 function RecentBookmarksPanel() {
   const { t } = useTranslation();
@@ -56,26 +59,26 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-border bg-sidebar transition-all duration-200",
+        "codex-sidebar fixed left-0 top-0 z-30 flex h-dvh flex-col border-r border-border-light bg-sidebar",
         collapsed ? "w-16" : "w-56",
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-        <FileText className="h-6 w-6 shrink-0 text-accent" />
+      <div className="codex-brand flex h-14 items-center gap-2 border-b border-border px-4">
+        <CodexSticker id="codex" className="h-8 w-8" />
         {!collapsed && (
-          <span className="font-heading text-lg font-semibold text-foreground">
-            IMMI-Case
-          </span>
+          <div className="min-w-0"><span className="codex-brand-name font-heading text-lg font-semibold text-foreground">IMMI-Case</span>
+            <p className="codex-brand-caption hidden text-xs leading-tight text-secondary-text">{t("news.brand_subtitle", { defaultValue: "Australian Immigration Case Research" })}</p>
+          </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="min-h-0 flex-1 overflow-y-auto p-2 font-data" aria-label={t("common.main_navigation", { defaultValue: "Main navigation" })}>
         {APP_NAV_GROUPS.map((group, gi) => (
           <div key={group.titleKey} className={cn(gi > 0 && "mt-4")}>
             {!collapsed && (
-              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-text">
+              <p className="mb-1 px-3 text-xs font-semibold text-muted-text">
                 {t(group.titleKey)}
               </p>
             )}
@@ -96,13 +99,13 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
                     onFocus={() => prefetchRoute(to)}
                     className={({ isActive }) =>
                       cn(
-                        "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        "codex-nav-link flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                         isActive
                           ? "bg-accent-muted text-accent"
                           : "text-muted-text hover:bg-surface hover:text-foreground",
                       )}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    {NAV_STICKERS[to] ? <CodexSticker id={NAV_STICKERS[to]} className="h-5 w-5" /> : <Icon className="h-4 w-4 shrink-0" />}
                     {!collapsed && (
                       <>
                         <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -144,7 +147,11 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
                   {user.first_name ?? user.username ?? "User"}
                 </span>
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    void logout().catch(() => toast.error(t("auth.logout_failed", {
+                      defaultValue: "Sign out failed. Please try again.",
+                    })));
+                  }}
                   title={t("auth.logout", "Sign out")}
                   className="rounded p-1 text-muted-text hover:bg-surface hover:text-foreground transition-colors"
                   aria-label={t("auth.logout", "Sign out")}

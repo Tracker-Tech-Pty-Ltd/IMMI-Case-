@@ -58,14 +58,14 @@ export default defineConfig({
       // reduces a floor. Together: coverage cannot fall, and the floor cannot be
       // quietly moved to let it.
       //
-      // Measured 2026-08-28: statements 40.23, branches 38.82, functions 32.50,
-      // lines 41.17.
+      // Measured 2026-10-26: statements 42.49, branches 40.97, functions 34.87,
+      // lines 43.48.
       thresholds: {
         autoUpdate: (measured: number) => Math.floor(measured * 10) / 10,
-        lines: 41.1,
-        functions: 32.5,
-        branches: 38.8,
-        statements: 40.2,
+        lines: 43.4,
+        functions: 34.8,
+        branches: 40.9,
+        statements: 42.4,
       },
     },
   },

@@ -190,6 +190,14 @@ def _validate_main(path: Path, errors: list[str]) -> None:
             )
     for binding in ("AUTH_NONCE", "COUNCIL_SESSION"):
         _require_binding(errors, config, "durable_objects.bindings", binding, "main", field="name")
+    coordinator = next(
+        (item for item in _entries(config, "durable_objects.bindings") if item.get("name") == "CASE_MUTATION_COORDINATOR"),
+        None,
+    )
+    if coordinator is None or coordinator.get("class_name") != "CaseMutationDO" or coordinator.get("script_name"):
+        errors.append("main must declare local CASE_MUTATION_COORDINATOR binding with class_name CaseMutationDO")
+    if not any("CaseMutationDO" in item.get("new_sqlite_classes", []) for item in _entries(config, "migrations")):
+        errors.append("main must declare the CaseMutationDO SQLite migration")
     _require_binding(errors, config, "queues.producers", "CASE_MUTATION_QUEUE", "main")
     _require_binding(errors, config, "queues.producers", "PIPELINE_CONTROL_QUEUE", "main")
     _require_queue(errors, config, "immi-case-mutation-queue", "main")

@@ -39,6 +39,13 @@ function stores(log, { claimed = true, completed = false } = {}) {
       embed: vi.fn(async () => { log.push("embed"); return Array(1024).fill(0); }),
       upsertCase: vi.fn(async () => { log.push("vectorize"); return { mutationId: "mutation-1" }; }),
     },
+    coordinator: {
+      putCase: vi.fn(async () => {
+        log.push("r2", "catalog");
+        return { key: `cases/${CASE_ID}/source/${"a".repeat(64)}.txt`, sha256: "a".repeat(64), size: 20, contentType: "text/plain; charset=utf-8" };
+      }),
+      reindexCase: vi.fn(async () => { log.push("vectorize"); return { mutationId: "mutation-1" }; }),
+    },
   };
 }
 
@@ -50,7 +57,7 @@ describe("Cloudflare pipeline storage coordinator", () => {
     const current = stores(log);
     mockCreateStores.mockReturnValue(current);
     const result = await coordinateExtractedCase({
-      env: { IMMI_STORAGE_MODE: "cloudflare" },
+      env: { IMMI_STORAGE_MODE: "cloudflare", CASE_MUTATION_COORDINATOR: { getByName: () => current.coordinator } },
       eventId: EVENT_ID,
       runId: RUN_ID,
       record: { case_id: CASE_ID, court_code: "FCA", year: 2026, visa_subclass: "482" },
@@ -60,15 +67,12 @@ describe("Cloudflare pipeline storage coordinator", () => {
 
     expect(result).toMatchObject({ status: "completed", eventId: EVENT_ID, caseId: CASE_ID });
     expect(log).toEqual([
-      "ensure-run", "claim", "r2", "r2-checkpoint", "catalog", "catalog-checkpoint",
-      "embed", "vectorize", "semantic-ready", "vectorize-checkpoint", "audit",
+      "ensure-run", "claim", "r2", "catalog", "r2-checkpoint", "catalog-checkpoint",
+      "vectorize", "vectorize-checkpoint", "audit",
       "ops-checkpoint", "complete-event",
     ]);
-    expect(current.semanticIndex.upsertCase).toHaveBeenCalledWith(
-      CASE_ID,
-      expect.any(Array),
-      { court_code: "FCA", year: 2026, source: "austlii-pipeline", visa_subclass: "482" },
-    );
+    expect(current.coordinator.reindexCase).toHaveBeenCalledWith(CASE_ID);
+    expect(current.semanticIndex.upsertCase).not.toHaveBeenCalled();
     expect(current.pipelineStore.recordExtractionAudit).toHaveBeenCalledWith(
       expect.objectContaining({ auditId: `${EVENT_ID}:case_nature` }),
     );
@@ -79,7 +83,7 @@ describe("Cloudflare pipeline storage coordinator", () => {
     const current = stores(log, { claimed: false, completed: true });
     mockCreateStores.mockReturnValue(current);
     const result = await coordinateExtractedCase({
-      env: { IMMI_STORAGE_MODE: "cloudflare" },
+      env: { IMMI_STORAGE_MODE: "cloudflare", CASE_MUTATION_COORDINATOR: { getByName: () => current.coordinator } },
       eventId: EVENT_ID,
       runId: RUN_ID,
       record: { case_id: CASE_ID },
@@ -96,7 +100,7 @@ describe("Cloudflare pipeline storage coordinator", () => {
     const current = stores(log, { claimed: false, completed: false });
     mockCreateStores.mockReturnValue(current);
     const result = await coordinateExtractedCase({
-      env: { IMMI_STORAGE_MODE: "cloudflare" },
+      env: { IMMI_STORAGE_MODE: "cloudflare", CASE_MUTATION_COORDINATOR: { getByName: () => current.coordinator } },
       eventId: EVENT_ID,
       runId: RUN_ID,
       record: { case_id: CASE_ID },

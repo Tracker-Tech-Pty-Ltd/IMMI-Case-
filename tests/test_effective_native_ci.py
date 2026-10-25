@@ -30,8 +30,8 @@ def test_ci_and_deploy_use_native_gates_only() -> None:
     assert "check_immi_deploy_target.py" not in deploy
     assert "check_cloudflare_native_target.py" in deploy
     assert "check_immi_activation_evidence.py" in deploy
-    assert '"$runner_temp/immi-native-main.toml"' in deploy
-    assert '"$runner_temp/immi-native-pipeline.toml"' in deploy
+    assert '"$immi_native_main_config"' in deploy
+    assert '"$immi_native_pipeline_config"' in deploy
     assert "wrangler deploy --config" in deploy
     assert "wrangler deploy\"" not in deploy
 

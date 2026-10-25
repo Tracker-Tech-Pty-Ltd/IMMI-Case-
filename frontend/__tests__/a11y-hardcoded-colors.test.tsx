@@ -41,7 +41,6 @@ const KNOWN_HEX_FILES: readonly string[] = [
   "src/components/analytics/MonthlyTrendsChart.tsx",
   "src/components/analytics/OutcomeByCourtChart.tsx",
   "src/components/analytics/OutcomeBySubclassChart.tsx",
-  "src/components/analytics/OutcomeFunnelChart.tsx",
   "src/components/analytics/VisaFamiliesSection.tsx",
   "src/components/dashboard/CourtChart.tsx",
   "src/components/dashboard/CourtSparklineGrid.tsx",
@@ -59,7 +58,6 @@ const KNOWN_HEX_FILES: readonly string[] = [
   "src/lib/court-events.ts",
   "src/pages/CourtLineagePage.tsx",
   "src/pages/DesignTokensPage.tsx",
-  "src/pages/JudgeDetailPage.tsx",
   "src/pages/LlmCouncilPage.tsx",
 ];
 

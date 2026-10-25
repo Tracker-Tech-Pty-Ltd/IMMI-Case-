@@ -1,0 +1,9 @@
+{
+  "error": "Target 'TestCodexDetailExperience' not found",
+  "target": {
+    "name": "TestCodexDetailExperience"
+  },
+  "direction": "upstream",
+  "impactedCount": null,
+  "risk": "UNKNOWN"
+}

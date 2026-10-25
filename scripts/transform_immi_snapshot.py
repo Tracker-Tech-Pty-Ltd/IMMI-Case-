@@ -249,7 +249,7 @@ def transform_cases(snapshot: Path, output: Output, rows: Iterable[dict[str, Any
         key = f"cases/{case_id}/source/{digest}.txt"
         object_path = output.r2 / key
         object_path.parent.mkdir(parents=True, exist_ok=True)
-        object_path.write_text(text, encoding="utf-8")
+        object_path.write_bytes(text.encode("utf-8"))
         created = normalise_timestamp(row.get("created_at"), output.snapshot_time)
         updated = normalise_timestamp(row.get("updated_at"), created)
         represented = optional_string(row.get("is_represented"))
@@ -504,7 +504,7 @@ def transform_judge_bios(output: Output, rows: Iterable[dict[str, Any]]) -> int:
         key = f"judges/{source_hash}/bio/{digest}.json"
         target = output.r2 / key
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(encoded, encoding="utf-8")
+        target.write_bytes(encoded.encode("utf-8"))
         judge_id = sha256_text("judge:" + canonical_name.casefold())[:32]
         output.catalog.execute(
             """
@@ -560,7 +560,7 @@ def transform_legislations(output: Output, source_path: Path | None) -> int:
             key = f"legislations/{law_id}.json"
             target = output.r2 / key
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(encoded, encoding="utf-8")
+            target.write_bytes(encoded.encode("utf-8"))
             manifest.write(canonical_json({"key": key, "sha256": digest, "size": len(encoded.encode("utf-8"))}) + "\n")
             count += 1
     return count
@@ -644,7 +644,7 @@ def transform_council(snapshot: Path, output: Output, tables: dict[str, list[dic
         key = f"council/{required(session.get('tenant_id'), 'session.tenant_id').lower()}/{session_id}/{turn_id}.json"
         target = output.r2 / key
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(encoded, encoding="utf-8")
+        target.write_bytes(encoded.encode("utf-8"))
         account.execute("INSERT INTO council_turns (turn_id,session_id,tenant_id,turn_index,role,payload_key,payload_sha256,payload_size,payload_content_type,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", (turn_id, session_id, required(session.get("tenant_id"), "session.tenant_id").lower(), int(row.get("turn_index") or 0), "user", key, digest, len(encoded.encode("utf-8")), "application/json", normalise_timestamp(row.get("created_at"), output.snapshot_time)))
     account.commit()
     return {"council_sessions": len(sessions), "council_turns": len(tables["council_turns"])}

@@ -1,0 +1,48 @@
+
+  GitNexus Impact (1.6.12)
+{
+  "target": {
+    "id": "Function:tests/e2e/react/react_helpers.py:close_mobile_menu",
+    "name": "close_mobile_menu",
+    "type": "Function",
+    "filePath": "tests/e2e/react/react_helpers.py"
+  },
+  "direction": "upstream",
+  "impactedCount": 1,
+  "risk": "LOW",
+  "riskSharedAxes": "LOW",
+  "riskScale": {
+    "comparableAcrossKinds": true,
+    "unusedAxes": []
+  },
+  "epistemic": "exact",
+  "summary": {
+    "direct": 1,
+    "processes_affected": 0,
+    "modules_affected": 1
+  },
+  "byDepthCounts": {
+    "1": 1
+  },
+  "affected_processes": [],
+  "affected_modules": [
+    {
+      "name": "React",
+      "hits": 1,
+      "impact": "direct"
+    }
+  ],
+  "byDepth": {
+    "1": [
+      {
+        "depth": 1,
+        "id": "Method:tests/e2e/react/test_react_navigation.py:TestMobileDrawer.test_close_mobile_drawer#1",
+        "name": "test_close_mobile_drawer",
+        "filePath": "tests/e2e/react/test_react_navigation.py",
+        "relationType": "CALLS",
+        "confidence": 0.85,
+        "processes": []
+      }
+    ]
+  }
+}

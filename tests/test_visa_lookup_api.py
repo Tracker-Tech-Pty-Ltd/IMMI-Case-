@@ -18,13 +18,14 @@ from immi_case_downloader.models import ImmigrationCase
 
 
 @pytest.fixture
-def api_client():
+def api_client(tmp_path):
     """Create a Flask test client with API enabled."""
-    from immi_case_downloader.web import create_app
+    from immi_case_downloader.web import close_app, create_app
 
-    app = create_app()
+    app = create_app(output_dir=str(tmp_path), backend="csv")
     app.config["TESTING"] = True
-    return app.test_client()
+    yield app.test_client()
+    close_app(app, wait=True)
 
 
 @pytest.fixture

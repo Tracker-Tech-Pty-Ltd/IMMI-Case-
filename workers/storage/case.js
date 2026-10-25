@@ -217,7 +217,7 @@ export class CloudflareCaseStore {
     return this.db.prepare(`
       SELECT ${LEGACY_CASE_PROJECTION},
              c.content_key, c.content_sha256, c.content_size, c.semantic_ready,
-             c.created_at, c.updated_at
+             c.vector_mutation_id, c.created_at, c.updated_at
       FROM cases c WHERE c.case_id = ?
     `).bind(id).first();
   }
@@ -730,8 +730,8 @@ export class CloudflareCaseStore {
         : column === "is_represented" ? (value === null ? null : Number(Boolean(value))) : String(value));
     }
     const now = utcNow();
-    assignments.push("semantic_ready = 0", "vector_mutation_id = NULL", "updated_at = ?");
-    params.push(now, id);
+    assignments.push("semantic_ready = 0", "vector_mutation_id = ?", "updated_at = ?");
+    params.push(`pending:${crypto.randomUUID()}`, now, id);
     const caseUpdate = this.db.prepare(`
       UPDATE cases SET ${assignments.join(", ")} WHERE case_id = ?
     `).bind(...params);
@@ -847,8 +847,8 @@ export class CloudflareCaseStore {
     const updates = current.map((row) => {
       const values = new Set(String(row.tags || "").split(",").map((value) => value.trim()).filter(Boolean));
       values.add(tag.trim());
-      return this.db.prepare("UPDATE cases SET tags = ?, semantic_ready = 0, vector_mutation_id = NULL, updated_at = ? WHERE case_id = ?")
-        .bind([...values].sort().join(", "), utcNow(), row.case_id);
+      return this.db.prepare("UPDATE cases SET tags = ?, semantic_ready = 0, vector_mutation_id = ?, updated_at = ? WHERE case_id = ?")
+        .bind([...values].sort().join(", "), `pending:${crypto.randomUUID()}`, utcNow(), row.case_id);
     });
     if (updates.length) await this.db.batch(updates);
     return updates.length;
@@ -1154,12 +1154,12 @@ export class CloudflareCaseStore {
         representative, source, case_nature, url, catchwords, legislation,
         text_snippet, tags, user_notes, visa_outcome_reason, legal_test_applied,
         last_extraction_run_id, extraction_confidence_json, content_key,
-        content_sha256, content_size, semantic_ready, created_at, updated_at
+        content_sha256, content_size, vector_mutation_id, semantic_ready, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        0, ?, ?
+        ?, 0, ?, ?
       )
       ON CONFLICT(case_id) DO UPDATE SET
         citation=excluded.citation, title=excluded.title, court=excluded.court,
@@ -1178,7 +1178,7 @@ export class CloudflareCaseStore {
         last_extraction_run_id=excluded.last_extraction_run_id,
         extraction_confidence_json=excluded.extraction_confidence_json,
         content_key=excluded.content_key, content_sha256=excluded.content_sha256,
-        content_size=excluded.content_size, semantic_ready=0, vector_mutation_id=NULL,
+        content_size=excluded.content_size, semantic_ready=0, vector_mutation_id=excluded.vector_mutation_id,
         updated_at=excluded.updated_at
     `, [
       metadata.case_id, metadata.citation, metadata.title, metadata.court,
@@ -1191,40 +1191,45 @@ export class CloudflareCaseStore {
       metadata.tags, metadata.user_notes, metadata.visa_outcome_reason,
       metadata.legal_test_applied, metadata.last_extraction_run_id,
       metadata.extraction_confidence_json, pointer.key, pointer.sha256, pointer.size,
-      now, now,
+      `pending:${crypto.randomUUID()}`, now, now,
     ]);
-    await insertCase.run();
-
     // judge_id is a hash of the RAW label, so every spelling variant and
     // every prose fragment becomes a separate judge. See docs/adr/0051-judge-identity.md.
     const judgeLabels = normaliseRelationLabels(record.judges, "judge");
     const conceptLabels = normaliseRelationLabels(record.legal_concepts, "legal concept");
     const judgeStatements = [this.db.prepare(`DELETE FROM case_judges WHERE case_id = ?`).bind(caseId)];
-    for (const label of judgeLabels) {
-      const judgeId = (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32);
+    if (judgeLabels.length) {
+      const entries = await Promise.all(judgeLabels.map(async (label) => ({
+        id: (await sha256Hex(`judge:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32), label,
+      })));
+      const encoded = JSON.stringify(entries);
       judgeStatements.push(
         this.db.prepare(`
           INSERT OR IGNORE INTO judges (judge_id, canonical_name, created_at, updated_at)
-          VALUES (?, ?, ?, ?)
-        `).bind(judgeId, label, now, now),
+          SELECT json_extract(value, '$.id'), json_extract(value, '$.label'), ?, ? FROM json_each(?)
+        `).bind(now, now, encoded),
         this.db.prepare(`
-          INSERT OR IGNORE INTO case_judges (case_id, judge_id) VALUES (?, ?)
-        `).bind(caseId, judgeId),
+          INSERT OR IGNORE INTO case_judges (case_id, judge_id)
+          SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+        `).bind(caseId, encoded),
       );
     }
     const conceptStatements = [this.db.prepare(`DELETE FROM case_concepts WHERE case_id = ?`).bind(caseId)];
-    for (const label of conceptLabels) {
-      const conceptId = (await sha256Hex(`concept:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32);
+    if (conceptLabels.length) {
+      const entries = await Promise.all(conceptLabels.map(async (label) => ({
+        id: (await sha256Hex(`concept:${label.toLocaleLowerCase("en-AU")}`)).hex.slice(0, 32), label,
+      })));
+      const encoded = JSON.stringify(entries);
       conceptStatements.push(
-        this.db.prepare(`INSERT OR IGNORE INTO concepts (concept_id, label) VALUES (?, ?)`)
-          .bind(conceptId, label),
+        this.db.prepare(`INSERT OR IGNORE INTO concepts (concept_id, label)
+          SELECT json_extract(value, '$.id'), json_extract(value, '$.label') FROM json_each(?)`)
+          .bind(encoded),
         this.db.prepare(`
-          INSERT OR IGNORE INTO case_concepts (case_id, concept_id) VALUES (?, ?)
-        `).bind(caseId, conceptId),
+          INSERT OR IGNORE INTO case_concepts (case_id, concept_id)
+          SELECT ?, json_extract(value, '$.id') FROM json_each(?)
+        `).bind(caseId, encoded),
       );
     }
-    await this.db.batch(judgeStatements);
-    await this.db.batch(conceptStatements);
     // A repeatable import must remove stale tail chunks before adding the new
     // canonical text. The delete and ALL replacement inserts ride one D1
     // transaction, so a case that has full text is never observable with zero
@@ -1245,16 +1250,29 @@ export class CloudflareCaseStore {
         status: 400,
       });
     }
-    await this.db.batch(chunkStatements);
+    // Publish metadata, normalized relations and every FTS chunk as one D1
+    // transaction. JSON relation expansion caps this at 47 statements, each
+    // using at most 36 parameters, even at the 100-label relation limits.
+    await this.db.batch([insertCase, ...judgeStatements, ...conceptStatements, ...chunkStatements]);
   }
 
-  async markSemanticReady(caseId, mutationId) {
+  async markSemanticReady(caseId, mutationId, expected) {
     const id = assertCaseId(caseId);
-    await this.db.prepare(`
+    if (!expected || !Object.prototype.hasOwnProperty.call(expected, "vector_mutation_id")) {
+      throw new StorageBoundaryError("Expected case version is required", {
+        code: "case_version_required", status: 500,
+      });
+    }
+    const result = await this.db.prepare(`
       UPDATE cases
       SET semantic_ready = 1, vector_mutation_id = ?, updated_at = ?
-      WHERE case_id = ?
-    `).bind(mutationId, utcNow(), id).run();
+      WHERE case_id = ? AND semantic_ready = 0
+        AND vector_mutation_id IS ? AND content_key IS ? AND content_sha256 IS ?
+    `).bind(
+      mutationId, utcNow(), id,
+      expected.vector_mutation_id, expected.content_key ?? null, expected.content_sha256 ?? null,
+    ).run();
+    return changeCount(result) === 1;
   }
 }
 

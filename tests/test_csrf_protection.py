@@ -4,11 +4,14 @@ from immi_case_downloader.web import create_app
 
 
 @pytest.fixture
-def app():
-    app = create_app()
+def app(tmp_path):
+    from immi_case_downloader.web import close_app
+
+    app = create_app(output_dir=str(tmp_path), backend="csv")
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = True
     yield app
+    close_app(app, wait=True)
     repo = app.config.get("REPO")
     if repo and hasattr(repo, "close"):
         repo.close()

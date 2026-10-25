@@ -21,12 +21,12 @@ export function AppLayout() {
   useKeyboard({ onSearch: handleSearchClick })
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="codex-shell min-h-screen bg-background">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-accent focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-white"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-accent focus:px-3 focus:py-1.5 focus:text-sm focus:font-medium focus:text-on-solid"
       >
-        {t("common.skip_to_content", "Skip to main content")}
+        {t("common.skip_to_content", { defaultValue: "Skip to main content" })}
       </a>
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
@@ -38,12 +38,13 @@ export function AppLayout() {
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Main content */}
-      <div className="lg:pl-56">
+      <div className="codex-shell-main lg:pl-56">
         <Topbar
           onMenuClick={() => setMobileOpen(true)}
+          menuOpen={mobileOpen}
           onSearchClick={handleSearchClick}
         />
-        <main id="main-content" className="mx-auto max-w-7xl p-4 sm:p-6">
+        <main id="main-content" tabIndex={-1} className="codex-main mx-auto min-w-0 max-w-7xl p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

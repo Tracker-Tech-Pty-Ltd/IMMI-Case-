@@ -15,6 +15,7 @@ import { useEffect } from "react";
 import { act, render, renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import "./helpers/auth-lock";
 import { queryClient } from "@/lib/query-client";
 import { useJudgeCompare } from "@/hooks/use-judges";
 

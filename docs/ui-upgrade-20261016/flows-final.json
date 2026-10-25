@@ -1,0 +1,76 @@
+{
+  "drawer": {
+    "expanded": "true",
+    "focusInside": true,
+    "links": 14
+  },
+  "drawerClosed": {
+    "closed": true,
+    "focusRestored": true
+  },
+  "search": {
+    "active": "global-search-option-6c00ba654bcc",
+    "query": "Chen",
+    "results": 1
+  },
+  "searchClosed": {
+    "closed": true,
+    "focusRestored": true
+  },
+  "theme": {
+    "documentWidth": 385,
+    "mode": "",
+    "orbTransition": "0.7s",
+    "width": 391
+  },
+  "reducedMotion": {
+    "drawerAnimation": "codex-fade-in",
+    "matches": true,
+    "orbTransitionProperties": "background-color, box-shadow"
+  },
+  "linkedScope": {
+    "href": "/analytics?court=FCA&year_from=2023&year_to=2024",
+    "result": {
+      "court": [
+        "FCA"
+      ],
+      "note": "依符合條件的 2 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。",
+      "url": "/analytics?court=FCA&year_from=2023&year_to=2024"
+    }
+  },
+  "finalAssets": {
+    "scripts": [
+      "/assets/index-BlxP5qW6.js"
+    ],
+    "styles": [
+      "https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700&display=swap",
+      "/assets/index-D1jAgUkm.css"
+    ]
+  },
+  "finalCopy": [
+    {
+      "documentWidth": 315,
+      "height": 740,
+      "historicalNote": "依符合條件的 2 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。",
+      "width": 321
+    },
+    {
+      "documentWidth": 385,
+      "height": 844,
+      "historicalNote": "依符合條件的 2 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。",
+      "width": 391
+    },
+    {
+      "documentWidth": 838,
+      "height": 391,
+      "historicalNote": "依符合條件的 2 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。",
+      "width": 844
+    },
+    {
+      "documentWidth": 1275,
+      "height": 850,
+      "historicalNote": "依符合條件的 2 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。",
+      "width": 1280
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from immi_case_downloader.repair_workflow import validate_approvals
+from immi_case_downloader.repair_workflow import _case_source_header, validate_approvals
 
 
 TARGET_CITATION = "[2026] FCA 1449"
@@ -24,6 +24,42 @@ TARGET_QUOTE = (
     "[2024] FedCFamC2G 1268"
 )
 PARENT_QUOTE = "Mr Singh applied for a student visa."
+
+
+@pytest.mark.parametrize(
+    ("citation_header", "continuation", "expected"),
+    [
+        ("[2008] FCA", "1724", "[2008] FCA 1724"),
+        ("[2008]", "FCA 761", "[2008] FCA 761"),
+        ("[2005] AATA", "839", "[2005] AATA 839"),
+    ],
+)
+def test_case_source_header_joins_wrapped_citation_number(
+    citation_header, continuation, expected
+):
+    source = (
+        f"Title: Example {expected}\nCitation: {citation_header}\n"
+        f"{continuation}\nURL: https://example.test/case\n"
+        "========================================\nBody text\n"
+    )
+
+    metadata, body, has_separator = _case_source_header(source)
+
+    assert has_separator is True
+    assert metadata["citation"] == expected
+    assert body.strip() == "Body text"
+
+
+def test_case_source_header_does_not_join_metadata_lines_as_citation():
+    source = (
+        "Title: Example [2008] FCA 1724\nCitation: [2008]\n"
+        "Court: FCA\nURL: https://example.test/case\n"
+        "========================================\nBody text\n"
+    )
+
+    metadata, _, _ = _case_source_header(source)
+
+    assert metadata["citation"] == "[2008]"
 
 
 def _source(title: str, citation: str, url: str, body: str) -> str:
@@ -546,6 +582,152 @@ def test_lower_court_linked_visa_approval_rejects_ambiguous_matching_cases(tmp_p
         validate_approvals(tmp_path, [approval])
 
 
+def _dated_lower_court_appeal_fixture(
+    tmp_path, *, quoted_date="2 December 2004", parent_source_date="2 December 2004",
+    parent_uses_judge_date=False, application_for_leave=False, target_mentions_rrt=True,
+):
+    target_citation = "[2005] FCA 580"
+    parent_citation = "[2004] FMCA 1034"
+    target_url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FCA/2005/580.html"
+    parent_url = "https://www.austlii.edu.au/cgi-bin/viewdoc/au/cases/cth/FMCA/2004/1034.html"
+    target_title = (
+        "SZDLU v Minister for Immigration & Multicultural & Indigenous Affairs "
+        "[2005] FCA 580 (27 April 2005)"
+    )
+    parent_title = f"SZDLU v Minister for Immigration [2004] FMCA 1034 ({parent_source_date})"
+    appeal_words = (
+        "This is an application for leave to appeal from a judgment"
+        if application_for_leave else
+        "This is an application for an extension of time to file and serve a notice "
+        "of appeal from a judgment"
+    )
+    target_quote = (
+        f"{appeal_words} of Federal Magistrate Mowbray given on {quoted_date}. "
+        + (
+            "That judgment concerns an application by the applicant for judicial review "
+            "of an adverse decision of the Refugee Review Tribunal."
+            if target_mentions_rrt else
+            "That judgment concerns an application by the applicant for judicial review "
+            "of an adverse administrative decision."
+        )
+    )
+    parent_quote = (
+        "The Tribunal affirmed the decision of the delegate on 3 March 2004 and "
+        "refused to grant a protection visa to the applicant."
+    )
+    data = tmp_path / "downloaded_cases"
+    source_dir = data / "case_texts"
+    source_dir.mkdir(parents=True)
+    target_path = source_dir / "target.txt"
+    parent_path = source_dir / "parent.txt"
+    target_path.write_text(
+        _source(
+            target_title,
+            target_citation,
+            target_url,
+            target_title.split(" (")[0] + "\nREASONS FOR JUDGMENT\n"
+            + target_quote + "\nThe application for leave to appeal is dismissed.",
+        ),
+        encoding="utf-8",
+    )
+    parent_path.write_text(
+        _source(
+            parent_title,
+            parent_citation,
+            parent_url,
+            parent_title.split(" (")[0]
+            + "\nFEDERAL MAGISTRATES COURT OF AUSTRALIA\n"
+            + "Applicant: SZDLU\n"
+            + (
+                "Judgment of: Mowbray FM\n" + parent_source_date + "\n"
+                if parent_uses_judge_date else
+                "Delivered on: " + parent_source_date + "\n"
+                "Judgment of: Mowbray FM\n"
+            )
+            + "Reasons for judgment\n"
+            + "The application concerns an adverse Refugee Review Tribunal decision.\n"
+            + parent_quote,
+        ),
+        encoding="utf-8",
+    )
+
+    conn = sqlite3.connect(data / "cases.db")
+    try:
+        conn.execute(
+            "CREATE TABLE cases (case_id TEXT, citation TEXT, title TEXT, url TEXT, "
+            "full_text_path TEXT, visa_type TEXT, catchwords TEXT, court_code TEXT, "
+            "date TEXT, judges TEXT, applicant_name TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "target-id", target_citation, target_title, target_url,
+                    "downloaded_cases/case_texts/target.txt", "",
+                    "MIGRATION - appeal from judicial review", "FCA",
+                    "27 April 2005", "MADGWICK J", "SZDLU",
+                ),
+                (
+                    "parent-id", parent_citation, parent_title, parent_url,
+                    "downloaded_cases/case_texts/parent.txt", "Protection visa",
+                    "MIGRATION - protection visa", "FMCA", "12 January 2004",
+                    "Mowbray FM", "SZDLU",
+                ),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "case_id": "target-id",
+        "field": "visa_type",
+        "source_path": "downloaded_cases/case_texts/target.txt",
+        "source_sha256": hashlib.sha256(target_path.read_bytes()).hexdigest(),
+        "reviewer": "Codex source-bound linked-case review",
+        "review_note": "The appeal quotes the lower judgment date; the same masked applicant and judge have one matching lower-court source.",
+        "evidence": {
+            "value": "Protection visa",
+            "quote": target_quote,
+            "method": "manual_lower_court_linked_visa_review",
+            "linked_case": {
+                "citation": parent_citation,
+                "source_path": "downloaded_cases/case_texts/parent.txt",
+                "source_sha256": hashlib.sha256(parent_path.read_bytes()).hexdigest(),
+                "url": parent_url,
+                "quote": parent_quote,
+                "source_value": "protection visa",
+            },
+        },
+    }
+
+
+def test_dated_lower_court_linked_visa_approval_checks_source_date(tmp_path):
+    approval = _dated_lower_court_appeal_fixture(tmp_path)
+
+    validate_approvals(tmp_path, [approval])
+
+
+def test_dated_leave_to_appeal_link_accepts_judge_adjacent_parent_date(tmp_path):
+    approval = _dated_lower_court_appeal_fixture(
+        tmp_path,
+        parent_uses_judge_date=True,
+        application_for_leave=True,
+        target_mentions_rrt=False,
+    )
+
+    validate_approvals(tmp_path, [approval])
+
+
+def test_dated_lower_court_linked_visa_approval_rejects_mismatched_parent_date(tmp_path):
+    approval = _dated_lower_court_appeal_fixture(
+        tmp_path, parent_source_date="3 December 2004"
+    )
+
+    with pytest.raises(ValueError, match="quoted judgment date to match the parent source"):
+        validate_approvals(tmp_path, [approval])
+
+
 def _source_quote_review_fixture(
     tmp_path, linked_quote, value, source_value, *, target_title=TARGET_TITLE
 ):
@@ -687,6 +869,50 @@ def test_linked_source_quote_review_uses_matching_court_caption_when_metadata_al
     )
 
     validate_approvals(tmp_path, [approval])
+
+
+def test_linked_source_quote_review_rejects_identity_conflict_without_matching_caption(tmp_path):
+    target_title = (
+        "UH17 v Minister for Immigration and Border Protection "
+        "[2026] FCA 1449 (1 October 2026)"
+    )
+    parent_title = (
+        "CUH17 v Minister for Immigration and Border Protection "
+        "[2024] FedCFamC2G 1268 (22 November 2024)"
+    )
+    approval = _fixture(
+        tmp_path,
+        target_title=target_title,
+        parent_title=parent_title,
+    )
+
+    target_path = tmp_path / approval["source_path"]
+    target_text = target_path.read_text(encoding="utf-8")
+    target_metadata, target_body = target_text.split(
+        "========================================\n", 1
+    )
+    target_body = target_body.replace(
+        "UH17 v Minister for Immigration and Border Protection [2026] FCA 1449\n",
+        "FEDERAL COURT OF AUSTRALIA\n"
+        "WRONG17 v Minister for Immigration and Border Protection [2026] FCA 1449\n",
+        1,
+    )
+    target_quote = (
+        "Application for leave to appeal:\n"
+        "CUH17 v Minister for Immigration and Border Protection\n"
+        "[2024] FedCFamC2G 1268"
+    )
+    target_body = target_body.replace(TARGET_QUOTE, target_quote, 1)
+    target_path.write_text(
+        target_metadata + "========================================\n" + target_body,
+        encoding="utf-8",
+    )
+    approval["source_sha256"] = hashlib.sha256(target_path.read_bytes()).hexdigest()
+    approval["evidence"]["method"] = "manual_linked_case_source_quote_review"
+    approval["evidence"]["quote"] = target_quote
+
+    with pytest.raises(ValueError, match="court caption naming the appealed party"):
+        validate_approvals(tmp_path, [approval])
 
 
 def test_linked_source_quote_review_rejects_a_different_party_despite_citation_link(tmp_path):

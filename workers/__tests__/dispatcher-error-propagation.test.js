@@ -69,7 +69,8 @@ describe("Dispatcher error propagation", () => {
     const response = await dispatchCloudflareCaseMutation(
       request,
       "/api/v1/cases",
-      { ...ENV, IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: { send: vi.fn(async () => undefined) } },
+      { ...ENV, IMMI_CASE_MUTATIONS_ENABLED: "true", CASE_MUTATION_QUEUE: { send: vi.fn(async () => undefined) },
+        CASE_MUTATION_COORDINATOR: { getByName: () => ({ putCase: () => mockStores().objectStore.putCaseSource() }) } },
     );
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ code: "r2_checksum_mismatch" });

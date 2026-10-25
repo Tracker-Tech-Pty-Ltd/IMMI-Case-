@@ -12,8 +12,8 @@ import { requireAuth } from "../auth/request_auth.js";
 import { verifyCsrf } from "../auth/csrf.js";
 import { createCloudflareStores } from "../storage/cloudflare.js";
 import { getStorageMode, StorageBoundaryError, sha256Hex } from "../storage/contracts.js";
-import { splitFtsChunks } from "../storage/pipeline_coordinator.js";
 import { readBoundedBodyText } from "../storage/body_limit.js";
+import { getCaseMutationStub } from "./mutation_namespace.js";
 
 const CASE_ID_RE = /^[0-9a-f]{12}$/;
 
@@ -98,7 +98,7 @@ function caseRecord(data, caseId) {
     court: data.court,
     court_code: data.court_code,
     decision_date: data.date ?? data.decision_date,
-    year: Number.isInteger(year) ? year : null,
+    year: data.year === undefined ? undefined : Number.isInteger(year) ? year : null,
     outcome: data.outcome,
     visa_type: data.visa_type,
     visa_subclass: data.visa_subclass,
@@ -175,22 +175,6 @@ function sourcePointerFromCase(row) {
   };
 }
 
-async function enqueueCaseSourceCleanup(env, row) {
-  const sourcePointer = sourcePointerFromCase(row);
-  if (!sourcePointer || typeof row?.case_id !== "string") return false;
-  if (!env.CASE_MUTATION_QUEUE || typeof env.CASE_MUTATION_QUEUE.send !== "function") return false;
-  await env.CASE_MUTATION_QUEUE.send({
-    event_id: `case.source.delete:${row.case_id}:${sourcePointer.sha256}`,
-    kind: "case.source.delete",
-    case_id: row.case_id,
-    content_key: sourcePointer.key,
-    content_sha256: sourcePointer.sha256,
-    content_size: sourcePointer.size,
-    content_type: sourcePointer.contentType,
-  });
-  return true;
-}
-
 function requireMutationQueue(env) {
   if (!env.CASE_MUTATION_QUEUE || typeof env.CASE_MUTATION_QUEUE.send !== "function") {
     throw new StorageBoundaryError("Native case mutation queue is unavailable", {
@@ -207,12 +191,7 @@ async function handleCreate(request, env, stores) {
   const caseId = await caseIdFor(data);
   const record = caseRecord(data, caseId);
   const text = canonicalText(data);
-  const sourcePointer = await stores.objectStore.putCaseSource({ caseId, body: text });
-  await stores.caseStore.putImportedCase({
-    case: record,
-    sourcePointer,
-    textChunks: text ? splitFtsChunks(text) : [],
-  });
+  const sourcePointer = await getCaseMutationStub(env, caseId).putCase({ record, canonicalText: text });
   const queued = await enqueueSemanticMutation(env, record, sourcePointer);
   const result = await stores.caseStore.getCase(caseId);
   return json({ case: publicCase(result), semantic_ready: Boolean(result?.semantic_ready), semantic_queued: queued }, 201);
@@ -228,14 +207,13 @@ async function handleUpdate(caseId, request, env, stores) {
   let result;
   let semanticQueued = false;
   if (hasTextReplacement) {
-    const record = caseRecord({ ...existing, ...data, date: data.date ?? existing.date }, caseId);
+    const record = caseRecord(data, caseId);
     const text = canonicalText(data);
-    const sourcePointer = await stores.objectStore.putCaseSource({ caseId, body: text });
-    await stores.caseStore.putImportedCase({ case: record, sourcePointer, textChunks: text ? splitFtsChunks(text) : [] });
+    const sourcePointer = await getCaseMutationStub(env, caseId).putCase({ record, canonicalText: text, preserveExisting: true });
     semanticQueued = await enqueueSemanticMutation(env, record, sourcePointer);
     result = await stores.caseStore.getCase(caseId);
   } else {
-    result = await stores.caseStore.updateCaseFields(caseId, data);
+    result = await getCaseMutationStub(env, caseId).updateCaseFields(caseId, data);
     // Metadata-only edits invalidate the embedding too. Reuse the existing
     // checksum-verified R2 pointer so the queue consumer can deterministically
     // re-embed the canonical source without loading payload bytes here.
@@ -251,13 +229,10 @@ async function handleUpdate(caseId, request, env, stores) {
 
 async function handleDelete(caseId, env, stores) {
   if (!CASE_ID_RE.test(caseId)) return errorResponse("Invalid case ID");
-  const existing = await stores.caseStore.getCase(caseId);
-  await stores.caseStore.deleteCase(caseId);
-  await stores.semanticIndex.deleteCase(caseId);
-  if (existing) {
-    await enqueueCaseSourceCleanup(env, { ...existing, case_id: caseId });
-    await enqueueAggregateRefresh(env, `delete:${caseId}:${existing.updated_at || ""}`);
-  }
+  const coordinator = getCaseMutationStub(env, caseId);
+  const deleted = await coordinator.deleteCase(caseId);
+  await enqueueAggregateRefresh(env, `delete:${caseId}:${deleted.updatedAt || ""}`);
+  if (!deleted.affected) return errorResponse("Case not found", 404, "case_not_found");
   return json({ success: true });
 }
 
@@ -269,23 +244,16 @@ async function handleBatch(request, env, stores) {
   if (ids.length > 200) return errorResponse("Batch limited to 200 cases");
   const action = String(data.action || "");
   if (action === "delete") {
-    const current = typeof stores.caseStore.findByIds === "function"
-      ? await stores.caseStore.findByIds(ids)
-      : [];
-    const affected = await stores.caseStore.batchDeleteCases(ids);
-    if (affected) await Promise.all(ids.map((id) => stores.semanticIndex.deleteCase(id)));
-    if (affected) {
-      await Promise.all(current.map((row) => enqueueCaseSourceCleanup(env, row)));
-      await enqueueAggregateRefresh(env, `batch-delete:${[...ids].sort().join(",")}`);
-    }
+    const coordinators = ids.map((id) => getCaseMutationStub(env, id));
+    const deleted = await Promise.all(ids.map((id, index) => coordinators[index].deleteCase(id)));
+    const affected = deleted.reduce((total, item) => total + item.affected, 0);
+    await enqueueAggregateRefresh(env, `batch-delete:${[...ids].sort().join(",")}`);
     return json({ affected });
   }
   if (action === "tag") {
-    const current = typeof stores.caseStore.findByIds === "function"
-      ? await stores.caseStore.findByIds(ids)
-      : [];
-    const affected = await stores.caseStore.batchAddTag(ids, String(data.tag || ""));
-    await Promise.all(current.map(async (row) => {
+    const tagged = await Promise.all(ids.map((id) => getCaseMutationStub(env, id).tagCase(id, String(data.tag || ""))));
+    const affected = tagged.reduce((total, item) => total + item.affected, 0);
+    await Promise.all(tagged.map(async ({ case: row }) => {
       const sourcePointer = sourcePointerFromCase(row);
       if (sourcePointer) await enqueueSemanticMutation(env, { case_id: row.case_id }, sourcePointer);
     }));

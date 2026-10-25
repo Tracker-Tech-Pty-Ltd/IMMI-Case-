@@ -44,7 +44,7 @@ if os.environ.get("APP_ENV") == "production":
 
     _socket.getaddrinfo = _cf_dns_patch
 
-from immi_case_downloader.webapp import create_app
+from immi_case_downloader.webapp import close_app, create_app
 
 
 def _get_env_default_port() -> int:
@@ -110,7 +110,10 @@ def main():
     app = create_app(output_dir=args.output, backend=args.backend)
     print(f"Starting IMMI-Case web interface at http://{args.host}:{args.port}")
     print(f"Data directory: {args.output}")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    try:
+        app.run(host=args.host, port=args.port, debug=args.debug)
+    finally:
+        close_app(app, wait=True)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,31 @@
+{
+  "sameBuild": true,
+  "newsSearch": {
+    "query": "法院",
+    "total": 3,
+    "featured": 1,
+    "list": 2,
+    "passed": true
+  },
+  "pagination": {
+    "directPage3": true,
+    "lastResultCount": 1,
+    "returnPage1": true
+  },
+  "englishDark": {
+    "fullSummary": true,
+    "editorialNote": true,
+    "noHorizontalOverflow": true
+  },
+  "mobile": {
+    "width": 390,
+    "noHorizontalOverflow": true,
+    "menuOpen": true,
+    "menuClosedAfterExitAnimation": true
+  },
+  "legacyE2E": {
+    "passed": 113,
+    "failed": 1,
+    "failure": "Mobile drawer immediately asserted before AnimatePresence exit completed; repeated failure; real UI passes when waiting for hidden state. Test files and animation unchanged."
+  }
+}

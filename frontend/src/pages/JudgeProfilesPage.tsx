@@ -9,6 +9,10 @@ import { JudgeCard } from "@/components/judges/JudgeCard";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { CodexFilterRail } from "@/components/ui/CodexFilterRail";
+import "@/styles/research-codex.css";
+import "@/styles/detail-codex.css";
 import { useJudgeLeaderboard } from "@/hooks/use-judges";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -124,12 +128,14 @@ export function JudgeProfilesPage() {
   }, [selectedNames.length, openCompare]);
 
   return (
-    <div className="space-y-4">
+    <div className="codex-research-page codex-detail-page codex-judges-index space-y-4">
       <PageHeader
+        icon={<CodexSticker id="judges" className="codex-page-emblem" />}
         title={t("judges.title")}
         description={t("judges.subtitle")}
         actions={
           <>
+            <CodexFilterRail activeKey={viewMode} className="codex-view-rail flex gap-1" aria-label={t("judges.view_mode", { defaultValue: "Judge display" })}>
             <button
               type="button"
               aria-label={t("tooltips.table_view")}
@@ -150,7 +156,7 @@ export function JudgeProfilesPage() {
               )}
               title={t("judges.table_view_label")}
             >
-              <List className="h-4 w-4" />
+              <span><List className="h-4 w-4" aria-hidden="true" /></span>
             </button>
             <button
               type="button"
@@ -172,13 +178,14 @@ export function JudgeProfilesPage() {
               )}
               title={t("judges.card_view_label")}
             >
-              <LayoutGrid className="h-4 w-4" />
+              <span><LayoutGrid className="h-4 w-4" aria-hidden="true" /></span>
             </button>
+            </CodexFilterRail>
           </>
         }
       />
 
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="codex-judge-workspace rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <AnalyticsFilters
             court={court}
@@ -225,7 +232,7 @@ export function JudgeProfilesPage() {
           </div>
         </div>
 
-        <div className="mb-3 flex items-center justify-between">
+        <div className="codex-compare-bar mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-text">
             {isLoading
               ? t("common.loading_ellipsis")
@@ -244,8 +251,9 @@ export function JudgeProfilesPage() {
               onClick={openCompare}
               disabled={selectedNames.length < 2}
               aria-keyshortcuts="C"
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="codex-control inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-solid disabled:cursor-not-allowed disabled:opacity-50"
             >
+              <CodexSticker id="scope" />
               {t("judges.compare_selected", {
                 count: selectedNames.length,
               })}
@@ -259,6 +267,7 @@ export function JudgeProfilesPage() {
           </div>
         )}
 
+        <div key={viewMode} className="codex-judge-results">
         {isLoading ? (
           <p className="text-sm text-muted-text">
             {t("judges.loading_judges")}
@@ -318,6 +327,7 @@ export function JudgeProfilesPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,18 @@
+{
+  "englishExpanded1440": {
+    "fullText": "Read summary\n: Student visa reform announcement\n\nThe announcement describes measures with different conditions and implementation dates, including a proposed transfer stream in 2027. Read the original for the scope and timing of each measure; this summary does not determine an individual applicant's eligibility.\n\nSource checked 16 Oct 2026",
+    "h": 1400,
+    "overflow": false,
+    "w": 1440
+  },
+  "englishExpanded1127": {
+    "fullText": "Read summary\n: Student visa reform announcement\n\nThe announcement describes measures with different conditions and implementation dates, including a proposed transfer stream in 2027. Read the original for the scope and timing of each measure; this summary does not determine an individual applicant's eligibility.\n\nSource checked 16 Oct 2026",
+    "h": 911,
+    "overflow": false,
+    "w": 1127
+  },
+  "directPage3": {
+    "url": "http://localhost:5194/news?page=3",
+    "nextEnabled": false
+  }
+}

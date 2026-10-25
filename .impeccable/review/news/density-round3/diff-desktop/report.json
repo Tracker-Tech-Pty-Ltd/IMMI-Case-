@@ -1,0 +1,732 @@
+{
+  "tool": "comp-diff",
+  "version": 1,
+  "createdAt": "2026-10-16T02:11:21.068Z",
+  "label": "desktop",
+  "comp": ".impeccable/mocks/news-updates-approved-desktop.png",
+  "build": ".impeccable/review/news/density-round3/desktop.png",
+  "spec": ".impeccable/build/spec.json",
+  "compSize": "1127x911",
+  "buildSize": "1413x1373",
+  "align": "top",
+  "overall": 0.6309,
+  "verdict": "drift",
+  "scores": {
+    "overall": 0.6309,
+    "structure": 0.5618,
+    "color": 0.9397,
+    "colorIntersection": 0.8883,
+    "paletteMatch": 0.9673,
+    "detail": 0.3997,
+    "detailRaw": 0.4622,
+    "detailAdded": 0.125,
+    "bands": 0.6629
+  },
+  "palette": {
+    "comp": [
+      {
+        "hex": "#f7f7f7",
+        "coverage": 0.9463
+      },
+      {
+        "hex": "#b1b9c2",
+        "coverage": 0.0176
+      },
+      {
+        "hex": "#7a8594",
+        "coverage": 0.0171
+      },
+      {
+        "hex": "#f8e6c8",
+        "coverage": 0.0073
+      },
+      {
+        "hex": "#4d5971",
+        "coverage": 0.006
+      },
+      {
+        "hex": "#102040",
+        "coverage": 0.0057
+      }
+    ],
+    "build": [
+      {
+        "hex": "#f8f7f7",
+        "coverage": 0.9839
+      },
+      {
+        "hex": "#5a6168",
+        "coverage": 0.0042
+      },
+      {
+        "hex": "#b1b3b6",
+        "coverage": 0.0042
+      },
+      {
+        "hex": "#584808",
+        "coverage": 0.0032
+      },
+      {
+        "hex": "#182838",
+        "coverage": 0.0029
+      },
+      {
+        "hex": "#f8f8d0",
+        "coverage": 0.0016
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "sidebar",
+      "x": 0,
+      "y": 0,
+      "w": 0.1721,
+      "h": 1,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.6976,
+        "structure": 0.754,
+        "color": 0.9292,
+        "colorIntersection": 0.893,
+        "paletteMatch": 0.9487,
+        "detail": 0.2839,
+        "detailRaw": 0.3256,
+        "detailAdded": 0.0833,
+        "bands": 0.8696
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 20,
+          "w": 154,
+          "h": 869
+        },
+        "build": {
+          "x": 44,
+          "y": 35,
+          "w": 150,
+          "h": 670
+        }
+      }
+    },
+    {
+      "id": "topbar",
+      "x": 0.1721,
+      "y": 0,
+      "w": 0.8279,
+      "h": 0.0626,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5533,
+        "structure": 0.955,
+        "color": 0.8724,
+        "colorIntersection": 0.7743,
+        "paletteMatch": 0.9251,
+        "detail": 0.0039,
+        "detailRaw": 0.0872,
+        "detailAdded": 0.1667,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 32,
+          "y": 0,
+          "w": 900,
+          "h": 40
+        },
+        "build": {
+          "x": 38,
+          "y": 29,
+          "w": 501,
+          "h": 28
+        }
+      }
+    },
+    {
+      "id": "page-title",
+      "x": 0.1917,
+      "y": 0.0834,
+      "w": 0.1375,
+      "h": 0.0439,
+      "kind": "text",
+      "score": {
+        "overall": 0.4051,
+        "structure": 0.2427,
+        "color": 0.7909,
+        "colorIntersection": 0.6549,
+        "paletteMatch": 0.8641,
+        "detail": 0.2582,
+        "detailRaw": 0.3467,
+        "detailAdded": 0.1771,
+        "bands": 0.4725
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 6,
+          "w": 149,
+          "h": 35
+        },
+        "build": {
+          "x": 25,
+          "y": 20,
+          "w": 108,
+          "h": 25
+        }
+      }
+    },
+    {
+      "id": "filters",
+      "x": 0.1917,
+      "y": 0.1789,
+      "w": 0.7915,
+      "h": 0.09,
+      "kind": "control",
+      "score": {
+        "overall": 0.6974,
+        "structure": 0.7508,
+        "color": 0.8912,
+        "colorIntersection": 0.854,
+        "paletteMatch": 0.9112,
+        "detail": 0.2384,
+        "detailRaw": 0.353,
+        "detailAdded": 0.2292,
+        "bands": 0.2
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 0,
+          "w": 796,
+          "h": 73
+        },
+        "build": {
+          "x": 22,
+          "y": 0,
+          "w": 654,
+          "h": 68
+        }
+      }
+    },
+    {
+      "id": "featured-title",
+      "x": 0.2067,
+      "y": 0.3392,
+      "w": 0.2413,
+      "h": 0.0395,
+      "kind": "text",
+      "score": {
+        "overall": 0.3612,
+        "structure": 0.26,
+        "color": 0.7584,
+        "colorIntersection": 0.7148,
+        "paletteMatch": 0.7818,
+        "detail": 0.0705,
+        "detailRaw": 0.232,
+        "detailAdded": 0.3229,
+        "bands": 0.31
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 8,
+          "w": 259,
+          "h": 31
+        },
+        "build": {
+          "x": 16,
+          "y": 6,
+          "w": 256,
+          "h": 38
+        }
+      }
+    },
+    {
+      "id": "featured-summary",
+      "x": 0.2067,
+      "y": 0.4237,
+      "w": 0.4064,
+      "h": 0.0604,
+      "kind": "text",
+      "score": {
+        "overall": 0.5817,
+        "structure": 0.6766,
+        "color": 0.9015,
+        "colorIntersection": 0.8288,
+        "paletteMatch": 0.9406,
+        "detail": 0,
+        "detailRaw": 0.1545,
+        "detailAdded": 0.375,
+        "bands": 0.18
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 4,
+          "w": 328,
+          "h": 47
+        },
+        "build": {
+          "x": 6,
+          "y": 0,
+          "w": 452,
+          "h": 55
+        }
+      }
+    },
+    {
+      "id": "featured-document",
+      "x": 0.6264,
+      "y": 0.3392,
+      "w": 0.0914,
+      "h": 0.1537,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5386,
+        "structure": 0.8641,
+        "color": 0.491,
+        "colorIntersection": 0.006,
+        "paletteMatch": 0.7522,
+        "detail": 0.0935,
+        "detailRaw": 0.2081,
+        "detailAdded": 0.2292,
+        "bands": 0.6
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": null,
+        "build": {
+          "x": 1,
+          "y": 28,
+          "w": 102,
+          "h": 111
+        }
+      }
+    },
+    {
+      "id": "featured-action",
+      "x": 0.2067,
+      "y": 0.494,
+      "w": 0.071,
+      "h": 0.0263,
+      "kind": "control",
+      "score": {
+        "overall": 0.6177,
+        "structure": 0.7379,
+        "color": 0.8161,
+        "colorIntersection": 0.7813,
+        "paletteMatch": 0.8348,
+        "detail": 0,
+        "detailRaw": 0,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 14,
+          "w": 78,
+          "h": 14
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "list-heading",
+      "x": 0.1925,
+      "y": 0.5488,
+      "w": 0.1012,
+      "h": 0.0329,
+      "kind": "text",
+      "score": {
+        "overall": 0.5429,
+        "structure": 0.5872,
+        "color": 0.8037,
+        "colorIntersection": 0.7792,
+        "paletteMatch": 0.8169,
+        "detail": 0.0559,
+        "detailRaw": 0.108,
+        "detailAdded": 0.1042,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 14,
+          "w": 84,
+          "h": 20
+        },
+        "build": {
+          "x": 28,
+          "y": 8,
+          "w": 86,
+          "h": 34
+        }
+      }
+    },
+    {
+      "id": "list-first",
+      "x": 0.1925,
+      "y": 0.5928,
+      "w": 0.543,
+      "h": 0.1153,
+      "kind": "text",
+      "score": {
+        "overall": 0.625,
+        "structure": 0.6825,
+        "color": 0.9244,
+        "colorIntersection": 0.8753,
+        "paletteMatch": 0.9509,
+        "detail": 0.1287,
+        "detailRaw": 0.2902,
+        "detailAdded": 0.3229,
+        "bands": 0.3333
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 16,
+          "w": 591,
+          "h": 71
+        },
+        "build": {
+          "x": 28,
+          "y": 12,
+          "w": 584,
+          "h": 93
+        }
+      }
+    },
+    {
+      "id": "list-second",
+      "x": 0.1925,
+      "y": 0.7091,
+      "w": 0.543,
+      "h": 0.1175,
+      "kind": "text",
+      "score": {
+        "overall": 0.5792,
+        "structure": 0.6279,
+        "color": 0.9011,
+        "colorIntersection": 0.8236,
+        "paletteMatch": 0.9428,
+        "detail": 0,
+        "detailRaw": 0.0421,
+        "detailAdded": 0.0938,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 17,
+          "w": 591,
+          "h": 72
+        },
+        "build": {
+          "x": 22,
+          "y": 0,
+          "w": 574,
+          "h": 52
+        }
+      }
+    },
+    {
+      "id": "list-third",
+      "x": 0.1925,
+      "y": 0.8277,
+      "w": 0.543,
+      "h": 0.1142,
+      "kind": "text",
+      "score": {
+        "overall": 0.5822,
+        "structure": 0.6499,
+        "color": 0.8683,
+        "colorIntersection": 0.8308,
+        "paletteMatch": 0.8885,
+        "detail": 0.0014,
+        "detailRaw": 0.0014,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 15,
+          "w": 591,
+          "h": 70
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "verification",
+      "x": 0.7702,
+      "y": 0.3074,
+      "w": 0.1988,
+      "h": 0.2086,
+      "kind": "text",
+      "score": {
+        "overall": 0.613,
+        "structure": 0.5475,
+        "color": 0.9035,
+        "colorIntersection": 0.833,
+        "paletteMatch": 0.9415,
+        "detail": 0.1638,
+        "detailRaw": 0.2471,
+        "detailAdded": 0.1667,
+        "bands": 0.8885
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 3,
+          "w": 212,
+          "h": 179
+        },
+        "build": {
+          "x": 33,
+          "y": 25,
+          "w": 191,
+          "h": 165
+        }
+      }
+    },
+    {
+      "id": "research",
+      "x": 0.772,
+      "y": 0.5554,
+      "w": 0.1952,
+      "h": 0.1142,
+      "kind": "control",
+      "score": {
+        "overall": 0.5483,
+        "structure": 0.5788,
+        "color": 0.6977,
+        "colorIntersection": 0.4939,
+        "paletteMatch": 0.8075,
+        "detail": 0.2181,
+        "detailRaw": 0.3483,
+        "detailAdded": 0.2604,
+        "bands": 0.5286
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 2,
+          "w": 127,
+          "h": 92
+        },
+        "build": {
+          "x": 24,
+          "y": 0,
+          "w": 196,
+          "h": 100
+        }
+      }
+    },
+    {
+      "id": "pagination",
+      "x": 0.1925,
+      "y": 0.9385,
+      "w": 0.543,
+      "h": 0.0615,
+      "kind": "control",
+      "score": {
+        "overall": 0.7739,
+        "structure": 0.9661,
+        "color": 0.9632,
+        "colorIntersection": 0.9314,
+        "paletteMatch": 0.9803,
+        "detail": 0.0103,
+        "detailRaw": 0.0103,
+        "detailAdded": 0,
+        "bands": 1
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 17,
+          "y": 22,
+          "w": 579,
+          "h": 12
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "page-subtitle",
+      "x": 0.1917,
+      "y": 0.1328,
+      "w": 0.5768,
+      "h": 0.0329,
+      "kind": "text",
+      "score": {
+        "overall": 0.6778,
+        "structure": 0.848,
+        "color": 0.9361,
+        "colorIntersection": 0.8994,
+        "paletteMatch": 0.9559,
+        "detail": 0.1314,
+        "detailRaw": 0.2721,
+        "detailAdded": 0.2813,
+        "bands": 0
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 0,
+          "w": 377,
+          "h": 30
+        },
+        "build": {
+          "x": 23,
+          "y": 0,
+          "w": 627,
+          "h": 48
+        }
+      }
+    },
+    {
+      "id": "featured-card",
+      "x": 0.1917,
+      "y": 0.2898,
+      "w": 0.5448,
+      "h": 0.2437,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5338,
+        "structure": 0.5415,
+        "color": 0.9033,
+        "colorIntersection": 0.8207,
+        "paletteMatch": 0.9478,
+        "detail": 0.156,
+        "detailRaw": 0.2966,
+        "detailAdded": 0.2813,
+        "bands": 0.5295
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 18,
+          "y": 19,
+          "w": 536,
+          "h": 183
+        },
+        "build": {
+          "x": 23,
+          "y": 0,
+          "w": 591,
+          "h": 212
+        }
+      }
+    },
+    {
+      "id": "support-card",
+      "x": 0.7524,
+      "y": 0.2898,
+      "w": 0.2307,
+      "h": 0.4007,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.683,
+        "structure": 0.603,
+        "color": 0.8895,
+        "colorIntersection": 0.8064,
+        "paletteMatch": 0.9343,
+        "detail": 0.4123,
+        "detailRaw": 0.5321,
+        "detailAdded": 0.2396,
+        "bands": 0.9765
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 21,
+          "y": 19,
+          "w": 212,
+          "h": 317
+        },
+        "build": {
+          "x": 0,
+          "y": 1,
+          "w": 260,
+          "h": 341
+        }
+      }
+    },
+    {
+      "id": "editorial-note",
+      "x": 0.7524,
+      "y": 0.7069,
+      "w": 0.2307,
+      "h": 0.0494,
+      "kind": "text",
+      "score": {
+        "overall": 0.57,
+        "structure": 0.723,
+        "color": 0.6662,
+        "colorIntersection": 0.4058,
+        "paletteMatch": 0.8064,
+        "detail": 0.0132,
+        "detailRaw": 0.0288,
+        "detailAdded": 0.0313,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 13,
+          "y": 15,
+          "w": 223,
+          "h": 19
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 17,
+          "h": 48
+        }
+      }
+    }
+  ],
+  "files": {
+    "sideBySide": "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/side-by-side.png",
+    "heatmap": "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/heatmap.png",
+    "regionFiles": [
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/sidebar.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/topbar.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/page-title.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/filters.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/featured-title.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/featured-summary.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/featured-document.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/featured-action.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/list-heading.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/list-first.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/list-second.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/list-third.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/verification.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/research.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/pagination.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/page-subtitle.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/featured-card.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/support-card.png",
+      "D:/Dev/Projects/IMMI-Case-/.impeccable/review/news/density-round3/diff-desktop/regions/editorial-note.png"
+    ]
+  }
+}

@@ -16,13 +16,13 @@ import pytest
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_app(backend="csv", **extra_env):
+def _make_app(output_dir, backend="csv", **extra_env):
     """Create a Flask test app with CSRF disabled."""
     from immi_case_downloader.web import create_app
 
     env = {"SECRET_KEY": "test-key", **extra_env}
     with patch.dict(os.environ, env):
-        app = create_app(backend=backend)
+        app = create_app(output_dir=str(output_dir), backend=backend)
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     return app
@@ -34,9 +34,9 @@ def _make_app(backend="csv", **extra_env):
 class TestBackendSelection:
     """create_app() backend= parameter routes to the correct repository."""
 
-    def test_csv_backend_selected(self):
+    def test_csv_backend_selected(self, tmp_path):
         """backend='csv' → CsvRepository is set as REPO."""
-        app = _make_app(backend="csv")
+        app = _make_app(tmp_path, backend="csv")
         assert app.config["BACKEND"] == "csv"
 
     def test_sqlite_backend_selected(self, tmp_path):
@@ -53,7 +53,7 @@ class TestBackendSelection:
             if repo and hasattr(repo, "close"):
                 repo.close()
 
-    def test_supabase_backend_selected(self):
+    def test_supabase_backend_selected(self, tmp_path):
         """backend='supabase' → SupabaseRepository is set as REPO."""
         mock_repo = MagicMock()
         with patch(
@@ -61,6 +61,7 @@ class TestBackendSelection:
             return_value=mock_repo,
         ):
             app = _make_app(
+                tmp_path,
                 backend="supabase",
                 SUPABASE_URL="https://test.supabase.co",
                 SUPABASE_SERVICE_ROLE_KEY="test-key",
@@ -172,16 +173,16 @@ class TestSpaStaticAssetServing:
             import pytest
             pytest.skip("No JS files in React build")
 
-        app = _make_app()
+        app = _make_app(tmp_path)
         client = app.test_client()
         resp = client.get(f"/{js_files[0]}")
 
         assert resp.status_code == 200
         assert b"" not in resp.data or True  # any content is fine
 
-    def test_api_path_not_intercepted_by_spa(self):
+    def test_api_path_not_intercepted_by_spa(self, tmp_path):
         """Requests to /api/* are not caught by the SPA catch-all."""
-        app = _make_app()
+        app = _make_app(tmp_path)
         client = app.test_client()
 
         # /api/v1/nonexistent should be 404, not served as index.html

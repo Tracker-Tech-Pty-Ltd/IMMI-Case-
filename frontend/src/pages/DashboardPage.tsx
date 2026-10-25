@@ -3,7 +3,6 @@ import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   FileText,
-  BookOpen,
   Database,
   Layers,
   BarChart3,
@@ -20,7 +19,6 @@ import {
   Minus,
   Activity,
   ArrowRight,
-  GitBranch,
 } from "lucide-react";
 import { useStats, useTrends } from "@/hooks/use-stats";
 import { useSavedSearches } from "@/hooks/use-saved-searches";
@@ -35,6 +33,10 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { AnalyticsFilters } from "@/components/shared/AnalyticsFilters";
 import { ApiErrorState } from "@/components/shared/ApiErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { CodexSticker } from "@/components/shared/CodexSticker";
+import { CodexFilterRail } from "@/components/ui/CodexFilterRail";
+import "@/styles/research-codex.css";
+import { buildAnalyticsHref } from "@/lib/analytics-scope";
 import { buildDashboardInsights, normalizeVisaSubclassKeys } from "@/lib/dashboard-insights";
 import { normalizeTrendEntries, hasRenderableTrendSeries } from "@/lib/trends";
 import type { AnalyticsFilterParams, DashboardStats } from "@/types/case";
@@ -599,24 +601,27 @@ export function DashboardPage() {
       : t("common.no_data");
 
   return (
-    <div className="space-y-6">
+    <div className="codex-research-page codex-dashboard space-y-6">
       {/* Report Header + Filters */}
       <div className="space-y-4">
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border/60 bg-surface/60 px-4 py-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-text">
-              {t("dashboard.report_eyebrow")}
-            </p>
-          </div>
+        <div className="codex-report-header overflow-hidden rounded-xl border border-border-light bg-card">
           <div className="grid gap-4 px-4 py-4 md:px-5 md:py-5 lg:grid-cols-[1.6fr_1fr]">
             <PageHeader
+              icon={<CodexSticker id="dashboard" className="codex-page-emblem" />}
               title={t("dashboard.title")}
               description={t("dashboard.subtitle")}
+              eyebrow={t("dashboard.report_eyebrow")}
+              actions={
+                <Link to="/cases" className="codex-control inline-flex items-center gap-2 rounded-md bg-accent px-4 font-data text-sm font-medium text-on-solid hover:bg-accent-hover">
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                  {t("common.search_cases", { defaultValue: "Search cases" })}
+                </Link>
+              }
               className="space-y-2"
             />
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+            <div className="grid grid-cols-2 gap-2 font-data">
+              <div className="min-w-0 border-b border-border-light px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-text">
                   {t("dashboard.report_generated_label")}
                 </p>
@@ -624,7 +629,7 @@ export function DashboardPage() {
                   {reportGeneratedOn}
                 </p>
               </div>
-              <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+              <div className="min-w-0 border-b border-border-light px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-text">
                   {t("dashboard.report_scope_label")}
                 </p>
@@ -632,7 +637,7 @@ export function DashboardPage() {
                   {scopeCourtLabel}
                 </p>
               </div>
-              <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+              <div className="min-w-0 border-b border-border-light px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-text">
                   {t("dashboard.report_active_years_label")}
                 </p>
@@ -642,7 +647,7 @@ export function DashboardPage() {
                   })}
                 </p>
               </div>
-              <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+              <div className="min-w-0 border-b border-border-light px-3 py-2">
                 <p className="text-[11px] uppercase tracking-wide text-muted-text">
                   {t("dashboard.report_total_cases_label")}
                 </p>
@@ -685,8 +690,64 @@ export function DashboardPage() {
         )}
       </div>
 
+      {/* Section 01 */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border/60 pb-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-text">
+              {t("dashboard.section_01_label")}
+            </p>
+            <h2 className="font-heading text-lg font-semibold text-foreground">
+              {t("dashboard.section_01_title")}
+            </h2>
+          </div>
+        </div>
+        <div className="codex-metric-grid grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            className="h-full"
+            title={t("dashboard.total_cases")}
+            value={stats.total_cases}
+            icon={<CodexSticker id="cases" />}
+          />
+          <StatCard
+            className="h-full"
+            title={t("dashboard.with_full_text")}
+            value={stats.with_full_text}
+            icon={<CodexSticker id="document" />}
+            description={t("dashboard.coverage", {
+              percentage: (
+                (stats.with_full_text / stats.total_cases) *
+                100
+              ).toFixed(1),
+            })}
+          />
+          <StatCard
+            className="h-full"
+            title={t("dashboard.courts_tribunals")}
+            value={Object.keys(courtDistribution).length}
+            icon={<CodexSticker id="courts" />}
+          />
+          <StatCard
+            className="h-full"
+            title={t("dashboard.case_categories")}
+            value={natureCount}
+            icon={<CodexSticker id="taxonomy" />}
+            description={
+              natureCount > 0
+                ? t("dashboard.classified", {
+                    count: Object.values(natureDistribution).reduce(
+                      (a, b) => a + b,
+                      0,
+                    ),
+                  })
+                : undefined
+            }
+          />
+        </div>
+      </section>
+
       {/* Executive Briefing */}
-      <section className="rounded-xl border border-border bg-card p-4 shadow-sm md:p-5">
+      <section className="codex-briefing rounded-xl border border-border bg-card p-4 shadow-sm md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 pb-3">
           <div className="space-y-1">
             <p className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
@@ -702,7 +763,7 @@ export function DashboardPage() {
           </div>
 
           <Link
-            to="/analytics"
+            to={buildAnalyticsHref(filters)}
             className="inline-flex items-center gap-1 rounded-md border border-border bg-surface/70 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-surface"
           >
             {t("dashboard.open_analytics")}
@@ -842,62 +903,6 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Section 01 */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border/60 pb-2">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-text">
-              {t("dashboard.section_01_label")}
-            </p>
-            <h2 className="font-heading text-lg font-semibold text-foreground">
-              {t("dashboard.section_01_title")}
-            </h2>
-          </div>
-        </div>
-        <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            className="h-full"
-            title={t("dashboard.total_cases")}
-            value={stats.total_cases}
-            icon={<FileText className="h-5 w-5" />}
-          />
-          <StatCard
-            className="h-full"
-            title={t("dashboard.with_full_text")}
-            value={stats.with_full_text}
-            icon={<BookOpen className="h-5 w-5" />}
-            description={t("dashboard.coverage", {
-              percentage: (
-                (stats.with_full_text / stats.total_cases) *
-                100
-              ).toFixed(1),
-            })}
-          />
-          <StatCard
-            className="h-full"
-            title={t("dashboard.courts_tribunals")}
-            value={Object.keys(courtDistribution).length}
-            icon={<Database className="h-5 w-5" />}
-          />
-          <StatCard
-            className="h-full"
-            title={t("dashboard.case_categories")}
-            value={natureCount}
-            icon={<Layers className="h-5 w-5" />}
-            description={
-              natureCount > 0
-                ? t("dashboard.classified", {
-                    count: Object.values(natureDistribution).reduce(
-                      (a, b) => a + b,
-                      0,
-                    ),
-                  })
-                : undefined
-            }
-          />
-        </div>
-      </section>
-
       {/* Section 02 */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border/60 pb-2">
@@ -922,7 +927,7 @@ export function DashboardPage() {
                   {formatSourceBadgeText(courtSourceState)}
                 </span>
               </div>
-              <div className="flex gap-1">
+              <CodexFilterRail activeKey={courtView} className="codex-view-rail flex gap-1" aria-label={t("dashboard.cases_by_court", { defaultValue: "Cases by court" })}>
                 <button
                   type="button"
                   onClick={() => setCourtView("chart")}
@@ -939,7 +944,7 @@ export function DashboardPage() {
                   })}
                   aria-pressed={courtView === "chart"}
                 >
-                  <BarChart3 className="h-4 w-4" />
+                  <span><BarChart3 className="h-4 w-4" aria-hidden="true" /></span>
                 </button>
                 <button
                   type="button"
@@ -957,11 +962,11 @@ export function DashboardPage() {
                   })}
                   aria-pressed={courtView === "table"}
                 >
-                  <Table className="h-4 w-4" />
+                  <span><Table className="h-4 w-4" aria-hidden="true" /></span>
                 </button>
-              </div>
+              </CodexFilterRail>
             </div>
-            <div className="flex-1">
+            <div key={courtView} className="codex-view-content flex-1">
               {courtView === "chart" ? (
                 <CourtChart data={courtDistribution} />
               ) : (
@@ -1080,14 +1085,14 @@ export function DashboardPage() {
       </section>
 
       {/* Quick actions */}
-      <div className="grid auto-rows-fr gap-3 sm:grid-cols-3">
+      <div className="codex-quick-actions grid auto-rows-fr gap-3 sm:grid-cols-3">
         <button
           type="button"
           onClick={() => navigate("/guided-search")}
           className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
         >
           <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <Search className="h-4 w-4" />
+            <CodexSticker id="guided-search" />
           </div>
           <span className="text-sm font-medium text-foreground">
             {t("nav.guided_search")}
@@ -1096,11 +1101,11 @@ export function DashboardPage() {
 
         <button
           type="button"
-          onClick={() => navigate("/analytics")}
+          onClick={() => navigate(buildAnalyticsHref(filters))}
           className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
         >
           <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <BarChart3 className="h-4 w-4" />
+            <CodexSticker id="analytics" />
           </div>
           <span className="text-sm font-medium text-foreground">
             {t("nav.analytics")}
@@ -1113,7 +1118,7 @@ export function DashboardPage() {
           className="flex h-full min-h-[76px] items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-accent hover:shadow-md"
         >
           <div className="rounded-md bg-accent-muted p-2 text-accent">
-            <GitBranch className="h-4 w-4" />
+            <CodexSticker id="data-tools" />
           </div>
           <span className="text-sm font-medium text-foreground">
             {t("nav.data_tools")}

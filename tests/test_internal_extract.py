@@ -13,20 +13,20 @@ HEADERS = {
 }
 
 
-def _app():
+def _app(output_dir):
     with patch.dict(
         os.environ,
         {"SECRET_KEY": "test-key", "EXTRACTION_SHARED_SECRET": TOKEN},
         clear=False,
     ):
-        app = create_app(backend="csv")
+        app = create_app(output_dir=str(output_dir), backend="csv")
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = True
     return app
 
 
-def test_internal_extract_requires_worker_and_subtype_headers():
-    client = _app().test_client()
+def test_internal_extract_requires_worker_and_subtype_headers(tmp_path):
+    client = _app(tmp_path).test_client()
     payload = {"run_id": "run-1", "batch": []}
 
     assert client.post("/internal/extract", json=payload).status_code == 403
@@ -43,8 +43,8 @@ def test_internal_extract_requires_worker_and_subtype_headers():
         ).status_code == 200
 
 
-def test_internal_extract_returns_field_envelopes_without_echoing_full_text():
-    client = _app().test_client()
+def test_internal_extract_returns_field_envelopes_without_echoing_full_text(tmp_path):
+    client = _app(tmp_path).test_client()
     text = (
         "Applicant v Minister [2026] FCA 42\n"
         "The applicant is a citizen of India and applied for a Subclass 866 visa. "
@@ -81,8 +81,8 @@ def test_internal_extract_returns_field_envelopes_without_echoing_full_text():
     assert "full_text" not in item["base"]
 
 
-def test_internal_extract_rejects_missing_token():
-    client = _app().test_client()
+def test_internal_extract_rejects_missing_token(tmp_path):
+    client = _app(tmp_path).test_client()
     payload = {"run_id": "run-1", "batch": []}
 
     with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
@@ -99,8 +99,8 @@ def test_internal_extract_rejects_missing_token():
     assert response.get_json()["code"] == "invalid_extraction_token"
 
 
-def test_internal_extract_rejects_oversize_batch():
-    client = _app().test_client()
+def test_internal_extract_rejects_oversize_batch(tmp_path):
+    client = _app(tmp_path).test_client()
     payload = {"run_id": "run-1", "batch": [{} for _ in range(21)]}
 
     with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
@@ -115,13 +115,13 @@ def test_internal_extract_rejects_oversize_batch():
 
 
 @pytest.mark.parametrize("body", [[1, 2], "hello", 7, None])
-def test_internal_extract_rejects_non_object_payloads(body):
+def test_internal_extract_rejects_non_object_payloads(body, tmp_path):
     """A JSON array/string/number/null body must be a clean 400, never a 5xx.
 
     Before parse_payload existed, `payload = request.get_json(silent=True) or
     {}` followed by `payload.get(...)` raised AttributeError on any of these.
     """
-    client = _app().test_client()
+    client = _app(tmp_path).test_client()
 
     with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
         response = client.post(
@@ -141,8 +141,8 @@ def test_internal_extract_rejects_non_object_payloads(body):
         [{"base": "not-a-mapping"}],
     ],
 )
-def test_internal_extract_rejects_bad_item_shapes(batch):
-    client = _app().test_client()
+def test_internal_extract_rejects_bad_item_shapes(batch, tmp_path):
+    client = _app(tmp_path).test_client()
     payload = {"run_id": "run-1", "batch": batch}
 
     with patch.dict(os.environ, {"EXTRACTION_SHARED_SECRET": TOKEN}, clear=False):
@@ -156,9 +156,9 @@ def test_internal_extract_rejects_bad_item_shapes(batch):
     assert response.get_json()["code"] == "bad_payload"
 
 
-def test_internal_extract_rejects_mixed_valid_and_invalid_items():
+def test_internal_extract_rejects_mixed_valid_and_invalid_items(tmp_path):
     """One malformed item rejects the whole request rather than partial processing."""
-    client = _app().test_client()
+    client = _app(tmp_path).test_client()
     payload = {
         "run_id": "run-1",
         "batch": [

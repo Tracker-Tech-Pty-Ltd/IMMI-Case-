@@ -3,11 +3,12 @@
  *
  * Containers may return extraction data but never receive data-store
  * credentials. Queue consumers invoke this coordinator only after extraction.
- * Replays are safe because the event id is bound to an immutable SHA-256 and
- * each durable write is deterministic/upserted.
+ * Replays are safe because the event id is bound to an immutable SHA-256,
+ * current verified sources can be reused and all case writes share a DO.
  */
 
 import { createCloudflareStores } from "./cloudflare.js";
+import { getCaseMutationStub } from "../case-api/mutation_namespace.js";
 import {
   FTS_CHUNK_MAX_BYTES,
   sha256Hex,
@@ -69,16 +70,6 @@ export function splitFtsChunks(text) {
   return chunks;
 }
 
-function vectorMetadata(record) {
-  const year = Number(record?.year);
-  return {
-    court_code: String(record?.court_code || ""),
-    ...(Number.isInteger(year) ? { year } : {}),
-    source: String(record?.source || "austlii-pipeline"),
-    visa_subclass: String(record?.visa_subclass || record?.visa_subclass_number || ""),
-  };
-}
-
 function normaliseAudit(audit) {
   if (!Array.isArray(audit)) return [];
   return audit
@@ -110,6 +101,7 @@ export async function coordinateExtractedCase({
   const checkedRunId = assertRunId(runId);
   const text = requiredText(canonicalText, "canonicalText");
   const stores = createCloudflareStores(env);
+  const coordinator = getCaseMutationStub(env, record?.case_id);
   const payloadSha256 = (await sha256Hex(JSON.stringify({
     case_id: record?.case_id,
     record,
@@ -126,18 +118,13 @@ export async function coordinateExtractedCase({
     return { status: "replayed", eventId: checkedEventId, caseId: record.case_id };
   }
 
-  const sourcePointer = await stores.objectStore.putCaseSource({ caseId: record?.case_id, body: text });
+  const sourcePointer = await coordinator.putCase({ record, canonicalText: text });
   await stores.pipelineStore.pipelineCheckpoint({
     runId: checkedRunId,
     eventId: checkedEventId,
     step: "r2",
     status: "complete",
     detail: { case_id: record.case_id, content_sha256: sourcePointer.sha256 },
-  });
-  await stores.caseStore.putImportedCase({
-    case: record,
-    sourcePointer,
-    textChunks: splitFtsChunks(text),
   });
   await stores.pipelineStore.pipelineCheckpoint({
     runId: checkedRunId,
@@ -146,9 +133,7 @@ export async function coordinateExtractedCase({
     status: "complete",
     detail: { case_id: record.case_id },
   });
-  const embedding = await stores.semanticIndex.embed(text);
-  const mutation = await stores.semanticIndex.upsertCase(record.case_id, embedding, vectorMetadata(record));
-  await stores.caseStore.markSemanticReady(record.case_id, mutation?.mutationId || null);
+  const mutation = await coordinator.reindexCase(record.case_id);
   await stores.pipelineStore.pipelineCheckpoint({
     runId: checkedRunId,
     eventId: checkedEventId,

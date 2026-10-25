@@ -1,0 +1,81 @@
+@font-face {
+  font-family: "Codex Serif TC";
+  src: url("/fonts/codex-serif-tc-ui.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  unicode-range: U+2E80-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
+
+.codex-sticker { display: inline-block; flex-shrink: 0; vertical-align: middle; }
+.codex-sticker img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.codex-sticker-light { display: block; }
+.codex-sticker-dark { display: none; }
+.dark .codex-sticker-light { display: none; }
+.dark .codex-sticker-dark { display: block; }
+.dark .codex-news input[type="date"] { color-scheme: dark; }
+.news-list-entry > span { white-space: nowrap; overflow-wrap: normal; }
+
+@media (min-width: 640px) {
+  .codex-news[lang="en"] .news-list-entry { grid-template-columns: calc(var(--spacing-8) * 4) minmax(0, 1fr); }
+}
+
+/* The approved news composition inherits the existing Legal Codex tokens. */
+@media (min-width: 1024px) {
+  .codex-news[lang="zh-Hant"] { font-family: var(--font-heading); }
+  .codex-news[lang="zh-Hant"] h1, .codex-news[lang="zh-Hant"] h2, .codex-news[lang="zh-Hant"] h3,
+  .codex-news[lang="zh-Hant"] .font-data,
+  .codex-shell:has(.codex-news[lang="zh-Hant"]) .codex-sidebar nav { font-family: var(--font-heading); }
+  .codex-shell:has(.codex-news) .codex-sidebar { width: calc(var(--spacing-8) * 6); }
+  .codex-shell:has(.codex-news) .codex-shell-main { padding-left: calc(var(--spacing-8) * 6); }
+  .codex-shell:has(.codex-news) .codex-main { padding: var(--spacing-5) var(--spacing-5) var(--spacing-6) var(--spacing-6); }
+  .codex-shell:has(.codex-news) .codex-topbar { padding-block: calc(var(--spacing-3) / 2); }
+  .codex-shell:has(.codex-news) .codex-search-trigger { max-width: none; background: var(--color-background-card); }
+  .codex-shell:has(.codex-news) .codex-brand { height: calc(var(--spacing-8) * 3); align-items: flex-start; padding-top: var(--spacing-5); border-bottom: 0; }
+  .codex-shell:has(.codex-news) .codex-brand-name { font-size: var(--text-2xl); line-height: var(--line-height-tight); }
+  .codex-shell:has(.codex-news) .codex-brand-caption { display: block; margin-top: var(--spacing-1); }
+  .codex-shell:has(.codex-news) .codex-nav-link { min-height: var(--spacing-8); padding-block: var(--spacing-1); border-radius: calc(var(--radius-sm) / 2); }
+  .codex-shell:has(.codex-news) .codex-sidebar nav > div + div { margin-top: var(--spacing-5); }
+  .codex-news .news-header h1 { font-size: var(--text-4xl); line-height: var(--line-height-tight); }
+  .codex-news .news-header > p { font-size: var(--text-base); line-height: var(--line-height-normal); }
+  .codex-news .news-filters .codex-control { min-height: calc(var(--spacing-8) + var(--spacing-3) / 2); border-radius: calc(var(--radius-sm) / 2); }
+  .codex-news .news-filters input[type="date"].codex-control, .codex-news .news-filters select.codex-control { min-height: calc(var(--spacing-8) + var(--spacing-1)); }
+  .codex-news .news-search { width: 46%; }
+  .codex-news .news-categories { flex: 1; flex-wrap: nowrap; }
+  .codex-news .news-categories button { flex: 1; white-space: nowrap; padding-inline: var(--spacing-3); }
+  .codex-news .news-columns { grid-template-columns: minmax(0, 12fr) minmax(0, 5fr); gap: calc(var(--spacing-4) + var(--spacing-1)); }
+  .codex-news .news-feature { min-height: calc(var(--spacing-8) * 7); padding: var(--spacing-4); border-radius: calc(var(--radius-sm) / 2); }
+  .codex-news .news-feature-heading, .codex-news .news-feature > div > .news-summary { padding-right: calc(var(--spacing-8) * 4); }
+  .codex-news .news-document { position: absolute; width: calc(var(--spacing-8) * 3 + var(--spacing-2)); height: calc(var(--spacing-8) * 4 + var(--spacing-3)); top: var(--spacing-11); right: var(--spacing-5); padding: var(--spacing-5) var(--spacing-4); background: color-mix(in srgb, var(--color-primary) calc(var(--opacity-10) * 100%), var(--color-background-card)); }
+  .codex-news .news-entry-meta .codex-control { min-height: var(--spacing-8); }
+  .codex-news .news-entry-meta { margin-top: var(--spacing-1); }
+  .codex-news .news-feature .news-entry-meta { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); justify-content: start; column-gap: var(--spacing-4); row-gap: var(--spacing-3); padding-right: calc(var(--spacing-8) * 4); }
+  .codex-news .news-feature .news-entry-meta > div:first-child { grid-column: 1 / -1; }
+  .codex-news .news-feature .news-entry-meta > details { text-align: left; }
+  .codex-news .news-feature .news-entry-meta > details[open] { grid-column: 1 / -1; }
+  .codex-news #news-latest-heading { font-size: var(--text-2xl); line-height: var(--line-height-tight); }
+  .codex-news .news-list-entry { min-height: calc(var(--spacing-8) * 3 + var(--spacing-3)); padding-block: var(--spacing-1); gap: var(--spacing-5); }
+  .codex-news .news-list-entry h3 { font-size: calc((var(--text-xl) + var(--text-2xl)) / 2); line-height: var(--line-height-tight); }
+  .codex-news .news-list-entry .news-summary { line-height: var(--line-height-normal); }
+  .codex-news .news-list-entry .news-entry-meta { margin-top: 0; }
+  .codex-news .news-list-entry .news-entry-meta .codex-control { min-height: calc(var(--spacing-6) + var(--spacing-1)); }
+  .codex-news .news-tools { min-height: calc(var(--spacing-8) * 11 + var(--spacing-3)); border-radius: calc(var(--radius-sm) / 2); }
+  .codex-news .news-tools { margin-bottom: var(--spacing-4); }
+  .codex-news .news-tools > summary { min-height: var(--spacing-8); }
+  .codex-news .news-tools h2 { font-size: var(--text-2xl); line-height: var(--line-height-tight); }
+  .codex-news .news-tools > p { margin-top: var(--spacing-2); line-height: var(--line-height-normal); }
+  .codex-news .news-checks { margin-top: var(--spacing-3); }
+  .codex-news .news-checks li { min-height: calc(var(--spacing-6) + var(--spacing-1)); }
+  .codex-news .news-research { margin-top: var(--spacing-4); padding-top: var(--spacing-3); }
+  .codex-news .news-research > div { margin-top: var(--spacing-2); gap: 0; }
+  .codex-news .news-research a { min-height: var(--spacing-8); justify-content: flex-start; }
+  .codex-news .news-pagination { padding-top: var(--spacing-1); }
+  .codex-news .news-pagination .codex-control { min-height: var(--spacing-8); border-radius: calc(var(--radius-sm) / 2); }
+}
+
+@media (min-width: 1024px) and (pointer: coarse) {
+  .codex-shell:has(.codex-news) .codex-nav-link,
+  .codex-news .codex-control,
+  .codex-news .news-tools > summary,
+  .codex-news .news-research a { min-height: var(--spacing-11); }
+}

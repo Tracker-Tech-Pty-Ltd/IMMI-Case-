@@ -1,1 +1,0 @@
-import{j as e}from"./vendor-C0FagFki.js";import{T as n}from"./charts-CTmBbytW.js";const a={backgroundColor:"var(--color-card)",border:"1px solid var(--color-border)",borderRadius:8,color:"var(--color-text)",fontSize:12,padding:"8px 12px"};function s(o){const{contentStyle:r,...t}=o;return e.jsx(n,{...t,contentStyle:{...a,...r}})}export{s as C};

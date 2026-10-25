@@ -477,6 +477,7 @@ class TestPerAppRpcExecutor:
     def test_saturated_app_executor_does_not_starve_a_second_app(self, tmp_path):
         import threading
 
+        from immi_case_downloader.web import close_app
         from immi_case_downloader.web.routes import api as api_module
         from immi_case_downloader.webapp import create_app
 
@@ -513,8 +514,69 @@ class TestPerAppRpcExecutor:
             release.set()
             for future in saturating_futures:
                 future.result(timeout=5)
-            executor_a.shutdown(wait=True)
-            executor_b.shutdown(wait=True)
+            close_app(app_a, wait=True)
+            close_app(app_b, wait=True)
+
+    def test_app_context_teardown_does_not_close_executor(self, tmp_path):
+        from immi_case_downloader.web import close_app
+        from immi_case_downloader.web.routes import api as api_module
+        from immi_case_downloader.webapp import create_app
+
+        app = create_app(str(tmp_path), backend="csv")
+        try:
+            with app.app_context():
+                assert api_module._call_in_app_context(
+                    lambda: "first", timeout_seconds=2.0
+                ) == "first"
+                # _call_in_app_context() pops its worker app context after
+                # each call.  A teardown_appcontext shutdown would make this
+                # second call fail with RuntimeError("cannot schedule...").
+                assert api_module._call_in_app_context(
+                    lambda: "second", timeout_seconds=2.0
+                ) == "second"
+        finally:
+            close_app(app, wait=True)
+
+    def test_close_app_cancels_queued_work_but_preserves_in_flight_work(self, tmp_path):
+        import threading
+
+        from immi_case_downloader.web import close_app
+        from immi_case_downloader.webapp import create_app
+
+        app = create_app(str(tmp_path), backend="csv")
+        app.extensions["immi_warmup_stop_event"].set()
+        app.extensions["immi_warmup_thread"].join(timeout=5)
+        assert not app.extensions["immi_warmup_thread"].is_alive()
+        executor = app.extensions["immi_rpc_executor"]
+        release = threading.Event()
+        started = threading.Semaphore(0)
+        recorder: list[int] = []
+
+        def _blocking_task():
+            started.release()
+            release.wait(timeout=5)
+            return "done"
+
+        running_futures = [executor.submit(_blocking_task) for _ in range(4)]
+        queued_future = None
+        try:
+            for _ in range(4):
+                assert started.acquire(timeout=5), "executor never reached capacity"
+
+            queued_future = executor.submit(lambda: recorder.append(1))
+            close_app(app)
+
+            assert queued_future.cancelled()
+            release.set()
+            assert [future.result(timeout=5) for future in running_futures] == [
+                "done"
+            ] * 4
+            assert recorder == []
+        finally:
+            release.set()
+            for future in running_futures:
+                future.result(timeout=5)
+            close_app(app, wait=True)
 
 
 # ── Security headers ───────────────────────────────────────────────────────

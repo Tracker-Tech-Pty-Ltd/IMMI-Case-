@@ -1,0 +1,318 @@
+ M .env.example
+ M .github/workflows/deploy-worker.yml
+ M .gitignore
+ M CLAUDE.md
+ M config/wrangler-cloudflare-native.toml.example
+ M frontend/__tests__/a11y-hardcoded-colors.test.tsx
+ M frontend/__tests__/a11y-mobile-nav.test.tsx
+ M frontend/__tests__/analytics-filter-integration.test.tsx
+ M frontend/__tests__/auth-refresh-recovery.test.tsx
+ M frontend/__tests__/global-search-debounce.test.tsx
+ M frontend/__tests__/hooks/use-auth.test.tsx
+ M frontend/__tests__/legislations.test.tsx
+ M frontend/__tests__/outcome-funnel-chart.test.tsx
+ M frontend/__tests__/router-open-redirect.test.tsx
+ M frontend/__tests__/tenant-cache-isolation.test.tsx
+ M frontend/eslint.config.js
+ M frontend/package-lock.json
+ M frontend/package.json
+ M frontend/src/App.tsx
+ M frontend/src/components/analytics/ChartCard.tsx
+ M frontend/src/components/analytics/OutcomeFunnelChart.tsx
+ M frontend/src/components/analytics/SuccessRateCalculator.tsx
+ M frontend/src/components/cases/CasesFilters.tsx
+ M frontend/src/components/layout/AppLayout.tsx
+ M frontend/src/components/layout/MobileNav.tsx
+ M frontend/src/components/layout/Sidebar.tsx
+ M frontend/src/components/layout/Topbar.tsx
+ M frontend/src/components/layout/nav-config.ts
+ M frontend/src/components/llm-council/AchievementToast.tsx
+ M frontend/src/components/llm-council/StreamingCouncilView.tsx
+ M frontend/src/components/shared/AnalyticsFilters.tsx
+ M frontend/src/components/shared/Breadcrumb.tsx
+ M frontend/src/components/shared/ConfirmModal.tsx
+ M frontend/src/components/shared/FilterPill.tsx
+ M frontend/src/components/shared/GlobalSearch.tsx
+ M frontend/src/components/shared/PageHeader.tsx
+ M frontend/src/components/shared/PageLoader.tsx
+ M frontend/src/components/shared/Pagination.tsx
+ M frontend/src/components/shared/TagInputModal.tsx
+ M frontend/src/contexts/AuthContext.tsx
+ M frontend/src/i18n/locales/en.json
+ M frontend/src/i18n/locales/zh-TW.json
+ M frontend/src/index.css
+ M frontend/src/lib/api-llm-council.ts
+ M frontend/src/lib/api.ts
+ M frontend/src/lib/prefetch.ts
+ M frontend/src/pages/AnalyticsPage.tsx
+ M frontend/src/pages/CaseEditPage.tsx
+ M frontend/src/pages/CasesPage.tsx
+ M frontend/src/pages/DashboardPage.tsx
+ M frontend/src/tokens/tokens.css
+ M frontend/src/tokens/tokens.json
+ M frontend/src/tokens/tokens.ts
+ M frontend/vitest.config.ts
+ M immi_case_downloader/cli.py
+ M immi_case_downloader/pipeline.py
+ M immi_case_downloader/sqlite_repository.py
+ M immi_case_downloader/static/react/_redirects
+ D immi_case_downloader/static/react/assets/AdminPipelineRunsPage-BRxnLuSr.js
+ D immi_case_downloader/static/react/assets/AnalyticsFilters-DK0cCEVr.js
+ D immi_case_downloader/static/react/assets/AnalyticsPage-Divd9rt9.js
+ D immi_case_downloader/static/react/assets/ApiErrorState-Cj_bnaTe.js
+ D immi_case_downloader/static/react/assets/BookmarkButton-DxjfBVRe.js
+ D immi_case_downloader/static/react/assets/Breadcrumb-vCyZ9exU.js
+ D immi_case_downloader/static/react/assets/CaseAddPage-CwJ7vL5b.js
+ D immi_case_downloader/static/react/assets/CaseCard-DEDuMSVO.js
+ D immi_case_downloader/static/react/assets/CaseComparePage-CbLApIu3.js
+ D immi_case_downloader/static/react/assets/CaseDetailPage-Dh0TnRKS.js
+ D immi_case_downloader/static/react/assets/CaseEditPage-B2cV4n7S.js
+ D immi_case_downloader/static/react/assets/CasesPage-CkNEzY_o.js
+ D immi_case_downloader/static/react/assets/ChartTooltip-B4OohMl5.js
+ D immi_case_downloader/static/react/assets/CollectionDetailPage-qqZplSIR.js
+ D immi_case_downloader/static/react/assets/CollectionEditor-XUz_gmF2.js
+ D immi_case_downloader/static/react/assets/CollectionsPage-CD01Ec9V.js
+ D immi_case_downloader/static/react/assets/ConfirmModal-uFcKnMeg.js
+ D immi_case_downloader/static/react/assets/CourtBadge-BhyW_G8T.js
+ D immi_case_downloader/static/react/assets/CourtLineagePage-jZQE2RRn.js
+ D immi_case_downloader/static/react/assets/DashboardPage-DAEVT2Pe.js
+ D immi_case_downloader/static/react/assets/DataDictionaryPage-RzLGCl9y.js
+ D immi_case_downloader/static/react/assets/DataToolsPage-C1iPQ2fm.js
+ D immi_case_downloader/static/react/assets/DesignTokensPage-BIyoHZ9R.js
+ D immi_case_downloader/static/react/assets/EmptyState-D7AGE0DS.js
+ D immi_case_downloader/static/react/assets/GuidedSearchPage-CYdIdg2N.js
+ D immi_case_downloader/static/react/assets/JudgeComparePage-BFJC4LBl.js
+ D immi_case_downloader/static/react/assets/JudgeDetailPage-DnQMS0fl.js
+ D immi_case_downloader/static/react/assets/JudgeProfilesPage-TyzwZJ9w.js
+ D immi_case_downloader/static/react/assets/LegislationDetailPage-BY03qoZI.js
+ D immi_case_downloader/static/react/assets/LegislationsPage-BCTI-vta.js
+ D immi_case_downloader/static/react/assets/LlmCouncilPage-CZ9mghrb.js
+ D immi_case_downloader/static/react/assets/LlmCouncilSessionsPage-BHBNAxSS.js
+ D immi_case_downloader/static/react/assets/LoginPage-DLHEbQvX.js
+ D immi_case_downloader/static/react/assets/NatureBadge-B-6xlseG.js
+ D immi_case_downloader/static/react/assets/OutcomeBadge-DhSPxz5S.js
+ D immi_case_downloader/static/react/assets/PageHeader-CegKwuJF.js
+ D immi_case_downloader/static/react/assets/Pagination-GSCk5pOd.js
+ D immi_case_downloader/static/react/assets/SavedSearchCard-DW4C95Bv.js
+ D immi_case_downloader/static/react/assets/SavedSearchPanel-BFtWia7S.js
+ D immi_case_downloader/static/react/assets/SavedSearchesPage-CkZAy4v6.js
+ D immi_case_downloader/static/react/assets/SearchTaxonomyPage-BPcPT8bJ.js
+ D immi_case_downloader/static/react/assets/SemanticSearchPage-D6la-W3I.js
+ D immi_case_downloader/static/react/assets/StatCard-D9J3N0om.js
+ D immi_case_downloader/static/react/assets/arrow-left-DQQHVOgD.js
+ D immi_case_downloader/static/react/assets/arrow-right-DnrAe0XO.js
+ D immi_case_downloader/static/react/assets/briefcase-DsOvwU6I.js
+ D immi_case_downloader/static/react/assets/calendar-4m_me7fW.js
+ D immi_case_downloader/static/react/assets/charts-CTmBbytW.js
+ D immi_case_downloader/static/react/assets/check-BLOZEOfk.js
+ D immi_case_downloader/static/react/assets/chevron-down-CMB80jAZ.js
+ D immi_case_downloader/static/react/assets/chevron-left-Cazg5Dgg.js
+ D immi_case_downloader/static/react/assets/chevron-right-9V8rmtCh.js
+ D immi_case_downloader/static/react/assets/chevron-up-DHjehI0z.js
+ D immi_case_downloader/static/react/assets/circle-alert-DNEwc8VP.js
+ D immi_case_downloader/static/react/assets/circle-check-D3o0bTJc.js
+ D immi_case_downloader/static/react/assets/clock-Bd77bgic.js
+ D immi_case_downloader/static/react/assets/constants-x2lw-VEP.js
+ D immi_case_downloader/static/react/assets/copy-TsZ-k06K.js
+ D immi_case_downloader/static/react/assets/database-DLreXM62.js
+ D immi_case_downloader/static/react/assets/dnd-BC4zH1O7.js
+ D immi_case_downloader/static/react/assets/download-JbB2nRf4.js
+ D immi_case_downloader/static/react/assets/external-link-CGgHNq6B.js
+ D immi_case_downloader/static/react/assets/git-branch-DVWPYmqY.js
+ D immi_case_downloader/static/react/assets/git-compare-B22GwSH_.js
+ D immi_case_downloader/static/react/assets/globe-ByKBQKJM.js
+ D immi_case_downloader/static/react/assets/hash-BQ9Lfjzf.js
+ D immi_case_downloader/static/react/assets/i18n-MbUvcAwQ.js
+ D immi_case_downloader/static/react/assets/index-CHSp87Ia.css
+ D immi_case_downloader/static/react/assets/index-GlxSA6NU.js
+ D immi_case_downloader/static/react/assets/info-BeTcvS7h.js
+ D immi_case_downloader/static/react/assets/list-CcMEeuQB.js
+ D immi_case_downloader/static/react/assets/map-pin-BmB_AiMb.js
+ D immi_case_downloader/static/react/assets/minimize-2-6oUbkafI.js
+ D immi_case_downloader/static/react/assets/plus-CDWQuM0r.js
+ D immi_case_downloader/static/react/assets/query-CNCXsQJe.js
+ D immi_case_downloader/static/react/assets/rotate-ccw-f_qPeCe-.js
+ D immi_case_downloader/static/react/assets/save-CnMTJeEN.js
+ D immi_case_downloader/static/react/assets/sparkles-CRheYbHF.js
+ D immi_case_downloader/static/react/assets/square-pen-dfI_Ejw7.js
+ D immi_case_downloader/static/react/assets/tag-CO5u_TP6.js
+ D immi_case_downloader/static/react/assets/tokens-f5FcprdZ.js
+ D immi_case_downloader/static/react/assets/trash-2-BjrYhHwz.js
+ D immi_case_downloader/static/react/assets/use-judges-Ca6oUCpN.js
+ D immi_case_downloader/static/react/assets/use-legislations-BG7MAFHe.js
+ D immi_case_downloader/static/react/assets/use-llm-council-sessions-CXxeU9Z1.js
+ D immi_case_downloader/static/react/assets/use-stats-DNLP35mh.js
+ D immi_case_downloader/static/react/assets/user-DXxaVpWs.js
+ D immi_case_downloader/static/react/assets/vendor-C0FagFki.js
+ M immi_case_downloader/static/react/index.html
+ M immi_case_downloader/storage.py
+ M immi_case_downloader/supabase_repository.py
+ M immi_case_downloader/web/__init__.py
+ M immi_case_downloader/web/routes/api.py
+ M immi_case_downloader/webapp.py
+ M scripts/check_cloudflare_native_target.py
+ M scripts/check_immi_activation_evidence.py
+ M tests/e2e/react/react_helpers.py
+ M tests/e2e/react/test_react_analytics.py
+ M tests/e2e/react/test_react_case_crud.py
+ M tests/e2e/react/test_react_cases_list.py
+ M tests/e2e/react/test_react_dark_mode.py
+ M tests/e2e/react/test_react_dashboard.py
+ M tests/e2e/react/test_react_jobs.py
+ M tests/e2e/react/test_react_keyboard.py
+ M tests/e2e/react/test_react_rapid_nav.py
+ M tests/test_cloudflare_native_target.py
+ M tests/test_council_schema.py
+ M tests/test_effective_native_ci.py
+ M tests/test_immi_activation_evidence.py
+ M tests/test_webapp.py
+ M web.py
+ M workers/__tests__/cloudflare-actions.test.js
+ M workers/__tests__/cloudflare-mutations.test.js
+ M workers/__tests__/cloudflare-native-queue.test.js
+ M workers/__tests__/cloudflare-storage-contracts.test.js
+ M workers/__tests__/dispatcher-error-propagation.test.js
+ M workers/__tests__/pipeline-coordinator.test.js
+ M workers/__tests__/reindex-idempotency.test.js
+ M workers/case-api/cloudflare.js
+ M workers/case-api/cloudflare_actions.js
+ M workers/case-api/cloudflare_mutations.js
+ M workers/cloudflare-native.js
+ M workers/storage/case.js
+ M workers/storage/identity.js
+ M workers/storage/object.js
+ M workers/storage/pipeline_coordinator.js
+ M wrangler.toml
+?? .impeccable/
+?? DESIGN.md
+?? "Icon\357\200\215"
+?? PRODUCT.md
+?? docs/21st-core-pages-20261017.md
+?? docs/21st-motion-20261017.md
+?? docs/news-updates-design-20261016/
+?? docs/reviews/
+?? docs/ui-upgrade-20261016/
+?? frontend/__tests__/analytics-scope.test.ts
+?? frontend/__tests__/auth-cross-tab.test.tsx
+?? frontend/__tests__/case-edit-private-notes.test.tsx
+?? frontend/__tests__/council-workspace-auth.test.tsx
+?? frontend/__tests__/helpers/
+?? frontend/__tests__/news-page.test.tsx
+?? frontend/__tests__/news.test.ts
+?? frontend/public/assets/
+?? frontend/public/fonts/
+?? frontend/src/components/shared/CodexSticker.tsx
+?? frontend/src/components/shared/NewsPagination.tsx
+?? frontend/src/components/ui/
+?? frontend/src/data/
+?? frontend/src/lib/analytics-scope.ts
+?? frontend/src/lib/auth-cookie-coordination.ts
+?? frontend/src/lib/codex-stickers.ts
+?? frontend/src/lib/news.ts
+?? frontend/src/pages/NewsPage.tsx
+?? frontend/src/styles/
+?? immi_case_downloader/static/react/assets/AdminPipelineRunsPage-Qb0616ZA.js
+?? immi_case_downloader/static/react/assets/AnalyticsFilters-C7NhVipa.js
+?? immi_case_downloader/static/react/assets/AnalyticsPage-CKJzTa-t.js
+?? immi_case_downloader/static/react/assets/ApiErrorState-v2dqkoSn.js
+?? immi_case_downloader/static/react/assets/BookmarkButton-MI3k-OUr.js
+?? immi_case_downloader/static/react/assets/Breadcrumb-BvPSS2Py.js
+?? immi_case_downloader/static/react/assets/CaseAddPage-D8DW9wEw.js
+?? immi_case_downloader/static/react/assets/CaseCard-C-na84LP.js
+?? immi_case_downloader/static/react/assets/CaseComparePage-wCqOTUZe.js
+?? immi_case_downloader/static/react/assets/CaseDetailPage-CRCnO2DX.js
+?? immi_case_downloader/static/react/assets/CaseEditPage-BdiKoUmd.js
+?? immi_case_downloader/static/react/assets/CaseMutationsDisabledNotice-CJk9TNrI.js
+?? immi_case_downloader/static/react/assets/CasesPage-BVCw0YbH.js
+?? immi_case_downloader/static/react/assets/ChartTooltip-CbYrH4Az.js
+?? immi_case_downloader/static/react/assets/CollectionDetailPage-DAS2r4Qe.js
+?? immi_case_downloader/static/react/assets/CollectionEditor-CnvxJj4O.js
+?? immi_case_downloader/static/react/assets/CollectionsPage-Ck0WHVYv.js
+?? immi_case_downloader/static/react/assets/ConfirmModal-C7z-Uo_j.js
+?? immi_case_downloader/static/react/assets/CourtBadge-BVdUAUV8.js
+?? immi_case_downloader/static/react/assets/CourtLineagePage-DnJHZFvt.js
+?? immi_case_downloader/static/react/assets/DashboardPage-CKdHUk2F.js
+?? immi_case_downloader/static/react/assets/DataDictionaryPage-DZ_7fTCc.js
+?? immi_case_downloader/static/react/assets/DataToolsPage-DXDzqxh-.js
+?? immi_case_downloader/static/react/assets/DesignTokensPage-PU5Rw9Xf.js
+?? immi_case_downloader/static/react/assets/EmptyState-SGLxhby9.js
+?? immi_case_downloader/static/react/assets/GuidedSearchPage-JzDQJ4U2.js
+?? immi_case_downloader/static/react/assets/JudgeComparePage-CM4LriFC.js
+?? immi_case_downloader/static/react/assets/JudgeDetailPage-BTBTWKTy.js
+?? immi_case_downloader/static/react/assets/JudgeProfilesPage-CkQEJ-uj.js
+?? immi_case_downloader/static/react/assets/LegislationDetailPage-DodHwODV.js
+?? immi_case_downloader/static/react/assets/LegislationsPage-GhcLd7X5.js
+?? immi_case_downloader/static/react/assets/LlmCouncilPage-iNdH3u94.js
+?? immi_case_downloader/static/react/assets/LlmCouncilSessionsPage-OIYueMlE.js
+?? immi_case_downloader/static/react/assets/LoginPage-BllVaKw_.js
+?? immi_case_downloader/static/react/assets/NatureBadge-DqdT3g_d.js
+?? immi_case_downloader/static/react/assets/NewsPage-Dt2rXJ7K.js
+?? immi_case_downloader/static/react/assets/OutcomeBadge-DzGlLbGc.js
+?? immi_case_downloader/static/react/assets/PageHeader-DgGFPY6f.js
+?? immi_case_downloader/static/react/assets/Pagination-CehG7s79.js
+?? immi_case_downloader/static/react/assets/SavedSearchCard-53FBVoLF.js
+?? immi_case_downloader/static/react/assets/SavedSearchPanel--5pYaIS8.js
+?? immi_case_downloader/static/react/assets/SavedSearchesPage-MgJTgJ-t.js
+?? immi_case_downloader/static/react/assets/SearchTaxonomyPage-CupHySq0.js
+?? immi_case_downloader/static/react/assets/SemanticSearchPage-Hj0bnktx.js
+?? immi_case_downloader/static/react/assets/StatCard-0VQI1ayK.js
+?? immi_case_downloader/static/react/assets/analytics-scope-C0U2pp1G.js
+?? immi_case_downloader/static/react/assets/arrow-left-D_EqY5_7.js
+?? immi_case_downloader/static/react/assets/arrow-right-CdfnGRn6.js
+?? immi_case_downloader/static/react/assets/arrow-up-right-BprdF4tU.js
+?? immi_case_downloader/static/react/assets/briefcase-DdUxshO0.js
+?? immi_case_downloader/static/react/assets/calendar-XcvneV1A.js
+?? immi_case_downloader/static/react/assets/chart-column-g4myzWtd.js
+?? immi_case_downloader/static/react/assets/charts-e4Wfszy3.js
+?? immi_case_downloader/static/react/assets/check-NSGjBeiN.js
+?? immi_case_downloader/static/react/assets/chevron-down-nznNSfM0.js
+?? immi_case_downloader/static/react/assets/chevron-left-B1EqMCHx.js
+?? immi_case_downloader/static/react/assets/chevron-right-Boy8Ru3w.js
+?? immi_case_downloader/static/react/assets/chevron-up-BwUPTQB7.js
+?? immi_case_downloader/static/react/assets/circle-alert-CJUeOjQV.js
+?? immi_case_downloader/static/react/assets/circle-check-D0aoxofS.js
+?? immi_case_downloader/static/react/assets/clock-BP3pxyGe.js
+?? immi_case_downloader/static/react/assets/confetti.module-C2jkTI5u.js
+?? immi_case_downloader/static/react/assets/constants-BFiAA_Wk.js
+?? immi_case_downloader/static/react/assets/copy-CTtdRRuR.js
+?? immi_case_downloader/static/react/assets/database-SDy1wZfr.js
+?? immi_case_downloader/static/react/assets/dnd-Hd1hg0nv.js
+?? immi_case_downloader/static/react/assets/download-BPmKHQMA.js
+?? immi_case_downloader/static/react/assets/download-blob-Csa2RqIT.js
+?? immi_case_downloader/static/react/assets/external-link-OnEtsPgA.js
+?? immi_case_downloader/static/react/assets/git-branch-7fPIAZ-7.js
+?? immi_case_downloader/static/react/assets/git-compare-B0anOkQv.js
+?? immi_case_downloader/static/react/assets/globe-XLWnCsp4.js
+?? immi_case_downloader/static/react/assets/hash-raBHXamO.js
+?? immi_case_downloader/static/react/assets/i18n-Diq9BY4f.js
+?? immi_case_downloader/static/react/assets/index-BTJ5qU45.css
+?? immi_case_downloader/static/react/assets/index-CrGLLRRQ.js
+?? immi_case_downloader/static/react/assets/info-bsUfcOyn.js
+?? immi_case_downloader/static/react/assets/list-D8rqf0IB.js
+?? immi_case_downloader/static/react/assets/map-pin-bZhjvHWv.js
+?? immi_case_downloader/static/react/assets/minimize-2-mq-UJAAb.js
+?? immi_case_downloader/static/react/assets/plus-DtY0jZ9H.js
+?? immi_case_downloader/static/react/assets/query-CVaASUXx.js
+?? immi_case_downloader/static/react/assets/rotate-ccw-UHN51a2_.js
+?? immi_case_downloader/static/react/assets/save-CpeCspMQ.js
+?? immi_case_downloader/static/react/assets/sparkles-mOJKZEC5.js
+?? immi_case_downloader/static/react/assets/square-pen-D8rOQsRU.js
+?? immi_case_downloader/static/react/assets/tag-KkL2wczC.js
+?? immi_case_downloader/static/react/assets/tokens-D_bOn_bz.js
+?? immi_case_downloader/static/react/assets/trash-2-DY0RaENr.js
+?? immi_case_downloader/static/react/assets/use-judges-CdQtGbsn.js
+?? immi_case_downloader/static/react/assets/use-legislations-Ml2Lyidj.js
+?? immi_case_downloader/static/react/assets/use-llm-council-sessions-DF18LzVo.js
+?? immi_case_downloader/static/react/assets/use-stats-C4mkPVus.js
+?? immi_case_downloader/static/react/assets/user-8ZiLaNw4.js
+?? immi_case_downloader/static/react/assets/vendor-Ba2z923H.js
+?? immi_case_downloader/static/react/assets/zh-TW-BM3IZ50k.js
+?? scripts/materialize_immi_native_configs.py
+?? tests/e2e/react/test_auth_cross_tab.py
+?? tests/test_live_schema_opt_in.py
+?? tests/test_local_data_preservation.py
+?? tests/test_native_deploy_release.py
+?? workers/__tests__/case-mutation-races.test.js
+?? workers/__tests__/identity-refresh-overlap.test.js
+?? workers/case-api/mutation_do.js
+?? workers/case-api/mutation_namespace.js

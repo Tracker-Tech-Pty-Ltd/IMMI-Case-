@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-16T04:16:07Z",
+  "title": "Design System: IMMI-Case",
+  "extensions": {
+    "colorMeta": {
+      "deep-navy": {
+        "role": "primary",
+        "displayName": "Deep Navy",
+        "tonalRamp": [
+          "oklch(15% 0.04 255)",
+          "oklch(26% 0.04 255)",
+          "oklch(37% 0.04 255)",
+          "oklch(48% 0.04 255)",
+          "oklch(59% 0.04 255)",
+          "oklch(70% 0.04 255)",
+          "oklch(81% 0.04 255)",
+          "oklch(95% 0.04 255)"
+        ]
+      },
+      "parchment": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "tonalRamp": [
+          "oklch(15% 0.008 85)",
+          "oklch(26% 0.008 85)",
+          "oklch(37% 0.008 85)",
+          "oklch(48% 0.008 85)",
+          "oklch(59% 0.008 85)",
+          "oklch(70% 0.008 85)",
+          "oklch(81% 0.008 85)",
+          "oklch(95% 0.008 85)"
+        ]
+      },
+      "ink-amber": {
+        "role": "accent",
+        "displayName": "Ink Amber",
+        "tonalRamp": [
+          "oklch(15% 0.09 85)",
+          "oklch(26% 0.09 85)",
+          "oklch(37% 0.09 85)",
+          "oklch(48% 0.09 85)",
+          "oklch(59% 0.09 85)",
+          "oklch(70% 0.09 85)",
+          "oklch(81% 0.09 85)",
+          "oklch(95% 0.09 85)"
+        ]
+      }
+    },
+    "shadows": [
+      {
+        "name": "xs",
+        "value": "0 1px 2px rgba(27,40,56,0.04)",
+        "purpose": "既有紙面與浮層層次"
+      },
+      {
+        "name": "sm",
+        "value": "0 1px 3px rgba(27,40,56,0.06), 0 1px 2px rgba(27,40,56,0.04)",
+        "purpose": "既有紙面與浮層層次"
+      },
+      {
+        "name": "DEFAULT",
+        "value": "0 2px 6px rgba(27,40,56,0.08)",
+        "purpose": "既有紙面與浮層層次"
+      },
+      {
+        "name": "lg",
+        "value": "0 4px 12px rgba(27,40,56,0.1)",
+        "purpose": "既有紙面與浮層層次"
+      }
+    ],
+    "motion": [
+      {
+        "name": "fast",
+        "value": "150ms",
+        "purpose": "互動狀態回饋"
+      },
+      {
+        "name": "normal",
+        "value": "300ms",
+        "purpose": "互動狀態回饋；新聞的分類底片、游標聚光及圖示過渡沿用此時間與既有 easing，遵守 reduced-motion。21st 來源與改編紀錄見 docs/21st-motion-20261017.md。"
+      },
+      {
+        "name": "slow",
+        "value": "500ms",
+        "purpose": "互動狀態回饋"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ],
+    "typographyMeta": {
+      "display": {
+        "displayName": "Legal Codex 襯線標題",
+        "purpose": "西文優先 Crimson Text，繁中以自行託管的 Codex Serif TC 後備；Google Fonts Noto Serif TC 精簡及 OFL 授權來源見 docs/news-updates-design-20261016/fonts/provenance.json。"
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "主要動作，以主題對應前景確保辨識。",
+      "html": "<button class=\"ds-primary\">搜尋案例</button>",
+      "css": ".ds-primary{background:var(--color-accent);color:var(--color-on-solid);border:0;border-radius:var(--radius);padding:var(--spacing-2) var(--spacing-4);min-height:var(--spacing-11);font:inherit;transition:background var(--duration-fast)}.ds-primary:hover{background:var(--color-accent-hover)}.ds-primary:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "description": "次要或取消動作。",
+      "html": "<button class=\"ds-secondary\">取消</button>",
+      "css": ".ds-secondary{background:var(--color-background-card);color:var(--color-text);border:1px solid var(--color-border);border-radius:var(--radius);padding:var(--spacing-2) var(--spacing-4);min-height:var(--spacing-11);font:inherit}.ds-secondary:hover{background:var(--color-background-surface)}.ds-secondary:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Case search",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "搜尋標題或引註。",
+      "html": "<input class=\"ds-input\" aria-label=\"搜尋案例\" placeholder=\"搜尋案例…\">",
+      "css": ".ds-input{background:var(--color-background-card);color:var(--color-text);border:1px solid var(--color-border);border-radius:var(--radius);padding:var(--spacing-2) var(--spacing-3);font:inherit;min-height:var(--spacing-11);caret-color:var(--color-accent)}.ds-input::placeholder{color:var(--color-text-muted)}.ds-input:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Active navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "以文字及底色共同指出目前位置。",
+      "html": "<nav><a href=\"#\" class=\"ds-nav\" aria-current=\"page\">案例數據總覽</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;min-height:var(--spacing-11);padding:0 var(--spacing-3);background:var(--color-accent-muted);color:var(--color-accent);border-radius:var(--radius);text-decoration:none;font-family:var(--font-data)}.ds-nav:hover{background:var(--color-background-surface)}.ds-nav:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Filter chip",
+      "kind": "chip",
+      "description": "選取條件；顏色不可取代名稱。",
+      "html": "<button class=\"ds-chip\" aria-pressed=\"true\">FCA</button>",
+      "css": ".ds-chip{min-height:var(--spacing-11);padding:var(--spacing-2) var(--spacing-3);border:0;border-radius:var(--radius);background:var(--color-accent);color:var(--color-on-solid);font-family:var(--font-data)}.ds-chip:hover{background:var(--color-accent-hover)}.ds-chip:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Data panel",
+      "kind": "card",
+      "description": "圖表與資料內容的紙面容器。",
+      "html": "<section class=\"ds-panel\"><h2>法院案例分布</h2><p>依目前篩選範圍呈現。</p></section>",
+      "css": ".ds-panel{background:var(--color-background-card);color:var(--color-text);border:1px solid var(--color-border-light);border-radius:var(--radius-lg);padding:var(--spacing-4)}.ds-panel h2{font-family:var(--font-heading);margin:0 0 var(--spacing-2)}.ds-panel p{color:var(--color-text-secondary);margin:0}"
+    },
+    {
+      "name": "CodexSticker",
+      "kind": "custom",
+      "description": "透明裝飾素材採分別生成的淺深雙版本，由相鄰真實文字提供名稱；document 使用 document-v2。逐張來源見 docs/news-updates-design-20261016/sticker-assets/source-map.json。",
+      "html": "<span class=\"ds-codex-sticker\" aria-hidden=\"true\"><img class=\"ds-codex-sticker-light\" src=\"/assets/legal-codex-stickers/document-v2-light.webp\" width=\"256\" height=\"256\" alt=\"\" loading=\"lazy\" decoding=\"async\"><img class=\"ds-codex-sticker-dark\" src=\"/assets/legal-codex-stickers/document-v2-dark.webp\" width=\"256\" height=\"256\" alt=\"\" loading=\"lazy\" decoding=\"async\"></span>",
+      "css": ".ds-codex-sticker{display:inline-block;flex-shrink:0;vertical-align:middle;width:var(--spacing-11);height:var(--spacing-11)}.ds-codex-sticker img{width:100%;height:100%;object-fit:contain;pointer-events:none}.ds-codex-sticker-light{display:block}.ds-codex-sticker-dark{display:none}.dark .ds-codex-sticker-light,:host-context(.dark) .ds-codex-sticker-light{display:none}.dark .ds-codex-sticker-dark,:host-context(.dark) .ds-codex-sticker-dark{display:block}"
+    },
+    {
+      "name": "NewsPagination",
+      "kind": "nav",
+      "description": "新聞專用前後頁與直接選頁，保留結果範圍狀態及首末頁停用；原共用 Pagination 不替換。新聞桌面的 rem 與整個新聞框架共用單一根基準：clamp(100%, calc(100vw * 16 / 1127), 150%)，預設16px、上限24px；其他路由及手機維持原基準。",
+      "html": "<nav class=\"ds-news-pagination\" aria-label=\"分頁導覽\"><p class=\"ds-news-pagination-status\" role=\"status\" aria-live=\"polite\">顯示第 1–3 筆，共 7 筆</p><button class=\"ds-news-pagination-button\" type=\"button\" disabled aria-label=\"前往上一頁\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m15 18-6-6 6-6\"></path></svg><span>上一頁</span></button><select class=\"ds-news-pagination-select\" aria-label=\"選擇新聞頁碼\"><option selected>第 1 頁，共 3 頁</option><option>第 2 頁，共 3 頁</option><option>第 3 頁，共 3 頁</option></select><button class=\"ds-news-pagination-button\" type=\"button\" aria-label=\"前往下一頁\"><span>下一頁</span><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"></path></svg></button></nav>",
+      "css": ".ds-news-pagination{position:relative;display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-2);border-top:1px solid var(--color-border-light);padding-top:var(--spacing-2);font-family:var(--font-data);font-size:0.875rem;font-variant-numeric:tabular-nums}.ds-news-pagination-button{display:inline-flex;align-items:center;gap:var(--spacing-1);flex-shrink:0;min-height:var(--spacing-11);padding:0 var(--spacing-3);border:1px solid var(--color-border-light);border-radius:var(--radius-sm);background:var(--color-background-card);color:var(--color-text-muted);font:inherit}.ds-news-pagination-select{min-width:0;min-height:var(--spacing-11);appearance:none;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--color-text-secondary);padding:0 var(--spacing-2);font:inherit;text-align:center}.ds-news-pagination-button:hover{background:var(--color-background-surface)}.ds-news-pagination-button:disabled{cursor:not-allowed;opacity:0.4}.ds-news-pagination-button:focus-visible,.ds-news-pagination-select:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}.ds-news-pagination-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(min-width:1024px) and (pointer:fine){.ds-news-pagination{padding-top:var(--spacing-1)}.ds-news-pagination-button,.ds-news-pagination-select{min-height:var(--spacing-8);border-radius:calc(var(--radius-sm)/2)}}@media(max-width:639px){.ds-news-pagination-button span{display:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Legal Codex（法律典籍）",
+    "overview": "以法律典籍的沉穩、精準與學術感呈現公開案例。介面首先讓使用者辨認所在位置、搜尋範圍與資料來源，再閱讀分析結果。此文件記錄現有品牌與實作，不另立替代風格。",
+    "keyCharacteristics": [
+      "暖米白紙面、深海軍藍文字、節制的琥珀金提示。",
+      "襯線標題配合清楚的資料標籤與表格。",
+      "圖表優先呈現資料與範圍，保留九種法院識別色。",
+      "共用操作、狀態與尺寸規則，讓不同頁面可以預期。"
+    ],
+    "rules": [
+      {
+        "name": "The Paired Contrast Rule",
+        "body": "實心重點底色搭配 `--color-on-solid`，由主題決定前景，不將白字固定套用到深色模式的亮琥珀底色。",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do 保留資料、來源連結、法院分類與所有主要操作。",
+      "Do 從 `tokens.json` 取得顏色、間距、圓角與陰影。",
+      "Do 在英文、繁體中文及明暗主題下檢查窄螢幕與鍵盤操作。"
+    ],
+    "donts": [
+      "Don't 用通用行銷頁模板取代現有研究介面。",
+      "Don't 隱藏主要功能來掩飾手機版溢出。",
+      "Don't 編造新聞、案例數量、來源或驗證結果。"
+    ]
+  }
+}

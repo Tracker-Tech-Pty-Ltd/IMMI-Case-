@@ -27,11 +27,13 @@
     "data_dictionary": "資料字典",
     "design_tokens": "設計代符",
     "legislations": "法律法規",
-    "collections": "案例收藏"
+    "collections": "案例收藏",
+    "workspace": "我的研究",
+    "news": "新聞更新"
   },
   "nav_descriptions": {
     "dashboard": "統計數據、圖表及近期案例",
-    "analytics": "勝訴率、趨勢及洞察分析",
+    "analytics": "歷史裁決結果、趨勢及洞察分析",
     "judge_profiles": "按法官或成員查看核准率",
     "court_lineage": "2000年起澳洲法院演進歷程",
     "cases": "搜尋及瀏覽全部149,000+件裁決",
@@ -47,7 +49,8 @@
     "jobs": "監控後台任務執行進度",
     "legislations": "瀏覽澳洲移民相關法律",
     "data_dictionary": "欄位定義及資料庫結構",
-    "design_tokens": "視覺設計變數（開發用）"
+    "design_tokens": "視覺設計變數（開發用）",
+    "news": "可核對的官方消息"
   },
   "common": {
     "search": "搜尋",
@@ -91,7 +94,13 @@
     "close_menu": "關閉選單",
     "skip_to_content": "跳到主要內容",
     "clear": "清除",
-    "loading_message": "正在準備最新資料與介面狀態。"
+    "loading_message": "正在準備最新資料與介面狀態。",
+    "main_navigation": "主要導覽",
+    "breadcrumb": "目前位置",
+    "search_min_chars": "請輸入至少 2 個字元，可搜尋案例標題或引註。",
+    "search_loading": "正在搜尋案例…",
+    "search_failed": "搜尋暫時無法使用，請再試一次。",
+    "search_refine_hint": "可試試較短的標題、姓氏或案例引註。"
   },
   "buttons": {
     "browse_cases": "瀏覽案例",
@@ -198,6 +207,7 @@
     "peak_year": "高峰：{{year}}"
   },
   "cases": {
+    "view_mode": "案例顯示方式",
     "title": "案例",
     "add_new": "新增案例",
     "case_details": "案件詳情",
@@ -259,6 +269,7 @@
     "similarity_score": "相似度分數"
   },
   "case_detail": {
+    "sections_label": "案例章節捷徑",
     "loading": "案件載入中⋯",
     "copy_citation": "複製引述標識",
     "catchwords": "關鍵詞摘要",
@@ -283,7 +294,10 @@
     "all_sources": "所有來源",
     "all_tags": "所有標籤",
     "date": "日期",
-    "remove_filter": "移除篩選"
+    "remove_filter": "移除篩選",
+    "preset_all_time": "全部期間",
+    "preset_last_5y": "近 5 年",
+    "preset_last_10y": "近 10 年"
   },
   "pagination": {
     "showing": "顯示第 {{start}}–{{end}} 筆，共 {{total}} 筆",
@@ -291,7 +305,8 @@
     "ellipsis": "⋯",
     "previous_page": "前往上一頁",
     "next_page": "前往下一頁",
-    "page_number": "前往第 {{page}} 頁"
+    "page_number": "前往第 {{page}} 頁",
+    "navigation": "案例分頁"
   },
   "outcomes": {
     "remitted": "發回重審",
@@ -317,6 +332,9 @@
     "pending": "待決"
   },
   "judges": {
+    "sections_label": "法官檔案章節捷徑",
+    "view_mode": "法官顯示方式",
+    "profile_label": "歷史案例研究檔案",
     "title": "法官檔案",
     "subtitle": "依法官／成員探索核准率、審理量及案件組成。",
     "judge_profile": "法官檔案",
@@ -472,20 +490,21 @@
     "filter_sorted_by": "依 {{field}} 排序（{{direction}}）"
   },
   "analytics": {
+    "sections_label": "分析章節捷徑",
     "title": "數據分析",
     "subtitle": "案例洞察與趨勢",
     "filters_scope_title": "篩選範圍",
     "filters_scope_desc": "先設定法院、年份區間與進階條件，再解讀下方圖表洞察。",
     "reset_all_filters": "重設篩選",
     "keyboard_shortcuts": "鍵盤操作：按 r 可重設所有分析篩選",
-    "quick_estimate_title": "快速估算",
-    "quick_estimate_desc": "先用勝訴率試算快速掌握基線，再往下做結構與趨勢深度分析。",
-    "success_rate_calculator": "勝訴率試算器",
-    "success_calculator_desc": "依法院、簽證子類別、案件性質及法律概念估算歷史勝訴率",
+    "quick_estimate_title": "歷史裁決結果總覽",
+    "quick_estimate_desc": "先查看歷史裁決分布，再深入閱讀趨勢與個案內容。",
+    "success_rate_calculator": "歷史裁決結果分析",
+    "success_calculator_desc": "檢視符合所選條件的歷史案例及裁決分布。",
     "outcome_snapshot": "裁決概覽",
     "outcome_snapshot_desc": "先看各法院、年度與案件組成的裁決分布，再往下做深度分析。",
-    "applicant_win_rate": "申請人勝訴率",
-    "success_rate": "勝訴率",
+    "applicant_win_rate": "歷史上有利申請人的結果比例",
+    "success_rate": "歷史有利結果比例",
     "calculate": "試算",
     "enter_court": "輸入法院代碼",
     "enter_visa_subclass": "輸入簽證子類別",
@@ -493,9 +512,9 @@
     "outcome_by_court": "各法院裁決結果",
     "outcome_by_subclass": "各簽證子類別裁決結果",
     "outcome_trends": "裁決結果走勢",
-    "outcome_trends_desc": "申請人勝訴率與法院維持原裁率之對比走勢",
+    "outcome_trends_desc": "歷史上有利申請人的結果與維持原裁結果之比例走勢",
     "legal_concepts": "法律概念與裁決結果",
-    "top_judges": "勝訴率最高之法官",
+    "top_judges": "依歷史有利結果比例排列的法官",
     "concept_heatmap": "案件性質與結果相關矩陣",
     "concept_cooccurrence": "法律概念共現分析",
     "concept_cooccurrence_desc": "多項法律概念同時出現之案件統計",
@@ -507,7 +526,7 @@
     "concept_effectiveness": "概念效益",
     "concept_effectiveness_desc": "法律概念對案件裁決結果之提升影響",
     "concept_trends": "概念走勢",
-    "concept_trends_desc": "主要法律概念勝訴率之演變",
+    "concept_trends_desc": "含主要法律概念之案例的歷史結果比例變化",
     "concept_combos": "常見概念組合",
     "common_combinations_desc": "最具效益之概念配對及其效益指數",
     "outcome_rate_by_court": "各法院裁決率",
@@ -527,7 +546,7 @@
     "concept_intelligence_desc": "識別與較佳裁決結果相關之法律概念，並追蹤其隨時間之演變。",
     "concept_by_court": "各法院概念效益",
     "lift_delta": "效益差值",
-    "win_rate": "勝訴率",
+    "win_rate": "歷史有利結果比例",
     "rate": "比率",
     "trend": "走勢",
     "frequency": "頻率",
@@ -538,7 +557,7 @@
     "confidence": "可信度",
     "outcome_funnel": "裁決漏斗圖",
     "top_concept_lift": "效益最高之概念",
-    "win_trend": "勝訴率走勢",
+    "win_trend": "歷史有利結果比例走勢",
     "top_concept_combinations": "最優概念組合",
     "concepts_col": "概念",
     "cases_col": "案件數",
@@ -575,13 +594,13 @@
     "unfavourable": "不利",
     "total": "合計",
     "advanced_filters": "進階篩選",
-    "deep_analysis_title": "勝訴率深度分析",
+    "deep_analysis_title": "歷史裁決結果深度分析",
     "visa_families": "簽證家族分析",
-    "visa_families_desc": "按簽證家族群組彙整勝訴率，比較不同簽證類別的裁決結果。",
+    "visa_families_desc": "按簽證家族群組彙整歷史資料，比較不同簽證類別已發生的裁決結果。",
     "visa_family_volume": "各簽證家族案件量",
-    "visa_family_win_rates": "各簽證家族勝訴率",
+    "visa_family_win_rates": "各簽證家族歷史有利結果比例",
     "sort_by_volume": "按案件量排序",
-    "sort_by_win_rate": "按勝訴率排序",
+    "sort_by_win_rate": "按歷史有利結果比例排序",
     "family": "家族",
     "total_cases": "案件總數",
     "cases": "案件",
@@ -596,12 +615,12 @@
     "insights_top_nature_label": "最常見案件性質",
     "insights_top_visa_label": "最常見簽證類別",
     "insights_of_cases": "的案件",
-    "deep_analysis_description": "勝訴率分析",
+    "deep_analysis_description": "歷史裁決結果分析",
     "flow_cases": "案件數",
     "flow_sankey_aria": "顯示案件性質與結果分布的流向圖",
     "flow_source": "來源",
     "flow_target": "目標",
-    "judge_profile_hint": "勝訴率資料請見法官檔案頁面",
+    "judge_profile_hint": "歷史裁決結果資料請見法官檔案頁面",
     "legal_concepts_aria": "依案件數排序之主要法律概念長條圖",
     "legend": "圖例",
     "losses": "敗訴",
@@ -613,11 +632,13 @@
     "show_pct": "列百分比",
     "table_view": "表格檢視",
     "top_judges_aria": "依案件數排序之最活躍法官長條圖",
-    "trend_legend_note": "維持原判率＝法庭維持原決定｜申請人勝訴率＝撤銷＋發回重審",
+    "trend_legend_note": "歷史維持原判比例＝法庭維持原決定｜歷史有利申請人結果比例＝撤銷＋發回重審",
     "vs_avg": "對比平均",
     "wins": "勝訴",
     "concept_combo_caption": "法律概念組合",
-    "risk_gauge_aria": "分數 {{score}}（滿分 100）：{{label}}"
+    "risk_gauge_aria": "分數 {{score}}（滿分 100）：{{label}}",
+    "historical_share": "歷史結果比例",
+    "historical_result_limit": "依符合條件的 {{count}} 筆歷史案例計算，並非個人案件結果預測。樣本不足或資料不完整時，可推論的範圍有限。"
   },
   "lineage": {
     "title": "法院沿革時間軸",
@@ -1379,6 +1400,7 @@
   },
   "auth": {
     "logout": "登出",
+    "logout_failed": "登出失敗，請再試一次。",
     "sign_in": "登入"
   },
   "semantic_search": {
@@ -1399,5 +1421,55 @@
     "description": "澳洲移民法庭案件研究平台。以 Telegram 登入即可儲存搜尋與收藏集。",
     "telegram_failed": "Telegram 登入失敗，請再試一次。",
     "public_access_note": "所有案例無須登入即可公開瀏覽。僅在儲存搜尋與收藏集時才需登入。"
+  },
+  "news": {
+    "title": "新聞更新",
+    "brand_subtitle": "澳洲移民案例研究",
+    "previous": "上一頁",
+    "next": "下一頁",
+    "choose_page": "選擇新聞頁碼",
+    "page_status": "第 {{page}} 頁，共 {{total}} 頁",
+    "editorial_summary": "人工選錄，非即時新聞",
+    "subtitle": "追蹤澳洲移民相關公告、審裁消息與法院動態。",
+    "curated": "人工整理選集 · 最近核對來源",
+    "official": "官方來源",
+    "filters": "篩選新聞",
+    "search": "搜尋新聞標題或來源",
+    "categories": "新聞分類",
+    "all": "全部",
+    "category": {
+      "government": "政府公告",
+      "tribunal": "審裁消息",
+      "courts": "法院動態"
+    },
+    "date_from": "發布日期起",
+    "date_range": "發布日期",
+    "tools_title": "核對來源與延伸研究",
+    "date_to": "發布日期迄",
+    "source": "來源",
+    "all_sources": "全部來源",
+    "results_count": "共 {{count}} 則消息",
+    "clear": "清除篩選",
+    "featured": "重點消息",
+    "published": "發布",
+    "verified": "來源核對",
+    "original": "查看原文",
+    "original_named": "查看原文：{{title}}（開啟新分頁）",
+    "read_summary": "閱讀摘要",
+    "latest": "最新更新",
+    "no_results": "沒有符合條件的消息",
+    "no_results_hint": "可更換關鍵字、放寬日期範圍，或清除篩選後再試。",
+    "reading_tools": "閱讀與研究",
+    "verify_title": "查核原始來源",
+    "verify_intro": "閱讀摘要後，請開啟原文核對日期與適用範圍。",
+    "check_date": "確認發布日期",
+    "check_source": "查看原始來源",
+    "check_scope": "區分公告消息與案例結果",
+    "research": "延伸研究",
+    "cases_link": "回到案例資料庫",
+    "analytics_link": "查看歷史數據",
+    "editorial_note": "此頁為人工核對的消息選集，非即時或完整新聞串流。摘要由本站整理，內容以原始公告為準；消息不能預測個人案件結果。",
+    "results_count_one": "共 {{count}} 則消息",
+    "results_count_other": "共 {{count}} 則消息"
   }
 }
