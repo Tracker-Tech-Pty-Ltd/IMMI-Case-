@@ -4,12 +4,10 @@ Screenshots use the isolated case fixture, never production or personal data.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
 
-EVIDENCE = Path(".impeccable/review/detail-judges-21st-20261017")
 CASE_PATH = "/cases/96ebc92e9afa"
 JUDGE_PATH = "/judge-profiles/Senior%20Member%20Jones"
 
@@ -18,7 +16,7 @@ class TestCodexDetailExperience:
     @pytest.mark.parametrize("surface", ["case", "judges", "judge"])
     @pytest.mark.parametrize("dark", [False, True], ids=["light", "dark"])
     @pytest.mark.parametrize("mobile", [False, True], ids=["desktop", "mobile"])
-    def test_theme_layout_and_keyboard(self, browser, base_url, surface, dark, mobile):
+    def test_theme_layout_and_keyboard(self, browser, base_url, surface, dark, mobile, tmp_path):
         context = browser.new_context(
             viewport={"width": 390 if mobile else 1280, "height": 844 if mobile else 900},
             locale="zh-TW",
@@ -54,8 +52,7 @@ class TestCodexDetailExperience:
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             theme = "dark" if dark else "light"
             size = "mobile" if mobile else "desktop"
-            EVIDENCE.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(EVIDENCE / f"{surface}-{size}-{theme}.png"))
+            page.screenshot(path=str(tmp_path / f"{surface}-{size}-{theme}.png"))
 
             if surface == "case":
                 source = page.locator(".codex-detail-toolbar a[target='_blank']")
@@ -90,13 +87,13 @@ class TestCodexDetailExperience:
                 checkbox = card.locator("input[type='checkbox']")
                 checkbox.check()
                 expect(checkbox).to_be_checked()
-                page.screenshot(path=str(EVIDENCE / f"judges-{size}-{theme}-cards.png"))
+                page.screenshot(path=str(tmp_path / f"judges-{size}-{theme}-cards.png"))
                 assert page.url.endswith("/judge-profiles")
                 card.press("Enter")
                 expect(page.locator(".codex-judge-hero")).to_be_visible()
 
             assert errors == []
-            (EVIDENCE / f"{surface}-{size}-{theme}.json").write_text(json.dumps({
+            (tmp_path / f"{surface}-{size}-{theme}.json").write_text(json.dumps({
                 "surface": surface, "mobile": mobile, "dark": dark,
                 "no_horizontal_overflow": True, "keyboard": "passed", "errors": errors,
             }, indent=2), encoding="utf-8")
@@ -124,7 +121,7 @@ class TestCodexDetailExperience:
         finally:
             context.close()
 
-    def test_text_reader_and_reduced_motion(self, browser, base_url):
+    def test_text_reader_and_reduced_motion(self, browser, base_url, tmp_path):
         context = browser.new_context(
             base_url=base_url, viewport={"width": 390, "height": 844},
             reduced_motion="reduce", locale="en-AU",
@@ -149,12 +146,12 @@ class TestCodexDetailExperience:
                 "el => getComputedStyle(el).animationName"
             )
             assert animation == "none"
-            page.screenshot(path=str(EVIDENCE / "case-mobile-reader-reduced.png"))
+            page.screenshot(path=str(tmp_path / "case-mobile-reader-reduced.png"))
         finally:
             context.close()
 
     @pytest.mark.parametrize("dark", [False, True], ids=["light", "dark"])
-    def test_biography_disclosures_keep_content_and_sources(self, browser, base_url, dark):
+    def test_biography_disclosures_keep_content_and_sources(self, browser, base_url, dark, tmp_path):
         context = browser.new_context(
             base_url=base_url, viewport={"width": 390, "height": 844}, locale="en-AU",
         )
@@ -190,6 +187,6 @@ class TestCodexDetailExperience:
                 page.locator(".celestial-toggle").click()
             page.wait_for_function("dark => document.documentElement.classList.contains('dark') === dark && !document.documentElement.classList.contains('theme-transitioning')", arg=dark)
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.screenshot(path=str(EVIDENCE / f"judge-mobile-bio-{'dark' if dark else 'light'}.png"))
+            page.screenshot(path=str(tmp_path / f"judge-mobile-bio-{'dark' if dark else 'light'}.png"))
         finally:
             context.close()
