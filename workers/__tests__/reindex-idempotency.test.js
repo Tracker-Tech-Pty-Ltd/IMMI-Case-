@@ -57,6 +57,8 @@ function statefulStores({ semanticReady = 0, contentSha = SHA } = {}) {
         row.vector_mutation_id = mutation;
         return true;
       }),
+      markAggregatesDirty: vi.fn(async () => true),
+      aggregatesNeedRebuild: vi.fn(async () => ({ due: false, reason: "debounced" })),
       rebuildAggregates: vi.fn(async () => undefined),
     },
     semanticIndex: {
@@ -87,8 +89,7 @@ function reindexMessage() {
 beforeEach(() => { vi.clearAllMocks(); coordinators.clear(); });
 
 describe("case.reindex does not re-buy an embedding it already has", () => {
-  // The defect: handleCaseMutationQueue runs every message, then does ONE
-  // corpus-wide rebuildAggregates(). If that rebuild throws, EVERY handled
+  // The defect: handleCaseMutationQueue runs every message, then durably marks analytics dirty. If that handoff throws, EVERY handled
   // message is retried — including reindexes that fully succeeded. Redelivery
   // then repeats the Workers AI embed and the Vectorize upsert, and after
   // max_retries the message lands in the DLQ because of an analytics fault that
@@ -139,15 +140,15 @@ describe("case.reindex does not re-buy an embedding it already has", () => {
   });
 
   // The scenario the review named, played out across two real deliveries.
-  it("does not repeat the paid work when an aggregate rebuild fails and the message is redelivered", async () => {
+  it("does not repeat the paid work when persisting the aggregate dirty mark fails and the message is redelivered", async () => {
     const stores = statefulStores({ semanticReady: 0 });
-    stores.caseStore.rebuildAggregates.mockRejectedValueOnce(new Error("D1 aggregate query failed"));
+    stores.caseStore.markAggregatesDirty.mockRejectedValueOnce(new Error("D1 aggregate query failed"));
     mockCreateStores.mockReturnValue(stores);
 
     const first = reindexMessage();
     await worker.queue({ messages: [first] }, ENV);
 
-    // Delivery 1: the embedding succeeded, then the unrelated rebuild blew up,
+    // Delivery 1: the embedding succeeded, then the unrelated dirty handoff failed,
     // so the platform will redeliver.
     expect(stores.semanticIndex.embed).toHaveBeenCalledOnce();
     expect(first.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
@@ -156,11 +157,12 @@ describe("case.reindex does not re-buy an embedding it already has", () => {
     const second = reindexMessage();
     await worker.queue({ messages: [second] }, ENV);
 
-    // Delivery 2: the aggregate rebuild is retried (which is the point of the
+    // Delivery 2: the durable dirty handoff is retried (which is the point of the
     // redelivery) but the embedding is NOT bought a second time.
     expect(stores.semanticIndex.embed).toHaveBeenCalledOnce();
     expect(stores.semanticIndex.upsertCase).toHaveBeenCalledOnce();
-    expect(stores.caseStore.rebuildAggregates).toHaveBeenCalledTimes(2);
+    expect(stores.caseStore.markAggregatesDirty).toHaveBeenCalledTimes(2);
+    expect(stores.caseStore.rebuildAggregates).not.toHaveBeenCalled();
     expect(second.ack).toHaveBeenCalledOnce();
   });
 

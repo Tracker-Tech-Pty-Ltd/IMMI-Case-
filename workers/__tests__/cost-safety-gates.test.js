@@ -16,7 +16,7 @@ import { dirname, resolve } from "node:path";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 function readRepoFile(relativePath) {
-  return readFileSync(resolve(REPO_ROOT, relativePath), "utf8");
+  return readFileSync(resolve(REPO_ROOT, relativePath), "utf8").replace(/\r\n/g, "\n");
 }
 
 /**

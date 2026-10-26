@@ -106,7 +106,7 @@ describe("Cloudflare storage atomicity", () => {
     for (const statements of catalog.batches) {
       expect(statements.length).toBeLessThanOrEqual(20);
       for (const statement of statements) {
-        const match = /^DELETE FROM (\w+)$/.exec(statement.sql);
+        const match = /^DELETE FROM (\w+)(?: WHERE summary_key NOT IN \(.*\))?$/.exec(statement.sql);
         if (!match) continue;
         const table = match[1];
         const hasInsert = statements.some((other) => new RegExp("INSERT INTO " + table + "\\b").test(other.sql));
@@ -121,7 +121,7 @@ describe("Cloudflare storage atomicity", () => {
     await stores.caseStore.rebuildAggregates();
     const deletedTables = catalog.batches
       .flat()
-      .map((statement) => /^DELETE FROM (\w+)$/.exec(statement.sql)?.[1])
+      .map((statement) => /^DELETE FROM (\w+)(?: WHERE summary_key NOT IN \(.*\))?$/.exec(statement.sql)?.[1])
       .filter(Boolean);
     expect(deletedTables.length).toBe(17);
     expect(new Set(deletedTables).size).toBe(17);
@@ -198,6 +198,8 @@ describe("Cloudflare storage atomicity", () => {
     for (const table of AGGREGATE_TABLES) {
       expect(catalog.rowsIn(table).length).toBeGreaterThan(0);
     }
+    // The cost guard must not mark pending work applied after a partial rebuild.
+    expect(catalog.batches.flat().some((statement) => statement.sql.includes("SELECT 'rebuild_applied_generation'"))).toBe(false);
     const partial = logs.mock.calls
       .map(([arg]) => { try { return JSON.parse(arg); } catch { return null; } })
       .find((entry) => entry?.event === "cloudflare.aggregate_rebuild_partial");
@@ -208,6 +210,21 @@ describe("Cloudflare storage atomicity", () => {
     });
     expect(new Set(partial.committed_tables)).toEqual(new Set(changedTables));
     logs.mockRestore();
+  });
+
+  it("stops before table writes when the rebuild lease was superseded", async () => {
+    const catalog = d1({ changes: 0 });
+    for (const table of AGGREGATE_TABLES) catalog.seed(table, [{ sql: "seed", params: [] }]);
+    const stores = createCloudflareStores(env(catalog));
+    const logs = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(stores.caseStore.rebuildAggregates({ lease: { token: "expired", leaseSeconds: 900 } }))
+        .rejects.toMatchObject({ code: "rebuild_lease_lost" });
+      expect(catalog.batch).not.toHaveBeenCalled();
+      for (const table of AGGREGATE_TABLES) expect(catalog.rowsIn(table)).toEqual([{ sql: "seed", params: [] }]);
+    } finally {
+      logs.mockRestore();
+    }
   });
 
   it("leaves the previous chunks intact when the chunk transaction fails", async () => {

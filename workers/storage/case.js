@@ -11,6 +11,36 @@ import {
 } from "./contracts.js";
 import { bindAll, changeCount, requireD1, rows } from "./cloudflare_shared.js";
 
+// catalog_summary doubles as the aggregate-rebuild control table. Its
+// bookkeeping keys must survive a rebuild's DELETE so a mutation landing
+// mid-rebuild still leaves a pending generation behind.
+// Floors for the rebuild knobs: a mistyped small value must not turn the cost
+// guard into a per-minute rebuild loop (a max-staleness of "1" rebuilt 106x/hour).
+const MIN_QUIET_SECONDS = 30;
+const MIN_MAX_STALENESS_SECONDS = 300;
+
+const AGGREGATE_BOOKKEEPING_KEYS = [
+  "rebuild_generation", "rebuild_applied_generation", "rebuild_last_at",
+  "rebuild_last_attempt_at", "rebuild_lease_until",
+  "rebuild_last_mutation_at", "rebuild_dirty_since",
+  // The daily budget counter MUST be preserved by the rebuild's own
+  // `DELETE FROM catalog_summary` (this list feeds its NOT IN clause).
+  // Without these two keys a completed rebuild erases the counter, the next
+  // attempt starts again at 1, and the "absolute" cap is defeated by the very
+  // mechanism it exists to bound (caught by the 2026-09-22 delta review).
+  "rebuild_day", "rebuild_count_today",
+];
+
+// The rebuild lease keeps its fencing token in the `updated_at` column of the
+// SAME row that holds the expiry, so claiming, renewing and releasing are each
+// a single atomic statement: a token captured in one column and an expiry in
+// another could otherwise be read in a torn state by an expiring holder.
+function leaseToken() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** D1 wraps one batch() call in one transaction; keep batches modest. */
 const D1_BATCH_STATEMENT_LIMIT = 20;
 
@@ -856,10 +886,16 @@ export class CloudflareCaseStore {
 
   /**
    * Rebuild queue-maintained analytics outside the request path. A mutation
-   * queue batch calls this once after its D1/R2/Vectorize work, so dashboard
-   * reads remain aggregate-only and never scan the corpus.
+   * queue batch marks pending work; the scheduled cost guard coalesces rebuilds.
+   * Keep each table replacement atomic while preserving the guard bookkeeping.
    */
-  async rebuildAggregates() {
+  async rebuildAggregates({ lease } = {}) {
+    // Disarm before any attempt: repeated failures must still obey the cadence.
+    await this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+      SELECT 'rebuild_dirty_since', 0, ?`).bind(utcNow()).run();
+    const state = await this.readAggregateState();
+    const appliedGeneration = state.get("rebuild_generation") || 0;
+    const keepKeys = AGGREGATE_BOOKKEEPING_KEYS.map((key) => `'${key}'`).join(", ");
     const now = utcNow();
     const filterOptions = [["court", "court_code"], ["year", "year"], ["outcome", "outcome"], ["visa_type", "visa_type"], ["visa_subclass", "visa_subclass"], ["source", "source"], ["case_nature", "case_nature"]]
       .map(([filterName, column]) => this.db.prepare(`INSERT INTO filter_options (filter_name, option_value, sort_order)
@@ -964,7 +1000,10 @@ export class CloudflareCaseStore {
     const batches = [];
     let current = { tables: [], statements: [] };
     for (const [table, inserts] of groups) {
-      const group = [this.db.prepare(`DELETE FROM ${table}`), ...inserts];
+      const deletion = table === "catalog_summary"
+        ? `DELETE FROM catalog_summary WHERE summary_key NOT IN (${keepKeys})`
+        : `DELETE FROM ${table}`;
+      const group = [this.db.prepare(deletion), ...inserts];
       if (current.statements.length > 0
         && current.statements.length + group.length > D1_BATCH_STATEMENT_LIMIT) {
         batches.push(current);
@@ -976,6 +1015,16 @@ export class CloudflareCaseStore {
       };
     }
     if (current.statements.length > 0) batches.push(current);
+    // Publish the observed generation only after every analytics table commits.
+    // A mutation during the scan therefore remains pending, including on failure.
+    batches.push({ tables: [], statements: [
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_applied_generation', ?, ?`).bind(appliedGeneration, now),
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_last_at', ?, ?`).bind(Math.floor(Date.now() / 1000), now),
+      this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key,value_int,updated_at)
+        SELECT 'rebuild_dirty_since', 0, ?`).bind(now),
+    ] });
     // A rebuild spans more than one transaction, so a failure part-way through
     // leaves a mixed generation: `committed_tables` names the tables that
     // already hold the new rows. Log it so the skew is observable in Logpush
@@ -983,6 +1032,11 @@ export class CloudflareCaseStore {
     const committed = [];
     for (const [index, batch] of batches.entries()) {
       try {
+        if (lease && !(await this.renewRebuildLease({ token: lease.token, leaseSeconds: lease.leaseSeconds }))) {
+          throw new StorageBoundaryError("Aggregate rebuild lease lost mid-run", {
+            code: "rebuild_lease_lost", status: 503,
+          });
+        }
         await this.db.batch(batch.statements);
       } catch (error) {
         console.error(JSON.stringify({
@@ -996,7 +1050,217 @@ export class CloudflareCaseStore {
       }
       committed.push(...batch.tables);
     }
-    return { rebuilt_at: now, rebuilt_tables: committed };
+    return { rebuilt_at: now, rebuilt_tables: committed, applied_generation: appliedGeneration };
+  }
+
+  /**
+   * Mark analytics as stale without paying for a rebuild: one row written per
+   * queue batch instead of clearing and rewriting 17 tables.
+   *
+   * A monotonic generation, not a boolean: a rebuild applies the generation it
+   * observed when it started, so a mutation landing mid-rebuild stays pending
+   * instead of being wiped by the rebuild's own bookkeeping write.
+   */
+  async markAggregatesDirty() {
+    const now = Math.floor(Date.now() / 1000);
+    const stamp = utcNow();
+    // One batch = one transaction, so two isolates cannot interleave these rows.
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_generation', 1, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET value_int = catalog_summary.value_int + 1, updated_at = excluded.updated_at`)
+        .bind(stamp),
+      // When the last mutation happened: the scheduled rebuild waits for a quiet
+      // window so a long bulk import costs one rebuild, not one per interval.
+      // MAX() keeps it monotonic when isolates with skewed clocks interleave.
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_last_mutation_at', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = MAX(catalog_summary.value_int, excluded.value_int), updated_at = excluded.updated_at`)
+        .bind(now, stamp),
+      // When the pending work first appeared: bounds how stale analytics may get
+      // while mutations keep arriving without a quiet gap.
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_dirty_since', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = CASE WHEN catalog_summary.value_int = 0 THEN excluded.value_int ELSE catalog_summary.value_int END,
+          updated_at = excluded.updated_at`)
+        .bind(now, stamp),
+    ]);
+    return true;
+  }
+
+  async readAggregateState() {
+    const current = rows(await this.db.prepare(
+      `SELECT summary_key, value_int FROM catalog_summary
+        WHERE summary_key IN ('rebuild_generation', 'rebuild_applied_generation', 'rebuild_last_at',
+                              'rebuild_last_attempt_at', 'rebuild_lease_until',
+                              'rebuild_last_mutation_at', 'rebuild_dirty_since')`,
+    ).all());
+    return new Map(current.map((row) => [row.summary_key, Number(row.value_int || 0)]));
+  }
+
+  /**
+   * Rate-limit decision for the scheduled handler: rebuild only when a
+   * generation is pending and the last rebuild is older than the interval.
+   * This is the only guard preventing a bulk import from rewriting the whole
+   * summary set thousands of times.
+   */
+  /**
+   * Narrow re-check for an invocation that already holds the lease.
+   *
+   * The full decision cannot be re-used here: claiming the lease stamps
+   * `rebuild_last_attempt_at`, so the interval - and with it the whole decision -
+   * reads as "debounced" the moment we own the lease. This asks the only question
+   * that matters after the claim: is work still pending (did another invocation
+   * already apply it)?
+   */
+  async aggregatesStillPending() {
+    const state = await this.readAggregateState();
+    const pending = state.get("rebuild_generation") || 0;
+    const applied = state.get("rebuild_applied_generation") || 0;
+    return { pending_generation: pending, applied_generation: applied, pending: pending > applied };
+  }
+
+  async aggregatesNeedRebuild({ minIntervalSeconds = 300, quietSeconds = 0, maxStalenessSeconds = 0 } = {}) {
+    const interval = Number.isFinite(minIntervalSeconds) && minIntervalSeconds > 0
+      ? Math.floor(minIntervalSeconds) : 300;
+    const quiet = Number.isFinite(quietSeconds) && quietSeconds >= MIN_QUIET_SECONDS ? Math.floor(quietSeconds) : 0;
+    const maxStaleness = Number.isFinite(maxStalenessSeconds) && maxStalenessSeconds >= MIN_MAX_STALENESS_SECONDS
+      ? Math.floor(maxStalenessSeconds) : 0;
+    const state = await this.readAggregateState();
+    const pending = state.get("rebuild_generation") || 0;
+    const applied = state.get("rebuild_applied_generation") || 0;
+    if (pending <= applied) return { due: false, reason: "clean" };
+
+    // Throttle on the last *attempt*, not only the last success: a rebuild that
+    // throws releases its lease without stamping `rebuild_last_at`, and the
+    // 30-second queue retry must not therefore rebuild on every retry.
+    const lastSuccessAt = state.get("rebuild_last_at") || 0;
+    const lastAttemptAt = state.get("rebuild_last_attempt_at") || 0;
+    const lastAt = Math.max(lastSuccessAt, lastAttemptAt);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const elapsedSeconds = lastAt > 0 ? nowSeconds - lastAt : interval;
+    const dirtySince = state.get("rebuild_dirty_since") || 0;
+    const staleness = dirtySince > 0 ? nowSeconds - dirtySince : 0;
+    const base = {
+      pending_generation: pending,
+      applied_generation: applied,
+      seconds_since_last_rebuild: lastSuccessAt > 0 ? elapsedSeconds : null,
+    };
+
+    // Hard bound: however busy the queue is, analytics may not stay stale longer
+    // than this, so a bulk import costs one rebuild per window instead of one per
+    // interval. The interval is still honoured here: it is the backstop that stops
+    // any path - including a persistently failing rebuild - from retrying on every
+    // queue batch.
+    if (maxStaleness > 0 && staleness >= maxStaleness && elapsedSeconds >= interval) {
+      return { due: true, reason: "max-staleness", seconds_since_first_pending: staleness, ...base };
+    }
+
+    if (elapsedSeconds < interval) {
+      return { due: false, reason: "debounced", seconds_until_due: interval - elapsedSeconds };
+    }
+
+    // Quiet window: wait for mutations to stop, so a multi-hour import collapses
+    // into a single rebuild afterwards.
+    if (quiet > 0) {
+      const lastMutationAt = state.get("rebuild_last_mutation_at") || 0;
+      const quietFor = lastMutationAt > 0 ? nowSeconds - lastMutationAt : Number.MAX_SAFE_INTEGER;
+      if (quietFor < quiet) {
+        return {
+          due: false,
+          reason: "awaiting-quiet",
+          seconds_until_quiet: quiet - quietFor,
+          seconds_since_first_pending: staleness,
+          ...base,
+        };
+      }
+    }
+
+    return { due: true, reason: "dirty", seconds_since_first_pending: staleness, ...base };
+  }
+
+  /**
+   * Atomically claim the rebuild lease. Two overlapping cron invocations (or a
+   * cron racing the queue fallback) would otherwise both rewrite 17 tables and
+   * interleave their DELETEs. The conditional upsert only writes when the held
+   * lease has expired, so `changes === 1` means this caller won.
+   */
+  async claimRebuildLease({ leaseSeconds = 900 } = {}) {
+    const now = Math.floor(Date.now() / 1000);
+    const lease = Math.max(60, Math.floor(leaseSeconds));
+    const token = leaseToken();
+    // One statement takes the lease, writes its expiry and rotates the token:
+    // a winner cannot be confused with the previous holder, and an expired
+    // holder's token stops matching the moment a new claim lands.
+    const result = await this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_lease_until', ?, ?)
+      ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int, updated_at = excluded.updated_at
+      WHERE catalog_summary.value_int < ?`)
+      .bind(now + lease, token, now).run();
+    if (changeCount(result) === 0) return null;
+    // Throttles retries of a rebuild that failed (a failure never stamps
+    // rebuild_last_at). Losing this write only costs one extra rebuild.
+    await this.db.prepare(`INSERT OR REPLACE INTO catalog_summary (summary_key, value_int, updated_at)
+        VALUES ('rebuild_last_attempt_at', ?, ?)`).bind(now, utcNow()).run();
+    return { token, leaseSeconds: lease };
+  }
+
+  /**
+   * Absolute daily rebuild budget - the only cost bound that is NOT an operator
+   * variable. Every rebuild attempt (cron or queue fallback) consumes one unit;
+   * past the cap the attempt is refused before it touches the 17 aggregate
+   * tables. A wrong knob, an extra cron entry, a dashboard edit, a lease race or
+   * clock skew can all be survived once the daily count is hard-capped.
+   *
+   * Returns { allowed, used, budget, day }. `used` counts the attempt that just
+   * consumed a unit, so `used === budget` is the last allowed attempt.
+   */
+  async consumeRebuildBudget({ dailyBudget = 48 } = {}) {
+    const budget = Math.max(1, Math.floor(Number(dailyBudget) || 48));
+    const day = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ""));
+    const stamp = utcNow();
+    // Batch order matters: the counter statement must read the PREVIOUS
+    // rebuild_day value, so it runs before the day stamp is overwritten.
+    await this.db.batch([
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_count_today', 1, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET
+          value_int = CASE
+            WHEN (SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_day') = ?
+            THEN catalog_summary.value_int + 1
+            ELSE 1 END,
+          updated_at = excluded.updated_at`).bind(stamp, day),
+      this.db.prepare(`INSERT INTO catalog_summary (summary_key, value_int, updated_at)
+          VALUES ('rebuild_day', ?, ?)
+        ON CONFLICT(summary_key) DO UPDATE SET value_int = excluded.value_int,
+          updated_at = excluded.updated_at`).bind(day, stamp),
+    ]);
+    const row = await this.db.prepare(
+      `SELECT value_int FROM catalog_summary WHERE summary_key = 'rebuild_count_today'`).first();
+    const used = Number(row?.value_int || 0);
+    return { allowed: used <= budget, used, budget, day };
+  }
+
+  /** Extend the lease, but only while this caller still owns it. */
+  async renewRebuildLease({ token, leaseSeconds = 900 } = {}) {
+    if (typeof token !== "string" || !token) return false;
+    const lease = Math.max(60, Math.floor(leaseSeconds));
+    const result = await this.db.prepare(`UPDATE catalog_summary SET value_int = ?, updated_at = ?
+        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?`)
+      .bind(Math.floor(Date.now() / 1000) + lease, token, token).run();
+    return changeCount(result) > 0;
+  }
+
+  /** Release the lease — only the token holder can, so an expired run cannot
+   *  free (or extend) a lease that a newer invocation now owns. */
+  async releaseRebuildLease({ token } = {}) {
+    if (typeof token !== "string" || !token) return false;
+    const result = await this.db.prepare(`UPDATE catalog_summary SET value_int = 0, updated_at = ?
+        WHERE summary_key = 'rebuild_lease_until' AND updated_at = ?`)
+      .bind(utcNow(), token).run();
+    return changeCount(result) > 0;
   }
 
   async relatedCompat(caseId, { limit = 5 } = {}) {
