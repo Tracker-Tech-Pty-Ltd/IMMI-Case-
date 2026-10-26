@@ -320,7 +320,7 @@ Request → Cloudflare Worker (cloudflare-native.js)
 
 - **Pages**: `JudgeProfilesPage` (排行榜), `JudgeDetailPage` (詳細分析), `JudgeComparePage` (對比)
 - **Navigation**: JudgeDetailPage 新增分段導航 (section-outcomes, section-trend, section-court, section-visa, section-nature, section-representation, section-country, section-concepts, section-recent)
-- **Data**: 15,465 個獨特法官記錄，需進行名字正規化（模糊匹配）
+- **Data completeness**: see [2026-10-27 judge identification census](docs/data-repairs/2026-10-27-judge-identification-status.md). The local DB/CSV still have 39 cases without a named judge/member; nonempty name strings and 104 biography entries are not a verified count of distinct people. Name normalisation must not be treated as identity proof.
 
 ## Judge Bios Database
 

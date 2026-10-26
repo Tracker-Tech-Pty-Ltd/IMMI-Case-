@@ -1,5 +1,7 @@
 # Judge Field Data Quality Report
 
+> 本頁保留 2026-05-02 舊 Supabase 環境的事故與復原紀錄，不代表目前資料完整性。最新本機盤點見 [2026-10-27 法官與裁決者辨識狀態](data-repairs/2026-10-27-judge-identification-status.md)；仍有 39 案未能確認，不能宣稱已辨識全部裁決者。
+
 **Date**: 2026-05-02
 **Source**: Supabase `public.immigration_cases` (149,016 rows)
 **Scope**: `judges` (text) field
