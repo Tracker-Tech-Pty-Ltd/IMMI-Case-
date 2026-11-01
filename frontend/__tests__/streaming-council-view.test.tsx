@@ -27,6 +27,65 @@ function setClipboard(value: unknown) {
   });
 }
 
+describe("completed moderator results", () => {
+  it("renders the streamed synthesis and structured points without hiding either answer", () => {
+    const state = doneStateWithCode("");
+    state.moderator.data = {
+      success: true,
+      composed_answer: "The panel's integrated answer.",
+      mock_judgment: "A separate simulated judgment.",
+      outcome_likelihood_percent: 50,
+      outcome_likelihood_label: "medium",
+      outcome_likelihood_reason: "Fallback estimate based on limited synthesis confidence.",
+      agreement_points: ["The date is important."],
+      conflict_points: ["The remedy is disputed."],
+      law_sections: ["Migration Act s 501"],
+      follow_up_questions: ["Which documents matter?"],
+    };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByText("The panel's integrated answer.")).toBeInTheDocument();
+    expect(screen.getByText("A separate simulated judgment.")).toBeInTheDocument();
+    expect(screen.getByText("Model estimate")).toBeInTheDocument();
+    expect(screen.getByText("Fallback estimate based on limited synthesis confidence.")).toBeInTheDocument();
+    expect(screen.getByText(/Points of agreement/)).toBeInTheDocument();
+    expect(screen.getByText(/Which documents matter\?/)).toBeInTheDocument();
+  });
+
+  it("does not claim the synthesis succeeded when the moderator reports failure", () => {
+    const state = doneStateWithCode("");
+    state.moderator.data = { success: false, error: "Moderator unavailable" };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByText("Moderator unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("synthesis complete")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("council-insights")).not.toBeInTheDocument();
+  });
+
+  it("labels a standalone mock judgment as a simulation", () => {
+    const state = doneStateWithCode("");
+    state.moderator.data = { success: true, mock_judgment: "Simulated judgment only." };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByText("Simulated judgment only.")).toBeInTheDocument();
+    expect(screen.getByText(/not an actual judicial outcome/i)).toBeInTheDocument();
+  });
+
+  it("does not claim success when the completed moderator has no success flag", () => {
+    const state = doneStateWithCode("");
+    state.moderator.data = {};
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByText("synthesis failed")).toBeInTheDocument();
+    expect(screen.queryByText("synthesis complete")).not.toBeInTheDocument();
+  });
+
+  it("ignores malformed structured fields instead of rendering them as components", () => {
+    const state = doneStateWithCode("");
+    state.moderator.data = { success: true, composed_answer: "Plain answer", agreement_points: [{ html: "<script>" }], law_sections: null };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByText("Plain answer")).toBeInTheDocument();
+    expect(screen.queryByText("NaN%")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("council-insights")).not.toBeInTheDocument();
+  });
+});
+
 describe("RecallCodeCard clipboard", () => {
   afterEach(() => {
     setClipboard(undefined);

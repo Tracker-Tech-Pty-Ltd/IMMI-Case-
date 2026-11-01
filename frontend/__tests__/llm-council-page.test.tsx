@@ -411,6 +411,65 @@ describe("LlmCouncilPage", () => {
     }
   });
 
+  it.each([false, true])("opens a streamed conversation only when its first turn is available (available=%s)", async (available) => {
+    const events = [
+      ["council.start", {}],
+      ["council.session", { session_id: "abc123def456", session_token: "local-token" }],
+      ["openai.done", { answer: "Expert answer", success: true }],
+      ["moderator.complete", { success: true, composed_answer: "Integrated answer" }],
+      ["council.done", {}],
+    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (String(url).endsWith("/stream")) {
+        return Promise.resolve(new Response(events, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+      }
+      return Promise.resolve(available
+        ? new Response(JSON.stringify({ session: makeSession(1), turns: [makeTurn(1)] }), { status: 200 })
+        : new Response("", { status: 404 }));
+    });
+    try {
+      renderNewSession();
+      fireEvent.change(screen.getByPlaceholderText(/Compare strongest review grounds/i), { target: { value: "A question" } });
+      fireEvent.submit(screen.getByRole("button", { name: /Send/i }).closest("form")!);
+      const open = await screen.findByRole("button", { name: /Open conversation to follow up/i });
+      expect(screen.getByText("Integrated answer")).toBeInTheDocument();
+      fireEvent.click(open);
+      if (available) {
+        await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/llm-council/sessions/abc123def456"));
+      } else {
+        expect(await screen.findByText(/conversation is not available yet/i)).toBeInTheDocument();
+        expect(navigateMock).not.toHaveBeenCalled();
+      }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not offer an unsaved conversation when all experts fail", async () => {
+    const events = [
+      ["council.start", {}],
+      ["council.session", { session_id: "abc123def456" }],
+      ["openai.error", { error: "Unavailable" }],
+      ["gemini_pro.error", { error: "Unavailable" }],
+      ["anthropic.error", { error: "Unavailable" }],
+      ["council.error", { error: "All experts failed" }],
+      ["council.done", { opinions: [], moderator: null }],
+    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(events, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    );
+    try {
+      renderNewSession();
+      fireEvent.change(screen.getByPlaceholderText(/Compare strongest review grounds/i), { target: { value: "A question" } });
+      fireEvent.submit(screen.getByRole("button", { name: /Send/i }).closest("form")!);
+      await screen.findAllByText(/Unavailable/);
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Open conversation to follow up/i })).not.toBeInTheDocument());
+      expect(navigateMock).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   // 14. Error banner shown when SSE fetch fails
   it("shows inline error banner when streaming fetch fails", async () => {
     const fetchSpy = vi
@@ -476,6 +535,43 @@ describe("LlmCouncilPage", () => {
     await waitFor(() => {
       expect(textarea).toHaveValue("");
     });
+  });
+
+  it("adds a suggested question to the existing draft without sending it", () => {
+    const mutateAsync = vi.fn();
+    mockUseAddTurn.mockReturnValue(idleMutation({ mutateAsync }));
+    const turn = makeTurn(1);
+    turn.moderator.follow_up_questions = ["What evidence should I gather?"];
+    turn.moderator.agreement_points = ["The decision date matters."];
+    turn.moderator.conflict_points = ["The remedy is disputed."];
+    renderThreadSession("abc123def456", 1, [turn]);
+
+    expect(screen.getByText(/Points of agreement/)).toBeInTheDocument();
+    expect(screen.getByText(/Points of difference/)).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText(/Ask a follow-up question/i);
+    fireEvent.change(textarea, { target: { value: "My own question  " } });
+    fireEvent.click(screen.getByRole("button", { name: "What evidence should I gather?" }));
+    expect(textarea).toHaveValue("My own question  \nWhat evidence should I gather?");
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("does not allow a suggested question when the session is at its turn limit", () => {
+    const turn = makeTurn(1);
+    turn.moderator.follow_up_questions = ["Can I appeal?"];
+    renderThreadSession("abc123def456", 15, [turn]);
+    expect(screen.getByRole("button", { name: "Can I appeal?" })).toBeDisabled();
+  });
+
+  it("keeps the draft intact when adding a suggestion would exceed the limit", () => {
+    const turn = makeTurn(1);
+    turn.moderator.follow_up_questions = ["A suggested follow-up"];
+    renderThreadSession("abc123def456", 1, [turn]);
+    const textarea = screen.getByPlaceholderText(/Ask a follow-up question/i);
+    const draft = "x".repeat(7990);
+    fireEvent.change(textarea, { target: { value: draft } });
+    fireEvent.click(screen.getByRole("button", { name: "A suggested follow-up" }));
+    expect(textarea).toHaveValue(draft);
+    expect(screen.getByText(/not enough room to add this question/i)).toBeInTheDocument();
   });
 
   // 17. getSession 404 → null data shows "Session not found" (item 5)

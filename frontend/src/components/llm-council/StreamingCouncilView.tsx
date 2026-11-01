@@ -21,6 +21,8 @@ import remarkGfm from "remark-gfm";
 import { getApiAccessToken } from "@/lib/api";
 import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Search, Sparkles } from "lucide-react";
 import { playHaptic } from "@/lib/council-celebrations";
+import { ModeratorSection } from "@/components/llm-council/TurnCard";
+import type { LlmCouncilModerator } from "@/lib/api-llm-council";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,6 +77,28 @@ const PROVIDER_META: Record<ProviderKey, { label: string; color: string }> = {
   gemini_pro: { label: "Gemini Pro", color: "#4285f4" },
   anthropic: { label: "Claude Sonnet", color: "#cc785c" },
 };
+
+// The stream is network data. Render only known fields with the expected
+// shapes; never interpret model output as components or executable markup.
+function streamModerator(data?: Record<string, unknown>): LlmCouncilModerator | null {
+  if (!data || data.success !== true) return null;
+  const text = (value: unknown) => typeof value === "string" ? value : "";
+  const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const providerSections: Record<string, string[]> = Object.create(null);
+  if (data.provider_law_sections && typeof data.provider_law_sections === "object" && !Array.isArray(data.provider_law_sections)) {
+    for (const [key, value] of Object.entries(data.provider_law_sections)) providerSections[key] = strings(value);
+  }
+  return {
+    success: true, composed_answer: text(data.composed_answer), consensus: text(data.consensus),
+    disagreements: text(data.disagreements), outcome_likelihood_percent: typeof data.outcome_likelihood_percent === "number" ? data.outcome_likelihood_percent : NaN,
+    outcome_likelihood_label: text(data.outcome_likelihood_label), outcome_likelihood_reason: text(data.outcome_likelihood_reason),
+    law_sections: strings(data.law_sections), mock_judgment: text(data.mock_judgment), follow_up_questions: strings(data.follow_up_questions),
+    ranking: [], model_critiques: [], vote_summary: null, agreement_points: strings(data.agreement_points), conflict_points: strings(data.conflict_points),
+    provider_law_sections: providerSections, shared_law_sections: strings(data.shared_law_sections),
+    shared_law_sections_confidence_percent: typeof data.shared_law_sections_confidence_percent === "number" ? data.shared_law_sections_confidence_percent : 0,
+    shared_law_sections_confidence_reason: text(data.shared_law_sections_confidence_reason), raw_text: text(data.raw_text), error: "", latency_ms: 0,
+  };
+}
 
 const initialExpert = (): ExpertStreamState => ({ text: "", status: "pending" });
 
@@ -641,9 +665,10 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
+    if (state.council.status === "done" || state.council.status === "error") return;
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - state.startedAt) / 1000)), 500);
     return () => clearInterval(id);
-  }, [state.startedAt]);
+  }, [state.startedAt, state.council.status]);
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
@@ -660,6 +685,9 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
   const councilBusy =
     !councilFailed &&
     (state.council.status === "running" || !allExpertsFinal);
+  const completedModerator = state.moderator.status === "complete" ? streamModerator(state.moderator.data) : null;
+  const moderatorFailed = state.moderator.status === "error" ||
+    (state.moderator.status === "complete" && state.moderator.data?.success !== true);
 
   return (
     <div className="space-y-3" data-testid="streaming-council-view">
@@ -704,7 +732,9 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
 
       <div
         className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 shadow-sm ${
-          state.moderator.status === "complete"
+          moderatorFailed
+            ? "border-amber-300/50 bg-amber-50/30 dark:border-amber-700/40 dark:bg-amber-900/15"
+            : state.moderator.status === "complete"
             ? "border-emerald-300/50 bg-emerald-50/30 dark:border-emerald-700/40 dark:bg-emerald-900/15"
             : state.moderator.status === "running"
               ? "border-amber-300/50 bg-amber-50/30 dark:border-amber-700/40 dark:bg-amber-900/15"
@@ -714,7 +744,9 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
       >
         <Sparkles
           className={`h-4 w-4 ${
-            state.moderator.status === "running"
+            moderatorFailed
+              ? "text-amber-600 dark:text-amber-400"
+              : state.moderator.status === "running"
               ? "text-amber-600 dark:text-amber-400"
               : state.moderator.status === "complete"
                 ? "text-emerald-600 dark:text-emerald-400"
@@ -725,8 +757,8 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
         <span className="text-xs text-muted-text">
           {state.moderator.status === "pending" && "awaiting panel"}
           {state.moderator.status === "running" && "synthesising 14-field judgment…"}
-          {state.moderator.status === "complete" && "synthesis complete"}
-          {state.moderator.status === "error" && (state.moderator.error || "synthesis failed")}
+          {state.moderator.status === "complete" && !moderatorFailed && "synthesis complete"}
+          {moderatorFailed && (state.moderator.error || (typeof state.moderator.data?.error === "string" ? state.moderator.data.error : "") || "synthesis failed")}
         </span>
         {state.moderator.status === "running" ? (
           <div className="ml-auto animate-spin">
@@ -734,6 +766,10 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
           </div>
         ) : null}
       </div>
+
+      {completedModerator ? (
+        <ModeratorSection moderator={completedModerator} providerLabels={{ openai: "OpenAI", gemini_pro: "Gemini Pro", anthropic: "Claude Sonnet" }} />
+      ) : null}
 
       {/* Task C — recall-code surface. Only rendered after the council
           finishes AND the session.session event has landed (most flows

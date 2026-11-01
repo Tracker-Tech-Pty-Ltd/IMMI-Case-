@@ -272,9 +272,11 @@ function LawSectionsTable({
 interface ModeratorSectionProps {
   moderator: LlmCouncilModerator;
   providerLabels: Record<string, string>;
+  onSelectFollowUp?: (question: string) => void;
+  followUpDisabled?: boolean;
 }
 
-function ModeratorSection({ moderator, providerLabels }: ModeratorSectionProps) {
+export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, followUpDisabled }: ModeratorSectionProps) {
   const { t } = useTranslation();
 
   if (!moderator.success) {
@@ -327,26 +329,46 @@ function ModeratorSection({ moderator, providerLabels }: ModeratorSectionProps) 
             {(moderator.outcome_likelihood_label || "unknown").toUpperCase()}
           </span>
         ) : null}
-        {typeof moderator.outcome_likelihood_percent === "number" ? (
-          <span
-            className={`text-sm font-bold tabular-nums ${likelihoodTone(
-              moderator.outcome_likelihood_label,
-            )}`}
-          >
-            {moderator.outcome_likelihood_percent}%
+        {typeof moderator.outcome_likelihood_percent === "number" && Number.isFinite(moderator.outcome_likelihood_percent) ? (
+          <span className="text-right">
+            <span className="block text-xs text-muted-text">{t("llm_council.model_estimate", { defaultValue: "Model estimate" })}</span>
+            <span className={`text-sm font-bold tabular-nums ${likelihoodTone(moderator.outcome_likelihood_label)}`}>
+              {moderator.outcome_likelihood_percent}%
+            </span>
           </span>
         ) : null}
       </div>
 
-      {moderator.mock_judgment || moderator.composed_answer ? (
+      {moderator.outcome_likelihood_reason ? (
+        <p className="mb-3 text-xs text-muted-text">{moderator.outcome_likelihood_reason}</p>
+      ) : null}
+
+      {moderator.composed_answer ? (
         <div className="rounded-md border border-border bg-surface p-3">
           <p className="mb-1 text-xs uppercase tracking-wide text-muted-text">
             {t("llm_council.composed_answer_label", {
               defaultValue: "Integrated Council Analysis",
             })}
           </p>
-          <Markdown>{moderator.mock_judgment || moderator.composed_answer}</Markdown>
+          {moderator.mock_judgment === moderator.composed_answer ? (
+            <p className="mb-2 text-xs text-muted-text">
+              {t("llm_council.mock_judgment_note", { defaultValue: "Research simulation only. This is not an actual judicial outcome." })}
+            </p>
+          ) : null}
+          <Markdown>{moderator.composed_answer}</Markdown>
         </div>
+      ) : null}
+
+      {moderator.mock_judgment && moderator.mock_judgment !== moderator.composed_answer ? (
+        <details className="mt-3 rounded-md border border-border bg-surface/40 p-3" open={!moderator.composed_answer}>
+          <summary className="cursor-pointer text-sm font-semibold text-foreground">
+            {t("llm_council.mock_judgment_label", { defaultValue: "Mock judgment draft" })}
+          </summary>
+          <p className="mt-2 text-xs text-muted-text">
+            {t("llm_council.mock_judgment_note", { defaultValue: "Research simulation only. This is not an actual judicial outcome." })}
+          </p>
+          <div className="mt-2"><Markdown>{moderator.mock_judgment}</Markdown></div>
+        </details>
       ) : null}
 
       {moderator.consensus ? (
@@ -370,6 +392,34 @@ function ModeratorSection({ moderator, providerLabels }: ModeratorSectionProps) 
         </p>
       ) : null}
 
+      {[moderator.agreement_points, moderator.conflict_points, moderator.law_sections].some(
+        (items) => Array.isArray(items) && items.some((item) => typeof item === "string" && item.trim()),
+      ) ? (
+        <section className="mt-4 rounded-md border border-border bg-surface/40 p-3" data-testid="council-insights">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-text">
+            {t("llm_council.insights_title", { defaultValue: "Explore the analysis" })}
+          </p>
+          {[
+            { key: "agreement", label: t("llm_council.insights_agreement", { defaultValue: "Points of agreement" }), items: moderator.agreement_points },
+            { key: "difference", label: t("llm_council.insights_difference", { defaultValue: "Points of difference" }), items: moderator.conflict_points },
+            { key: "law", label: t("llm_council.insights_law", { defaultValue: "Laws mentioned" }), items: moderator.law_sections },
+          ].map(({ key, label, items }) => {
+            const entries = Array.isArray(items) ? items.filter((item): item is string => typeof item === "string" && !!item.trim()) : [];
+            if (!entries.length) return null;
+            return (
+              <details key={key} className="rounded-md border border-border bg-card px-3 py-2 mb-2 last:mb-0">
+                <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                  {label} <span className="text-muted-text">({entries.length})</span>
+                </summary>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
+                  {entries.map((entry, index) => <li key={`${index}-${entry}`}><Markdown>{entry}</Markdown></li>)}
+                </ul>
+              </details>
+            );
+          })}
+        </section>
+      ) : null}
+
       {moderator.provider_law_sections &&
       Object.keys(moderator.provider_law_sections).length > 0 ? (
         <LawSectionsTable
@@ -381,7 +431,7 @@ function ModeratorSection({ moderator, providerLabels }: ModeratorSectionProps) 
         />
       ) : null}
 
-      {moderator.follow_up_questions && moderator.follow_up_questions.length > 0 ? (
+      {Array.isArray(moderator.follow_up_questions) && moderator.follow_up_questions.some((q) => typeof q === "string" && q.trim()) ? (
         <div className="mt-3">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-text">
             {t("llm_council.follow_up_label", {
@@ -389,8 +439,15 @@ function ModeratorSection({ moderator, providerLabels }: ModeratorSectionProps) 
             })}
           </p>
           <ul className="space-y-1 text-xs text-muted-text">
-            {moderator.follow_up_questions.map((q, i) => (
-              <li key={i}>• {q}</li>
+            {moderator.follow_up_questions.filter((q): q is string => typeof q === "string" && !!q.trim()).map((q, i) => (
+              <li key={i}>
+                {onSelectFollowUp ? (
+                  <button type="button" disabled={followUpDisabled} onClick={() => onSelectFollowUp(q)}
+                    className="rounded-md border border-border bg-card px-3 py-2 text-left text-foreground hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60">
+                    {q}
+                  </button>
+                ) : <>• {q}</>}
+              </li>
             ))}
           </ul>
         </div>
@@ -528,9 +585,11 @@ function ExpertTabs({ opinions }: ExpertTabsProps) {
 export interface TurnCardProps {
   turn: LlmCouncilTurn;
   turnNumber: number;
+  onSelectFollowUp?: (question: string) => void;
+  followUpDisabled?: boolean;
 }
 
-export function TurnCard({ turn, turnNumber }: TurnCardProps) {
+export function TurnCard({ turn, turnNumber, onSelectFollowUp, followUpDisabled }: TurnCardProps) {
   const { t } = useTranslation();
   const [expertsExpanded, setExpertsExpanded] = useState(false);
 
@@ -568,6 +627,8 @@ export function TurnCard({ turn, turnNumber }: TurnCardProps) {
       <ModeratorSection
         moderator={turn.moderator}
         providerLabels={providerLabels}
+        onSelectFollowUp={onSelectFollowUp}
+        followUpDisabled={followUpDisabled}
       />
 
       {/* Expert opinions — collapsible accordion with tabs */}
