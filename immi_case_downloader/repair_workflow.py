@@ -2062,6 +2062,362 @@ def _validate_unstated_current_visa_clear(
         )
 
 
+def _validate_tribunal_heading_judges(row, source_text: str, evidence: dict, assessment) -> None:
+    """Accept only the complete, case-bound decision heading, never a body mention."""
+    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+    if not separator or assessment.source_status != "checked":
+        raise ValueError("Tribunal heading requires a checked source")
+    metadata = {}
+    for line in source_text[:separator.start()].splitlines():
+        match = re.match(r"^(Title|Citation|URL|Date):\s*(.*?)\s*$", line)
+        if match and match[2].strip():
+            key = match[1].casefold()
+            if key in metadata:
+                raise ValueError("Duplicate source identity field")
+            metadata[key] = match[2].strip()
+    if (not re.fullmatch(r"\[\d{4}\] AATA \d+", row["citation"] or "")
+            or metadata.get("citation") != row["citation"]
+            or metadata.get("title") != row["title"]
+            or metadata.get("url") != row["url"]
+            or metadata.get("date") != row["date"]):
+        raise ValueError("Tribunal heading requires matching source identity and date")
+    body = source_text[separator.end():]
+    if row["title"] not in body[:3000]:
+        raise ValueError("Tribunal heading requires the published case title")
+    # Only a decision heading associated with this caption may supply the
+    # panel.  A later quotation from a different case is not this decision.
+    caption_end = body.index(row["title"]) + len(row["title"])
+    decision_label = re.search(r"(?im)^[ \t]*(?:DECISION(?:[ \t]+RECORD)?|ORDER)[ \t]*$", body[caption_end:4000])
+    if not decision_label:
+        raise ValueError("Tribunal decision heading is missing")
+    decision_start = caption_end + decision_label.end()
+    boundary = re.search(
+        r"(?im)^[ \t]*(?:CATCHWORDS|LEGISLATION|REASONS FOR (?:DECISION|ORDER)|"
+        r"STATEMENT OF DECISION AND REASONS)[ \t]*$", body[decision_start:4000]
+    )
+    prefix = body[decision_start:decision_start + boundary.start()] if boundary else body[decision_start:4000]
+    matches = list(re.finditer(r"(?im)^\s*MEMBERS\s*:\s*(.*?)\s+DATE\s*:", prefix, re.S))
+    singles = list(re.finditer(r"(?im)^\s*Tribunal\s+((?:SM|Deputy President)\s+[A-Za-z .'-]+?)\s+Date\b", prefix))
+    if len(matches) + len(singles) != 1:
+        raise ValueError("Tribunal heading is missing or ambiguous")
+    match = (matches or singles)[0]
+    # A second labelled member or an additional signature is evidence of a
+    # panel; never return the first member as if they decided alone.
+    remainder = prefix[match.end():]
+    if re.search(
+        r"(?im)^[ \t]*(?:Tribunal[ \t]+)?(?:(?:(?:Senior|Presiding|General|Additional|Other)[ \t]+)?"
+        r"Members?\b(?:\(s\))?|Panel\b|Before\b|"
+        r"(?:Deputy[ \t]+President|Associate[ \t]+Professor)[ \t]*[:：.]?[ \t]+[A-Za-z])",
+        remainder,
+    ):
+        raise ValueError("Additional tribunal member appears in the decision heading")
+    signature_lines = re.findall(r"(?im)^.*(?:\bsgd\b|\bsigned\b).*$", remainder)
+    if len(signature_lines) > 1:
+        raise ValueError("Multiple signatures appear in the decision heading")
+    if signature_lines:
+        signed_words = re.sub(r"(?i)\b(?:sgd|signed)\b", "", signature_lines[0])
+        words = re.findall(r"[A-Za-z]+", signed_words)
+        if any(word.casefold() not in {part.casefold() for part in re.findall(r"[A-Za-z]+", match.group(1))}
+               for word in words):
+            raise ValueError("Signature names another tribunal member")
+    actual_date = re.match(r"\s*(\d{1,2}[ \t]+[A-Za-z]+[ \t]+\d{4})(?=\s|$)", prefix[match.end():])
+    title_date = re.search(r"\((\d{1,2} [A-Za-z]+ \d{4})\)", row["title"])
+    if not actual_date or not title_date or " ".join(actual_date[1].split()) != title_date[1]:
+        raise ValueError("Tribunal decision heading date does not match the case")
+    other_citations = re.findall(
+        r"\[\d{4}\]\s*(?:AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|RRTA|MRTA)\s+\d+",
+        prefix[:match.start()], re.I,
+    )
+    if any(canonical_citation(citation) != canonical_citation(row["citation"])
+           for citation in other_citations):
+        raise ValueError("Another case precedes the tribunal heading")
+    if matches:
+        names = [" ".join(line.split()) for line in match.group(1).splitlines() if line.strip()]
+        if not 1 <= len(names) <= 5 or any(
+            not re.fullmatch(r"[A-Za-z][A-Za-z .'-]*(?:\s+\(Presiding\))?", name)
+            for name in names
+        ):
+            raise ValueError("Tribunal member heading cannot be read safely")
+        expected = "; ".join(re.sub(r"\s+\(Presiding\)$", "", name) for name in names)
+    else:
+        expected = " ".join(match.group(1).split())
+    if (evidence.get("value") != expected
+            or " ".join(evidence.get("quote", "").split()) != " ".join(match.group(0).split())):
+        raise ValueError("Tribunal heading requires the entire exact panel")
+    if title_date[1] != row["date"]:
+        # An existing date may be a hearing date only when the same published
+        # decision certifies the same member and labels both dates in its footer.
+        cert = re.search(
+            r"(?is)\bI certify that\b.{0,500}?reasons for the (?:order|decision) herein of\s+"
+            + re.escape(expected) + r"\b", body
+        )
+        footer = body[cert.start():cert.end() + 1000] if cert else ""
+        hearing = re.findall(r"(?i)\bDate\s+of\s+Hearing\s+(\d{1,2} [A-Za-z]+ \d{4})", footer)
+        order = re.findall(r"(?i)\bDate\s+of\s+(?:Order|Decision)\s+(\d{1,2} [A-Za-z]+ \d{4})", footer)
+        if len(set(hearing)) != 1 or hearing[0] != row["date"] or set(order) != {title_date[1]}:
+            raise ValueError("Tribunal hearing date lacks matching certified evidence")
+    proof = assessment.values.get("judges")
+    if proof and proof.value.casefold() != expected.casefold():
+        raise ValueError("Tribunal heading conflicts with grounded evidence")
+
+
+def _validate_legacy_tribunal_judges(row, source_text: str, evidence: dict, assessment) -> None:
+    """Review two explicit historical formats without treating body quotes as headings."""
+    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+    if not separator or assessment.source_status != "checked":
+        raise ValueError("Legacy tribunal source is not checked")
+    metadata = {}
+    for line in source_text[:separator.start()].splitlines():
+        field = re.match(r"^(Title|Citation|URL|Date):\s*(.*?)\s*$", line)
+        if field and field[2].strip():
+            key = field[1].casefold()
+            if key in metadata:
+                raise ValueError("Duplicate source identity field")
+            metadata[key] = field[2].strip()
+    if (not re.fullmatch(r"\[\d{4}\] AATA \d+", row["citation"] or "")
+            or any(metadata.get(k) != row[v] for k, v in
+                   (("citation", "citation"), ("title", "title"), ("url", "url"), ("date", "date")))):
+        raise ValueError("Legacy tribunal identity or date conflicts")
+    title = re.match(r"^([A-Za-z'-]+)\s+and\b", row["title"], re.I)
+    date = re.search(r"\((\d{1,2} [A-Za-z]+ \d{4})\)", row["title"])
+    body = source_text[separator.end():][:6000]
+    opening = re.match(r"(?is)^\s*DECISION\s+AND\s+REASONS\s+FOR\s+DECISION\s+"
+                       + re.escape(row["citation"]), body)
+    parties = re.search(r"(?is)\bRe\s+([A-Z][A-Z\s,.'-]+?)\s+Applicants?\s+And\s+"
+                        r"(MINISTER\s+FOR\s+IMMIGRATION[\sA-Z,.'-]+?)\s+Respondent\b", body)
+    if (not title or not date or date[1] != row["date"] or not opening or not parties
+            or parties.start() > 1500
+            or not re.search(r"\b" + re.escape(title[1]) + r"\b", parties[1], re.I)):
+        raise ValueError("Legacy tribunal published case identity is inconsistent")
+    def has_other_citation(text: str) -> bool:
+        citations = re.findall(
+            r"\[\d{4}\]\s*(?:AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|RRTA|MRTA)\s+\d+", text, re.I
+        )
+        return any(canonical_citation(c) != canonical_citation(row["citation"]) for c in citations)
+    if has_other_citation(body[opening.end():parties.end()]):
+        raise ValueError("Another case appears before the tribunal parties")
+    tail = body[parties.end():]
+    method = evidence.get("format")
+    # Additional decision headings, labelled members or signatures in the
+    # current decision may represent a panel.  Do not reduce it to one person.
+    reasons_labels = list(re.finditer(r"(?im)^[ \t]*REASONS\s+FOR\s+DECISION[ \t]*\r?$", tail))
+    if len(reasons_labels) > 1:
+        raise ValueError("Legacy tribunal has multiple reasons headings")
+    decision_end = re.search(r"(?im)^[ \t]*(?:CATCHWORDS|REASONS\s+FOR\s+DECISION)[ \t]*\r?$", tail)
+    decision = tail[:decision_end.start()] if decision_end else tail
+    labelled_members = list(re.finditer(
+        r"(?im)^[ \t]*(?:Tribunal[ \t]+)?(?:(?:(?:Senior|Presiding|General|Additional|Other)[ \t]+)?"
+        r"Members?\b(?:\(s\))?|Panel\b|Before\b|"
+        r"(?:Deputy[ \t]+President|Associate[ \t]+Professor)[ \t]*[:：.]?[ \t]+[A-Za-z])", decision
+    ))
+    signatures = list(re.finditer(r"(?im)^[ \t]*(?:\(Sgd\)|\[Sgd\]|Sgd\b|Signed\b)", decision))
+    if method == "tribunal_decision_heading":
+        heading = re.match(r"(?is)^\s*DECISION\s+Tribunal\s+"
+                           r"(Associate\s+Professor\s+[A-Za-z .'-]+,\s*Deputy\s+President)"
+                           r"\s+Date\s+(\d{1,2}\s+[A-Za-z]+\s+\d{4})", tail)
+        if (not heading or " ".join(heading[2].split()) != date[1]
+                or len(labelled_members) != 1 or signatures):
+            raise ValueError("Legacy tribunal decision heading or date is inconsistent")
+        expected = " ".join(heading[1].split())
+        quote = heading[0]
+    elif method == "signed_reasons_heading":
+        signed = re.search(r"(?im)^\s*\(Sgd\)\s+([A-Z]+)\s+([A-Z]+)\s*$", tail)
+        reasons = re.search(r"(?ims)^[ \t]*REASONS\s+FOR\s+DECISION[ \t]*\r?$\s+"
+                            r"(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s+"
+                            r"(Deputy\s+President\s+([A-Z]+)\s+([A-Za-z'-]+)),\s*Presidential\s+Member", tail)
+        if (not signed or not reasons or signed.end() > reasons.start()
+                or len(signatures) != 1 or labelled_members
+                or has_other_citation(tail[:signed.start()])
+                or " ".join(reasons[1].split()) != date[1]
+                or signed[1].casefold() != reasons[3].casefold()
+                or signed[2].casefold() != reasons[4].casefold()):
+            raise ValueError("Legacy tribunal signature and reasons do not match")
+        expected = " ".join(reasons[2].split())
+        quote = reasons[0]
+    else:
+        raise ValueError("Unsupported legacy tribunal format")
+    if evidence.get("value") != expected or " ".join(evidence.get("quote", "").split()) != " ".join(quote.split()):
+        raise ValueError("Legacy tribunal evidence is not the complete heading")
+    proof = assessment.values.get("judges")
+    if proof and proof.value.casefold() not in {expected.casefold(), ("Tribunal " + expected).casefold()}:
+        raise ValueError("Legacy tribunal heading conflicts with grounded evidence")
+
+
+def _validate_mrta_signed_footer(row, source_text: str, evidence: dict, assessment) -> None:
+    """Accept a single case-bound MRTA member only from its terminal decision footer."""
+    separator = re.search(r"(?m)^={10,}\s*$", source_text)
+    if not separator or assessment.source_status != "checked":
+        raise ValueError("MRTA source is not checked")
+    metadata = {}
+    for line in source_text[:separator.start()].splitlines():
+        match = re.match(r"^(Title|Citation|URL):\s*(.*?)\s*$", line)
+        if match and match[2].strip():
+            key = match[1].casefold()
+            if key in metadata:
+                raise ValueError("Duplicate source identity field")
+            metadata[key] = match[2].strip()
+    if (not re.fullmatch(r"\[\d{4}\] MRTA \d+", row["citation"] or "")
+            or any(metadata.get(k) != row[v] for k, v in
+                   (("citation", "citation"), ("title", "title"), ("url", "url")))):
+        raise ValueError("MRTA source identity conflicts")
+    title = re.fullmatch(r"(\d+)\s+\[\d{4}\] MRTA \d+ \((\d{1,2} [A-Za-z]+ \d{4})\)", row["title"])
+    body = source_text[separator.end():]
+    if not title or title[2] != row["date"] or row["title"] not in body[:1000]:
+        raise ValueError("MRTA published citation and date do not match")
+    boundary = re.search(r"(?im)^[ \t]*STATEMENT OF DECISION AND REASONS[ \t]*\r?$", body)
+    if not boundary:
+        raise ValueError("MRTA decision reasons are missing")
+    header = body[:boundary.start()]
+    def field(label: str) -> list[str]:
+        return re.findall(r"(?im)^[ \t]*" + label + r":[ \t]*\r?\n[ \t]*([^\r\n]+?)[ \t]*\r?$", header)
+    if (not row["applicant_name"] or field("APPLICANT") != [row["applicant_name"]]
+            or field("MRT CASE NUMBER") != [title[1]] or field("TRIBUNAL MEMBER") != [title[1]]
+            or field("DATE") != [title[2]]):
+        raise ValueError("MRTA decision record applicant, number, member or date conflicts")
+    other_header = re.sub(
+        r"(?im)^[ \t]*TRIBUNAL MEMBER:[ \t]*\r?\n[ \t]*" + re.escape(title[1]) + r"[ \t]*\r?$",
+        "", header,
+    )
+    marker = (r"(?im)^[ \t]*\(?[ \t]*(?:(?:Tribunal|MRT)[ \t]+)?(?:(?:(?:Senior|Presiding|General|Other|Additional)[ \t]+)?"
+              r"Members?\b|Panel\b|Before\b|Deputy[ \t]+President\b|Associate[ \t]+Professor\b|"
+              r"Sgd\b|\[Sgd\]|Signed\b)")
+    if re.search(marker, other_header):
+        raise ValueError("MRTA decision record contains another member or signature")
+    decisions = list(re.finditer(r"(?im)^[ \t]*DECISION[ \t]*\r?$", body[boundary.end():]))
+    if len(decisions) != 1:
+        raise ValueError("MRTA operative decision heading is ambiguous")
+    before_decision = body[boundary.end():boundary.end() + decisions[0].start()]
+    findings = list(re.finditer(r"(?im)^[ \t]*FINDINGS AND REASONS[ \t]*\r?$", before_decision))
+    if len(findings) != 1:
+        raise ValueError("MRTA findings heading is missing or ambiguous")
+    stand_alone = re.findall(
+        r"(?im)^[ \t]*(\[\d{4}\][ \t]*(?:AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|RRTA|MRTA)[ \t]+\d+)[ \t]*\r?$",
+        before_decision[findings[0].end():],
+    )
+    if any(canonical_citation(c) != canonical_citation(row["citation"]) for c in stand_alone):
+        raise ValueError("Another case appears within the MRTA findings")
+    numbered = list(re.finditer(r"(?m)^[ \t]*\d{1,3}\.[ \t]*\r?$", before_decision))
+    if not numbered:
+        raise ValueError("MRTA findings are missing")
+    final_finding = before_decision[numbered[-1].end():]
+    if re.search(r"\[\d{4}\]\s*(?:AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|RRTA|MRTA)\s+\d+", final_finding, re.I):
+        raise ValueError("Another case appears immediately before the MRTA decision")
+    last = body[boundary.end() + decisions[0].end():]
+    footer = re.search(
+        r"(?m)^([A-Z][A-Za-z'-]+(?:[ \t]+[A-Z][A-Za-z'-]+)+)[ \t]+Date:[ \t]*"
+        r"(\d{1,2} [A-Za-z]+ \d{4})[ \t]*\r?\n[ \t]*Member[ \t]*\r?\n?\s*\Z", last
+    )
+    if not footer or footer[2] != title[2]:
+        raise ValueError("MRTA terminal member and decision date are missing")
+    preceding = last[:footer.start()]
+    if re.search(marker, preceding):
+        raise ValueError("MRTA decision contains additional member or signature")
+    if re.search(r"(?im)^[^\r\n]{1,150}\bDate[ \t]*:[^\r\n]{1,80}\bMembers?\b", preceding):
+        raise ValueError("MRTA decision contains an additional dated member")
+    citations = re.findall(r"\[\d{4}\]\s*(?:AATA|ARTA|FCAFC|FCA|FCCA|FMCA|HCA|RRTA|MRTA)\s+\d+",
+                           preceding, re.I)
+    if any(canonical_citation(c) != canonical_citation(row["citation"]) for c in citations):
+        raise ValueError("Another case appears before the MRTA footer")
+    if (evidence.get("value") != footer[1]
+            or " ".join(evidence.get("quote", "").split()) != " ".join(footer[0].split())):
+        raise ValueError("MRTA footer requires the entire exact member and date")
+    proof = assessment.values.get("judges")
+    if proof and proof.value.casefold() != footer[1].casefold():
+        raise ValueError("MRTA footer conflicts with grounded evidence")
+
+
+def _validate_high_court_pdf_judges(root: Path, row, source_text: str, evidence: dict) -> None:
+    """Verify the actual official PDF bytes and its complete first-page panel."""
+    match = re.fullmatch(r"\[(\d{4})\] HCA (\d+)", row["citation"] or "")
+    if not match:
+        raise ValueError("High Court review requires an HCA citation")
+    year, number = match.groups()
+    expected_url = f"https://www.hcourt.gov.au/sites/default/files/eresources/{year}/HCA/{int(number)}.pdf"
+    if evidence.get("source_url") != expected_url:
+        raise ValueError("High Court review requires the exact official PDF URL")
+    pdf = source_path(root, evidence.get("pdf_path", ""))
+    if not pdf or digest(pdf) != evidence.get("pdf_sha256"):
+        raise ValueError("High Court PDF is missing or changed")
+    try:
+        from pypdf import PdfReader
+        page = PdfReader(pdf).pages[0].extract_text()
+    except Exception as exc:
+        raise ValueError("High Court PDF first page cannot be read") from exc
+    if source_text != page:
+        raise ValueError("High Court text must be extracted from the exact PDF first page")
+    lines = page.splitlines()
+    headings = [i for i, line in enumerate(lines) if line.strip() == "HIGH COURT OF AUSTRALIA"]
+    if len(headings) != 1:
+        raise ValueError("High Court heading is missing or ambiguous")
+    i = headings[0] + 1
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    panel = []
+    # A PDF can insert blank lines between judges.  Never interpret an empty
+    # line as the end of a panel: stop only at an identifiable party heading,
+    # and reject unfamiliar intervening text rather than accepting a subset.
+    party = re.compile(
+        r"^(?:PLAINTIFF|APPLICANT|APPELLANT|RESPONDENT|DEFENDANT|MINISTER|IN THE MATTER)\b"
+        r"|\b(?:PLAINTIFFS?|APPLICANTS?|APPELLANTS?|RESPONDENTS?|DEFENDANTS?)\b|[&0-9]",
+        re.IGNORECASE,
+    )
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
+        if not line:
+            continue
+        if party.search(line):
+            break
+        if not re.fullmatch(r"[A-Z][A-Z ,.'-]*", line):
+            raise ValueError("High Court panel boundary is ambiguous")
+        panel.append(line)
+    else:
+        raise ValueError("High Court party heading is missing")
+    panel_text = " ".join(" ".join(panel).split())
+    if (not re.fullmatch(r"[A-Z][A-Z ,]*(?:CJ|JJ|J)", panel_text)
+            or evidence.get("value") != panel_text
+            or " ".join(evidence.get("quote", "").split()) != panel_text):
+        raise ValueError("High Court review requires the complete first-page panel")
+    title = row["title"].split(row["citation"], 1)[0].strip()
+    def normalize(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", s.casefold())
+    if (not title or normalize(title) not in normalize(page)
+            or row["citation"] not in page):
+        raise ValueError("High Court PDF does not match the case title and citation")
+    date_match = re.search(r"\((\d{1,2} [A-Za-z]+ \d{4})\)", row["title"])
+    if not date_match:
+        raise ValueError("High Court PDF does not match the judgment date")
+    judgment_date = date_match[1]
+    explicitly_labelled = re.findall(
+        r"(?im)^[ \t]*Date[ \t]+of[ \t]+Judg(?:e)?ment[ \t]*:[ \t]*"
+        r"(\d{1,2} [A-Za-z]+ \d{4})[ \t]*\r?$", page
+    )
+    # Older official PDFs often print the date directly on the next line
+    # following their neutral citation, without a Date of Judgment label.
+    legacy_date = re.search(
+        r"(?m)^[ \t]*" + re.escape(row["citation"]) + r"[ \t]*\r?\n"
+        + r"[ \t]*" + re.escape(judgment_date) + r"[ \t]*\r?$", page
+    )
+    if (explicitly_labelled and set(explicitly_labelled) != {judgment_date}) or (
+        not explicitly_labelled and not legacy_date
+    ):
+        raise ValueError("High Court PDF does not match the judgment date")
+    hearing_dates = re.findall(
+        r"(?im)^[ \t]*Date[ \t]+of[ \t]+Hearing[ \t]*:[ \t]*"
+        r"(\d{1,2} [A-Za-z]+ \d{4})[ \t]*\r?$", page
+    )
+    # Some existing catalogues stored the hearing date in their date field.
+    # Accept it only when the same PDF separately labels both exact dates;
+    # the approval updates the judge field only and does not change that date.
+    is_documented_hearing = (
+        bool(explicitly_labelled)
+        and len(set(hearing_dates)) == 1
+        and row["date"] == hearing_dates[0]
+    )
+    if row["date"] not in (judgment_date, judgment_date.rsplit(" ", 1)[0]) and not is_documented_hearing:
+        raise ValueError("High Court database date conflicts with judgment date")
+
+
 def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
     """Approval is source-pinned and literal; replacements require exact compare-and-swap."""
     seen = set()
@@ -2132,6 +2488,22 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                 manual_judge_review = (
                     field == "judges"
                     and evidence.get("method") == "manual_official_source_judge_review"
+                )
+                manual_tribunal_heading = (
+                    field == "judges"
+                    and evidence.get("method") == "manual_tribunal_heading_judge_review"
+                )
+                manual_high_court_pdf = (
+                    field == "judges"
+                    and evidence.get("method") == "manual_high_court_pdf_judge_review"
+                )
+                manual_legacy_tribunal = (
+                    field == "judges"
+                    and evidence.get("method") == "manual_legacy_tribunal_judge_review"
+                )
+                manual_mrta_signed_footer = (
+                    field == "judges"
+                    and evidence.get("method") == "manual_mrta_signed_footer_judge_review"
                 )
                 manual_docket_outcome_review = (
                     field == "outcome"
@@ -2252,6 +2624,14 @@ def validate_approvals(root: Path, approvals: list[dict[str, Any]]) -> None:
                         raise ValueError("Manual visa approval conflicts with not-applicable evidence")
                     if proof and proof.value != value:
                         raise ValueError("Manual visa approval conflicts with grounded evidence")
+                elif manual_mrta_signed_footer:
+                    _validate_mrta_signed_footer(row, source_text, evidence, assessment)
+                elif manual_legacy_tribunal:
+                    _validate_legacy_tribunal_judges(row, source_text, evidence, assessment)
+                elif manual_high_court_pdf:
+                    _validate_high_court_pdf_judges(root, row, source_text, evidence)
+                elif manual_tribunal_heading:
+                    _validate_tribunal_heading_judges(row, source_text, evidence, assessment)
                 elif manual_judge_review:
                     metadata = {}
                     separator = re.search(r"(?m)^={10,}\s*$", source_text)
