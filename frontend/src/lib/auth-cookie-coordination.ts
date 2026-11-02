@@ -1,3 +1,5 @@
+import { demoRequestCredentials } from "@/lib/demo-request";
+
 /** Refresh cookies are shared by every same-origin tab. Only the holder of
  * this browser-wide lock may consume one; a per-React-tree promise is not a
  * cross-tab lock. Unsupported or denied locks fail closed. */
@@ -23,7 +25,7 @@ export async function fetchAuthJson<T>(
   try {
     return await Promise.race([
       (async () => {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, { ...options, ...demoRequestCredentials(), signal: controller.signal });
         const data: T | null = await response.json().catch((error: unknown) => {
           if (controller.signal.aborted) throw error;
           return null;
@@ -41,7 +43,10 @@ export async function withAuthCookieLock<T>(operation: () => Promise<T>): Promis
   if (!navigator.locks?.request) {
     throw new Error("Secure session coordination is unavailable. Please try again in a supported browser.");
   }
-  return navigator.locks.request(AUTH_COOKIE_LOCK, { mode: "exclusive" }, operation);
+  const lockName = import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true"
+    ? `${AUTH_COOKIE_LOCK}:demo`
+    : AUTH_COOKIE_LOCK;
+  return navigator.locks.request(lockName, { mode: "exclusive" }, operation);
 }
 
 /** Store only an idempotency UUID, never a credential. If a response is lost
@@ -49,6 +54,9 @@ export async function withAuthCookieLock<T>(operation: () => Promise<T>): Promis
 export function getSharedRefreshRotationId(proposedId: string): string {
   try {
     if (!UUID_RE.test(proposedId)) throw new Error("Invalid rotation id");
+    // The local fake service has no shared refresh cookie; a demo request
+    // must not read or overwrite a real pending rotation on the same origin.
+    if (import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true") return proposedId;
     const pending = window.localStorage.getItem(ROTATION_STORAGE_KEY);
     if (pending && UUID_RE.test(pending)) return pending;
     window.localStorage.setItem(ROTATION_STORAGE_KEY, proposedId);
@@ -63,6 +71,7 @@ export function getSharedRefreshRotationId(proposedId: string): string {
 }
 
 export function clearSharedRefreshRotationId(): void {
+  if (import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true") return;
   try {
     window.localStorage.removeItem(ROTATION_STORAGE_KEY);
   } catch {

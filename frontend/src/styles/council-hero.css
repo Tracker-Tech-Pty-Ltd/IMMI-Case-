@@ -1,0 +1,77 @@
+/* A quiet, decorative sense of the Council coming together. The motion is
+   never used to indicate that a model has run or that an answer is reliable. */
+.council-hero {
+  isolation: isolate;
+  background-image: radial-gradient(ellipse at 90% 50%, var(--color-accent-muted), transparent 52%);
+}
+
+.council-hero-atmosphere {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 38%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--color-accent);
+}
+
+.council-hero-orbit {
+  position: absolute;
+  aspect-ratio: 1;
+  border: thin solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-radius: 50%;
+}
+
+.council-hero-orbit::before {
+  content: "";
+  position: absolute;
+  inset: 6%;
+  border: thin solid color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: inherit;
+}
+
+.council-hero-orbit span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: var(--spacing-2);
+  height: var(--spacing-2);
+  border-radius: 50%;
+  background: var(--color-accent-light);
+  box-shadow: var(--shadow-lg);
+}
+
+.council-hero-orbit-outer { width: 76%; }
+.council-hero-orbit-inner { width: 54%; }
+.council-hero-orbit-inner span { left: auto; right: 0; }
+
+.council-hero-core {
+  display: grid;
+  place-items: center;
+  width: 30%;
+  aspect-ratio: 1;
+  border: thin solid color-mix(in srgb, var(--color-accent) 24%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-background-card) 85%, var(--color-accent-muted));
+  box-shadow: var(--shadow);
+}
+
+.council-hero-core svg { width: 42%; height: 42%; }
+
+@media (min-width: 64rem) {
+  .council-hero-atmosphere { display: flex; }
+  .council-hero-content > .min-w-0 { max-width: 60%; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .council-hero-orbit-outer { animation: council-hero-orbit 28s linear infinite; }
+  .council-hero-orbit-inner { animation: council-hero-orbit 19s linear infinite reverse; }
+  .council-emblem-pulse { animation: council-emblem-pulse 2.4s ease-out infinite; }
+}
+
+@keyframes council-hero-orbit { to { transform: rotate(360deg); } }
+@keyframes council-emblem-pulse {
+  0% { transform: scale(1); opacity: .7; }
+  100% { transform: scale(1.18); opacity: 0; }
+}

@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -231,6 +231,49 @@ describe("TurnCard", () => {
     const toggle = screen.getByTestId("experts-toggle");
     fireEvent.click(toggle);
     expect(await screen.findByText("OpenAI")).toBeInTheDocument();
+  });
+
+  it("supports keyboard navigation and announces each expert's status", () => {
+    const turn = makeTurn(1);
+    turn.opinions.push(
+      { ...turn.opinions[0], provider_key: "gemini", provider_label: "Gemini", answer: "Gemini answer" },
+      { ...turn.opinions[0], provider_key: "anthropic", provider_label: "Claude", success: false, error: "Unavailable" },
+    );
+    renderTurnCard(turn);
+    fireEvent.click(screen.getByTestId("experts-toggle"));
+    const openai = screen.getByTestId("expert-tab-openai");
+    const gemini = screen.getByTestId("expert-tab-gemini");
+    const claude = screen.getByTestId("expert-tab-anthropic");
+    expect(openai).toHaveAttribute("tabindex", "0");
+    expect(gemini).toHaveAttribute("tabindex", "-1");
+    expect(claude).toHaveAccessibleName(/Claude.*Failed/i);
+    openai.focus();
+    fireEvent.keyDown(openai, { key: "ArrowRight" });
+    expect(gemini).toHaveFocus();
+    expect(gemini).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", gemini.id);
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Gemini answer");
+    expect(gemini).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    fireEvent.keyDown(gemini, { key: "End" });
+    expect(claude).toHaveFocus();
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Unavailable");
+    fireEvent.keyDown(claude, { key: "ArrowRight" });
+    expect(openai).toHaveFocus();
+    fireEvent.keyDown(openai, { key: "ArrowLeft" });
+    expect(claude).toHaveFocus();
+    fireEvent.keyDown(claude, { key: "Home" });
+    expect(openai).toHaveFocus();
+  });
+
+  it("assigns distinct accessible tab and panel IDs to separate turns", () => {
+    render(<MemoryRouter><TurnCard turn={makeTurn(1)} turnNumber={1} /><TurnCard turn={makeTurn(2)} turnNumber={2} /></MemoryRouter>);
+    const cards = screen.getAllByTestId("turn-card");
+    cards.forEach((card) => fireEvent.click(within(card).getByTestId("experts-toggle")));
+    const tabs = cards.map((card) => within(card).getByRole("tab"));
+    const panels = cards.map((card) => within(card).getByRole("tabpanel"));
+    expect(tabs[0].id).not.toBe(tabs[1].id);
+    expect(panels[0].id).not.toBe(panels[1].id);
+    panels.forEach((panel, index) => expect(panel).toHaveAttribute("aria-labelledby", tabs[index].id));
   });
 
   it("renders the moderator section (data-testid='moderator-section')", () => {

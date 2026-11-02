@@ -9,6 +9,7 @@
  */
 
 import { getApiAccessToken } from "@/lib/api";
+import { demoRequestCredentials } from "@/lib/demo-request";
 
 // ---------------------------------------------------------------------------
 // Types — mirror handlers.js JSON shapes
@@ -162,6 +163,7 @@ async function councilFetch(
     const res = await fetch(url, {
       method,
       credentials: "include",
+      ...demoRequestCredentials(),
       headers: {
         "Content-Type": "application/json",
         ...headers,

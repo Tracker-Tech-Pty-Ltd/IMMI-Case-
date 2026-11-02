@@ -10,6 +10,7 @@ import type { AuthState, AuthTenant, AuthUser } from "@/lib/auth";
 import { clearAuthCookies, parseJwtPayload } from "@/lib/auth";
 import { setApiAccessToken } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
+import { demoRequestCredentials } from "@/lib/demo-request";
 import {
   withAuthCookieLock,
   getSharedRefreshRotationId,
@@ -26,6 +27,9 @@ const REFRESH_RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
 const ACTIVE_TENANT_STORAGE_KEY = "immi:auth:active-tenant";
 
 function readStoredTenantId(): string | null {
+  // A local Council demonstration may share an origin with a real dev app.
+  // Never read its saved tenant into a simulated authentication request.
+  if (import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true") return null;
   try {
     return window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
   } catch {
@@ -34,6 +38,8 @@ function readStoredTenantId(): string | null {
 }
 
 function storeTenantId(tenantId: string | null): void {
+  // Preserve any real workspace selection stored at this origin.
+  if (import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true") return;
   try {
     if (tenantId) window.localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenantId);
     else window.localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
@@ -242,7 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/v1/auth/me", { credentials: "include" });
+        const r = await fetch("/api/v1/auth/me", { credentials: "include", ...demoRequestCredentials() });
         if (r.ok) {
           const data = await r.json();
           if (data?.access_token) {

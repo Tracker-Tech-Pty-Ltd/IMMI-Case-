@@ -31,6 +31,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import "@/styles/council-hero.css";
 import {
   ArrowRight,
   Bot,
@@ -69,7 +70,6 @@ import {
   recordCouncilRun,
   unlockRobeTheme,
   isRobeThemeUnlocked,
-  timeOfDaySalutation,
   getCouncilStats,
   type Achievement,
 } from "@/lib/council-celebrations";
@@ -370,6 +370,12 @@ interface PromptSidebarProps {
 
 function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
   const { t } = useTranslation();
+  const prompts = [
+    { title: t("llm_council.sample_1_title", { defaultValue: SAMPLE_PROMPTS[0].title }), body: t("llm_council.sample_1_body", { defaultValue: SAMPLE_PROMPTS[0].body }) },
+    { title: t("llm_council.sample_2_title", { defaultValue: SAMPLE_PROMPTS[1].title }), body: t("llm_council.sample_2_body", { defaultValue: SAMPLE_PROMPTS[1].body }) },
+    { title: t("llm_council.sample_3_title", { defaultValue: SAMPLE_PROMPTS[2].title }), body: t("llm_council.sample_3_body", { defaultValue: SAMPLE_PROMPTS[2].body }) },
+    { title: t("llm_council.sample_4_title", { defaultValue: SAMPLE_PROMPTS[3].title }), body: t("llm_council.sample_4_body", { defaultValue: SAMPLE_PROMPTS[3].body }) },
+  ];
   return (
     <aside className="space-y-4">
       {/* Sample prompts */}
@@ -383,7 +389,7 @@ function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
           </h3>
         </div>
         <ul className="space-y-2">
-          {SAMPLE_PROMPTS.map((p) => (
+          {prompts.map((p) => (
             <li key={p.title}>
               <button
                 type="button"
@@ -420,7 +426,7 @@ function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
                 style={{ backgroundColor: p.color }}
               />
               <span className="text-foreground">{p.label}</span>
-              <span className="text-muted-text">— expert</span>
+              <span className="text-muted-text">— {t("llm_council.sidebar_role_expert", { defaultValue: "expert" })}</span>
             </li>
           ))}
           <li className="flex items-center gap-2 border-t border-border pt-2">
@@ -430,7 +436,7 @@ function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
                 defaultValue: "Council Chairman",
               })}
             </span>
-            <span className="text-muted-text">— 綜合 / synthesis</span>
+            <span className="text-muted-text">— {t("llm_council.sidebar_role_synthesis", { defaultValue: "synthesis" })}</span>
           </li>
         </ul>
       </div>
@@ -446,10 +452,10 @@ function PromptSidebar({ onSelectPrompt }: PromptSidebarProps) {
           </h3>
         </div>
         <ul className="space-y-1.5 text-[11px] leading-relaxed text-muted-text">
-          <li>• Cite section numbers and case names for sharper output.</li>
-          <li>• Heavy prompts can take 2-3 minutes — that&apos;s normal.</li>
-          <li>• Up to 15 follow-up turns per session.</li>
-          <li>• Cmd/Ctrl+Enter submits.</li>
+          <li>• {t("llm_council.sidebar_tip_citations", { defaultValue: "Cite section numbers and case names for sharper output." })}</li>
+          <li>• {t("llm_council.sidebar_tip_wait", { defaultValue: "Complex questions can take 2–3 minutes." })}</li>
+          <li>• {t("llm_council.sidebar_tip_turns", { defaultValue: "Up to 15 follow-up turns per session." })}</li>
+          <li>• {t("llm_council.sidebar_tip_shortcut", { defaultValue: "Cmd/Ctrl+Enter submits." })}</li>
         </ul>
       </div>
     </aside>
@@ -484,6 +490,7 @@ const SWIPE_TO_SEND_THRESHOLD_PX = 48;
 // ---------------------------------------------------------------------------
 
 interface MessageInputProps {
+  id: string;
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
@@ -497,6 +504,7 @@ interface MessageInputProps {
 }
 
 function MessageInput({
+  id,
   value,
   onChange,
   onSubmit,
@@ -568,6 +576,7 @@ function MessageInput({
     <div className="space-y-2">
       <div className="relative">
         <textarea
+          id={id}
           ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -576,14 +585,14 @@ function MessageInput({
           maxLength={maxChars}
           disabled={disabled || isPending}
           placeholder={placeholder}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2.5 text-sm leading-relaxed text-foreground outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2.5 pr-12 text-base leading-relaxed text-foreground outline-none transition-colors focus:border-accent disabled:cursor-not-allowed disabled:opacity-60"
         />
         {value.length > 0 && !isPending ? (
           <button
             type="button"
             onClick={() => onChange("")}
-            aria-label="Clear input"
-            className="absolute right-2 top-2 rounded-md p-1 text-muted-text opacity-60 transition-opacity hover:opacity-100"
+            aria-label={t("llm_council.clear_input", { defaultValue: "Clear question" })}
+            className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded-md text-muted-text transition-colors hover:text-foreground"
           >
             <Eraser className="h-3.5 w-3.5" />
           </button>
@@ -599,7 +608,7 @@ function MessageInput({
             onTouchStart={handleSwipeTouchStart}
             onTouchEnd={handleSwipeTouchEnd}
             onTouchCancel={handleSwipeTouchCancel}
-            className={`absolute bottom-2 right-2 grid h-8 w-8 place-items-center rounded-full bg-accent text-white shadow-sm transition-transform duration-150 hover:bg-accent/90 ${
+            className={`absolute bottom-2 right-2 grid h-11 w-11 place-items-center rounded-full bg-accent text-on-solid shadow-sm transition-transform duration-150 hover:bg-accent/90 ${
               swipeActive ? "scale-110" : "scale-100"
             }`}
           >
@@ -650,6 +659,7 @@ function MessageInput({
 const RECALL_CODE_RE = /^[2-9A-HJ-NP-Z]{6}$/;
 
 function RestoreByCodeRibbon() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -664,7 +674,7 @@ function RestoreByCodeRibbon() {
     setError(null);
 
     if (!isValidShape) {
-      setError("Code must be 6 characters (letters and digits, no 0/O/1/I/L).");
+      setError(t("llm_council.restore_invalid_code", { defaultValue: "Code must be 6 characters (letters and digits, no 0/O/1/I/L)." }));
       return;
     }
 
@@ -675,7 +685,7 @@ function RestoreByCodeRibbon() {
       // Token already persisted by the api fetcher — navigate into the session view.
       navigate(`/llm-council/sessions/${result.session_id}`);
     } catch (err) {
-      const msg = (err as Error).message || "Restore failed";
+      const msg = (err as Error).message || t("llm_council.restore_failed", { defaultValue: "Restore failed" });
       // 404 → "Code not found"; 400 → validation. Surface as-is.
       setError(msg);
       setBusy(false);
@@ -690,7 +700,7 @@ function RestoreByCodeRibbon() {
     >
       <div className="flex items-center gap-2 text-xs font-semibold text-muted-text">
         <KeyRound className="h-3.5 w-3.5 text-accent" />
-        <span>Returning?</span>
+        <span>{t("llm_council.restore_returning", { defaultValue: "Returning?" })}</span>
       </div>
       <input
         type="text"
@@ -705,7 +715,7 @@ function RestoreByCodeRibbon() {
         maxLength={6}
         autoComplete="off"
         spellCheck={false}
-        aria-label="6-character recall code"
+        aria-label={t("llm_council.restore_code_label", { defaultValue: "6-character recall code" })}
         data-testid="restore-by-code-input"
         className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-center font-mono text-sm font-bold tracking-[0.2em] uppercase text-foreground outline-none transition-colors focus:border-accent"
       />
@@ -720,17 +730,17 @@ function RestoreByCodeRibbon() {
             <div className="animate-spin">
               <Loader2 className="h-3 w-3" />
             </div>
-            Restoring…
+            {t("llm_council.restoring", { defaultValue: "Restoring…" })}
           </>
         ) : (
           <>
             <KeyRound className="h-3 w-3" />
-            Restore conversation
+            {t("llm_council.restore_conversation", { defaultValue: "Restore conversation" })}
           </>
         )}
       </button>
       <span className="text-[11px] text-muted-text">
-        Have a recall code from a previous session? Enter it to continue.
+        {t("llm_council.restore_help", { defaultValue: "Have a recall code from a previous session? Enter it to continue." })}
       </span>
       {error ? (
         <span
@@ -784,6 +794,7 @@ function AuthRequiredNotice() {
 
 function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) {
   const { t } = useTranslation();
+  const localDemo = import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true";
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [message, setMessage] = useState("");
@@ -818,7 +829,7 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
     ) {
       celebratedDoneRef.current = true;
       const moderatorOk = stream.state.moderator.status === "complete" && stream.state.moderator.data?.success === true;
-      if (anyExpertOk && moderatorOk) {
+      if (anyExpertOk && moderatorOk && !localDemo) {
         fireCouncilDoneCelebration();
         playCue("verdict");
         const unlocked = recordCouncilRun();
@@ -831,6 +842,7 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
     anyExpertOk,
     stream.state.moderator.status,
     stream.state.moderator.data?.success,
+    localDemo,
     onAchievements,
     onRunComplete,
   ]);
@@ -912,7 +924,7 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
             returning user sees it before starting a fresh session.
             Hidden once the user starts streaming so it doesn't compete
             with live council output. */}
-        {!stream.isStreaming &&
+        {!localDemo && !stream.isStreaming &&
         stream.state.openai.status === "pending" &&
         stream.state.gemini_pro.status === "pending" &&
         stream.state.anthropic.status === "pending" ? (
@@ -928,12 +940,13 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
             className="space-y-5"
           >
             <div>
-              <label className="mb-2 block text-sm font-semibold text-foreground">
+              <label htmlFor="council-question" className="mb-2 block text-sm font-semibold text-foreground">
                 {t("llm_council.question_label", {
                   defaultValue: "Legal Research Question",
                 })}
               </label>
               <MessageInput
+                id="council-question"
                 value={message}
                 onChange={setMessage}
                 onSubmit={handleSend}
@@ -948,20 +961,22 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-text">
+                <label htmlFor="council-case-id" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-text">
                   {t("llm_council.case_id_label", {
                     defaultValue: "Case ID (optional)",
                   })}
                 </label>
                 <input
+                  id="council-case-id"
                   type="text"
+                  disabled={localDemo}
                   value={caseId}
                   onChange={(e) => setCaseId(e.target.value)}
                   placeholder="12-char hex id"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none transition-colors focus:border-accent"
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-base text-foreground outline-none transition-colors focus:border-accent sm:text-sm"
                 />
                 <p className="mt-1 text-[11px] text-muted-text">
-                  {t("llm_council.case_id_help", {
+                  {localDemo ? t("llm_council.local_demo_case_hint", { defaultValue: "The demonstration does not load real cases." }) : t("llm_council.case_id_help", {
                     defaultValue:
                       "If provided, the case context is auto-included in the prompt.",
                   })}
@@ -972,7 +987,7 @@ function NewSessionForm({ onAchievements, onRunComplete }: NewSessionFormProps) 
                 <button
                   type="submit"
                   disabled={stream.isStreaming || !message.trim()}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-on-solid shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {stream.isStreaming ? (
                     <>
@@ -1085,7 +1100,7 @@ function ThreadView({
       const anyExpertOk = (result?.turn?.opinions || []).some(
         (o) => o?.success === true,
       );
-      if (moderatorOk && anyExpertOk) {
+      if (moderatorOk && anyExpertOk && !(import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true")) {
         fireCouncilDoneCelebration();
         playCue("verdict");
         const unlocked = recordCouncilRun();
@@ -1167,11 +1182,11 @@ function ThreadView({
           className="space-y-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-text">
+            <label htmlFor="council-follow-up" className="text-xs font-semibold uppercase tracking-wide text-muted-text">
               {t("llm_council.follow_up_input_label", {
                 defaultValue: "Follow-up question",
               })}
-            </p>
+            </label>
             <span
               data-testid="turn-count-badge"
               className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -1186,6 +1201,7 @@ function ThreadView({
           </div>
 
           <MessageInput
+            id="council-follow-up"
             value={input}
             onChange={setInput}
             onSubmit={handleSend}
@@ -1216,7 +1232,7 @@ function ThreadView({
             <button
               type="submit"
               disabled={atLimit || addTurn.isPending || !input.trim()}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md bg-accent px-5 py-2 text-sm font-semibold text-on-solid shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
             >
               {addTurn.isPending ? (
                 <>
@@ -1311,13 +1327,23 @@ export function LlmCouncilPage() {
 
   return (
     <div className="space-y-8">
+      {import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true" ? (
+        <div role="status" className="rounded-md border border-accent bg-surface p-4 text-sm font-semibold text-foreground" data-testid="council-demo-notice">
+          {t("llm_council.local_demo_notice", { defaultValue: "Local demonstration: example responses only, not real AI or legal advice. Do not enter personal information." })}
+        </div>
+      ) : null}
       {/* Hero — custom oversized block. Icon scales with title height
           (clamp 4-5.5rem). Subtitle drops upstream model provider names;
           panel surfaces as a unified Council Chairman + 3 experts. */}
       <section
-        className="relative overflow-hidden rounded-2xl border border-border/80 bg-card p-6 shadow-sm sm:p-8"
+        className="council-hero relative overflow-hidden rounded-2xl border border-border/80 bg-card p-6 shadow-sm sm:p-8"
         data-testid="llm-council-hero"
       >
+        <div className="council-hero-atmosphere" aria-hidden="true">
+          <div className="council-hero-orbit council-hero-orbit-outer"><span /></div>
+          <div className="council-hero-orbit council-hero-orbit-inner"><span /></div>
+          <div className="council-hero-core"><Scale /></div>
+        </div>
         {/* Subtle accent gradient bar at the bottom edge for depth */}
         <div
           aria-hidden
@@ -1340,7 +1366,7 @@ export function LlmCouncilPage() {
           />
         ) : null}
 
-        <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center">
+        <div className="council-hero-content relative flex flex-col items-start gap-5 sm:flex-row sm:items-center">
           <button
             type="button"
             onClick={handleScaleTap}
@@ -1363,16 +1389,9 @@ export function LlmCouncilPage() {
             {scaleTapCount === 0 && stats.totalRuns < 3 ? (
               <span
                 aria-hidden
-                className="absolute inset-0 rounded-2xl ring-2 ring-accent/30"
-                style={{ animation: "councilEmblemPulse 2.4s ease-out infinite" }}
+                className="council-emblem-pulse absolute inset-0 rounded-2xl ring-2 ring-accent/30"
               />
             ) : null}
-            <style>
-              {`@keyframes councilEmblemPulse {
-                0% { transform: scale(1); opacity: 0.7; }
-                100% { transform: scale(1.18); opacity: 0; }
-              }`}
-            </style>
           </button>
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -1381,7 +1400,7 @@ export function LlmCouncilPage() {
                   defaultValue: "Multi-Model Legal Research",
                 })}
               </p>
-              {stats.totalRuns > 0 ? (
+              {stats.totalRuns > 0 && !(import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true") ? (
                 <span
                   className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent"
                   title={`${stats.totalRuns} council runs · ${stats.streak}-day streak`}
@@ -1394,14 +1413,14 @@ export function LlmCouncilPage() {
             <h1 className="break-words font-heading text-[clamp(1.75rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-foreground">
               {t("llm_council.title", { defaultValue: "LLM IMMI Council" })}
             </h1>
-            <p className="text-sm leading-relaxed text-muted-text sm:text-base">
+            <p className="max-w-prose text-sm leading-relaxed text-muted-text sm:text-base">
               {t("llm_council.subtitle", {
                 defaultValue:
                   "Three independent legal-research experts deliberate in parallel — their opinions are then synthesised by the Council Chairman into ranked critique, statute cross-reference, and a mock judgment outline.",
               })}
             </p>
-            <p className="text-[11px] italic text-muted-text">
-              {timeOfDaySalutation()}
+            <p className="max-w-prose text-sm leading-relaxed text-muted-text">
+              {t("llm_council.research_notice", { defaultValue: "Check important details against original sources. This is research assistance, not a court decision." })}
             </p>
           </div>
 
@@ -1440,7 +1459,9 @@ export function LlmCouncilPage() {
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-accent" />
               <p>
-                {t("llm_council.idle_hint", {
+                {import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true" ? t("llm_council.local_demo_hint", {
+                  defaultValue: "Enter a sample question to see a fixed example. The response does not analyse your input.",
+                }) : t("llm_council.idle_hint", {
                   defaultValue:
                     "Submit a question to start a new council session. Each session supports up to 15 turns.",
                 })}

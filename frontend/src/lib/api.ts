@@ -25,6 +25,7 @@ import type {
   SimilarCase,
 } from "@/types/case";
 import type { LineageData } from "@/lib/lineage-data";
+import { demoRequestCredentials } from "@/lib/demo-request";
 
 let csrfToken: string | null = null;
 /** In-flight mint, so concurrent mutations share one token and one Set-Cookie. */
@@ -55,7 +56,7 @@ const DASHBOARD_STATS_CACHE_KEY = "immi:dashboard:stats:v2";
 const DASHBOARD_TRENDS_CACHE_KEY = "immi:dashboard:trends:v2";
 
 async function mintCsrfToken(): Promise<string> {
-  const res = await fetch("/api/v1/csrf-token", { credentials: "include" });
+  const res = await fetch("/api/v1/csrf-token", { credentials: "include", ...demoRequestCredentials() });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(
@@ -183,6 +184,7 @@ async function apiFetchOnce<T>(
     res = await fetch(url, {
       credentials: "include",
       ...requestOptions,
+      ...demoRequestCredentials(),
       headers,
       signal: controller.signal,
     });
@@ -1451,6 +1453,7 @@ async function postCollectionExportOnce(
   const { token, generation } = await fetchCsrfToken();
   const res = await fetch("/api/v1/collections/export", {
     method: "POST",
+    ...demoRequestCredentials(),
     headers: {
       "Content-Type": "application/json",
       "X-CSRFToken": token,

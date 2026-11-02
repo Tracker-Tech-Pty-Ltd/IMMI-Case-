@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, within } from "@testing-library/react";
 import {
   StreamingCouncilView,
   useCouncilStream,
@@ -79,7 +79,7 @@ describe("StreamingCouncilView presentation", () => {
       />,
     );
 
-    expect(screen.getByText("Panel finished — synthesising")).toBeInTheDocument();
+    expect(screen.getByText("Panel responses complete")).toBeInTheDocument();
     expect(screen.queryByTestId("council-stream-error")).toBeNull();
   });
 });
@@ -207,7 +207,7 @@ describe("useCouncilStream error surfacing", () => {
         if (!pulled) {
           pulled = true;
           controller.enqueue(
-            encoder.encode("event: council.start\ndata: {}\n\n"),
+            encoder.encode("event: council.start\ndata: {}\n\nevent: moderator.start\ndata: {}\n\n"),
           );
           return;
         }
@@ -224,5 +224,36 @@ describe("useCouncilStream error surfacing", () => {
 
     expect(settled).toBeDefined();
     expect(hook.result.current.state.council.status).toBe("error");
+    expect(hook.result.current.state.moderator.status).toBe("running");
+    render(<StreamingCouncilView state={hook.result.current.state} />);
+    const moderator = screen.getByTestId("streaming-moderator-status");
+    expect(within(moderator).getByText("Synthesis unavailable")).toBeInTheDocument();
+    expect(within(moderator).queryByText("Combining responses…")).toBeNull();
+    expect(moderator.querySelector('[class*="animate-spin"]')).toBeNull();
+  });
+
+  it("marks a stream closed without a terminal event as incomplete", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(
+          "event: council.start\ndata: {}\n\nevent: moderator.start\ndata: {}\n\n",
+        ));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, body }));
+    const hook = renderHook(() => useCouncilStream());
+
+    await act(async () => {
+      await hook.result.current.start({ message: "x" });
+    });
+
+    expect(hook.result.current.isStreaming).toBe(false);
+    expect(hook.result.current.state.council.status).toBe("error");
+    expect(hook.result.current.state.council.error).toBe("council_stream_ended_early");
+    render(<StreamingCouncilView state={hook.result.current.state} />);
+    expect(screen.getByTestId("council-stream-error")).toHaveTextContent("ended before completion");
+    expect(screen.queryByText("Council deliberating")).toBeNull();
+    expect(within(screen.getByTestId("streaming-moderator-status")).queryByText("Combining responses…")).toBeNull();
   });
 });

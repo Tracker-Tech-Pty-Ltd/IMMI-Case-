@@ -16,7 +16,7 @@
  * Mobile + desktop: experts collapsed by default (moderator is the holding).
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -92,7 +92,7 @@ const MARKDOWN_COMPONENTS: Record<string, (props: MdProps | MdCodeProps) => Reac
 
 function Markdown({ children }: { children: string }) {
   return (
-    <div className="max-w-none text-sm text-foreground">
+    <div className="max-w-prose text-base text-foreground">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
         {children}
       </ReactMarkdown>
@@ -101,28 +101,6 @@ function Markdown({ children }: { children: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Likelihood styling helpers
-// ---------------------------------------------------------------------------
-
-function likelihoodTone(label: string) {
-  const normalized = (label || "").toLowerCase();
-  if (normalized === "high") return "text-emerald-700 dark:text-emerald-300";
-  if (normalized === "medium") return "text-amber-700 dark:text-amber-300";
-  if (normalized === "low") return "text-rose-700 dark:text-rose-300";
-  return "text-muted-text";
-}
-
-function likelihoodBadge(label: string) {
-  const normalized = (label || "").toLowerCase();
-  if (normalized === "high")
-    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
-  if (normalized === "medium")
-    return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
-  if (normalized === "low")
-    return "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300";
-  return "bg-surface text-muted-text";
-}
-
 function sectionKey(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -287,11 +265,11 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
       >
         <div className="mb-3 flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">
+          <h2 className="text-base font-semibold text-foreground">
             {t("llm_council.moderator_section_title", {
               defaultValue: "Moderator Synthesis",
             })}
-          </h3>
+          </h2>
         </div>
         <ApiErrorState
           title={t("llm_council.moderator_failed_title", {
@@ -308,31 +286,38 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
     );
   }
 
+  const estimateLabels: Record<string, string> = {
+    high: t("llm_council.estimate_high", { defaultValue: "High" }),
+    medium: t("llm_council.estimate_medium", { defaultValue: "Medium" }),
+    low: t("llm_council.estimate_low", { defaultValue: "Low" }),
+  };
+  const estimateLabel = estimateLabels[(moderator.outcome_likelihood_label || "").toLowerCase()] || moderator.outcome_likelihood_label;
+
   return (
     <div
-      className="rounded-xl border border-border/80 bg-card p-4 shadow-sm"
+      className="overflow-hidden rounded-xl border border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-4 shadow-sm sm:p-6"
       data-testid="moderator-section"
     >
-      <div className="mb-3 flex items-center gap-2 border-b border-border pb-2">
-        <Sparkles className="h-4 w-4 text-accent" />
-        <h3 className="text-sm font-semibold text-foreground">
+      <div className="mb-4 flex flex-wrap items-center gap-3 border-b border-accent/20 pb-4">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/20 bg-accent/10 text-accent motion-safe:transition-transform motion-safe:duration-300 motion-safe:hover:scale-110">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h2 className="text-base font-semibold text-foreground">
           {t("llm_council.moderator_section_title", {
             defaultValue: "Moderator Synthesis",
           })}
-        </h3>
+        </h2>
         {moderator.outcome_likelihood_label ? (
           <span
-            className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${likelihoodBadge(
-              moderator.outcome_likelihood_label,
-            )}`}
+            className="ml-auto rounded border border-border bg-surface px-2 py-1 text-xs font-semibold uppercase tracking-wide text-foreground"
           >
-            {(moderator.outcome_likelihood_label || "unknown").toUpperCase()}
+            {estimateLabel}
           </span>
         ) : null}
         {typeof moderator.outcome_likelihood_percent === "number" && Number.isFinite(moderator.outcome_likelihood_percent) ? (
           <span className="text-right">
             <span className="block text-xs text-muted-text">{t("llm_council.model_estimate", { defaultValue: "Model estimate" })}</span>
-            <span className={`text-sm font-bold tabular-nums ${likelihoodTone(moderator.outcome_likelihood_label)}`}>
+            <span className="text-sm font-bold tabular-nums text-foreground">
               {moderator.outcome_likelihood_percent}%
             </span>
           </span>
@@ -340,11 +325,11 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
       </div>
 
       {moderator.outcome_likelihood_reason ? (
-        <p className="mb-3 text-xs text-muted-text">{moderator.outcome_likelihood_reason}</p>
+        <p className="mb-3 max-w-prose text-sm leading-relaxed text-muted-text">{moderator.outcome_likelihood_reason}</p>
       ) : null}
 
       {moderator.composed_answer ? (
-        <div className="rounded-md border border-border bg-surface p-3">
+        <div className="rounded-xl border border-accent/20 bg-card/80 p-4 shadow-sm sm:p-5">
           <p className="mb-1 text-xs uppercase tracking-wide text-muted-text">
             {t("llm_council.composed_answer_label", {
               defaultValue: "Integrated Council Analysis",
@@ -372,7 +357,7 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
       ) : null}
 
       {moderator.consensus ? (
-        <p className="mt-3 text-xs text-muted-text">
+        <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted-text">
           <span className="font-semibold">
             {t("llm_council.consensus_label", { defaultValue: "Consensus" })}:{" "}
           </span>
@@ -381,7 +366,7 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
       ) : null}
 
       {moderator.disagreements ? (
-        <p className="mt-1 text-xs text-muted-text">
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-text">
           <span className="font-semibold">
             {t("llm_council.disagreements_label", {
               defaultValue: "Disagreements",
@@ -395,7 +380,7 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
       {[moderator.agreement_points, moderator.conflict_points, moderator.law_sections].some(
         (items) => Array.isArray(items) && items.some((item) => typeof item === "string" && item.trim()),
       ) ? (
-        <section className="mt-4 rounded-md border border-border bg-surface/40 p-3" data-testid="council-insights">
+        <section className="mt-4 border-t border-border pt-3" data-testid="council-insights">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-text">
             {t("llm_council.insights_title", { defaultValue: "Explore the analysis" })}
           </p>
@@ -407,11 +392,11 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
             const entries = Array.isArray(items) ? items.filter((item): item is string => typeof item === "string" && !!item.trim()) : [];
             if (!entries.length) return null;
             return (
-              <details key={key} className="rounded-md border border-border bg-card px-3 py-2 mb-2 last:mb-0">
-                <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              <details key={key} className="group border-b border-border last:border-b-0">
+                <summary className="cursor-pointer rounded-md py-3 text-sm font-semibold text-foreground transition-colors hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
                   {label} <span className="text-muted-text">({entries.length})</span>
                 </summary>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-foreground">
+                <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-foreground">
                   {entries.map((entry, index) => <li key={`${index}-${entry}`}><Markdown>{entry}</Markdown></li>)}
                 </ul>
               </details>
@@ -438,12 +423,12 @@ export function ModeratorSection({ moderator, providerLabels, onSelectFollowUp, 
               defaultValue: "Follow-up Questions",
             })}
           </p>
-          <ul className="space-y-1 text-xs text-muted-text">
+          <ul className="space-y-1 text-sm text-muted-text">
             {moderator.follow_up_questions.filter((q): q is string => typeof q === "string" && !!q.trim()).map((q, i) => (
               <li key={i}>
                 {onSelectFollowUp ? (
                   <button type="button" disabled={followUpDisabled} onClick={() => onSelectFollowUp(q)}
-                    className="rounded-md border border-border bg-card px-3 py-2 text-left text-foreground hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60">
+                    className="min-h-11 rounded-lg border border-accent/25 bg-card px-3 py-2 text-left text-foreground shadow-sm transition-colors hover:border-accent hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60 motion-safe:transition-transform motion-safe:hover:-translate-y-0.5">
                     {q}
                   </button>
                 ) : <>• {q}</>}
@@ -466,6 +451,7 @@ interface ExpertTabsProps {
 
 function ExpertTabs({ opinions }: ExpertTabsProps) {
   const { t } = useTranslation();
+  const id = useId();
   const [activeKey, setActiveKey] = useState<string>(
     opinions[0]?.provider_key || "",
   );
@@ -478,17 +464,33 @@ function ExpertTabs({ opinions }: ExpertTabsProps) {
     <div className="space-y-3" data-testid="expert-tabs">
       <div
         role="tablist"
+        aria-label={t("llm_council.expert_title", { defaultValue: "Expert Model Opinions" })}
         className="-mb-px flex flex-wrap gap-1 border-b border-border"
       >
-        {opinions.map((op) => {
+        {opinions.map((op, index) => {
           const isActive = op.provider_key === active.provider_key;
           return (
             <button
               key={op.provider_key}
+              type="button"
               role="tab"
+              id={`${id}-tab-${index}`}
               aria-selected={isActive}
+              aria-controls={`${id}-panel`}
+              tabIndex={isActive ? 0 : -1}
               data-testid={`expert-tab-${op.provider_key}`}
               onClick={() => setActiveKey(op.provider_key)}
+              onKeyDown={(event) => {
+                let nextIndex: number;
+                if (event.key === "ArrowRight") nextIndex = (index + 1) % opinions.length;
+                else if (event.key === "ArrowLeft") nextIndex = (index - 1 + opinions.length) % opinions.length;
+                else if (event.key === "Home") nextIndex = 0;
+                else if (event.key === "End") nextIndex = opinions.length - 1;
+                else return;
+                event.preventDefault();
+                setActiveKey(opinions[nextIndex].provider_key);
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
+              }}
               className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold transition-colors ${
                 isActive
                   ? "border-accent text-accent"
@@ -501,6 +503,9 @@ function ExpertTabs({ opinions }: ExpertTabsProps) {
                 <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
               )}
               <span>{op.provider_label}</span>
+              <span className="sr-only">{" "}{op.success
+                ? t("llm_council.status_ok", { defaultValue: "OK ({{latency}} ms)", latency: op.latency_ms })
+                : t("llm_council.status_failed", { defaultValue: "Failed ({{latency}} ms)", latency: op.latency_ms })}</span>
             </button>
           );
         })}
@@ -508,8 +513,10 @@ function ExpertTabs({ opinions }: ExpertTabsProps) {
 
       <article
         role="tabpanel"
+        id={`${id}-panel`}
+        aria-labelledby={`${id}-tab-${opinions.indexOf(active)}`}
+        tabIndex={0}
         className="rounded-md border border-border/80 bg-card p-3"
-        aria-label={active.provider_label}
       >
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 text-muted-text">
@@ -607,7 +614,7 @@ export function TurnCard({ turn, turnNumber, onSelectFollowUp, followUpDisabled 
       aria-label={`Turn ${turnNumber}`}
     >
       {/* User message */}
-      <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-surface/60 p-4">
+      <div className="flex items-start gap-3 rounded-xl border border-accent/20 bg-gradient-to-r from-accent/10 via-surface to-surface p-4 shadow-sm sm:p-5">
         <div className="mt-0.5 rounded-full bg-accent/15 p-1.5 text-accent">
           <User className="h-4 w-4" />
         </div>
@@ -633,13 +640,13 @@ export function TurnCard({ turn, turnNumber, onSelectFollowUp, followUpDisabled 
 
       {/* Expert opinions — collapsible accordion with tabs */}
       {turn.opinions && turn.opinions.length > 0 ? (
-        <div className="rounded-xl border border-border/80 bg-card shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm transition-colors hover:border-accent/40">
           <button
             type="button"
             onClick={() => setExpertsExpanded((v) => !v)}
             aria-expanded={expertsExpanded}
             data-testid="experts-toggle"
-            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-surface/50"
+            className="flex min-h-11 w-full items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-accent/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-accent" />

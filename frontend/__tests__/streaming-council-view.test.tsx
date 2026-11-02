@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import {
   StreamingCouncilView,
   useCouncilStream,
@@ -7,7 +7,7 @@ import {
 } from "@/components/llm-council/StreamingCouncilView";
 
 function doneStateWithCode(code: string): CouncilStreamState {
-  const expert = { text: "", status: "done" as const };
+  const expert = { text: "An expert response", status: "done" as const };
   return {
     openai: expert,
     gemini_pro: expert,
@@ -28,6 +28,43 @@ function setClipboard(value: unknown) {
 }
 
 describe("completed moderator results", () => {
+  it("labels completed results as a demo only in development demo mode", () => {
+    vi.stubEnv("DEV", true);
+    vi.stubEnv("VITE_COUNCIL_DEMO", "true");
+    try {
+      const state = doneStateWithCode("");
+      state.moderator.data = { success: true, composed_answer: "Sample" };
+      const view = render(<StreamingCouncilView state={state} />);
+      expect(screen.getByRole("status")).toHaveTextContent("Demo response complete");
+      vi.stubEnv("DEV", false);
+      view.rerender(<StreamingCouncilView state={state} />);
+      expect(screen.getByRole("status")).toHaveTextContent("Analysis complete");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("stops indicating pending or partial responses are active after the council ends", () => {
+    const state = doneStateWithCode("");
+    state.council = { status: "error", error: "Connection lost" };
+    state.openai = { status: "pending", text: "" };
+    state.gemini_pro = { status: "streaming", text: "Partial response" };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getAllByText("Response not completed").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Queued")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Receiving/)).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("stream-column-openai")).getByRole("region")).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("status")).toHaveTextContent("Council run failed");
+  });
+
+  it("does not keep deliberating after a terminal event leaves a response incomplete", () => {
+    const state = doneStateWithCode("");
+    state.openai = { status: "pending", text: "" };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Some responses were not completed");
+    expect(screen.queryByText("Council deliberating")).not.toBeInTheDocument();
+  });
+
   it("renders the streamed synthesis and structured points without hiding either answer", () => {
     const state = doneStateWithCode("");
     state.moderator.data = {
@@ -72,8 +109,8 @@ describe("completed moderator results", () => {
     const state = doneStateWithCode("");
     state.moderator.data = {};
     render(<StreamingCouncilView state={state} />);
-    expect(screen.getByText("synthesis failed")).toBeInTheDocument();
-    expect(screen.queryByText("synthesis complete")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Synthesis unavailable").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Synthesis complete")).not.toBeInTheDocument();
   });
 
   it("ignores malformed structured fields instead of rendering them as components", () => {
@@ -96,6 +133,7 @@ describe("RecallCodeCard clipboard", () => {
     setClipboard({ writeText });
 
     render(<StreamingCouncilView state={doneStateWithCode("ABC123")} />);
+    expect(screen.getByText(/Saving is not yet confirmed/i)).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByTestId("recall-code-copy"));
     });
@@ -105,6 +143,14 @@ describe("RecallCodeCard clipboard", () => {
       "Copied",
     );
     expect(screen.queryByTestId("recall-code-copy-failed")).toBeNull();
+  });
+
+  it("does not show a code for a failed run that will not be saved", () => {
+    const state = doneStateWithCode("ABC123");
+    state.council = { status: "error", error: "All experts failed" };
+    render(<StreamingCouncilView state={state} />);
+    expect(screen.getByTestId("council-stream-error")).toHaveTextContent("All experts failed");
+    expect(screen.queryByTestId("recall-code-card")).not.toBeInTheDocument();
   });
 
   it("reports failure when writeText rejects", async () => {
@@ -135,6 +181,34 @@ describe("RecallCodeCard clipboard", () => {
     expect(screen.getByTestId("recall-code-copy").textContent).toContain(
       "Copy failed",
     );
+  });
+});
+
+describe("useCouncilStream terminal events", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("preserves a failure when the server follows it with its terminal done event", async () => {
+    const events = [
+      ["council.start", {}],
+      ["council.session", { session_id: "s-1", retrieve_code: "ABC123" }],
+      ["openai.error", { error: "Unavailable" }],
+      ["gemini_pro.error", { error: "Unavailable" }],
+      ["anthropic.error", { error: "Unavailable" }],
+      ["council.error", { error: "All experts failed" }],
+      ["council.done", { opinions: [], moderator: null }],
+    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(events, {
+      status: 200, headers: { "Content-Type": "text/event-stream" },
+    }));
+    const hook = renderHook(() => useCouncilStream());
+    await act(async () => { await hook.result.current.start({ message: "Question" }); });
+    expect(hook.result.current.state.council.status).toBe("error");
+    expect(hook.result.current.state.council.error).toBe("All experts failed");
+    render(<StreamingCouncilView state={hook.result.current.state} />);
+    expect(screen.getByTestId("council-stream-error")).toHaveTextContent("All experts failed");
+    expect(screen.getByText("Synthesis was not attempted")).toBeInTheDocument();
+    expect(screen.queryByText("Awaiting panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("recall-code-card")).not.toBeInTheDocument();
   });
 });
 

@@ -16,13 +16,17 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getApiAccessToken } from "@/lib/api";
+import { demoRequestCredentials } from "@/lib/demo-request";
 import { AlertTriangle, Bot, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Search, Sparkles } from "lucide-react";
 import { playHaptic } from "@/lib/council-celebrations";
 import { ModeratorSection } from "@/components/llm-council/TurnCard";
 import type { LlmCouncilModerator } from "@/lib/api-llm-council";
+
+const STREAM_INCOMPLETE = "council_stream_ended_early";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -276,6 +280,7 @@ export function useCouncilStream(): UseCouncilStreamResult {
         const res = await fetch("/api/v1/llm-council/stream", {
           method: "POST",
           credentials: "include",
+          ...demoRequestCredentials(),
           headers: {
             "Content-Type": "application/json",
             ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -389,13 +394,26 @@ export function useCouncilStream(): UseCouncilStreamResult {
             continue;
           }
           if (ev.event === "council.done") {
-            update({ ...curr, council: { status: "done", data: ev.data } });
+            // The Worker sends a terminal done event even after an all-expert
+            // failure. Preserve that error: done signals stream termination,
+            // not that a usable result or saved conversation exists.
+            update({ ...curr, council: curr.council.status === "error"
+              ? { ...curr.council, data: ev.data }
+              : { status: "done", data: ev.data } });
             continue;
           }
           if (ev.event === "council.error") {
             update({ ...curr, council: { status: "error", error: String(ev.data.error ?? "") } });
             continue;
           }
+        }
+        // EOF without a terminal event is an interrupted response, not a
+        // still-running or successful council. Preserve terminal error/done.
+        if (curr.council.status === "pending" || curr.council.status === "running") {
+          update({
+            ...curr,
+            council: { status: "error", error: STREAM_INCOMPLETE },
+          });
         }
         return curr;
       } catch (err) {
@@ -503,62 +521,61 @@ const STREAM_MARKDOWN_COMPONENTS: Record<string, (props: MdProps | MdCodeProps) 
 interface ExpertColumnProps {
   providerKey: ProviderKey;
   state: ExpertStreamState;
+  stopped: boolean;
 }
 
-function ExpertColumn({ providerKey, state }: ExpertColumnProps) {
+function ExpertColumn({ providerKey, state, stopped }: ExpertColumnProps) {
+  const { t } = useTranslation();
   const meta = PROVIDER_META[providerKey];
   const charCount = state.text.length;
+  const incomplete = stopped && (state.status === "pending" || state.status === "streaming");
 
   return (
     <article
       data-testid={`stream-column-${providerKey}`}
-      className="flex h-[28rem] flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm md:h-[32rem]"
+      className={`flex max-h-96 flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm transition-colors hover:border-accent/40 ${!incomplete && (state.status === "pending" || state.status === "streaming") ? "h-64 md:h-96" : ""}`}
     >
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-surface/40 px-3 py-2">
+      <div className="h-1 shrink-0" style={{ backgroundColor: meta.color }} aria-hidden="true" />
+      <header className="flex items-center justify-between gap-2 border-b border-border bg-gradient-to-r from-surface to-card px-3 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <div
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-full"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl"
             style={{ backgroundColor: `${meta.color}1A`, color: meta.color }}
           >
             <Bot className="h-3.5 w-3.5" />
           </div>
           <span className="truncate text-xs font-semibold text-foreground">{meta.label}</span>
         </div>
-        <StatusBadge status={state.status} latencyMs={state.latencyMs} charCount={charCount} />
+        <StatusBadge status={state.status} latencyMs={state.latencyMs} charCount={charCount} incomplete={incomplete} />
       </header>
 
-      <div className="flex-1 overflow-y-auto px-3 py-2">
+      {/* A scrollable region needs keyboard focus so its full text is reachable. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" tabIndex={0} role="region" aria-label={t("llm_council.stream_response_region", { defaultValue: "{{provider}} response", provider: meta.label })}>
         {state.status === "pending" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-text">
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="h-1 w-1 rounded-full"
-                  style={{
-                    backgroundColor: meta.color,
-                    animation: "pulse 1.4s ease-in-out infinite",
-                    animationDelay: `${i * 150}ms`,
-                  }}
-                />
-              ))}
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-xs text-muted-text">
+            <div className="relative grid h-14 w-14 place-items-center" aria-hidden="true">
+              <span className={`absolute inset-0 rounded-full border border-accent/25 ${incomplete ? "" : "motion-safe:animate-ping"}`} />
+              <span className={`grid h-10 w-10 place-items-center rounded-full bg-accent/10 text-accent ${incomplete ? "" : "motion-safe:animate-pulse"}`}>
+                <Sparkles className="h-4 w-4" />
+              </span>
             </div>
-            <span>queued</span>
+            <span>{incomplete ? t("llm_council.stream_incomplete", { defaultValue: "Response not completed" }) : t("llm_council.stream_queued", { defaultValue: "Queued" })}</span>
           </div>
         ) : state.status === "error" ? (
           <div className="rounded-md border border-amber-300/40 bg-amber-50/30 p-2 text-[11px] text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-300">
-            <p className="mb-1 font-semibold">Failed</p>
-            <p className="break-words">{state.error || "unknown error"}</p>
+            <p className="mb-1 font-semibold">{t("llm_council.stream_failed", { defaultValue: "Failed" })}</p>
+            <p className="break-words">{state.error || t("llm_council.stream_unknown_error", { defaultValue: "Unknown error" })}</p>
           </div>
         ) : state.text ? (
           <div className="text-xs text-foreground">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={STREAM_MARKDOWN_COMPONENTS}>
               {state.text}
             </ReactMarkdown>
-            {state.status === "streaming" ? (
+            {state.status === "streaming" && !incomplete ? (
               <span
                 aria-hidden
-                className="ml-0.5 inline-block h-3 w-1 animate-pulse"
+                className="ml-0.5 inline-block h-3 w-1 motion-safe:animate-pulse"
                 style={{ backgroundColor: meta.color }}
               />
             ) : null}
@@ -583,7 +600,7 @@ function ExpertColumn({ providerKey, state }: ExpertColumnProps) {
         >
           <div className="mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-accent">
             <Search className="h-2.5 w-2.5" />
-            <span>Live sources ({state.groundedSources.length})</span>
+            <span>{t("llm_council.stream_live_sources", { defaultValue: "Live sources ({{total}})", total: state.groundedSources.length })}</span>
           </div>
           <div className="flex flex-wrap gap-1">
             {state.groundedSources.slice(0, 8).map((s) => {
@@ -620,20 +637,25 @@ interface StatusBadgeProps {
   status: ExpertStreamState["status"];
   latencyMs?: number;
   charCount?: number;
+  incomplete?: boolean;
 }
 
-function StatusBadge({ status, latencyMs, charCount }: StatusBadgeProps) {
+function StatusBadge({ status, latencyMs, charCount, incomplete }: StatusBadgeProps) {
+  const { t } = useTranslation();
+  if (incomplete) {
+    return <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted-text">{t("llm_council.stream_incomplete", { defaultValue: "Response not completed" })}</span>;
+  }
   if (status === "pending") {
-    return <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-text">queued</span>;
+    return <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-text">{t("llm_council.stream_queued", { defaultValue: "Queued" })}</span>;
   }
   if (status === "streaming") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
         <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
+          <span className="absolute inset-0 rounded-full bg-accent opacity-60 motion-safe:animate-ping" />
           <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
         </span>
-        streaming{typeof charCount === "number" ? ` · ${charCount}c` : ""}
+        {t("llm_council.stream_receiving", { defaultValue: "Receiving" })}{typeof charCount === "number" ? ` · ${t("llm_council.stream_characters", { defaultValue: "{{characters}} characters", characters: charCount })}` : ""}
       </span>
     );
   }
@@ -641,14 +663,14 @@ function StatusBadge({ status, latencyMs, charCount }: StatusBadgeProps) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
         <CheckCircle2 className="h-2.5 w-2.5" />
-        {typeof latencyMs === "number" ? `${(latencyMs / 1000).toFixed(1)}s` : "done"}
+        {typeof latencyMs === "number" ? `${(latencyMs / 1000).toFixed(1)}s` : t("llm_council.stream_done", { defaultValue: "Done" })}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
       <AlertTriangle className="h-2.5 w-2.5" />
-      failed
+      {t("llm_council.stream_failed", { defaultValue: "Failed" })}
     </span>
   );
 }
@@ -662,7 +684,9 @@ export interface StreamingCouncilViewProps {
 }
 
 export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
+  const { t } = useTranslation();
   const [elapsed, setElapsed] = useState(0);
+  const isDemo = import.meta.env.DEV && import.meta.env.VITE_COUNCIL_DEMO === "true";
 
   useEffect(() => {
     if (state.council.status === "done" || state.council.status === "error") return;
@@ -682,32 +706,42 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
     state.anthropic.status !== "streaming";
 
   const councilFailed = state.council.status === "error";
-  const councilBusy =
-    !councilFailed &&
-    (state.council.status === "running" || !allExpertsFinal);
+  const councilBusy = state.council.status === "running" || state.council.status === "pending";
+  const panelIncomplete = state.council.status === "done" && !allExpertsFinal;
   const completedModerator = state.moderator.status === "complete" ? streamModerator(state.moderator.data) : null;
-  const moderatorFailed = state.moderator.status === "error" ||
+  const moderatorInterrupted = (state.council.status === "done" || councilFailed) && state.moderator.status === "running";
+  const moderatorFailed = moderatorInterrupted || state.moderator.status === "error" ||
     (state.moderator.status === "complete" && state.moderator.data?.success !== true);
+  const hasExpertAnswer = [state.openai, state.gemini_pro, state.anthropic]
+    .some((expert) => expert.status === "done" && expert.text.trim().length > 0);
 
   return (
     <div className="space-y-3" data-testid="streaming-council-view">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-card px-4 py-2 shadow-sm">
         <div className="flex items-center gap-2">
-          {councilFailed ? (
+          {councilFailed || moderatorFailed || panelIncomplete ? (
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
           ) : councilBusy ? (
-            <div className="animate-spin">
+            <div className="motion-safe:animate-spin">
               <Loader2 className="h-3.5 w-3.5 text-accent" />
             </div>
           ) : (
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           )}
-          <span className="text-sm font-semibold text-foreground">
+          <span role="status" className="text-sm font-semibold text-foreground">
             {councilFailed
-              ? "Council run failed"
+              ? t("llm_council.stream_run_failed", { defaultValue: "Council run failed" })
               : councilBusy
-                ? "Council deliberating"
-                : "Panel finished — synthesising"}
+                ? t("llm_council.deliberating", { defaultValue: "Council deliberating" })
+                : panelIncomplete
+                  ? t("llm_council.stream_panel_incomplete", { defaultValue: "Some responses were not completed" })
+                : moderatorFailed
+                  ? t("llm_council.stream_synthesis_failed", { defaultValue: "Synthesis unavailable" })
+                  : state.moderator.status === "complete"
+                    ? isDemo
+                      ? t("llm_council.stream_demo_complete", { defaultValue: "Demo response complete" })
+                      : t("llm_council.stream_analysis_complete", { defaultValue: "Analysis complete" })
+                    : t("llm_council.stream_panel_finished", { defaultValue: "Panel responses complete" })}
           </span>
         </div>
         <span className="rounded bg-surface px-2 py-0.5 font-mono text-xs tabular-nums text-foreground">
@@ -719,14 +753,16 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
             data-testid="council-stream-error"
             className="w-full break-words rounded-md border border-amber-300/40 bg-amber-50/30 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/15 dark:text-amber-300"
           >
-            {state.council.error || "unknown error"}
+            {state.council.error === STREAM_INCOMPLETE
+              ? t("llm_council.stream_ended_early", { defaultValue: "The council stream ended before completion. Try sending the question again." })
+              : state.council.error || t("llm_council.stream_unknown_error", { defaultValue: "Unknown error" })}
           </p>
         ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {(["openai", "gemini_pro", "anthropic"] as const).map((key) => (
-          <ExpertColumn key={key} providerKey={key} state={state[key]} />
+          <ExpertColumn key={key} providerKey={key} state={state[key]} stopped={state.council.status === "done" || councilFailed} />
         ))}
       </div>
 
@@ -753,15 +789,19 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
                 : "text-muted-text"
           }`}
         />
-        <span className="text-sm font-semibold text-foreground">Council Chairman</span>
+        <span className="text-sm font-semibold text-foreground">{t("llm_council.chairman_label", { defaultValue: "Council Chairman" })}</span>
         <span className="text-xs text-muted-text">
-          {state.moderator.status === "pending" && "awaiting panel"}
-          {state.moderator.status === "running" && "synthesising 14-field judgment…"}
-          {state.moderator.status === "complete" && !moderatorFailed && "synthesis complete"}
-          {moderatorFailed && (state.moderator.error || (typeof state.moderator.data?.error === "string" ? state.moderator.data.error : "") || "synthesis failed")}
+          {state.moderator.status === "pending" && ((councilFailed || state.council.status === "done")
+            ? t("llm_council.stream_synthesis_not_attempted", { defaultValue: "Synthesis was not attempted" })
+            : t("llm_council.awaiting_label", { defaultValue: "Awaiting panel" }))}
+          {state.moderator.status === "running" && !moderatorInterrupted && t("llm_council.stream_synthesising", { defaultValue: "Combining responses…" })}
+          {state.moderator.status === "complete" && !moderatorFailed && (isDemo
+            ? t("llm_council.stream_demo_complete", { defaultValue: "Demo response complete" })
+            : t("llm_council.stream_synthesis_complete", { defaultValue: "Synthesis complete" }))}
+          {moderatorFailed && (state.moderator.error || (typeof state.moderator.data?.error === "string" ? state.moderator.data.error : "") || t("llm_council.stream_synthesis_failed", { defaultValue: "Synthesis unavailable" }))}
         </span>
-        {state.moderator.status === "running" ? (
-          <div className="ml-auto animate-spin">
+        {state.moderator.status === "running" && !moderatorInterrupted ? (
+          <div className="ml-auto motion-safe:animate-spin">
             <Loader2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
           </div>
         ) : null}
@@ -775,7 +815,7 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
           finishes AND the session.session event has landed (most flows
           satisfy both within ~10ms of each other; gating on retrieveCode
           alone would surface it mid-stream which is misleading). */}
-      {state.council.status === "done" && state.session.retrieveCode ? (
+      {state.council.status === "done" && hasExpertAnswer && state.session.retrieveCode ? (
         <RecallCodeCard code={state.session.retrieveCode} />
       ) : null}
     </div>
@@ -787,6 +827,7 @@ export function StreamingCouncilView({ state }: StreamingCouncilViewProps) {
 // ---------------------------------------------------------------------------
 
 function RecallCodeCard({ code }: { code: string }) {
+  const { t } = useTranslation();
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
@@ -826,10 +867,10 @@ function RecallCodeCard({ code }: { code: string }) {
           </div>
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-wide text-accent">
-              Save your recall code
+              {t("llm_council.stream_recall_code", { defaultValue: "Your recall code" })}
             </div>
             <div className="text-[11px] text-muted-text">
-              Enter this code on a future visit to restore this conversation.
+              {t("llm_council.stream_recall_pending", { defaultValue: "Saving is not yet confirmed. Open the conversation to check it is available before relying on this code." })}
             </div>
           </div>
         </div>
@@ -846,23 +887,23 @@ function RecallCodeCard({ code }: { code: string }) {
               void onCopy();
             }}
             data-testid="recall-code-copy"
-            aria-label="Copy recall code"
+            aria-label={t("llm_council.stream_copy_code", { defaultValue: "Copy recall code" })}
             className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-accent/60 hover:bg-accent/10 hover:text-accent"
           >
             {copyState === "copied" ? (
               <>
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                Copied
+                {t("llm_council.stream_copied", { defaultValue: "Copied" })}
               </>
             ) : copyState === "failed" ? (
               <>
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                Copy failed
+                {t("llm_council.stream_copy_failed", { defaultValue: "Copy failed" })}
               </>
             ) : (
               <>
                 <Copy className="h-3.5 w-3.5" />
-                Copy
+                {t("llm_council.stream_copy", { defaultValue: "Copy" })}
               </>
             )}
           </button>
@@ -873,7 +914,7 @@ function RecallCodeCard({ code }: { code: string }) {
           data-testid="recall-code-copy-failed"
           className="mt-2 text-[11px] text-amber-700 dark:text-amber-400"
         >
-          Copy failed — select the code above and copy it manually.
+          {t("llm_council.stream_copy_manually", { defaultValue: "Copy failed — select the code above and copy it manually." })}
         </div>
       ) : null}
     </div>

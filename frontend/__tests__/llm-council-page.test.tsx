@@ -100,6 +100,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { LlmCouncilPage } from "@/pages/LlmCouncilPage";
+import { recordCouncilRun } from "@/lib/council-celebrations";
 import type {
   LlmCouncilTurn,
   LlmCouncilSession,
@@ -253,12 +254,45 @@ describe("LlmCouncilPage", () => {
     expect(screen.getByText("LLM IMMI Council")).toBeInTheDocument();
   });
 
+  it("marks the local demo and keeps the notice out of the normal page", () => {
+    try {
+      vi.stubEnv("VITE_COUNCIL_DEMO", "true");
+      const demo = renderNewSession();
+      expect(screen.getByTestId("council-demo-notice")).toHaveTextContent(/example responses only/i);
+      expect(screen.getByLabelText(/Case ID \(optional\)/i)).toBeDisabled();
+      expect(screen.getByText(/does not load real cases/i)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Restore conversation/i })).not.toBeInTheDocument();
+      demo.unmount();
+      vi.stubEnv("VITE_COUNCIL_DEMO", "false");
+      const normal = renderNewSession();
+      expect(screen.queryByTestId("council-demo-notice")).not.toBeInTheDocument();
+      normal.unmount();
+      vi.stubEnv("DEV", false);
+      vi.stubEnv("VITE_COUNCIL_DEMO", "true");
+      renderNewSession();
+      expect(screen.queryByTestId("council-demo-notice")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   // 2. New-session form: question textarea
   it("renders the question textarea on new-session view", () => {
     renderNewSession();
     expect(
       screen.getByPlaceholderText(/Compare strongest review grounds/i),
     ).toBeInTheDocument();
+  });
+
+  it("associates visible labels with the question and optional case fields", () => {
+    renderNewSession();
+    expect(screen.getByLabelText("Legal Research Question")).toHaveAttribute("id", "council-question");
+    expect(screen.getByLabelText(/Case ID \(optional\)/i)).toHaveAttribute("id", "council-case-id");
+  });
+
+  it("associates the follow-up label with its input", () => {
+    renderThreadSession("abc123def456", 1, [makeTurn(1)]);
+    expect(screen.getByLabelText("Follow-up question")).toHaveAttribute("id", "council-follow-up");
   });
 
   // 3. New-session form: Send button present
@@ -442,6 +476,29 @@ describe("LlmCouncilPage", () => {
       }
     } finally {
       fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not record a simulated run as a real achievement", async () => {
+    vi.stubEnv("VITE_COUNCIL_DEMO", "true");
+    const events = [
+      ["council.start", {}],
+      ["openai.done", { answer: "Example answer", success: true }],
+      ["moderator.complete", { success: true, composed_answer: "Example synthesis" }],
+      ["council.done", {}],
+    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(events, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    );
+    try {
+      renderNewSession();
+      fireEvent.change(screen.getByLabelText("Legal Research Question"), { target: { value: "Example question" } });
+      fireEvent.submit(screen.getByRole("button", { name: /Send/i }).closest("form")!);
+      expect(await screen.findByText("Example synthesis")).toBeInTheDocument();
+      expect(recordCouncilRun).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+      vi.unstubAllEnvs();
     }
   });
 
